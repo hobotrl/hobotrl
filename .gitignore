@@ -1,0 +1,41 @@
+# raw data file
+*.tgz
+*.gz
+*.zip
+*.dat
+
+# Pycharm files
+.idea/
+
+# ipython notebook checkpoints
+.ipynb_checkpoints/
+.save
+
+# TensorFlow checkpoints
+*.ckpt*
+checkpoint
+
+# TensorFlow summaries
+summary/
+
+# compiled python (.pyc)
+*.pyc
+
+# log file
+*.log
+*.csv
+*.tsv
+*.txt
+*.stat
+*.png
+log/
+
+# MISC
+.fuse*
+*.swp
+
+# Temporory file directory
+tmp/
+
+# Virtual env
+venv*/
