@@ -41,10 +41,12 @@ class BaseAgent(object):
         episode_done : whether the interaction ends in this step.
         kwargs :
         """
+        last_state = self.__last_state
+        last_action = self.__last_action
 
         # Agent improve itself with new experience
         info = self.reinforce_(
-            self.__last_state, self.__last_action,
+            last_state, last_action,
             reward, state, episode_done=False, **kwargs
         )
 
@@ -128,7 +130,7 @@ class BasePolicyMixin(object):
     implement the "act_()" abstract method.
     """
     def __init__(self, **kwargs):
-        pass
+        super(BasePolicyMixin, self).__init__(**kwargs)
 
     def act_(self, state, **kwargs):
         raise NotImplementedError(

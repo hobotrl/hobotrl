@@ -1,0 +1,40 @@
+import sys
+sys.path.append('../')
+
+from simple_agent import TabularQLearning
+from simple_env import GridworldSink
+
+
+env = GridworldSink()
+
+agent = TabularQLearning(
+    # TablularQMixin params
+    actions = env.ACTIONS,
+    gamma = 0.9,
+    # EpsilonGreedyPolicyMixin params
+    epsilon=0.02
+)
+
+while True:
+    done = False
+    info = None
+    state = env.reset()
+    reward = 0.0
+    cum_reward = 0.0
+    n_steps = 0
+    while True:
+        action, update_info = agent.step(state=state, reward=reward, episode_done=done)
+        state, reward, done, info = env.step(action)
+        n_steps += 1
+        cum_reward += reward
+        if done is True:
+            action, update_info = agent.step(
+                state=state, reward=reward, episode_done=done)
+            print "Episode done in {} steps, reward is {}".format(
+                n_steps, cum_reward
+            )
+            n_steps = 0
+            cum_reward = 0.0
+            raw_input()
+            break
+
