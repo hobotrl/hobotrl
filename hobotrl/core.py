@@ -5,6 +5,7 @@ and leave features unique to individual algorithms as abstract methods.
 Date   : 2017-05-27
 """
 
+
 class BaseAgent(object):
     """Base class for reinforcement learning agents.
     This is the base class for general RL agents.
@@ -25,6 +26,7 @@ class BaseAgent(object):
     def __init__(self):
         self.__last_state = None
         self.__last_action = None
+        self.transition_listeners = []
 
     def step(self, state, reward, episode_done=False, **kwargs):
         """Single interaction step with outside world.
@@ -41,6 +43,7 @@ class BaseAgent(object):
         episode_done : whether the interaction ends in this step.
         kwargs :
         """
+        # todo stateless
         last_state = self.__last_state
         last_action = self.__last_action
 
@@ -58,6 +61,7 @@ class BaseAgent(object):
         return action, info
 
     def reset(self):
+        # todo event driven
         self.__last_state = None
         self.__last_action = None
 
@@ -69,6 +73,7 @@ class BaseAgent(object):
         pass
 
     def act_(self, state, **kwargs):
+        # todo stateless public method
         raise NotImplementedError(
             "BaseAgent.act_(): abstract method not implemented."
         )
