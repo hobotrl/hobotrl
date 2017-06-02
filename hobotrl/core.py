@@ -31,44 +31,57 @@ class BaseAgent(object):
     def __init__(self):
         pass
 
-    def step(self, last_state, last_action, state, reward,
+    def step(self, state, action, next_state, reward,
              episode_done=False, **kwargs):
-        """Single interaction step with outside world.
+        """
+        called when single interaction step with outside world occurs.
         The agent receive an experience tuple ("last_state", "last_action",
-        "state", "reward") from the outside world and returns an action and
-        relevante info.
+        "state", "reward") from the outside world.
 
         Optionally the outside world provides a "episode_done" argument to
         indicate the end of an interaction episode.
 
-        Parameters:
-        state  : state of outside world.
-        reward : scalar reward signal.
-        episode_done : whether the interaction ends in this step.
-        kwargs :
+        Parameters: transition received from environment
+        :param state: state of outside world.
+        :param action: action taken
+        :param next_state: afterstate
+        :param reward: scalar reward signal
+        :param episode_done: true if episode ends in this step.
+        :param kwargs: other params
         """
 
         # Agent improve itself with new experience
-        info = self.reinforce_(last_state, last_action, reward, state,
+        info = self.reinforce_(state, action, next_state, reward,
                                episode_done=False, **kwargs)
 
-        # Agent take action in reaction to current state
-        action = self.act(state, **kwargs)
+        return info
 
-        return action, info
+    def new_episode(self, state):
+        """
+        called when a new episode starts.
+        :param state:
+        :return:
+        """
+        pass
 
-    def reinforce_(self, state, action, reward, next_state,
+    def act(self, state, evaluate=False, **kwargs):
+        """
+        called when an action need to be taken from this agent.
+        :param state:
+        :param evaluate:
+        :param kwargs:
+        :return:
+        """
+        raise NotImplementedError(
+            "BaseAgent.act(): abstract method not implemented."
+        )
+
+    def reinforce_(self, state, action, next_state, reward,
                    episode_done=False, **kwargs):
         # Default agent does nothing. This method is not
         #   abstract to fascilitate super() call from
         #   child classes.
         pass
-
-    def act(self, state, **kwargs):
-        raise NotImplementedError(
-            "BaseAgent.act(): abstract method not implemented."
-        )
-
 
 class BaseValueFuncMixin(object):
     """Base class for value function mixins.
@@ -89,18 +102,18 @@ class BaseValueFuncMixin(object):
     def __init__(self, **kwargs):
         super(BaseValueFuncMixin, self).__init__(**kwargs)
 
-    def reinforce_(self, state, action, reward, next_state,
+    def reinforce_(self, state, action, next_state, reward,
                    episode_done=False, **kwargs):
 
         parent_info = super(
             BaseValueFuncMixin, self
         ).reinforce_(
-            state, action, reward, next_state,
+            state, action, next_state, reward,
             episode_done, **kwargs)
 
         eval_info = self.improve_value_(
-            state, action, reward, next_state,
-            episode_done, **kwargs
+            state=state, action=action, next_state=next_state, reward=reward,
+            episode_done=episode_done, **kwargs
         )
 
         return parent_info, eval_info
@@ -111,7 +124,7 @@ class BaseValueFuncMixin(object):
             "abstract method not implemented."
         )
 
-    def improve_value_(self, state, action, reward, next_state,
+    def improve_value_(self, state, action, next_state, reward,
                        episode_done, **kwargs):
         raise NotImplementedError(
             "BaseValueFuncMixin.improve_value_() :" +
@@ -128,16 +141,16 @@ class BasePolicyMixin(object):
     def __init__(self, **kwargs):
         super(BasePolicyMixin, self).__init__(**kwargs)
 
-    def reinforce_(self, last_state, last_action, state ,reward,
+    def reinforce_(self, state, action, next_state, reward, episode_done=False,
                    **kwargs):
         parent_info = super(BasePolicyMixin, self).reinforce_(
-            last_state, last_action, state, reward,
+            state, action, next_state, reward, episode_done,
             **kwargs
         )
 
         return parent_info
 
-    def act(self, state, **kwargs):
+    def act(self, state, evaluate=False, **kwargs):
         raise NotImplementedError(
             "BasePolicyMixin.act() :" +
             "abstract method not implemented."
