@@ -110,11 +110,12 @@ class TabularQMixin(BaseValueFuncMixin):
 
         return td
 
-    def reset(self, **kwargs):
-        """Reset Action Value Table
-        """
-        super(TabularQMixin, self).reset(**kwargs)
-        self.__q = {}
+    # TODO: seems this method has no practical use anywhere
+    # def reset(self, **kwargs):
+    #     """Reset Action Value Table
+    #     """
+    #     super(TabularQMixin, self).reset(**kwargs)
+    #     self.__q = {}
 
 
 class EpsilonGreedyPolicyMixin(BasePolicyMixin):
@@ -139,7 +140,7 @@ class EpsilonGreedyPolicyMixin(BasePolicyMixin):
         self.EPSILON = epsilon
         self.TOL = tol
 
-    def act_(self, state, **kwargs):
+    def act(self, state, **kwargs):
         """Epsilon greedy action selection.
         Choose greedy action with 1-epsilon probability and random action with
         epsilon probability. Ties are broken randomly for greedy actions.
