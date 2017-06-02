@@ -31,11 +31,11 @@ class BaseAgent(object):
     def __init__(self):
         pass
 
-    def step(self, last_state, last_action, state, reward,
+    def step(self, last_state, last_action, reward, state,
              episode_done=False, **kwargs):
         """Single interaction step with outside world.
         The agent receive an experience tuple ("last_state", "last_action",
-        "state", "reward") from the outside world and returns an action and
+        "reward", "state") from the outside world and returns an action and
         relevante info.
 
         Optionally the outside world provides a "episode_done" argument to
