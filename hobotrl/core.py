@@ -5,6 +5,7 @@ and leave features unique to individual algorithms as abstract methods.
 Date   : 2017-06-02
 """
 
+
 class BaseAgent(object):
     """Base class for reinforcement learning agents.
     This is the base class for general RL agents.
