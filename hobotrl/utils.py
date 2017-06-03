@@ -12,6 +12,7 @@ from core import BaseAgent
 from numpy import max
 from numpy.random import rand, randint
 
+
 class TabularQFunc(object):
     """Table-based Action-Value Function.
     This class implements the classical table-based action value function
@@ -139,7 +140,7 @@ class EpsilonGreedyPolicy(object):
         self.__EPSILON = epsilon
         self.__TOL = tol
 
-    def act(self, state, **kwargs):
+    def act(self, state, evaluate=False, **kwargs):
         """Epsilon greedy action selection.
         Choose greedy action with 1-epsilon probability and random action with
         epsilon probability. Ties are broken randomly for greedy actions.

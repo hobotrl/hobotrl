@@ -1,4 +1,5 @@
 #
+# -*- coding: utf-8 -*-
 
 import logging
 import numpy as np
@@ -270,54 +271,54 @@ class NPPlayback(MapPlayback):
         self.plus_playback.reset()
 
 
-class LSHPlayback(Playback):
-    """
-    * expandable on tree nodes
-    * support action exploration decision based on state node
-    """
-    def __init__(self, capacity, sample_length, key_length, key_maker=None, dtype=np.float32):
-        """
-
-        :param capacity:
-        :param sample_length:
-        :param key_length:
-        :param key_maker: function mapping value to key
-        :param dtype:
-        """
-        super(LSHPlayback, self).__init__(1, sample_length, "sequence", "random", dtype)
-        self.space_table = lsh.LSHTree(key_length, 2)
-        if key_maker is None:
-            key_maker = lambda v: v[:key_length]
-        self.key_maker = key_maker
-        self.capacity = capacity
-
-    def push_sample(self, sample, sample_score=0):
-        key = self.key_maker(sample)
-        node = self.space_table.get_bucket(key)
-        if self.space_table.get_count() < self.capacity:
-            node.append_value_array(key, sample, {})
-        else:
-            # table full; need to rebalance
-            print("table full; need to rebalance")
-            node_max = self.space_table.select_node(None, lsh.select_func_dist)
-            if node_max == node:
-                print("overwriting in node_max")
-                node.append_value_array(key, sample, {}, overwrite=True)
-            else:
-                print "shrinking node_max,"
-                node_max.print_self(4)
-                node_max.shrink(1)
-                print "after shrinking node_max,"
-                node_max.print_self(4)
-                node.append_value_array(key, sample, {}, overwrite=False)
-        self.space_table.print_self()
-
-    def pop_batch(self, batch_size):
-        return self.space_table.pop(batch_size, lsh.distribution_count)
-
-    def get_count(self):
-        return self.space_table.get_count()
-
-
+# class LSHPlayback(Playback):
+#     """
+#     * expandable on tree nodes
+#     * support action exploration decision based on state node
+#     """
+#     def __init__(self, capacity, sample_length, key_length, key_maker=None, dtype=np.float32):
+#         """
+#
+#         :param capacity:
+#         :param sample_length:
+#         :param key_length:
+#         :param key_maker: function mapping value to key
+#         :param dtype:
+#         """
+#         super(LSHPlayback, self).__init__(1, sample_length, "sequence", "random", dtype)
+#         self.space_table = lsh.LSHTree(key_length, 2)
+#         if key_maker is None:
+#             key_maker = lambda v: v[:key_length]
+#         self.key_maker = key_maker
+#         self.capacity = capacity
+#
+#     def push_sample(self, sample, sample_score=0):
+#         key = self.key_maker(sample)
+#         node = self.space_table.get_bucket(key)
+#         if self.space_table.get_count() < self.capacity:
+#             node.append_value_array(key, sample, {})
+#         else:
+#             # table full; need to rebalance
+#             print("table full; need to rebalance")
+#             node_max = self.space_table.select_node(None, lsh.select_func_dist)
+#             if node_max == node:
+#                 print("overwriting in node_max")
+#                 node.append_value_array(key, sample, {}, overwrite=True)
+#             else:
+#                 print "shrinking node_max,"
+#                 node_max.print_self(4)
+#                 node_max.shrink(1)
+#                 print "after shrinking node_max,"
+#                 node_max.print_self(4)
+#                 node.append_value_array(key, sample, {}, overwrite=False)
+#         self.space_table.print_self()
+#
+#     def pop_batch(self, batch_size):
+#         return self.space_table.pop(batch_size, lsh.distribution_count)
+#
+#     def get_count(self):
+#         return self.space_table.get_count()
+#
+#
 
 

@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 """Abstract base classes of RL agent components.
 The base classes implement some common features of RL agent components,
 and leave features unique to individual algorithms as abstract methods.
@@ -31,11 +33,12 @@ class BaseAgent(object):
     def __init__(self, **kwargs):
         pass
 
-    def step(self, last_state, last_action, reward, state,
+    def step(self, state, action, reward, next_state,
              episode_done=False, **kwargs):
-        """Single interaction step with outside world.
-        The agent receive an experience tuple ("last_state", "last_action",
-        "reward", "state") from the outside world and returns an action and
+        """Single Agent Step
+        called when single interaction step with outside world occurs.
+        The agent receive an experience tuple ("state", "action",
+        "reward", "next_state") from the outside world and returns an action and
         relevante info.
 
         Optionally the outside world provides a "episode_done" argument to
@@ -44,19 +47,41 @@ class BaseAgent(object):
         Parameters
         ----------
         state  : state of outside world.
+        action : action taken
         reward : scalar reward signal.
-        episode_done : whether the interaction ends in this step.
-        kwargs :
+        next_state :afterstate
+        episode_done : true if episode ends in this step.
+        kwargs : other params
         """
 
         # Agent improve itself with new experience
-        info = self.reinforce_(last_state, last_action, reward, state,
+        info = self.reinforce_(state, action, reward, next_state,
                                episode_done=False, **kwargs)
-
+        
         # Agent take action in reaction to current state
-        action = self.act(state, **kwargs)
+        next_action = self.act(next_state, **kwargs)
 
-        return action, info
+        return next_action, info
+
+    def new_episode(self, state):
+        """
+        called when a new episode starts.
+        :param state:
+        :return:
+        """
+        pass
+
+    def act(self, state, evaluate=False, **kwargs):
+        """
+        called when an action need to be taken from this agent.
+        :param state:
+        :param evaluate:
+        :param kwargs:
+        :return:
+        """
+        raise NotImplementedError(
+            "BaseAgent.act(): abstract method not implemented."
+        )
 
     def reinforce_(self, state, action, reward, next_state,
                    episode_done=False, **kwargs):
@@ -64,9 +89,4 @@ class BaseAgent(object):
         #   abstract to fascilitate super() call from
         #   child classes.
         pass
-
-    def act(self, state, **kwargs):
-        raise NotImplementedError(
-            "BaseAgent.act(): abstract method not implemented."
-        )
 
