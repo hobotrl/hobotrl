@@ -1,16 +1,16 @@
 import sys
 sys.path.append('../')
 
-from mixin_style import TabularQLearning
+from mixin_style import SARSA
 from simple_env import GridworldSink
 
 
 env = GridworldSink()
 
-agent = TabularQLearning(
+agent = SARSA(
     # TablularQMixin params
-    actions = env.ACTIONS,
-    gamma = 0.9,
+    actions=env.ACTIONS,
+    gamma=0.9,
     # EpsilonGreedyPolicyMixin params
     epsilon=0.02
 )
