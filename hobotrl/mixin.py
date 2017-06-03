@@ -23,6 +23,8 @@ TODO: [Lewis] mixins with overriding are linear in nature, not sure if
       decoupled with mixins.
 """
 
+import numpy as np
+
 from core import BaseAgent
 from utils import TabularQFunc, EpsilonGreedyPolicy
 
@@ -160,4 +162,83 @@ class EpsilonGreedyPolicyMixin(BasePolicyMixin):
         self.act = \
             lambda *args, **kwargs: self.__epgp.act(*args, **kwargs)
 
-       
+
+class ReplayMixin(object):
+    """Experience Replay Wrapper
+    This is a wrapper class that provides batch of uncorrelated experiences
+    for the "reinforce_()" method of its parent class(es). It can be seen
+    as a "translater": single sequential data in, batch uncorrelated data out.
+
+    Experience replay is a method for preparing un-correlated experiences
+    for RL algorithms. It uses a buffer to store (possibliy correlated)
+    past experience and break the correlation through random sampling.
+    
+    Overriding Hierachy
+    -------------------
+    __init__:
+        self.__init__
+            |- [call super] XXX.__init__
+    reinforce_:
+        self.reinforce_
+            |- [call super] XXX.reinforce_
+    """
+    def __init__(self, buffer_class, buffer_param_dict, batch_size,
+                 **kwargs):
+        """Initialization
+        Since the parent class most probably will also use the "batch_size"
+        argument (e.g. for building NN DAG), we repack it back into the kwargs
+        before making the super call.
+
+        Parameters
+        ----------
+        buffer_class : the class of the replay memory (not instance).
+        buffer_param_dict : kwargs for initializating the memory.
+        batch_size :
+        """
+        kwargs['batch_size'] = batch_size  # super-class may need this info
+        super(ReplayMixin, self).__init__(**kwargs)
+        
+        self.__BATCH_SIZE = batch_size
+        self.__replay_buffer = buffer_class(**buffer_param_dict)
+        # TODO: check methods that may be called
+
+    def reinforce_(self, state, action, reward, next_state,
+                   episode_done=False, **kwargs):
+        """Buffer update, sample, and supercall
+        Push current experience into replay buffer. Samples a batch of
+        experience and provide it to the `reinforce_()` method of parent
+        classes.
+        """
+        # Update buffer
+        self.__replay_buffer.push_sample(
+            self.prepare_sample(state, action, reward, next_state)
+        )
+        
+        # Sample buffer
+        batch_dict = self.__replay_buffer.pop_batch(self.__BATCH_SIZE)
+        
+        # Super call
+        # drop the input experience since they are not in batch form
+        kwargs.update(batch_dict) # pass'batch_dict' into super call as kwargs
+        info = super(ReplayMixin, self).reinforce_(**kwargs)
+
+        return info
+
+    def prepare_sample(self, state, action, reward, next_state):
+        """Adapt experience format
+        Adapt the format of incoming experience to that of the `push_sample()`
+        method. The "SARS" quadraple is the default format. This method can be
+        can be overriden if other formats are needed.
+        """
+        return {
+          "state": np.array(state),
+          "action": np.array(action),
+          "reward": np.array(reward),
+          "next_state": np.array(next_state)
+        }
+
+    def reset_memory(self):
+        """Reset the replay memory
+        """
+        self.__replay_buffer.reset()
+

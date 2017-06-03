@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 """Main building blocks for RL agent.
 Guys who do the heavy-lifting lies here. Supposed to be friendly to
 both mixin-style and non-... usages.
@@ -159,66 +161,4 @@ class EpsilonGreedyPolicy(object):
             idx_action = idx_best_actions[randint(0, len(idx_best_actions))]
 
         return self.__ACTIONS[idx_action]
-
-
-class ReplayMixin(object):
-    """Mixin class for Experience Replay.
-    This class is a wrapper that provide uncorrelated batch of experiences
-    for the "reinforce_()" method of its parent class(es). It can be seen
-    as a "translater": single sequential data in, batch uncorrelated data out.
-
-    Experience replay is a method for preparing un-correlated experiences
-    for RL algorithms. It uses a buffer to store (possibliy correlated)
-    past experience and break the correlation through random sampling.
-    """
-    def __init__(self, memory_class, memory_param_dict, batch_size,
-                 **kwargs):
-        """Initialization
-        Since the parent class most probably will also use the "batch_size"
-        argument (e.g. for building NN DAG), we repack it back into the kwargs
-        before making the super call.
-
-        Parameters
-        ----------
-        memory_class : the class of the replay memory (not instance).
-        memory_param_dict : kwargs for initializating the memory.
-        batch_size :
-        """
-        kwargs['batch_size'] = batch_size  # super-class may need this info
-        super(ReplayMixin, self).__init__(**kwargs)
-        self.BATCH_SIZE = batch_size
-        self.__replay_memory = memory_class(**memory_param_dict)
-        # TODO: check methods that may be called
-
-    def reinforce_(self, last_state, last_action, state, reward,
-                   episode_done=False, **kwargs):
-        """
-        """
-        # push and pull, translate
-        sample = self.prepare_sample(last_state, last_action, state, reward)
-        self.__replay_memory.push_sample(sample)
-        batch_dict = self.__replay_memory.pop_batch(self.BATCH_SIZE)
-        # pass'batch_dict' into super call as kwarg for flexibility
-        kwargs.update(batch_dict)
-        info = super(ReplayMixin, self).reinforce_(**kwargs)
-
-        return info
-
-    def prepare_sample_(self, last_state, last_action, state, reward):
-        """Adapt incoming experience to "push_sample()" method.
-        Note: the "SARS" quadraple is the default form. Can be overriden
-        if want to use other forms.
-        """
-        return {
-          "last_state": last_state,
-          "last_action": last_action,
-          "reward": reward,
-          "state": state
-        }
-
-    def reset_memory(self):
-        """Reset the replay memory
-        """
-        self.__replay_memory.reset()
-
 
