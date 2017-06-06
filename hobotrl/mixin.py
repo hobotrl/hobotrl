@@ -48,18 +48,14 @@ class BaseValueMixin(object):
     def __init__(self, **kwargs):
         super(BaseValueMixin, self).__init__(**kwargs)
 
-    def reinforce_(self, state, action, reward, next_state,
-                   episode_done=False, **kwargs):
-
+    def reinforce_(self, state, action, reward, next_state, **kwargs):
         parent_info = super(
             BaseValueMixin, self
         ).reinforce_(
-            state, action, reward, next_state,
-            episode_done=episode_done, **kwargs)
+            state, action, reward, next_state, **kwargs)
 
         eval_info = self.improve_value_(
-            state, action, reward, next_state,
-            episode_done=episode_done, **kwargs
+            state, action, reward, next_state, **kwargs
         )
 
         return parent_info, eval_info
@@ -159,8 +155,9 @@ class EpsilonGreedyPolicyMixin(BasePolicyMixin):
             )
 
         self.__epgp = EpsilonGreedyPolicy(**kwargs)
-        self.act = \
-            lambda *args, **kwargs: self.__epgp.act(*args, **kwargs)
+
+    def act(self, *args, **kwargs):
+        return self.__epgp.act(*args, **kwargs)
 
 
 class ReplayMixin(object):
@@ -211,7 +208,7 @@ class ReplayMixin(object):
         """
         # Update buffer
         self.__replay_buffer.push_sample(
-            self.prepare_sample(state, action, reward, next_state)
+            self.prepare_sample(state, action, reward, next_state, episode_done)
         )
         
         # Sample buffer
@@ -224,7 +221,23 @@ class ReplayMixin(object):
 
         return info
 
-    def prepare_sample(self, state, action, reward, next_state):
+    def act(self, state, action=None, **kwargs):
+        """Wrap `state` and `action` with numpy arrays of proper dimension.
+        Parameterized value functions and policies use the first dim. as the
+        batch dim. Thus even evaluating a single slice of experience, we
+        should put them into numpy arrays with proper shape.
+        
+        Parameters
+        ----------
+        """
+        state = np.array(state)[np.newaxis, :]
+        if action is not None:
+            action = np.array(action)[np.newaxix]
+        return super(ReplayMixin, self).act(
+            state=state, action=action, **kwargs
+        )
+
+    def prepare_sample(self, state, action, reward, next_state, episode_done):
         """Adapt experience format
         Adapt the format of incoming experience to that of the `push_sample()`
         method. The "SARS" quadraple is the default format. This method can be
@@ -234,7 +247,8 @@ class ReplayMixin(object):
           "state": np.array(state),
           "action": np.array(action),
           "reward": np.array(reward),
-          "next_state": np.array(next_state)
+          "next_state": np.array(next_state),
+          "episode_done": np.array(episode_done)
         }
 
     def reset_memory(self):
