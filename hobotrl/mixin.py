@@ -178,6 +178,9 @@ class ReplayMixin(object):
     reinforce_:
         self.reinforce_
             |- [call super] XXX.reinforce_
+    act:
+        self.act
+            |- [call super] xxx.act
     """
     def __init__(self, buffer_class, buffer_param_dict, batch_size,
                  **kwargs):
