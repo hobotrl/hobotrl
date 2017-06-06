@@ -10,7 +10,6 @@ both mixin-style and non-... usages.
 """
 
 from core import BaseAgent
-# from playback import *
 from numpy import max
 from numpy.random import rand, randint
 
@@ -142,7 +141,7 @@ class EpsilonGreedyPolicy(object):
         self.__EPSILON = epsilon
         self.__TOL = tol
 
-    def act(self, state, evaluate=False, **kwargs):
+    def act(self, state, **kwargs):
         """Epsilon greedy action selection.
         Choose greedy action with 1-epsilon probability and random action with
         epsilon probability. Ties are broken randomly for greedy actions.
@@ -152,7 +151,9 @@ class EpsilonGreedyPolicy(object):
         else:
             # Follow greedy policy with 1-epsilon prob.
             # break tie randomly
-            q_vals = self.__get_value(state=state)
+            q_vals = self.__get_value(state=state, **kwargs)
+            if 'print_qval' in kwargs and kwargs['print_qval']:
+                print q_vals
             max_q_val = max(q_vals)
             idx_best_actions = [
                 i for i in range(len(q_vals))
