@@ -48,17 +48,17 @@ class BaseValueMixin(object):
     def __init__(self, **kwargs):
         super(BaseValueMixin, self).__init__(**kwargs)
 
-    def reinforce_(self, state, action, reward, next_state, **kwargs):
+    def reinforce_(self, state, action, reward, next_state, episode_done=False, **kwargs):
         parent_info = super(
             BaseValueMixin, self
         ).reinforce_(
-            state, action, reward, next_state, **kwargs)
+            state, action, reward, next_state, episode_done=episode_done, **kwargs)
 
         eval_info = self.improve_value_(
-            state, action, reward, next_state, **kwargs
+            state, action, reward, next_state, episode_done=episode_done, **kwargs
         )
-
-        return parent_info, eval_info
+        parent_info.update(eval_info)
+        return parent_info
 
     def get_value(self, state, action=None, **kwargs):
         raise NotImplementedError(
@@ -83,10 +83,10 @@ class BasePolicyMixin(object):
     def __init__(self, **kwargs):
         super(BasePolicyMixin, self).__init__(**kwargs)
 
-    def reinforce_(self, state, action, reward, next_state,
+    def reinforce_(self, state, action, reward, next_state, episode_done=False,
                    **kwargs):
         parent_info = super(BasePolicyMixin, self).reinforce_(
-            state, action, reward, next_state,
+            state, action, reward, next_state, episode_done=episode_done,
             **kwargs
         )
 
@@ -213,32 +213,32 @@ class ReplayMixin(object):
         self.__replay_buffer.push_sample(
             self.prepare_sample(state, action, reward, next_state, episode_done)
         )
-        
-        # Sample buffer
-        batch_dict = self.__replay_buffer.pop_batch(self.__BATCH_SIZE)
-        
-        # Super call
-        # drop the input experience since they are not in batch form
-        kwargs.update(batch_dict) # pass'batch_dict' into super call as kwargs
-        info = super(ReplayMixin, self).reinforce_(**kwargs)
+        #
+        # # Sample buffer
+        # batch_dict = self.__replay_buffer.sample_batch(self.__BATCH_SIZE)
+        #
+        # # Super call
+        # # drop the input experience since they are not in batch form
+        # kwargs.update(batch_dict) # pass'batch_dict' into super call as kwargs
+        info = super(ReplayMixin, self).reinforce_(state, action, reward, next_state, episode_done, **kwargs)
 
         return info
 
-    def act(self, state, action=None, **kwargs):
-        """Wrap `state` and `action` with numpy arrays of proper dimension.
-        Parameterized value functions and policies use the first dim. as the
-        batch dim. Thus even evaluating a single slice of experience, we
-        should put them into numpy arrays with proper shape.
-        
-        Parameters
-        ----------
-        """
-        state = np.array(state)[np.newaxis, :]
-        if action is not None:
-            action = np.array(action)[np.newaxix]
-        return super(ReplayMixin, self).act(
-            state=state, action=action, **kwargs
-        )
+    # def act(self, state, action=None, **kwargs):
+    #     """Wrap `state` and `action` with numpy arrays of proper dimension.
+    #     Parameterized value functions and policies use the first dim. as the
+    #     batch dim. Thus even evaluating a single slice of experience, we
+    #     should put them into numpy arrays with proper shape.
+    #
+    #     Parameters
+    #     ----------
+    #     """
+    #     state = np.array(state)[np.newaxis, :]
+    #     if action is not None:
+    #         action = np.array(action)[np.newaxix]
+    #     return super(ReplayMixin, self).act(
+    #         state=state, action=action, **kwargs
+    #     )
 
     def prepare_sample(self, state, action, reward, next_state, episode_done):
         """Adapt experience format
@@ -246,16 +246,25 @@ class ReplayMixin(object):
         method. The "SARS" quadraple is the default format. This method can be
         can be overriden if other formats are needed.
         """
-        return {
+
+        sample = {
           "state": np.array(state),
           "action": np.array(action),
           "reward": np.array(reward),
           "next_state": np.array(next_state),
           "episode_done": np.array(episode_done)
         }
+        return sample
 
     def reset_memory(self):
         """Reset the replay memory
         """
         self.__replay_buffer.reset()
+
+    def get_replay_buffer(self):
+        """
+        get replay buffer
+        :return:
+        """
+        return self.__replay_buffer
 

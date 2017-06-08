@@ -56,7 +56,7 @@ class BaseAgent(object):
 
         # Agent improve itself with new experience
         info = self.reinforce_(state, action, reward, next_state,
-                               episode_done=False, **kwargs)
+                               episode_done=episode_done, **kwargs)
         
         # Agent take action in reaction to current state
         next_action = self.act(next_state, **kwargs)
@@ -88,5 +88,6 @@ class BaseAgent(object):
         # Default agent does nothing. This method is not
         #   abstract to fascilitate super() call from
         #   child classes.
+        return {}
         pass
 

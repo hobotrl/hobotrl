@@ -1,16 +1,18 @@
 #
 # -*- coding: utf-8 -*-
 
+import logging
+import tensorflow as tf
 import gym
 import numpy as np
-import logging
 
 
 class EnvRunner(object):
     """
     interaction between agent and environment.
     """
-    def __init__(self, env, agent, reward_decay=0.99, max_episode_len=5000, evaluate_interval=20, render_interval=1):
+    def __init__(self, env, agent, reward_decay=0.99, max_episode_len=5000, evaluate_interval=20, render_interval=1,
+                 logdir=None):
         super(EnvRunner, self).__init__()
         self.env, self.agent = env, agent
         self.reward_decay, self.max_episode_len = reward_decay, max_episode_len
@@ -19,10 +21,13 @@ class EnvRunner(object):
         self.state = None
         self.action = None
         self.total_reward = 0.0
+        self.summary_writer = None
+        if logdir is not None:
+            self.summary_writer = tf.summary.FileWriter(logdir)
 
     def step(self, evaluate=False):
         """
-        one step
+        agent runs one step against env.
         :param evaluate:
         :return:
         """
@@ -30,13 +35,23 @@ class EnvRunner(object):
         action = self.agent.act(self.state, evaluate=evaluate)
         observation, reward, done, info = self.env.step(action)
         self.total_reward = reward + self.reward_decay * self.total_reward
-        self.agent.step(self.state, action, observation, reward, done)
+        _, info = self.agent.step(state=self.state, action=action, reward=reward, next_state=observation,
+                                  episode_done=done)
+        self.record(info)
         self.state = observation
         return done
 
+    def record(self, info):
+        if self.summary_writer is not None:
+            for name in info:
+                value = info[name]
+                summary = tf.Summary()
+                summary.value.add(tag=name, simple_value=np.mean(value))
+                self.summary_writer.add_summary(summary, self.step_n)
+
     def episode(self, n):
         """
-        run n episodes
+        agent runs n episodes against env.
         :param n:
         :return:
         """
@@ -58,6 +73,7 @@ class EnvRunner(object):
                     break
             logging.warning("Episode %d finished after %d steps, total reward=%f", self.episode_n, t + 1,
                                 self.total_reward)
+            self.record({"episode_decayed_reward": self.total_reward})
 
 
 class AugmentEnvWrapper(object):

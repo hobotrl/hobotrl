@@ -18,6 +18,23 @@ Common RL framework and utilities.
 * Prioritized Exp Replay
 * Double DQN
 * Duel DQN
+* Actor Critic
+
+
+## Getting started
+
+All single process experiments resides in `test` folder.
+
+```
+python test/exp_tabular.py run --name TabularGrid
+```
+for starter.
+
+```
+python test/exp_tabular.py list
+```
+to get a list of experiments.
+
 
 ## Considerations Regarding Mixins
 ### Lewis, Jun 3

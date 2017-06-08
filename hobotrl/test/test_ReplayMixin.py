@@ -27,5 +27,5 @@ for i in range(32):
     agent.reinforce_(
         state=(i,i,i), action=(i, i), reward=i, next_state=(i,i,i)
     )
-    print agent._ReplayMixin__replay_buffer.pop_batch(1)
+    print agent._ReplayMixin__replay_buffer.sample_batch(1)
 

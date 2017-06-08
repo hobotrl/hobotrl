@@ -9,9 +9,12 @@ both mixin-style and non-... usages.
 3. ExperienceReplay
 """
 
-from core import BaseAgent
+import numpy as np
 from numpy import max
 from numpy.random import rand, randint
+import tensorflow.contrib.layers as layers
+import tensorflow as tf
+from core import BaseAgent
 
 
 class TabularQFunc(object):
@@ -151,7 +154,7 @@ class EpsilonGreedyPolicy(object):
         else:
             # Follow greedy policy with 1-epsilon prob.
             # break tie randomly
-            q_vals = self.__get_value(state=state, **kwargs)
+            q_vals = self.__get_value(state=np.asarray([state]), **kwargs)
             if 'print_qval' in kwargs and kwargs['print_qval']:
                 print q_vals
             max_q_val = max(q_vals)
@@ -163,3 +166,33 @@ class EpsilonGreedyPolicy(object):
 
         return self.__ACTIONS[idx_action]
 
+
+class Network(object):
+
+    @staticmethod
+    def layer_fcs(input_var, shape, out_count, activation_hidden=tf.nn.relu, activation_out=None, l2=0.0001,
+                  var_scope=""):
+        variables = []
+        ops = []
+        with tf.variable_scope(var_scope):
+            for i in range(len(shape)):
+                hidden_count = shape[i]
+                out = tf.contrib.layers.fully_connected(inputs=input_var, num_outputs=hidden_count,
+                                                        activation_fn=activation_hidden,
+                                                        weights_initializer=layers.xavier_initializer(),
+                                                        biases_initializer=layers.xavier_initializer(),
+                                                        weights_regularizer=layers.l2_regularizer(l2),
+                                                        biases_regularizer=layers.l2_regularizer(l2),
+                                                        scope="hidden_%d" % i)
+                input_var = out
+
+            # output
+            with tf.variable_scope("out"):
+                out = tf.contrib.layers.fully_connected(inputs=input_var, num_outputs=out_count,
+                                                        activation_fn=activation_out,
+                                                        weights_initializer=layers.xavier_initializer(),
+                                                        biases_initializer=layers.xavier_initializer(),
+                                                        weights_regularizer=layers.l2_regularizer(l2),
+                                                        biases_regularizer=layers.l2_regularizer(l2),
+                                                        scope="out")
+        return out

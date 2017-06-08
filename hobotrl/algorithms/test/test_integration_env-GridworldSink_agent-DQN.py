@@ -81,6 +81,7 @@ n_interactive = 0
 
 sess = tf.Session()
 sess.run(tf.global_variables_initializer())
+agent.set_session(sess)
 while True:
     cum_reward = 0.0
     n_steps = 0
