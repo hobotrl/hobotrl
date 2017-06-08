@@ -127,10 +127,10 @@ class DeepQFuncActionOut(object):
                     if ddqn:
                         with tf.variable_scope('ddqn') as scope_double_q:
                             double_q = f_net(next_state, num_actions, is_training)
-
+                        ddqn_vars = get_collection(key=tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope_double_q)
                         max_action = tf.argmax(double_q, axis=1)
                         max_action = tf.one_hot(max_action, num_actions, dtype=tf.float32)
-                        next_q_sel = tf.reduce_sum(next_q * max_action, axis=1, keep_dims=True)
+                        next_q_sel = tf.reduce_sum(next_q * max_action, axis=1, keep_dims=False)
                     else:
                         next_q_sel = tf.reduce_max(next_q, axis=1, name='next_q_sel')
                 else:
@@ -178,10 +178,9 @@ class DeepQFuncActionOut(object):
                     name='op_sync_target'
                 )
                 if ddqn:
-                    ddqn_vars = get_collection(key=tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope_double_q)
-                    op_sync_double_q = tf.group([tf.assign(var_d, var)
-                                                 for var_d, var in zip(ddqn_vars, non_target_vars)])
                     with tf.control_dependencies([op_train_td]):
+                        op_sync_double_q = tf.group(*[tf.assign(var_d, var)
+                                                      for var_d, var in zip(ddqn_vars, non_target_vars)])
                         op_train_td = op_sync_double_q
 
         # Register op handles
@@ -234,7 +233,7 @@ class DeepQFuncActionOut(object):
         if episode_done is not None:
             feed_dict[self.sym_episode_done] = np.squeeze(episode_done)
 
-        return sess.run(self.op_train_td, feed_dict)
+        return sess.run([self.op_train_td, self.sym_td_loss, self.sym_next_q_sel], feed_dict)
 
     def fetch_td_loss_(self, sess,
                        state, action, reward,
@@ -302,20 +301,14 @@ class DeepQFuncActionOut(object):
         info = {}
         td_loss = 0
         if self.countdown_td_ == 0:
-            self.apply_op_train_td_(
+            _, td_loss, next_q = self.apply_op_train_td_(
                 sess=sess, state=state, action=action,
                 reward=reward, next_state=next_state, next_action=next_action,
                 episode_done=episode_done, importance=importance,
                 **kwargs
             )
             self.countdown_td_ = self.__N_STEP_TD
-            td_loss = self.fetch_td_loss_(
-                sess=sess, state=state, action=action,
-                reward=reward, next_state=next_state, next_action=next_action,
-                episode_done=episode_done, importance=importance,
-                **kwargs
-            )
-            info["td_loss"] = td_loss
+            info = {"td_loss": td_loss, "target_q": next_q}
         
         if self.countdown_sync_ == 0:
             self.apply_op_sync_target_(sess=sess)
