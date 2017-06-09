@@ -169,7 +169,7 @@ class ReplayMixin(object):
     Experience replay is a method for preparing un-correlated experiences
     for RL algorithms. It uses a buffer to store (possibliy correlated)
     past experience and break the correlation through random sampling.
-    
+
     Overriding Hierachy
     -------------------
     __init__:
@@ -178,11 +178,9 @@ class ReplayMixin(object):
     reinforce_:
         self.reinforce_
             |- [call super] XXX.reinforce_
-    act:
-        self.act
-            |- [call super] xxx.act
     """
-    def __init__(self, buffer_class, buffer_param_dict, batch_size,
+    def __init__(self, buffer_class, buffer_param_dict,
+                 batch_size, f_prepare_sample=None,
                  **kwargs):
         """Initialization
         Since the parent class most probably will also use the "batch_size"
@@ -194,14 +192,22 @@ class ReplayMixin(object):
         buffer_class : the class of the replay memory (not instance).
         buffer_param_dict : kwargs for initializating the memory.
         batch_size :
+        f_prepare_sample : method to prepare sample from experience. Use
+                           default if None is passed in.
         """
         kwargs['batch_size'] = batch_size  # super-class may need this info
         super(ReplayMixin, self).__init__(**kwargs)
-        
+
         self.__BATCH_SIZE = batch_size
         self.__replay_buffer = buffer_class(**buffer_param_dict)
-        # TODO: check methods that may be called
+        if f_prepare_sample is None:
+            self.prepare_sample = self.__default_prepare_sample
+        else:
+            self.prepare_sample = f_prepare_sample
 
+    # TODO: For cases in which buffer needs to be updated, maybe we can
+    #       set up a `update_buffer` method to update related fields
+    #       using the reinforce_ info dict passed back.
     def reinforce_(self, state, action, reward, next_state,
                    episode_done=False, **kwargs):
         """Buffer update, sample, and supercall
@@ -211,36 +217,17 @@ class ReplayMixin(object):
         """
         # Update buffer
         self.__replay_buffer.push_sample(
-            self.prepare_sample(state, action, reward, next_state, episode_done)
+            self.prepare_sample(state, action, reward, next_state,
+                                episode_done, **kwargs)
         )
-        #
-        # # Sample buffer
-        # batch_dict = self.__replay_buffer.sample_batch(self.__BATCH_SIZE)
-        #
-        # # Super call
-        # # drop the input experience since they are not in batch form
-        # kwargs.update(batch_dict) # pass'batch_dict' into super call as kwargs
+
+        # Super call
         info = super(ReplayMixin, self).reinforce_(state, action, reward, next_state, episode_done, **kwargs)
 
         return info
 
-    # def act(self, state, action=None, **kwargs):
-    #     """Wrap `state` and `action` with numpy arrays of proper dimension.
-    #     Parameterized value functions and policies use the first dim. as the
-    #     batch dim. Thus even evaluating a single slice of experience, we
-    #     should put them into numpy arrays with proper shape.
-    #
-    #     Parameters
-    #     ----------
-    #     """
-    #     state = np.array(state)[np.newaxis, :]
-    #     if action is not None:
-    #         action = np.array(action)[np.newaxix]
-    #     return super(ReplayMixin, self).act(
-    #         state=state, action=action, **kwargs
-    #     )
-
-    def prepare_sample(self, state, action, reward, next_state, episode_done):
+    def __default_prepare_sample(self, state, action, reward, next_state,
+                       episode_done, **kwargs):
         """Adapt experience format
         Adapt the format of incoming experience to that of the `push_sample()`
         method. The "SARS" quadraple is the default format. This method can be
@@ -261,6 +248,7 @@ class ReplayMixin(object):
         """
         self.__replay_buffer.reset()
 
+    # TODO: user @property decorator?
     def get_replay_buffer(self):
         """
         get replay buffer
