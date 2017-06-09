@@ -36,35 +36,41 @@ optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
 target_sync_rate = 0.01
 training_params = (optimizer_td, target_sync_rate)
 state_shape = (99, 99, 3)
+batch_size = 10
+num_actions = 5
 graph = tf.get_default_graph()
 
 # Greedy policy
 greedy_policy=False
 print "=============="
-print "Greedy: {}".format(greedy_policy)
+print "Test initialize QFunc with greedy set to {}: ".format(greedy_policy),
 
 dqn = DeepQFuncActionOut(
     gamma=0.99,
-    f_net=f_net, state_shape=state_shape, num_actions=5,
+    f_net=f_net, state_shape=state_shape, num_actions=num_actions,
     training_params=training_params, schedule=(2,5),
+    batch_size=batch_size,
     greedy_policy=greedy_policy, graph=None
 )
+print 'pass!'
 
 print "================="
 print "Non-target subgraph in and out:"
 print dqn.get_subgraph_value()
+print 'pass!'
 
 print "================="
 print "Target subgraph in and out:"
 print dqn.get_subgraph_value_target()
+print 'pass!'
 
-state = np.random.rand(10, 99 ,99, 3)
-action = np.random.randint(0, 5, 10)
-reward = np.random.rand(10)
-next_state = np.random.rand(10, 99 ,99, 3)
-next_action = np.random.randint(0, 5, 10)
-importance = np.ones([10])
-episode_done = np.zeros([10])
+state = np.random.rand(batch_size, 99 ,99, 3)
+action = np.random.randint(0, num_actions, batch_size)
+reward = np.random.rand(batch_size)
+next_state = np.random.rand(batch_size, 99 ,99, 3)
+next_action = np.random.randint(0, num_actions, batch_size)
+importance = np.ones([batch_size])
+episode_done = np.zeros([batch_size])
 
 feed_dict = {
     dqn.sym_state: state,
@@ -85,10 +91,9 @@ print "Initial td_loss: ",
 print sess.run(dqn.sym_td_loss, feed_dict)
 for i in range(10):
     dqn.apply_op_train_td_(
-        sess, state, action, reward, next_state,
-        next_action,
-        importance,
-        episode_done
+        state=state, action=action, reward=reward, next_state=next_state,
+        next_action=next_action, episode_done=episode_done,
+        importance=importance, sess=sess
     )
     print "td_loss after td step {}".format(i),
     print sess.run(dqn.sym_td_loss, feed_dict)
@@ -100,7 +105,8 @@ print sess.run(dqn.sym_target_diff_l2)
 for i in range(10):
     dqn.apply_op_sync_target_(sess)
     print "diff l2 after sync step {}".format(i),
-    print sess.run(dqn.sym_target_diff_l2)    
+    print sess.run(dqn.sym_target_diff_l2)
+print 'pass!'
 
 print "================="
 print "Test improve value:"
@@ -108,15 +114,19 @@ print "Initial improve_value(): ",
 print sess.run(dqn.sym_td_loss, feed_dict)
 for i in range(20):
     dqn.improve_value_(
-        sess, state, action, reward, next_state,
+        state, action, reward, next_state,
         next_action,
+        episode_done,
         importance,
-        episode_done
+        sess
     )
     print "counters td {}, sync {}".format(dqn.countdown_td_, dqn.countdown_sync_),
     print "td_loss after td step {}".format(i),
     print sess.run(dqn.sym_td_loss, feed_dict),
     print "diff l2 after sync step {}".format(i),
-    print sess.run(dqn.sym_target_diff_l2)    
+    print sess.run(dqn.sym_target_diff_l2)
+print 'pass!'
+
 sess.close()
+
 

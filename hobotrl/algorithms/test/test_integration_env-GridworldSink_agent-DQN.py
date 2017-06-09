@@ -99,7 +99,7 @@ while True:
             next_state=map(lambda x: (x-2)/5.0, next_state), # scle state
             episode_done=done,
         )
-        cum_td_loss += update_info[1] if update_info[1] is not None else 0
+        cum_td_loss += update_info['td_loss'] if 'td_loss' in update_info is not None else 0
         # print update_info
         if done is True:
             print "Episode done in {} steps, reward is {}, average td_loss is {}".format(

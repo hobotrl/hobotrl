@@ -98,7 +98,7 @@ class BasePolicyMixin(object):
             "abstract method not implemented."
         )
 
-        
+
 class TabularQMixin(BaseValueMixin):
     """Thin mixin wrapper for Tabular Q Functions
     Make proper super call during `init_()` and implements
@@ -128,10 +128,10 @@ class EpsilonGreedyPolicyMixin(BasePolicyMixin):
     """Thin Wrapper for EpsilonGreedyPolicy
     Make proper super call during `init_()` and implements `act()` via a
     very thin lambda wrapper over the member EpsilonGreedyPolicy instance.
-    
+
     Requires super class to initialize a `get_value` method (most
     conviniently with a value mixin).
-    
+
     Overriding Hierachy
     -------------------
     __init__
@@ -144,7 +144,7 @@ class EpsilonGreedyPolicyMixin(BasePolicyMixin):
     """
     def __init__(self, **kwargs):
         super(EpsilonGreedyPolicyMixin, self).__init__(**kwargs)
-        
+
         # Check if `get_value` is properly initialized
         try:
             kwargs['f_get_value'] = self.get_value

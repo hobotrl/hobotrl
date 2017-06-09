@@ -146,7 +146,7 @@ class DeepQFuncActionOut(object):
                      q_sel,
                      name='td')
                 td_loss = tf.reduce_mean(tf.square(td), name='td_loss')
-                
+
                 list_reg_loss = get_collection(
                     key=tf.GraphKeys.REGULARIZATION_LOSSES, scope=scope_non
                 )
@@ -200,23 +200,28 @@ class DeepQFuncActionOut(object):
         self.sym_target_diff_l2 = target_diff_l2
         self.op_train_td = op_train_td
         self.op_sync_target = op_sync_target
-        
+
     def apply_op_sync_target_(self, sess, **kwargs):
         return sess.run(self.op_sync_target)
 
-    def apply_op_train_td_(self, sess,
-                       state, action, reward,
-                       next_state, next_action=None,
-                       episode_done=None, importance=None,
-                       **kwargs):
+    def apply_op_train_td_(self, state, action, reward,
+                           next_state, next_action=None,
+                           episode_done=None, importance=None,
+                           sess=None, **kwargs):
         """Functional wrapper for fetching op_train_td
         Squeeze out redundant dims in action, reward, next_action,
         importance, and episode_done to match the shape of
         corresponding placeholders.
-        
+
         Parameters
         ----------
         """
+        if sess is None:
+            raise ValueError(
+                "DeepQFuncActionOut.apply_op_train_td_: "
+                "please pass in a tf.Session()"
+            )
+
         feed_dict = {
             self.sym_state: state,
             self.sym_action: np.squeeze(action),
@@ -227,27 +232,36 @@ class DeepQFuncActionOut(object):
             next_action = None
             importance = None
         if next_action is not None:
+            assert action.shape == next_action.shape
             feed_dict[self.sym_next_action] = np.squeeze(next_action)
         if importance is not None:
+            assert action.shape == importance.shape
             feed_dict[self.sym_importance] = np.squeeze(importance)
         if episode_done is not None:
+            assert action.shape == episode_done.shape
             feed_dict[self.sym_episode_done] = np.squeeze(episode_done)
 
         return sess.run([self.op_train_td, self.sym_td_loss, self.sym_next_q_sel], feed_dict)
 
-    def fetch_td_loss_(self, sess,
+    def fetch_td_loss_(self,
                        state, action, reward,
                        next_state, next_action=None,
                        episode_done=None, importance=None,
-                       **kwargs):
+                       sess=None, **kwargs):
         """Functional wrapper for fetching td_loss
         Squeeze out redundant dims in action, reward, next_action,
         importance, and episode_done to match the shape of
         corresponding placeholders.
-        
+
         Parameters
         ----------
         """
+        if sess is None:
+            raise ValueError(
+                "DeepQFuncActionOut.fetch_td_loss_: "
+                "please pass in a tf.Session()"
+            )
+
         feed_dict = {
             self.sym_state: state,
             self.sym_action: np.squeeze(action),
@@ -266,7 +280,7 @@ class DeepQFuncActionOut(object):
 
         return sess.run(self.sym_td_loss, feed_dict)
 
-    def improve_value_(self, 
+    def improve_value_(self,
                        state, action, reward,
                        next_state, next_action=None,
                        episode_done=None, importance=None,
@@ -309,11 +323,11 @@ class DeepQFuncActionOut(object):
             )
             self.countdown_td_ = self.__N_STEP_TD
             info = {"td_loss": td_loss, "target_q": next_q}
-        
+
         if self.countdown_sync_ == 0:
             self.apply_op_sync_target_(sess=sess)
             self.countdown_sync_ = self.__N_STEP_SYNC
-        
+
         return info
 
     def get_value(self, state, action=None, sess=None, **kwargs):
@@ -337,6 +351,11 @@ class DeepQFuncActionOut(object):
                     self.sym_action: action
                 }
             )
+    @property
+    def state_shape(self):
+        """State shape getter
+        """
+        return self.__STATE_SHAPE
 
     def get_subgraph_value(self):
         input_dict = {

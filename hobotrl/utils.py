@@ -117,7 +117,7 @@ class TabularQFunc(object):
         td = target_q - self.__q[exp]
         self.__q[exp] += self.__ALPHA * td
 
-        return td
+        return {'td': td}
 
 
 class EpsilonGreedyPolicy(object):
@@ -154,7 +154,9 @@ class EpsilonGreedyPolicy(object):
         else:
             # Follow greedy policy with 1-epsilon prob.
             # break tie randomly
-            q_vals = self.__get_value(state=np.asarray([state]), **kwargs).flatten()
+            q_vals = np.asarray(
+                self.__get_value(state=state, **kwargs)
+            ).flatten()
             if 'print_qval' in kwargs and kwargs['print_qval']:
                 print q_vals
             max_q_val = max(q_vals)
