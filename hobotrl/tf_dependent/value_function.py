@@ -20,15 +20,6 @@ import numpy as np
 
 import tensorflow as tf
 
-# TODO: tf get_collection(key, scope) not working, check why
-def get_collection(key, scope):
-    """Temporary replacement for tf.get_collection()
-    """
-    vars = filter(
-        lambda var: scope.name in var.name,
-        tf.get_collection(key=key),
-    )
-    return vars
 
 class DeepQFuncActionOut(object):
     """NN-Parameterized Action-Out Q Functions
@@ -127,7 +118,10 @@ class DeepQFuncActionOut(object):
                     if ddqn:
                         with tf.variable_scope('ddqn') as scope_double_q:
                             double_q = f_net(next_state, num_actions, is_training)
-                        ddqn_vars = get_collection(key=tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope_double_q)
+                        ddqn_vars = tf.get_collection(
+                            key=tf.GraphKeys.TRAINABLE_VARIABLES,
+                            scope=scope_double_q.name
+                        )
                         max_action = tf.argmax(double_q, axis=1)
                         max_action = tf.one_hot(max_action, num_actions, dtype=tf.float32)
                         next_q_sel = tf.reduce_sum(next_q * max_action, axis=1, keep_dims=False)
@@ -147,16 +141,19 @@ class DeepQFuncActionOut(object):
                      name='td')
                 td_loss = tf.reduce_mean(tf.square(td), name='td_loss')
 
-                list_reg_loss = get_collection(
-                    key=tf.GraphKeys.REGULARIZATION_LOSSES, scope=scope_non
+                list_reg_loss = tf.get_collection(
+                    key=tf.GraphKeys.REGULARIZATION_LOSSES,
+                    scope=scope_non.name
                 )
                 reg_loss = sum(list_reg_loss)
 
-                non_target_vars = get_collection(
-                    key=tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope_non
+                non_target_vars = tf.get_collection(
+                    key=tf.GraphKeys.TRAINABLE_VARIABLES,
+                    scope=scope_non.name
                 )
-                target_vars = get_collection(
-                    key=tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope_target
+                target_vars = tf.get_collection(
+                    key=tf.GraphKeys.TRAINABLE_VARIABLES,
+                    scope=scope_target.name
                 )
                 # Training ops
                 # td, TODO: merge moving_averages_op with op_train_td
