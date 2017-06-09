@@ -60,7 +60,7 @@ class DiscreteNNPolicy(NNStochasticPolicyMixin):
         self.op_entropy = tf.reduce_mean(self.distribution.entropy())
         self.pi_loss = tf.reduce_mean(self.distribution.log_prob() * self.input_advantage) \
                        + self.input_entropy * self.op_entropy
-
+        self.pi_loss = -self.pi_loss
         if training_params is None:
             optimizer = tf.train.AdamOptimizer()
         else:
@@ -108,9 +108,6 @@ class DiscreteNNPolicy(NNStochasticPolicyMixin):
                     r = 0
                 r = Ri[index][0] + self.reward_decay * r
                 R[index][0] = r
-
-            target_name = "Ternimate" if episode_done else "bootstrap"
-            logging.warning("Target from %s: [ %s ... %s]", target_name, R[0], R[-1])
 
             advantage = R - V
             _, loss, entropy = self.sess.run([self.op_train, self.pi_loss, self.op_entropy], feed_dict={self.input_state: Si,
