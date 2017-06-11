@@ -1,11 +1,11 @@
-#
 # -*- coding: utf-8 -*-
-"""
+"""Mixin classes for Tensorflow-based RL modules
 """
 
 import numpy as np
-from value_function import DeepQFuncActionOut, DeepQFuncActionIn
 from hobotrl.mixin import BaseValueMixin, BasePolicyMixin
+from value_function import DeepQFuncActionOut, DeepQFuncActionIn
+from policy import DeepDeterministicPolicy
 
 
 class TFNetworkMixin(object):
@@ -83,10 +83,7 @@ class DeepQFuncMixin(BaseValueMixin):
 
         # if replay buffer is not filled yet.
         else:
-            info_key = 'DeepQFuncMixin\\debug_str'
-            return {
-                info_key: 'replay buffer not filled yet.'
-            }
+            return {}
       
     def get_grad_q_action(self, state, action=None, **kwargs):
         """Fetch action value(s)
@@ -140,6 +137,7 @@ class DeepQFuncMixin(BaseValueMixin):
         return state, action
 
 
+# TODO: inherit only from BasePolicyMixin
 class NNStochasticPolicyMixin(BasePolicyMixin, TFNetworkMixin):
     def __init__(self, **kwargs):
         super(NNStochasticPolicyMixin, self).__init__(**kwargs)
@@ -154,3 +152,56 @@ class NNStochasticPolicyMixin(BasePolicyMixin, TFNetworkMixin):
 
     def update_policy(self, state, action, reward, next_state, episode_done, **kwargs):
         raise NotImplementedError()
+
+
+# TODO: inherit from a base class which improves policy?
+class DeepDeterministicPolicyMixin(BasePolicyMixin):
+    def __init__(self, **kwargs):
+        super(DeepDeterministicPolicyMixin, self).__init__(**kwargs)
+        self.__ddp = DeepDeterministicPolicy(**kwargs)
+        self.__BATCH_SIZE = kwargs['batch_size']
+
+    def act(self, state, **kwargs):
+        state = np.array(state)
+        assert state.shape == self.__ddp.state_shape
+        state = state[np.newaxis, :]
+        kwargs.update({"sess": self.sess})
+        return self.__ddp.act(state=state, **kwargs)
+
+    def reinforce_(self, state, action, reward, next_state,
+                   episode_done=False, **kwargs):
+        parent_info = super(DeepDeterministicPolicyMixin, self).reinforce_(
+            state=state, action=action, reward=reward, next_state=next_state,
+            episode_done=episode_done, **kwargs
+        )
+        self_info = self.improve_policy_(
+            state, action, reward, next_state, episode_done, **kwargs
+        )
+        return parent_info.update(self.info)
+
+    def improve_policy_(self, state, action, reward, next_state,
+                   episode_done=False, **kwargs):
+        replay_buffer = self.get_replay_buffer()
+
+        # if replay buffer has more samples than the batch_size.
+        if replay_buffer.get_count() >= self.__BATCH_SIZE:
+            batch = replay_buffer.sample_batch(self.__BATCH_SIZE)
+            batch = {k: np.array(v) for k, v in batch.iteritems()}  # force convert
+
+            # check mandatory keys
+            assert 'state' in batch
+            assert 'action' in batch
+            
+            # get value gradient from value func
+            batch['grad_q_action'] = self.get_grad_q_action(
+                batch['state'], batch['action']
+            )
+            
+            kwargs.update(batch)  # pass the batch in as kwargs
+            kwargs.update({"sess": self.sess})
+            return self.__dqf.improve_policy_(**kwargs)
+        # if replay buffer is not filled yet.
+        else:
+            return {}
+    
+      

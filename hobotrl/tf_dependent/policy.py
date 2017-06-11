@@ -285,4 +285,4 @@ class DeepDeterministicPolicy(object):
                 name='is_training'
             )
         return (state, grad_q_action, is_training)
-
+    

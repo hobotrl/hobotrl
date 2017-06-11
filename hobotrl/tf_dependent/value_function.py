@@ -485,8 +485,8 @@ class DeepQFuncActionIn(object):
                 # get gradients:
                 #   if q.shape = [batch_size,], action.shape = [batch_size]+action_shape,
                 #   tf.gradients() will compute per-sample grad by default
-                grad_q_state = tf.gradients(q, state, name='grad_q_state')
                 grad_q_action = tf.gradients(q, action, name='grad_q_action')
+                grad_q_action_t = tf.gradients(next_q, next_action, name='grad_q_action_t')
 
                 # td_loss
                 target_q = tf.add(
@@ -545,8 +545,8 @@ class DeepQFuncActionIn(object):
         self.sym_is_training = is_training
         self.sym_q = q
         self.sym_next_q = next_q
-        self.sym_grad_q_state = grad_q_state
         self.sym_grad_q_action = grad_q_action
+        self.sym_grad_q_action_t = grad_q_action_t
         self.sym_target_q = target_q
         self.sym_td_loss = td_loss
         self.sym_target_diff_l2 = target_diff_l2
@@ -646,11 +646,14 @@ class DeepQFuncActionIn(object):
                 self.sym_state: state, self.sym_action: action
             })
 
-    def get_grad_q_action(self, state, action, sess=None, **kwargs):
-        return sess.run(
-            self.sym_grad_q_action, feed_dict={
-                self.sym_state: state, self.sym_action: action
-            })
+    def get_grad_q_action(self, state, action,
+                          sess=None, use_target=False, **kwargs):
+        if not use_target:
+            feed_dict = {self.sym_state: state, self.sym_action: action}
+            return sess.run(self.sym_grad_q_action, feed_dict)
+        else:
+            feed_dict = {self.sym_next_state: state, self.sym_next_action: action}
+            return sess.run(self.sym_grad_q_action_t, feed_dict)
 
     @property
     def state_shape(self):

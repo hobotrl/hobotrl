@@ -164,6 +164,12 @@ print "Shape: {}".format(grad.shape)
 print grad
 print "pass!\n"
 
+print "Test get grad(q_target, action) by value:"
+grad, = dqn.get_grad_q_action(state, action, sess=sess, use_target=True)
+print "Shape: {}".format(grad.shape)
+print grad
+print "pass!\n"
+
 sess.close()
 
 

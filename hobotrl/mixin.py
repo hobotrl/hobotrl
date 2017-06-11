@@ -256,3 +256,15 @@ class ReplayMixin(object):
         """
         return self.__replay_buffer
 
+
+class GaussianExplorationMixin(BasePolicyMixin):
+    def __init__(self, sigma, **kwargs):
+        super(GaussianExplorationMixin, self).__init__(**kwargs)
+        self.__sigma = sigma
+
+    def act(self, state, **kwargs):
+        action = super(GaussianExplorationMixin, self).act(state, **kwargs)
+        action += sigma * np.random.randn(*action.shape)
+
+        return action
+
