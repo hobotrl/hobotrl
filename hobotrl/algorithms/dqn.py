@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from hobotrl.core import BaseAgent
+from hobotrl.tf_dependent.base import BaseDeepAgent
 from hobotrl.mixin import ReplayMixin, EpsilonGreedyPolicyMixin
 from hobotrl.tf_dependent.mixin import DeepQFuncMixin
 
@@ -8,7 +8,7 @@ class DQN(
     ReplayMixin,
     EpsilonGreedyPolicyMixin,
     DeepQFuncMixin,
-    BaseAgent):
+    BaseDeepAgent):
     """
     """
     def __init__(self, **kwargs):

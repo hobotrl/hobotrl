@@ -9,14 +9,15 @@ from hobotrl.mixin import BaseValueMixin, BasePolicyMixin
 
 
 class TFNetworkMixin(object):
-
+    """To be deprecated. Use hobotrl.tf_dependent.base.BaseDeepAgent"""
     def set_session(self, sess):
         self.sess = sess
 
     def get_session(self):
         return self.sess
 
-class DeepQFuncMixin(BaseValueMixin, TFNetworkMixin):
+
+class DeepQFuncMixin(BaseValueMixin):
     """Mixin class for Q functions parameterized by deep neural networks.
     Initialize a parameterized action-value funciton as member.
     Dynamically insert the batch dimension before escalating the call
