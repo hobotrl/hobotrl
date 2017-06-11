@@ -12,9 +12,9 @@ Common RL framework and utilities.
 
 ## Initial algorithm set
 
-* DQN
+* [v] DQN
 * DDPG
-* Replay Buffer
+* [v] Replay Buffer
 * Prioritized Exp Replay
 * Double DQN
 * Duel DQN
