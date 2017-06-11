@@ -4,7 +4,7 @@
 """
 
 import numpy as np
-from value_function import DeepQFuncActionOut
+from value_function import DeepQFuncActionOut, DeepQFuncActionIn
 from hobotrl.mixin import BaseValueMixin, BasePolicyMixin
 
 
@@ -16,10 +16,8 @@ class TFNetworkMixin(object):
     def get_session(self):
         return self.sess
 
-
-# TODO: unify action-in and action-out in this class?
 class DeepQFuncMixin(BaseValueMixin, TFNetworkMixin):
-    """Mixin class for DNN parameterized Q functions.
+    """Mixin class for Q functions parameterized by deep neural networks.
     Initialize a parameterized action-value funciton as member.
     Dynamically insert the batch dimension before escalating the call
     for `get_value()`.
@@ -28,65 +26,56 @@ class DeepQFuncMixin(BaseValueMixin, TFNetworkMixin):
     NOTE: assumes there is a mixing class implementing the `get_replay_buffer()`
           method.
     """
-    def __init__(self, **kwargs):
+    def __init__(self, is_action_in=False, **kwargs):
         super(DeepQFuncMixin, self).__init__(**kwargs)
-        self.__dqf = DeepQFuncActionOut(**kwargs)
-        self.batch_size = kwargs['batch_size']
+        
+        self.__IS_ACTION_IN = is_action_in
+
+        if not is_action_in:
+            self.__dqf = DeepQFuncActionOut(**kwargs)
+        else:
+            self.__dqf = DeepQFuncActionIn(**kwargs)
+
+        self.__GREEDY_POLICY = False if is_action_in else self.__dqf.greedy_policy
+        self.__BATCH_SIZE = kwargs['batch_size']
 
     def get_value(self, state, action=None, **kwargs):
         """Fetch action value(s)
-        Wrapper for self.__dqf.get_value(). Prepends the batch dimension
-        whenever needed and make sure the batch sizes of `state` and
-        `action` are equal.
-
-        Parameters:
-        -----------
-        state :
-        action :
+        Wrapper for self.__dqf.get_value(). Checks and corrects arguments.
         """
-        dqf_state_shape = self.__dqf.state_shape
-        state = np.array(state)  # force convert to np.array
-
-        # Insert the batch dimension whenever needed
-        if state.shape == dqf_state_shape:  # non-batch format
-            state = state[np.newaxis, :]  # insert batch dimension
-            if action is not None:
-                action = np.array(action)[np.newaxis]
-                assert len(action.shape)==1  # assert action is a vector 
-        else:  # batch format
-            assert state.shape[1:] == dqf_state_shape
-            if action is not None:
-                # squeeze out redundant dims to make a vector
-                sqz_dims = [
-                    i for i, n in enumerate(action.shape) if i>0 and n==1
-                ]  # we want to keep the batch dimension
-                action = np.squeeze(action)
-                # assert action is a vector and batch size match
-                assert len(action.shape)==1 and state.shape[0]==action.shape[0]
-
+        state, action = self.__check_shape(state, action)
         kwargs.update({"sess": self.sess})
         return self.__dqf.get_value(state, action, **kwargs)
 
-    def improve_value_(self, state, action, reward, next_state, episode_done, **kwargs):
-        """Improve Q function with batch of uncorrelated expeirences.
-        Ignore the piece of experience passed in and use a batch of experiences
-        sampled from the replay buffer to update the value function.
+    def improve_value_(self, state, action, reward, next_state,
+                       episode_done, **kwargs):
+        """Improve Q function with a random batch of expeirences.
+        Ignore the single sample of experience passed in and use a batch of
+        experiences randomly sampled from the replay buffer to update the
+        Q function.
         """
         replay_buffer = self.get_replay_buffer()
 
         # if replay buffer has more samples than the batch_size.
-        if replay_buffer.get_count() >= self.batch_size:
-            batch = replay_buffer.sample_batch(self.batch_size)
-            for k, v in batch.iteritems():
-                batch[k] = np.array(v)
+        # TODO: the following is actually not necessary for sampling with replaycement.
+        if replay_buffer.get_count() >= self.__BATCH_SIZE:
+            batch = replay_buffer.sample_batch(self.__BATCH_SIZE)
+            batch = {k: np.array(v) for k, v in batch.iteritems()}  # force convert
 
             # check mandatory keys
             assert 'state' in batch
             assert 'action' in batch
             assert 'reward' in batch
             assert 'next_state' in batch
+            
+            # sample `next_action` if not using greedy policy and the replay buffer
+            # does not store `next_action` explicitly
+            if not self.__GREEDY_POLICY and 'next_action' not in batch:
+                next_action = np.array(
+                    [self.act(s_slice, **kwargs) for s_slice in batch['next_state']]
+                )
+                batch['next_action'] = next_action
 
-            # call the actual member method
             kwargs.update(batch)  # pass the batch in as kwargs
             kwargs.update({"sess": self.sess})
             return self.__dqf.improve_value_(**kwargs)
@@ -97,6 +86,57 @@ class DeepQFuncMixin(BaseValueMixin, TFNetworkMixin):
             return {
                 info_key: 'replay buffer not filled yet.'
             }
+      
+    def get_grad_q_action(self, state, action=None, **kwargs):
+        """Fetch action value(s)
+        Wrapper for self.__dqf.get_grad_q_action(). Checks and corrects
+        arguments. Raise exception for action-out network.
+        """
+        if self.__IS_ACTION_IN:
+            state, action = self.__check_shape(state, action)
+            kwargs.update({"sess": self.sess})
+            return self.__dqf.get_grad_q_action(state, action, **kwargs)
+        else:
+            raise NotImplementedError(
+                "DeepQFuncMixin.get_grad_q_action(): "
+                "dQ/da is not defined for action-out network."
+            )
+    
+    @property
+    def deep_q_func(self):
+        return self.__dqf
+
+    def __check_shape(self, state, action):
+        """Shape checking procedure
+        Convert both state and action to numpy arrays. Prepends the batch
+        dimension whereever needed and make sure the batch sizes of state
+        and action are equal.
+        """
+        # force convert to numpy array
+        state = np.array(state)
+        action = np.array(action) if action is not None else None
+
+        # assert that action must be explicitly provided for action-in Q func.
+        if self.__IS_ACTION_IN:
+            assert action is not None
+
+        # === Insert the batch dimension whenever needed ===
+        if state.shape == self.__dqf.state_shape:  # non-batch single sample
+            # prepend the batch dimension for state (and action if provided)
+            state = state[np.newaxis, :]
+            if action is not None:
+                action = action[np.newaxis]
+                # assert action is a vector 
+                assert len(action.shape) == 1
+        else:  # batch format
+            if action is not None:
+                # squeeze out redundant dims in action (except the batch dim)
+                sqz_dims = [i for i, n in enumerate(action.shape) if i>0 and n==1]
+                action = np.squeeze(action, axis=sqz_dims)
+                # assert action is a vector and batch size match with state
+                assert len(action.shape)==1 and state.shape[0]==action.shape[0]
+
+        return state, action
 
 
 class NNStochasticPolicyMixin(BasePolicyMixin, TFNetworkMixin):

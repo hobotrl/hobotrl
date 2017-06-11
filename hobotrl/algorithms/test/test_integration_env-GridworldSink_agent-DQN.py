@@ -62,7 +62,7 @@ agent = DQN(
     gamma = 0.9,
     f_net=f_net, state_shape=state_shape, num_actions=len(env.ACTIONS),
     training_params=training_params, schedule=(1, 10),
-    greedy_policy=True, graph=graph,
+    greedy_policy=False, graph=graph,
     # ReplayMixin params
     buffer_class=MapPlayback,
     buffer_param_dict={

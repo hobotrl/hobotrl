@@ -359,9 +359,11 @@ class DeepQFuncActionOut(object):
             )
     @property
     def state_shape(self):
-        """State shape getter
-        """
         return self.__STATE_SHAPE
+
+    @property
+    def greedy_policy(self):
+        return self.__GREEDY_POLICY
 
     def get_subgraph_value(self):
         input_dict = {
