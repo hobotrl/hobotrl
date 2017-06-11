@@ -57,10 +57,12 @@ class DeepQFuncMixin(BaseValueMixin, TFNetworkMixin):
             assert state.shape[1:] == dqf_state_shape
             if action is not None:
                 # squeeze out redundant dims to make a vector
+                sqz_dims = [
+                    i for i, n in enumerate(action.shape) if i>0 and n==1
+                ]  # we want to keep the batch dimension
                 action = np.squeeze(action)
                 # assert action is a vector and batch size match
                 assert len(action.shape)==1 and state.shape[0]==action.shape[0]
-
 
         kwargs.update({"sess": self.sess})
         return self.__dqf.get_value(state, action, **kwargs)
@@ -71,13 +73,24 @@ class DeepQFuncMixin(BaseValueMixin, TFNetworkMixin):
         sampled from the replay buffer to update the value function.
         """
         replay_buffer = self.get_replay_buffer()
+
         # if replay buffer has more samples than the batch_size.
-        # TODO: is this necessary?
         if replay_buffer.get_count() >= self.batch_size:
             batch = replay_buffer.sample_batch(self.batch_size)
+            for k, v in batch.iteritems():
+                batch[k] = np.array(v)
+
+            # check mandatory keys
+            assert 'state' in batch
+            assert 'action' in batch
+            assert 'reward' in batch
+            assert 'next_state' in batch
+
+            # call the actual member method
             kwargs.update(batch)  # pass the batch in as kwargs
             kwargs.update({"sess": self.sess})
             return self.__dqf.improve_value_(**kwargs)
+
         # if replay buffer is not filled yet.
         else:
             info_key = 'DeepQFuncMixin\\debug_str'
