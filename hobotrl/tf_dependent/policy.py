@@ -10,7 +10,7 @@ import hobotrl as hrl
 from distribution import DiscreteDistribution
 from mixin import NNStochasticPolicyMixin
 
-
+# TODO: Lewis suggest to make the `DiscriteNNPolicy` a mixin-free module.
 class DiscreteNNPolicy(NNStochasticPolicyMixin):
 
     def __init__(self, state_shape, num_actions, f_create_net,
@@ -118,3 +118,171 @@ class DiscreteNNPolicy(NNStochasticPolicyMixin):
             return {"policy_loss": loss, "entropy": entropy, "advantage": advantage, "V": V}
 
         return {}
+
+
+class DeepDeterministicPolicy(object):
+    """Deterministic policy parameterized by a deep neural network.
+    Build a deep deterministic policy and related op.
+
+    Subgraph contains a policy network which outputs a deterministic action
+    tensor given a state tensor. The policy network is trained periodically
+    with the deterministic policy gradient (DPG):
+        dpg = d Q(s, a)/ da * Hessian(a=pi(s), theta_pi).
+    Q value is reconstructed via local linear expansion:
+        Q(s0, a) ~= Q(S0, a0) + dQ/da * (a - a0),
+                  = const. + dQ/da * a.
+    """
+    def __init__(self, f_net, state_shape, action_shape,
+                 training_params, schedule, batch_size,
+                 graph=None, **kwargs):
+        """Initialization
+        Parameters
+        ----------
+        f_net : functional interface for building parameterized policy fcn.
+        state_shape : shape of state.
+        action_shape : shape of action.
+        training_params : parameters for training value fcn.. A tuple of one
+            member:
+                optimizer_dpg: Tensorflow optimizer for gradient-based opt.
+        schedule : periods of dpg ops. A length-1 tuple:
+                n_step_dpg : steps between DGP updates.
+        batch_size : batch size
+        graph : tf.Graph to build ops. Use default graph if None
+        """
+        # === Unpack params ===
+        self.__F_NET = f_net
+        self.__STATE_SHAPE = state_shape
+        self.__ACTION_SHAPE = action_shape
+        optimizer_dpg = training_params[0]
+        self.__optimizer_dpg = optimizer_dpg     
+        self.__N_STEP_DPG = schedule[0]
+        self.countdown_dpg_ = self.__N_STEP_DPG
+
+        # === Graph check ===
+        if graph is None:
+            graph = tf.get_default_graph()
+
+        # === Build ops ===
+        with graph.as_default():
+            with tf.variable_scope('DDP') as scope_ddp:
+                # === Build Placeholders ===
+                state, grad_q_action, is_training = \
+                    self.__init_placeholders()
+
+                # === Intermediates ===
+                with tf.variable_scope('policy') as scope_pi:
+                    action = f_net(state, action_shape, is_training)
+                
+                policy_vars = tf.get_collection(
+                    key=tf.GraphKeys.TRAINABLE_VARIABLES,
+                    scope=scope_pi.name
+                )
+
+                # dpg loss                
+                dpg_loss = tf.reduce_sum(
+                    -1.0*grad_q_action*action,
+                    name='dpg_loss'
+                )
+
+                # regularization loss
+                list_reg_loss = tf.get_collection(
+                    key=tf.GraphKeys.REGULARIZATION_LOSSES,
+                    scope=scope_pi.name
+                )
+                reg_loss = sum(list_reg_loss)
+
+                # dpg, TODO: merge moving_averages_op with op_train_td
+                op_train_dpg = optimizer_dpg.minimize(
+                    tf.add(dpg_loss, reg_loss, name='op_train_dpg'),
+                    var_list=policy_vars
+                )
+
+        self.sym_state = state
+        self.sym_grad_q_action = grad_q_action
+        self.sym_is_training = is_training
+        self.sym_action = action
+        self.sym_dpg_loss = dpg_loss
+        self.op_train_dpg = op_train_dpg        
+
+    def apply_op_train_dpg_(self, state, grad_q_action, sess=None, **kwargs):
+        """Wrapper method for evaluating op_train_dpg"""
+        feed_dict = {
+            self.sym_state: state,
+            self.sym_grad_q_action: grad_q_action
+        }
+
+        return sess.run([self.op_train_dpg, self.sym_dpg_loss], feed_dict)
+
+    def fetch_dpg_loss_(self, state, grad_q_action, sess=None, **kwargs):
+        """Wrapper method for fetching dpg_loss"""
+        feed_dict = {
+            self.sym_state: state,
+            self.sym_grad_q_action: grad_q_action
+        }
+
+        return sess.run(self.sym_dpg_loss, feed_dict)
+
+    def improve_policy_(self, state, grad_q_action, sess=None, **kwargs):
+        """Interface for Training Policy Network
+        The deep deterministic policy training procedure: apply `op_train_dpg`
+        with the periodic schedule specified by `self.__N_STEP_DPG`.
+
+        Parameters
+        ----------
+        :param state: a batch of state
+        :param grad_q_action : a batch of value gradients w.r.t to action inputs.
+        :param sess: tf session
+        :param kwargs:
+        :return:
+        """
+        self.countdown_dpg_ -= 1
+        info = {}
+        if self.countdown_dpg_ == 0:
+            _, dpg_loss = self.apply_op_train_dpg_(
+                state=state, grad_q_action=grad_q_action,
+                sess=sess, **kwargs
+            )
+            info['dpg_loss'] = dpg_loss
+            self.countdown_dpg_ = self.__N_STEP_DPG
+
+        return info
+
+    def act(self, state, sess=None, **kwargs):
+        return sess.run(self.sym_action, {self.sym_state: state})
+
+    @property
+    def state_shape(self):
+        return self.__STATE_SHAPE
+
+    @property
+    def action_shape(self):
+        return self.__ACTION_SHAPE
+
+    def get_subgraph_policy(self):
+        input_dict = {'state': self.sym_state}
+        output_dict = {'action': self.sym_action}
+
+        return input_dict, output_dict
+
+    def __init_placeholders(self):
+        """Define Placeholders"""
+        state_shape = list(self.__STATE_SHAPE)
+        action_shape = list(self.__ACTION_SHAPE)
+        with tf.variable_scope('placeholders'):
+            state = tf.placeholder(
+                dtype=tf.float32,
+                shape=[None]+state_shape,
+                name='state'
+            )
+            grad_q_action = tf.placeholder(
+                dtype=tf.float32,
+                shape=[None]+action_shape,
+                name='grad_q_action'
+            )
+            is_training = tf.placeholder_with_default(
+                input=True,
+                shape=(),
+                name='is_training'
+            )
+        return (state, grad_q_action, is_training)
+

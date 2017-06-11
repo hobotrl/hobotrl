@@ -23,14 +23,13 @@ import tensorflow as tf
 
 class DeepQFuncActionOut(object):
     """NN-Parameterized Action-Out Q Functions
-    Build the Deep Q-Network (DQN) in action-out form. Subgraphs include
-    the the non-target and target deep q-networks.
+    Build the Deep Q-Network (DQN) in action-out form and set up related op.
 
-    Non-target network weights are trained with one-step temporal-difference
-    backup:
+    Subgraph includes the the non-target and target deep q-networks. Non-target
+    network weights are trained with one-step temporal-difference backup:
             q(s, a) = r + gamma * q(s', a').
-    And target network weights are copied (soft or hard) from the non-target
-    network:
+    And the target network weights are copied (soft or hard) from the non-target
+    network following:
             theta_t = theta_t * (1-alpha) + theta_non * alpha.
     Both procedures are called periodically following a schedule defined by
     instance parameters.
@@ -65,10 +64,10 @@ class DeepQFuncActionOut(object):
         :param schedule : periods of TD and Target Sync. ops. A length-2 tuple:
                 n_step_td : steps between TD updates.
                 n_step_sync : steps between weight syncs.
-        :param batch_size : 
+        :param batch_size : batch_size
         :param greedy_policy : if evaluate the greedy policy.
         :param ddqn : True to enable Double DQN.
-        :param graph : tf.Graph to build ops. Use default graph if None:
+        :param graph : tf.Graph to build ops. Use default graph if None
         """
         # Unpack params
         self.__GAMMA = gamma
@@ -211,26 +210,14 @@ class DeepQFuncActionOut(object):
         self.op_sync_target = op_sync_target
 
     def apply_op_sync_target_(self, sess, **kwargs):
+        """Wrapper method for evaluating op_sync_target"""
         return sess.run(self.op_sync_target)
 
     def apply_op_train_td_(self, state, action, reward,
                            next_state, next_action=None,
                            episode_done=None, importance=None,
                            sess=None, **kwargs):
-        """Functional wrapper for fetching op_train_td
-        Squeeze out redundant dims in action, reward, next_action,
-        importance, and episode_done to match the shape of
-        corresponding placeholders.
-
-        Parameters
-        ----------
-        """
-        if sess is None:
-            raise ValueError(
-                "DeepQFuncActionOut.apply_op_train_td_: "
-                "please pass in a tf.Session()"
-            )
-
+        """Wrapper method for evaluating op_train_td"""
         feed_dict = {
             self.sym_state: state,
             self.sym_action: action,
@@ -255,20 +242,7 @@ class DeepQFuncActionOut(object):
                        next_state, next_action=None,
                        episode_done=None, importance=None,
                        sess=None, **kwargs):
-        """Functional wrapper for fetching td_loss
-        Squeeze out redundant dims in action, reward, next_action,
-        importance, and episode_done to match the shape of
-        corresponding placeholders.
-
-        Parameters
-        ----------
-        """
-        if sess is None:
-            raise ValueError(
-                "DeepQFuncActionOut.fetch_td_loss_: "
-                "please pass in a tf.Session()"
-            )
-
+        """Wrapper method for fetching td_loss"""
         feed_dict = {
             self.sym_state: state,
             self.sym_action: action,
@@ -311,12 +285,6 @@ class DeepQFuncActionOut(object):
         :param kwargs:
         :return:
         """
-        if sess is None:
-            raise ValueError(
-                "DeepQFuncActionOut.improve_value_(): "
-                "please pass in a tf.Session()"
-            )
-
         self.countdown_td_ -= 1
         self.countdown_sync_ -= 1
         info = {}
@@ -338,12 +306,6 @@ class DeepQFuncActionOut(object):
         return info
 
     def get_value(self, state, action=None, sess=None, **kwargs):
-        if sess is None:
-            raise ValueError(
-                "DeepQFuncActionOut.get_value(): "
-                "please pass in a tf.Session()"
-            )
-
         if action is None:
             return sess.run(
                 self.sym_q,
@@ -388,8 +350,7 @@ class DeepQFuncActionOut(object):
         return input_dict, output_dict
 
     def __init_placeholders(self):
-        """Define Placeholders
-        """
+        """Define Placeholders"""
         state_shape = list(self.__STATE_SHAPE)
         with tf.variable_scope('placeholders'):
             state = tf.placeholder(
@@ -593,26 +554,14 @@ class DeepQFuncActionIn(object):
         self.op_sync_target = op_sync_target
 
     def apply_op_sync_target_(self, sess, **kwargs):
+        """Wrapper method for evaluating op_sync_target"""
         return sess.run(self.op_sync_target)
 
     def apply_op_train_td_(self, state, action, reward,
                            next_state, next_action,
                            episode_done=None, importance=None,
                            sess=None, **kwargs):
-        """Functional wrapper for fetching op_train_td
-        Squeeze out redundant dims in action, reward, next_action,
-        importance, and episode_done to match the shape of
-        corresponding placeholders.
-
-        Parameters
-        ----------
-        """
-        if sess is None:
-            raise ValueError(
-                "DeepQFuncActionIn.apply_op_train_td_: "
-                "please pass in a tf.Session()"
-            )
-
+        """Wrapper method for evaluating op_train_td"""
         feed_dict = {
             self.sym_state: state,
             self.sym_action: action,
@@ -632,20 +581,7 @@ class DeepQFuncActionIn(object):
                        next_state, next_action,
                        episode_done=None, importance=None,
                        sess=None, **kwargs):
-        """Functional wrapper for fetching td_loss
-        Squeeze out redundant dims in action, reward, next_action,
-        importance, and episode_done to match the shape of
-        corresponding placeholders.
-
-        Parameters
-        ----------
-        """
-        if sess is None:
-            raise ValueError(
-                "DeepQFuncActionIn.fetch_td_loss_: "
-                "please pass in a tf.Session()"
-            )
-
+        """Wrapper method for fetching td_loss"""
         feed_dict = {
             self.sym_state: state,
             self.sym_action: action,
@@ -666,10 +602,10 @@ class DeepQFuncActionIn(object):
                        episode_done=None, importance=None,
                        sess=None,
                        **kwargs):
-        """Public Interface for Training Value Fcn.
+        """Interface for Training Value Fcn.
         The Deep Q-Network training procedure: apply `op_train_td`
         and `op_sync_target` with the periodic schedule specified by
-        `self.__N_STEP_TD` and `self.__N_STEP_SYNC`。
+        `self.__N_STEP_TD` and `self.__N_STEP_SYNC`.
 
         Parameters
         ----------
@@ -684,17 +620,10 @@ class DeepQFuncActionIn(object):
         :param kwargs:
         :return:
         """
-        if sess is None:
-            raise ValueError(
-                "DeepQFuncActionIn.improve_value_(): "
-                "please pass in a tf.Session()"
-            )
-
         self.countdown_td_ -= 1
         self.countdown_sync_ -= 1
 
         info = {}
-        td_loss = 0
         if self.countdown_td_ == 0:
             _, td_loss, target_q = self.apply_op_train_td_(
                 sess=sess, state=state, action=action,
@@ -712,24 +641,12 @@ class DeepQFuncActionIn(object):
         return info
 
     def get_value(self, state, action, sess=None, **kwargs):
-        if sess is None:
-            raise ValueError(
-                "DeepQFuncActionIn.get_value(): "
-                "please pass in a tf.Session()"
-            )
-
         return sess.run(
             self.sym_q, feed_dict={
                 self.sym_state: state, self.sym_action: action
             })
 
     def get_grad_q_action(self, state, action, sess=None, **kwargs):
-        if sess is None:
-            raise ValueError(
-                "DeepQFuncActionIn.get_grad_q_action(): "
-                "please pass in a tf.Session()"
-            )
-
         return sess.run(
             self.sym_grad_q_action, feed_dict={
                 self.sym_state: state, self.sym_action: action
