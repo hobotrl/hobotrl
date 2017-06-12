@@ -3,18 +3,11 @@
 """
 
 import numpy as np
+import hobotrl as hrl
+from value_function import DeepQFuncActionOut
 from hobotrl.mixin import BaseValueMixin, BasePolicyMixin
 from value_function import DeepQFuncActionOut, DeepQFuncActionIn
-from policy import DiscreteNNPolicy, DeepDeterministicPolicy
-
-
-class TFNetworkMixin(object):
-    """To be deprecated. Use hobotrl.tf_dependent.base.BaseDeepAgent"""
-    def set_session(self, sess):
-        self.sess = sess
-
-    def get_session(self):
-        return self.sess
+from policy import NNStochasticPolicy, DeepDeterministicPolicy
 
 
 class DeepQFuncMixin(BaseValueMixin):
@@ -119,7 +112,7 @@ class DeepQFuncMixin(BaseValueMixin):
             assert action is not None
 
         # === Insert the batch dimension whenever needed ===
-        if state.shape == self.__dqf.state_shape:  # non-batch single sample
+        if list(state.shape) == list(self.__dqf.state_shape):  # non-batch single sample
             # prepend the batch dimension for state (and action if provided)
             state = state[np.newaxis, :]
             if action is not None:
@@ -130,28 +123,36 @@ class DeepQFuncMixin(BaseValueMixin):
             if action is not None:
                 # squeeze out redundant dims in action (except the batch dim)
                 sqz_dims = [i for i, n in enumerate(action.shape) if i>0 and n==1]
-                action = np.squeeze(action, axis=sqz_dims)
+                # action = np.squeeze(action, axis=sqz_dims)
                 # assert action is a vector and batch size match with state
-                assert len(action.shape)==1 and state.shape[0]==action.shape[0]
+                # assert len(action.shape)==1 and state.shape[0]==action.shape[0]
+                assert state.shape[0] == action.shape[0]
 
         return state, action
 
 
-# TODO: [Lewis] this seems more like a base class, not a mixin class. Temporarily comment out NotImplementedError
-class NNStochasticPolicyMixin(DiscreteNNPolicy, BasePolicyMixin):
+class NNStochasticPolicyMixin(BasePolicyMixin):
+
     def __init__(self, **kwargs):
+        kwargs.update({
+            "parent_agent": self
+        })
+        self._policy = NNStochasticPolicy(**kwargs)
         super(NNStochasticPolicyMixin, self).__init__(**kwargs)
 
-#    def act(self, state, **kwargs):
-#        raise NotImplementedError()
+    def act(self, state, **kwargs):
+        kwargs.update({
+            "sess": self.get_session()
+        })
+        return self._policy.act(state, **kwargs)[0]
 
     def reinforce_(self, state, action, reward, next_state, episode_done=False, **kwargs):
         info = super(NNStochasticPolicyMixin, self).reinforce_(state, action, reward, next_state, episode_done, **kwargs)
-        info.update(self.update_policy(state, action, reward, next_state, episode_done, **kwargs))
+        kwargs.update({
+            "sess": self.get_session()
+        })
+        info.update(self._policy.update_policy(state, action, reward, next_state, episode_done, **kwargs))
         return info
-
-#    def update_policy(self, state, action, reward, next_state, episode_done, **kwargs):
-#        raise NotImplementedError()
 
 
 # TODO: inherit from a base class which improves policy?
@@ -181,6 +182,7 @@ class DeepDeterministicPolicyMixin(BasePolicyMixin):
 
     def improve_policy_(self, state, action, reward, next_state,
                    episode_done=False, **kwargs):
+
         replay_buffer = self.get_replay_buffer()
 
         # if replay buffer has more samples than the batch_size.
@@ -203,5 +205,3 @@ class DeepDeterministicPolicyMixin(BasePolicyMixin):
         # if replay buffer is not filled yet.
         else:
             return {}
-
-

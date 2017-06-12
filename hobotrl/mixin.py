@@ -189,10 +189,10 @@ class ReplayMixin(object):
 
         Parameters
         ----------
-        buffer_class : the class of the replay memory (not instance).
-        buffer_param_dict : kwargs for initializating the memory.
-        batch_size :
-        f_prepare_sample : method to prepare sample from experience. Use
+        :param buffer_class : the class of the replay memory (not instance).
+        :param buffer_param_dict : kwargs for initializating the memory.
+        :param batch_size : batch size
+        :param f_prepare_sample : method to prepare sample from experience. Use
                            default if None is passed in.
         """
         kwargs['batch_size'] = batch_size  # super-class may need this info
@@ -264,7 +264,7 @@ class GaussianExplorationMixin(BasePolicyMixin):
 
     def act(self, state, **kwargs):
         action = super(GaussianExplorationMixin, self).act(state, **kwargs)
-        action += sigma * np.random.randn(*action.shape)
+        action += self.__sigma * np.random.randn(*action.shape)
 
         return action
 

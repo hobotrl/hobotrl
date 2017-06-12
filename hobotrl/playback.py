@@ -6,13 +6,17 @@ import numpy as np
 
 
 class Playback(object):
-    def __init__(self, capacity, sample_shape, push_policy="sequence", pop_policy="random", dtype=None):
+    def __init__(self, capacity, sample_shape, push_policy="sequence", pop_policy="random",
+                 augment_offset=None, augment_scale=None, dtype=None):
         """
         stores ndarray.
         :param capacity: total count of samples stored
         :param sample_length: length of a single sample
         :param push_policy: sequence
         :param pop_policy: sequence/random
+        :param augment_offset:
+        :param augment_scale:
+                sample apply transformation: (sample + offset) * scale before returned by sample_batch()
         :param dtype: np.float32 default
         """
         self.capacity = capacity
@@ -23,6 +27,9 @@ class Playback(object):
         self.data = None
         self.push_policy = push_policy
         self.pop_policy = pop_policy
+
+        self.augment_offset = 0 if augment_offset is None else augment_offset
+        self.augment_scale = 1 if augment_scale is None else augment_scale
         self.count = 0
         self.push_index = 0
         self.pop_index = 0
@@ -107,7 +114,7 @@ class Playback(object):
         :param index:
         :return:
         """
-        return self.data[index]
+        return (self.data[index] + self.augment_offset) * self.augment_scale
 
     def sample_batch(self, batch_size):
         """
@@ -129,7 +136,8 @@ class Playback(object):
 
 class MapPlayback(Playback):
 
-    def __init__(self, capacity, sample_shapes, push_policy="sequence", pop_policy="random", dtype=None):
+    def __init__(self, capacity, sample_shapes, push_policy="sequence", pop_policy="random",
+                 augment_offset={}, augment_scale={}, dtype=None):
         """
         stores map of ndarray.
         :param capacity:
@@ -139,7 +147,9 @@ class MapPlayback(Playback):
         :param dtype:
         """
         super(MapPlayback, self).__init__(capacity, [1], push_policy, pop_policy, dtype)
-        self.data = dict([(i, Playback(capacity, sample_shapes[i], push_policy, pop_policy, dtype)) for i in sample_shapes])
+        self.data = dict([(i, Playback(capacity, sample_shapes[i], push_policy, pop_policy,
+                                       augment_offset=augment_offset.get(i), augment_scale=augment_scale.get(i),
+                                       dtype=dtype)) for i in sample_shapes])
 
     def push_sample(self, sample, sample_score=0):
         for i in sample:

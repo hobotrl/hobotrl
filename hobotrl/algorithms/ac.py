@@ -2,16 +2,17 @@
 # -*- coding: utf-8 -*-
 
 import hobotrl as hrl
-import hobotrl.tf_dependent as tf_dep
+from hobotrl.tf_dependent.mixin import NNStochasticPolicyMixin, DeepQFuncMixin
+from hobotrl.tf_dependent.base import BaseDeepAgent
 
 
 class ActorCritic(
-    tf_dep.policy.DiscreteNNPolicy,
+    NNStochasticPolicyMixin,
     hrl.mixin.ReplayMixin,
-    tf_dep.mixin.DeepQFuncMixin,
-    hrl.core.BaseAgent
+    DeepQFuncMixin,
+    BaseDeepAgent
 ):
-    def __init__(self, state_shape, num_actions, f_create_policy, f_create_value,
+    def __init__(self, state_shape, is_continuous_action, num_actions, f_create_policy, f_create_value,
                  entropy=0.01, gamma=0.9, train_interval=8,
                  training_params=None, schedule=None,
                  greedy_policy=True, ddqn=False,
@@ -19,11 +20,32 @@ class ActorCritic(
                  buffer_param_dict={"capacity": 1000, "sample_shapes": {}},
                  batch_size=1,
                  **kwargs):
+        """
+        list all supported ctor parameters here for user reference.
+        :param state_shape:
+        :param is_continuous_action:
+        :param num_actions:
+        :param f_create_policy:
+        :param f_create_value:
+        :param entropy:
+        :param gamma:
+        :param train_interval:
+        :param training_params:
+        :param schedule:
+        :param greedy_policy:
+        :param ddqn:
+        :param buffer_class:
+        :param buffer_param_dict:
+        :param batch_size:
+        :param kwargs:
+        """
         kwargs.update({
             "state_shape": state_shape,
+            "is_continuous_action": is_continuous_action,
+            "is_action_in": is_continuous_action,  # for Q function
             "num_actions": num_actions,
             "f_create_net": f_create_policy,
-            "f_net": f_create_value,
+            "f_net_dqn": f_create_value,
             "entropy": entropy,
             "gamma": gamma,
             "train_interval": train_interval,
@@ -35,4 +57,7 @@ class ActorCritic(
             "buffer_param_dict": buffer_param_dict,
             "batch_size": batch_size
         })
+        if is_continuous_action:
+            kwargs.update({"action_shape": [num_actions]})  # for Q function
+
         super(ActorCritic, self).__init__(**kwargs)
