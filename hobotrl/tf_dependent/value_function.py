@@ -153,9 +153,17 @@ class DeepQFuncActionOut(object):
                     scope=scope_target.name
                 )
                 # Training ops
-                # td, TODO: merge moving_averages_op with op_train_td
+                ops_update = tf.get_collection(
+                    key=tf.GraphKeys.UPDATE_OPS,
+                    scope=scope_non.name
+                )
                 op_train_td = optimizer_td.minimize(
-                    tf.add(td_loss, reg_loss, name='op_train_td'), var_list=non_target_vars
+                    tf.add(td_loss, reg_loss),
+                    var_list=non_target_vars
+                )
+                op_train_td = tf.group(
+                    op_train_td, *ops_update,
+                    name='op_train_td'
                 )
                 # sync
                 op_list_sync_target = [
@@ -497,9 +505,18 @@ class DeepQFuncActionIn(object):
                     scope=scope_target.name
                 )
 
-                # td, TODO: merge moving_averages_op with op_train_td
+                # td ops
+                ops_update = tf.get_collection(
+                    key=tf.GraphKeys.UPDATE_OPS,
+                    scope=scope_non.name
+                )
                 op_train_td = optimizer_td.minimize(
-                    tf.add(td_loss, reg_loss, name='op_train_td'), var_list=non_target_vars
+                    tf.add(td_loss, reg_loss),
+                    var_list=non_target_vars
+                )
+                op_train_td = tf.group(
+                    op_train_td, *ops_update,
+                    name='op_train_td'
                 )
 
                 # sync
