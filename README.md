@@ -16,9 +16,9 @@ Common RL framework and utilities.
 * DDPG
 * [v] Replay Buffer
 * Prioritized Exp Replay
-* Double DQN
-* Duel DQN
-* Actor Critic
+* [v] Double DQN
+* [v] Duel DQN
+* [v] Actor Critic
 
 
 ## Getting started
@@ -32,8 +32,10 @@ for starter.
 
 ```
 python test/exp_tabular.py list
+python test/exp_deeprl.py list
 ```
-to get a list of experiments.
+to get a list of experiments in each file.
+
 
 ## Developers Guide
 ### Sharing network parameters across modules
