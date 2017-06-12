@@ -40,29 +40,36 @@ batch_size = 10
 num_actions = 5
 graph = tf.get_default_graph()
 
-# Greedy policy
-greedy_policy=False
+# Initialization
+greedy_policy = True
+ddqn = True
 print "=============="
-print "Test initialize QFunc with greedy set to {}: ".format(greedy_policy),
+print "Test initialize QFunc with greedy_policy={} and ddqn={}:".format(
+    greedy_policy, ddqn
+),
 
 dqn = DeepQFuncActionOut(
     gamma=0.99,
-    f_net=f_net, state_shape=state_shape, num_actions=num_actions,
+    f_net_dqn=f_net, state_shape=state_shape, num_actions=num_actions,
     training_params=training_params, schedule=(2,5),
     batch_size=batch_size,
-    greedy_policy=greedy_policy, graph=None
+    greedy_policy=greedy_policy, ddqn=ddqn,
+    graph=None
 )
 print 'pass!'
+raw_input('next test case? <enter>')
 
 print "================="
 print "Non-target subgraph in and out:"
 print dqn.get_subgraph_value()
 print 'pass!'
+raw_input('next test case? <enter>')
 
 print "================="
 print "Target subgraph in and out:"
 print dqn.get_subgraph_value_target()
 print 'pass!'
+raw_input('next test case? <enter>')
 
 state = np.random.rand(batch_size, 99 ,99, 3)
 action = np.random.randint(0, num_actions, batch_size)
@@ -97,6 +104,8 @@ for i in range(10):
     )
     print "td_loss after td step {}".format(i),
     print sess.run(dqn.sym_td_loss, feed_dict)
+print "pass!"
+raw_input('next test case? <enter>')
 
 print "================="
 print "Test apply_op_sync_target_():"
@@ -107,6 +116,7 @@ for i in range(10):
     print "diff l2 after sync step {}".format(i),
     print sess.run(dqn.sym_target_diff_l2)
 print 'pass!'
+raw_input('next test case? <enter>')
 
 print "================="
 print "Test improve value:"
@@ -126,6 +136,7 @@ for i in range(20):
     print "diff l2 after sync step {}".format(i),
     print sess.run(dqn.sym_target_diff_l2)
 print 'pass!'
+raw_input('next test case? <enter>')
 
 print "================="
 print "Test get value:"
@@ -133,6 +144,7 @@ print "Test get value:"
 print "Case 1: batch:"
 print dqn.get_value(state, action, sess=sess)
 print "pass!"
+raw_input('next test case? <enter>')
 
 print "Case 2: single sample (should raise exception):"
 try:
@@ -141,6 +153,7 @@ except Exception, error:
     print str(error)
 finally:
     print "pass!"
+raw_input('next test case? <enter>')
 
 print "Case 3: single sample with batch dim.:"
 print dqn.get_value(state[0, :][np.newaxis, :], np.array(action[0])[np.newaxis], sess=sess)

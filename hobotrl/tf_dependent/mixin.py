@@ -7,8 +7,7 @@ import hobotrl as hrl
 from value_function import DeepQFuncActionOut
 from hobotrl.mixin import BaseValueMixin, BasePolicyMixin
 from value_function import DeepQFuncActionOut, DeepQFuncActionIn
-from policy import DeepDeterministicPolicy
-from policy import NNStochasticPolicy
+from policy import NNStochasticPolicy, DeepDeterministicPolicy
 
 
 class DeepQFuncMixin(BaseValueMixin):
@@ -62,7 +61,7 @@ class DeepQFuncMixin(BaseValueMixin):
             assert 'action' in batch
             assert 'reward' in batch
             assert 'next_state' in batch
-            
+
             # sample `next_action` if not using greedy policy and the replay buffer
             # does not store `next_action` explicitly
             if not self.__GREEDY_POLICY and 'next_action' not in batch:
@@ -78,7 +77,7 @@ class DeepQFuncMixin(BaseValueMixin):
         # if replay buffer is not filled yet.
         else:
             return {}
-      
+
     def get_grad_q_action(self, state, action=None, **kwargs):
         """Fetch action value(s)
         Wrapper for self.__dqf.get_grad_q_action(). Checks and corrects
@@ -93,7 +92,7 @@ class DeepQFuncMixin(BaseValueMixin):
                 "DeepQFuncMixin.get_grad_q_action(): "
                 "dQ/da is not defined for action-out network."
             )
-    
+
     @property
     def deep_q_func(self):
         return self.__dqf
@@ -194,12 +193,12 @@ class DeepDeterministicPolicyMixin(BasePolicyMixin):
             # check mandatory keys
             assert 'state' in batch
             assert 'action' in batch
-            
+
             # get value gradient from value func
             batch['grad_q_action'] = self.get_grad_q_action(
                 batch['state'], batch['action']
             )
-            
+
             kwargs.update(batch)  # pass the batch in as kwargs
             kwargs.update({"sess": self.sess})
             return self.__dqf.improve_policy_(**kwargs)

@@ -152,13 +152,13 @@ class DeepDeterministicPolicy(object):
         Q(s0, a) ~= Q(S0, a0) + dQ/da * (a - a0),
                   = const. + dQ/da * a.
     """
-    def __init__(self, f_net, state_shape, action_shape,
+    def __init__(self, f_net_ddp, state_shape, action_shape,
                  training_params, schedule, batch_size,
                  graph=None, **kwargs):
         """Initialization
         Parameters
         ----------
-        f_net : functional interface for building parameterized policy fcn.
+        f_net_ddp : functional interface for building parameterized policy fcn.
         state_shape : shape of state.
         action_shape : shape of action.
         training_params : parameters for training value fcn.. A tuple of one
@@ -170,11 +170,11 @@ class DeepDeterministicPolicy(object):
         graph : tf.Graph to build ops. Use default graph if None
         """
         # === Unpack params ===
-        self.__F_NET = f_net
+        self.__F_NET = f_net_ddp
         self.__STATE_SHAPE = state_shape
         self.__ACTION_SHAPE = action_shape
         optimizer_dpg = training_params[0]
-        self.__optimizer_dpg = optimizer_dpg     
+        self.__optimizer_dpg = optimizer_dpg
         self.__N_STEP_DPG = schedule[0]
         self.countdown_dpg_ = self.__N_STEP_DPG
 
@@ -191,8 +191,8 @@ class DeepDeterministicPolicy(object):
 
                 # === Intermediates ===
                 with tf.variable_scope('policy') as scope_pi:
-                    action = f_net(state, action_shape, is_training)
-                
+                    action = f_net_ddp(state, action_shape, is_training)
+
                 policy_vars = tf.get_collection(
                     key=tf.GraphKeys.TRAINABLE_VARIABLES,
                     scope=scope_pi.name

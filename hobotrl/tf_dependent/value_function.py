@@ -36,23 +36,23 @@ class DeepQFuncActionOut(object):
     """
 
     def __init__(self, gamma,
-                 f_net, state_shape, num_actions,
+                 f_net_dqn, state_shape, num_actions,
                  training_params, schedule, batch_size,
                  greedy_policy=True, ddqn=False,
                  graph=None, **kwargs):
         """Initialization
         Unpacks parameters, build related ops on graph (placeholders, networks,
         and training ops), and register handels to important ops.
-        
+
         Note regularization losses and moving average ops are retrieved with
         variable scope and default graphkey with `tf.get_collection()`.
-        Therefore f_net should properly register these ops to corresponding
+        Therefore f_net_dqn should properly register these ops to corresponding
         variable collections.
 
         Parameters
         ----------
         :param gamma : value discount factor.
-        :param f_net : functional interface for building parameterized value fcn.
+        :param f_net_dqn : functional interface for building parameterized value fcn.
         :param state_shape : shape of state and next_state
         :param num_actions : number of actions
         :param training_params : parameters for training value fcn.. A tuple of
@@ -72,12 +72,12 @@ class DeepQFuncActionOut(object):
         # Unpack params
         self.__GAMMA = gamma
 
-        self.__F_NET = f_net
+        self.__F_NET = f_net_dqn
         self.__STATE_SHAPE = state_shape
         self.__NUM_ACTIONS = num_actions
         optimizer_td, target_sync_rate = training_params
         self.__optimizer_td = optimizer_td
-        self.__TARGET_SYNC_RATE = target_sync_rate        
+        self.__TARGET_SYNC_RATE = target_sync_rate
         self.__N_STEP_TD = schedule[0]
         self.__N_STEP_SYNC = schedule[1]
         self.countdown_td_ = self.__N_STEP_TD
@@ -100,47 +100,35 @@ class DeepQFuncActionOut(object):
                 # Intermediates
                 # non-target network
                 with tf.variable_scope('non-target') as scope_non:
-                    q = f_net(state, num_actions, is_training)
-                    q_sel = tf.reduce_sum(
-                        q * tf.one_hot(action, num_actions),
-                        axis=1,
-                        name='q_sel'
-                    )
+                    q = f_net_dqn(state, num_actions, is_training)
+                    scope_non.reuse_variables()  # reuse non-target weights
+                    double_q = f_net_dqn(state, num_actions, is_training)
                 # target network
                 with tf.variable_scope('target') as scope_target:
-                    next_q = f_net(next_state, num_actions, is_training)
+                    next_q = f_net_dqn(next_state, num_actions, is_training)
+
+                # current Q value
+                q_sel = tf.reduce_sum(
+                            q * tf.one_hot(action, num_actions),
+                            axis=1, name='q_sel'
+                        )
+
                 # next Q value
                 if greedy_policy:
-                    # double dqn
-                    # TODO:
-                    # Why not directly calculate `max_action` from `q`
-                    # if ddqn is a copy of non-target q?
-                    # --------------
-                    # if ddqn:
-                    #     greedy_action = tf.argmax(q, axis=1, name='action_greedy')
-                    #     next_q_sel = tf.stop_gradient(
-                    #           tf.reduce_sum(
-                    #             next_q * tf.one_hot(greedy_action, num_actions),
-                    #             axis=1),
-                    #           name='next_q_sel'
-                    #    )
-                    if ddqn:
-                        with tf.variable_scope('ddqn') as scope_double_q:
-                            double_q = f_net(next_state, num_actions, is_training)
-                        ddqn_vars = tf.get_collection(
-                            key=tf.GraphKeys.TRAINABLE_VARIABLES,
-                            scope=scope_double_q.name
+                    if ddqn:  # use non-target network to select the greedy action.
+                        greedy_action = tf.argmax(double_q, axis=1, name='action_greedy')
+                        next_q_sel = tf.stop_gradient(
+                            tf.reduce_sum(
+                                next_q*tf.one_hot(greedy_action, num_actions),
+                                axis=1
+                            ), name='next_q_sel'
                         )
-                        max_action = tf.argmax(double_q, axis=1)
-                        max_action = tf.one_hot(max_action, num_actions, dtype=tf.float32)
-                        next_q_sel = tf.reduce_sum(next_q * max_action, axis=1, keep_dims=False)
-                    else:
+                    else:  # use target network to select the greedy actions
                         next_q_sel = tf.reduce_max(next_q, axis=1, name='next_q_sel')
                 else:
                     next_q_sel = tf.reduce_sum(
                         next_q * tf.one_hot(next_action, num_actions),
-                        axis=1,
-                        name='next_q_sel'
+                        axis=1, name='next_q_sel'
                     )
 
                 target_q = tf.add(reward, gamma * next_q_sel * (1 - episode_done), name='target_q')
@@ -165,9 +153,17 @@ class DeepQFuncActionOut(object):
                     scope=scope_target.name
                 )
                 # Training ops
-                # td, TODO: merge moving_averages_op with op_train_td
+                ops_update = tf.get_collection(
+                    key=tf.GraphKeys.UPDATE_OPS,
+                    scope=scope_non.name
+                )
                 op_train_td = optimizer_td.minimize(
-                    tf.add(td_loss, reg_loss, name='op_train_td'), var_list=non_target_vars
+                    tf.add(td_loss, reg_loss),
+                    var_list=non_target_vars
+                )
+                op_train_td = tf.group(
+                    op_train_td, *ops_update,
+                    name='op_train_td'
                 )
                 # sync
                 op_list_sync_target = [
@@ -183,12 +179,6 @@ class DeepQFuncActionOut(object):
                     *op_list_sync_target,
                     name='op_sync_target'
                 )
-                # TODO: check the dep. op_train_td should be the dependend, not the other way around
-                if ddqn:
-                    with tf.control_dependencies([op_train_td]):
-                        op_sync_double_q = tf.group(*[tf.assign(var_d, var)
-                                                      for var_d, var in zip(ddqn_vars, non_target_vars)])
-                        op_train_td = op_sync_double_q
 
         # Register op handles
         self.sym_state = state
@@ -200,6 +190,7 @@ class DeepQFuncActionOut(object):
         self.sym_episode_done = episode_done
         self.sym_is_training = is_training
         self.sym_q = q
+        self.sym_double_q = double_q
         self.sym_q_sel = q_sel
         # TODO: target_q
         self.sym_next_q = next_q
@@ -233,7 +224,7 @@ class DeepQFuncActionOut(object):
             feed_dict[self.sym_importance] = importance
         if episode_done is not None:
             feed_dict[self.sym_episode_done] = episode_done
-        
+
         # TODO: should fetch target q?
         return sess.run([self.op_train_td, self.sym_td_loss, self.sym_next_q_sel], feed_dict)
 
@@ -416,22 +407,22 @@ class DeepQFuncActionIn(object):
     """
 
     def __init__(self, gamma,
-                 f_net, state_shape, action_shape,
+                 f_net_dqn, state_shape, action_shape,
                  training_params, schedule, batch_size,
                  graph=None, **kwargs):
         """Initialization
         Unpacks parameters, build related ops on graph (placeholders, networks,
         and training ops), and register handels to important ops.
-        
+
         Note regularization losses and moving average ops are retrieved with
         variable scope and default graphkey with `tf.get_collection()`.
-        Therefore f_net should properly register these ops to corresponding
+        Therefore f_net_dqn should properly register these ops to corresponding
         variable collections.
 
         Parameters
         ----------
         :param gamma : value discount factor.
-        :param f_net : functional interface for building parameterized value fcn.
+        :param f_net_dqn : functional interface for building parameterized value fcn.
         :param state_shape : shape of states
         :param action_shape : shape of actions
         :param training_params : parameters for training value function. A tuple of
@@ -443,19 +434,19 @@ class DeepQFuncActionIn(object):
         :param schedule : periods of TD and Target Sync. ops. A length-2 tuple:
                 n_step_td : steps between TD updates.
                 n_step_sync : steps between weight syncs.
-        :param batch_size : 
+        :param batch_size :
         :param greedy_policy : if evaluate the greedy policy.
         :param graph : tf.Graph to build ops. Use default graph if None:
         """
         # Unpack params
         self.__GAMMA = gamma
 
-        self.__F_NET = f_net
+        self.__F_NET = f_net_dqn
         self.__STATE_SHAPE = state_shape
         self.__ACTION_SHAPE = action_shape
         optimizer_td, target_sync_rate = training_params
         self.__optimizer_td = optimizer_td
-        self.__TARGET_SYNC_RATE = target_sync_rate        
+        self.__TARGET_SYNC_RATE = target_sync_rate
         self.__N_STEP_TD = schedule[0]
         self.__N_STEP_SYNC = schedule[1]
         self.countdown_td_ = self.__N_STEP_TD
@@ -476,9 +467,9 @@ class DeepQFuncActionIn(object):
                 # === Build Intermediates ===
                 # q values
                 with tf.variable_scope('non-target') as scope_non:
-                    q = f_net(state, action, is_training)
+                    q = f_net_dqn(state, action, is_training)
                 with tf.variable_scope('target') as scope_target:
-                    next_q = f_net(next_state, next_action, is_training)
+                    next_q = f_net_dqn(next_state, next_action, is_training)
                 assert len(q.get_shape().dims)== 1
                 assert len(next_q.get_shape().dims)== 1
 
@@ -514,9 +505,18 @@ class DeepQFuncActionIn(object):
                     scope=scope_target.name
                 )
 
-                # td, TODO: merge moving_averages_op with op_train_td
+                # td ops
+                ops_update = tf.get_collection(
+                    key=tf.GraphKeys.UPDATE_OPS,
+                    scope=scope_non.name
+                )
                 op_train_td = optimizer_td.minimize(
-                    tf.add(td_loss, reg_loss, name='op_train_td'), var_list=non_target_vars
+                    tf.add(td_loss, reg_loss),
+                    var_list=non_target_vars
+                )
+                op_train_td = tf.group(
+                    op_train_td, *ops_update,
+                    name='op_train_td'
                 )
 
                 # sync

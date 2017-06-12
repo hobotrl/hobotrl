@@ -2,14 +2,15 @@
 # -*- coding: utf-8 -*-
 
 import hobotrl as hrl
-import hobotrl.tf_dependent as tf_dep
+from hobotrl.tf_dependent.mixin import NNStochasticPolicyMixin, DeepQFuncMixin
+from hobotrl.tf_dependent.base import BaseDeepAgent
 
 
 class ActorCritic(
-    hrl.tf_dependent.mixin.NNStochasticPolicyMixin,
+    NNStochasticPolicyMixin,
     hrl.mixin.ReplayMixin,
-    tf_dep.mixin.DeepQFuncMixin,
-    hrl.tf_dependent.base.BaseDeepAgent
+    DeepQFuncMixin,
+    BaseDeepAgent
 ):
     def __init__(self, state_shape, is_continuous_action, num_actions, f_create_policy, f_create_value,
                  entropy=0.01, gamma=0.9, train_interval=8,
@@ -44,7 +45,7 @@ class ActorCritic(
             "is_action_in": is_continuous_action,  # for Q function
             "num_actions": num_actions,
             "f_create_net": f_create_policy,
-            "f_net": f_create_value,
+            "f_net_dqn": f_create_value,
             "entropy": entropy,
             "gamma": gamma,
             "train_interval": train_interval,
