@@ -108,18 +108,19 @@ class AugmentEnvWrapper(object):
             self.action_limit = action_limit
             self.action_scale = (action_limit[1] - action_limit[0])/2.0
             self.action_offset = (action_limit[1] + action_limit[0])/2.0
-            self.logger.warning("limit:%s, scale:%s, offset:%s", action_limit, self.action_scale, self.action_offset)
+            logging.warning("limit:%s, scale:%s, offset:%s", action_limit, self.action_scale, self.action_offset)
         if state_stack_n is not None:
             self.last_action, self.stack_counter, self.last_reward = None, 0, 0.0
             self.state_shape = None  # state dimension of 1 frame
             space = env.observation_space
-            state_low, state_high, state_shape = space.low, space.high, space.shape
+            state_low, state_high, state_shape = space.low, space.high, list(space.shape)
             state_shape[self.stack_axis] *= self.stack_n
-            if type(state_low) == type(state_shape):
-                # ndarray low and high
-                state_low, state_high = [np.repeat(l, self.stack_n, axis=self.stack_axis)
-                                         for l in [state_low, state_high]]
-            self.observation_space = gym.spaces.box.Box(state_low, state_high, state_shape)
+            # if type(state_low) == type(state_shape):
+            #     # ndarray low and high
+            #     state_low, state_high = [np.repeat(l, self.stack_n, axis=self.stack_axis)
+            #                              for l in [state_low, state_high]]
+
+            self.observation_space = gym.spaces.box.Box(np.min(state_low), np.max(state_high), state_shape)
             self.state_shape = state_shape
             self.last_stacked_states = []  # lazy init
             pass
@@ -176,7 +177,7 @@ class AugmentEnvWrapper(object):
         state = self.augment_state(state)
         if self.stack_n is not None:
             self.last_stacked_states = [state for i in range(self.stack_n)]
-            state = np.concatenate(self.last_stacked_states)
+            state = np.concatenate(self.last_stacked_states, self.stack_axis)
         return state
 
 

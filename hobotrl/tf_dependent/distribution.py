@@ -120,3 +120,83 @@ class DiscreteDistribution(NNDistribution):
             sample_i.append(np.random.choice(np.arange(self.dist_n), p=p))
         sample_i = np.asarray(sample_i)
         return sample_i
+
+
+class NormalDistribution(NNDistribution):
+
+    def __init__(self, f_create_net, inputs_dist, action_dim, input_sample, epsilon=1e-2, **kwargs):
+        """
+        :param f_create_net: function to create network.
+                output of network must be a dictionary of 2 vector:
+                {"stddev": [batch_size, action_dim], "mean": [batch_size, action_dim]}
+                where stdddev > 0 serving as std^2
+        :param inputs_dist: list of distribution network input
+        :param action_dim: integer indicating dimension of action
+        :param input_sample: sample input placeholder, with shape: [batch_size] + action_shape
+        :param epsilon: minimum stddev allowed, preventing premature convergence
+        :param kwargs:
+        """
+        super(NormalDistribution, self).__init__(**kwargs)
+        self.epsilon = epsilon
+        with tf.variable_scope("dist") as vs:
+            self.inputs_dist, self.input_sample, self.action_dim = inputs_dist, input_sample, action_dim
+            net_dist = f_create_net(inputs_dist, action_dim)
+            self.net_mean, self.net_stddev = net_dist["mean"], net_dist["stddev"]
+            self.net_stddev = self.net_stddev + epsilon
+            self.net_entropy = (1 + tf.log(2 * np.pi * self.net_stddev)) / 2.0
+            self.net_prob = 1.0 / tf.sqrt(2 * np.pi * self.net_stddev) \
+                            * tf.exp(- tf.square(self.input_sample - self.net_mean) / (2.0 * self.net_stddev))
+
+            self.net_log_prob = tf.log(self.net_prob)
+            # self.net_log_prob = - tf.square(self.input_sample - self.net_mean) / (2.0 * self.net_stddev) - 0.5 * tf.log(2 * np.pi * self.net_stddev)
+            print "shapes:", self.inputs_dist, self.input_sample, self.action_dim, self.net_mean, self.net_entropy, \
+                self.net_prob, self.net_log_prob
+
+    def entropy(self):
+        return self.net_entropy
+
+    def entropy_run(self, sess, inputs):
+        return sess.run([self.net_entropy], feed_dict=dict(zip(self.inputs_dist, inputs)))[0]
+
+    def prob(self):
+        return self.net_prob
+
+    def prob_run(self, sess, inputs, sample):
+        return sess.run([self.net_prob],
+                        feed_dict=dict(zip(self.inputs_dist, inputs) + [self.input_sample, sample]))[0]
+
+    def log_prob(self):
+        return self.net_log_prob
+
+    def log_prob_run(self, sess, inputs, sample):
+        return sess.run([self.net_log_prob],
+                        feed_dict=dict(zip(self.inputs_dist, inputs) + [self.input_sample, sample]))[0]
+
+    def mean(self):
+        return self.net_mean
+
+    def mean_run(self, sess, inputs):
+        return sess.run([self.net_mean],
+                        feed_dict=dict(zip(self.inputs_dist, inputs)))[0]
+
+    def stddev(self):
+        return self.net_stddev
+
+    def stddev_run(self, sess, inputs):
+        return sess.run([self.net_stddev],
+                        feed_dict=dict(zip(self.inputs_dist, inputs)))[0]
+
+    def sample(self):
+        # not implemented
+        raise NotImplementedError()
+
+    def sample_run(self, sess, inputs):
+        # distribution with shape [batch_size, dist_n]
+        mean, stddev = sess.run([self.net_mean, self.net_stddev], feed_dict=dict(zip(self.inputs_dist, inputs)))
+        sample_i = []
+        stddev = np.sqrt(stddev)
+        for i in range(len(mean)):
+            mu, sigma = mean[i], stddev[i]
+            sample_i.append(np.random.normal(mu, sigma))
+        sample_i = np.asarray(sample_i)
+        return sample_i

@@ -179,22 +179,34 @@ class Network(object):
         with tf.variable_scope(var_scope):
             for i in range(len(shape)):
                 hidden_count = shape[i]
-                out = tf.contrib.layers.fully_connected(inputs=input_var, num_outputs=hidden_count,
-                                                        activation_fn=activation_hidden,
-                                                        weights_initializer=layers.xavier_initializer(),
-                                                        biases_initializer=layers.xavier_initializer(),
-                                                        weights_regularizer=layers.l2_regularizer(l2),
-                                                        biases_regularizer=layers.l2_regularizer(l2),
-                                                        scope="hidden_%d" % i)
+                out = layers.fully_connected(inputs=input_var, num_outputs=hidden_count,
+                                             activation_fn=activation_hidden,
+                                             weights_initializer=layers.xavier_initializer(),
+                                             biases_initializer=layers.xavier_initializer(),
+                                             weights_regularizer=layers.l2_regularizer(l2),
+                                             biases_regularizer=layers.l2_regularizer(l2),
+                                             scope="hidden_%d" % i)
                 input_var = out
 
             # output
             with tf.variable_scope("out"):
-                out = tf.contrib.layers.fully_connected(inputs=input_var, num_outputs=out_count,
-                                                        activation_fn=activation_out,
-                                                        weights_initializer=layers.xavier_initializer(),
-                                                        biases_initializer=layers.xavier_initializer(),
-                                                        weights_regularizer=layers.l2_regularizer(l2),
-                                                        biases_regularizer=layers.l2_regularizer(l2),
-                                                        scope="out")
+                out = layers.fully_connected(inputs=input_var, num_outputs=out_count,
+                                             activation_fn=activation_out,
+                                             weights_initializer=layers.xavier_initializer(),
+                                             biases_initializer=layers.xavier_initializer(),
+                                             weights_regularizer=layers.l2_regularizer(l2),
+                                             biases_regularizer=layers.l2_regularizer(l2),
+                                             scope="out")
+        return out
+
+    @staticmethod
+    def conv2d(input_var, h, w, out_channel, strides=[1,1], padding="VALID",
+               activation=tf.nn.relu, l2=1e-4, var_scope=""):
+        with tf.variable_scope(var_scope):
+            out = tf.layers.conv2d(inputs=input_var, filters=out_channel, kernel_size=[w, h],
+                                   strides=strides, padding=padding, activation=activation,
+                                   use_bias=True, kernel_initializer=layers.xavier_initializer(),
+                                   bias_initializer=layers.xavier_initializer(),
+                                   kernel_regularizer=layers.l2_regularizer(l2),
+                                   bias_regularizer=layers.l2_regularizer(l2))
         return out
