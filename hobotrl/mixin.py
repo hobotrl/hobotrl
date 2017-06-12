@@ -268,3 +268,21 @@ class GaussianExplorationMixin(BasePolicyMixin):
 
         return action
 
+
+class OUExplorationMixin(BasePolicyMixin):
+    def __init__(self, ou_params, **kwargs):
+        super(OUExplorationMixin, self).__init__(**kwargs)
+        self.__mu, self.__theta, self.__sigma = \
+                ou_params
+        self.__x_shape = kwargs['action_shape']
+        self.__x = np.zeros(self.__x_shape)
+
+    def act(self, state, **kwargs):
+        action = super(OUExplorationMixin, self).act(state, **kwargs)
+        self.__x += self.__theta * (self.__mu - self.__x) + \
+                    self.__sigma * np.random.randn(*self.__x_shape)
+        return action + self.__x
+
+    @property
+    def ou_state(self):
+        return self.__x
