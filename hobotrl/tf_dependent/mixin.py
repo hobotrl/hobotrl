@@ -5,7 +5,7 @@
 import numpy as np
 from hobotrl.mixin import BaseValueMixin, BasePolicyMixin
 from value_function import DeepQFuncActionOut, DeepQFuncActionIn
-from policy import DeepDeterministicPolicy
+from policy import DiscreteNNPolicy, DeepDeterministicPolicy
 
 
 class TFNetworkMixin(object):
@@ -29,7 +29,7 @@ class DeepQFuncMixin(BaseValueMixin):
     """
     def __init__(self, is_action_in=False, **kwargs):
         super(DeepQFuncMixin, self).__init__(**kwargs)
-        
+
         self.__IS_ACTION_IN = is_action_in
 
         if not is_action_in:
@@ -68,7 +68,7 @@ class DeepQFuncMixin(BaseValueMixin):
             assert 'action' in batch
             assert 'reward' in batch
             assert 'next_state' in batch
-            
+
             # sample `next_action` if not using greedy policy and the replay buffer
             # does not store `next_action` explicitly
             if not self.__GREEDY_POLICY and 'next_action' not in batch:
@@ -84,7 +84,7 @@ class DeepQFuncMixin(BaseValueMixin):
         # if replay buffer is not filled yet.
         else:
             return {}
-      
+
     def get_grad_q_action(self, state, action=None, **kwargs):
         """Fetch action value(s)
         Wrapper for self.__dqf.get_grad_q_action(). Checks and corrects
@@ -99,7 +99,7 @@ class DeepQFuncMixin(BaseValueMixin):
                 "DeepQFuncMixin.get_grad_q_action(): "
                 "dQ/da is not defined for action-out network."
             )
-    
+
     @property
     def deep_q_func(self):
         return self.__dqf
@@ -137,21 +137,21 @@ class DeepQFuncMixin(BaseValueMixin):
         return state, action
 
 
-# TODO: inherit only from BasePolicyMixin
-class NNStochasticPolicyMixin(BasePolicyMixin, TFNetworkMixin):
+# TODO: [Lewis] this seems more like a base class, not a mixin class. Temporarily comment out NotImplementedError
+class NNStochasticPolicyMixin(DiscreteNNPolicy, BasePolicyMixin):
     def __init__(self, **kwargs):
         super(NNStochasticPolicyMixin, self).__init__(**kwargs)
 
-    def act(self, state, **kwargs):
-        raise NotImplementedError()
+#    def act(self, state, **kwargs):
+#        raise NotImplementedError()
 
     def reinforce_(self, state, action, reward, next_state, episode_done=False, **kwargs):
         info = super(NNStochasticPolicyMixin, self).reinforce_(state, action, reward, next_state, episode_done, **kwargs)
         info.update(self.update_policy(state, action, reward, next_state, episode_done, **kwargs))
         return info
 
-    def update_policy(self, state, action, reward, next_state, episode_done, **kwargs):
-        raise NotImplementedError()
+#    def update_policy(self, state, action, reward, next_state, episode_done, **kwargs):
+#        raise NotImplementedError()
 
 
 # TODO: inherit from a base class which improves policy?
@@ -191,17 +191,17 @@ class DeepDeterministicPolicyMixin(BasePolicyMixin):
             # check mandatory keys
             assert 'state' in batch
             assert 'action' in batch
-            
+
             # get value gradient from value func
             batch['grad_q_action'] = self.get_grad_q_action(
                 batch['state'], batch['action']
             )
-            
+
             kwargs.update(batch)  # pass the batch in as kwargs
             kwargs.update({"sess": self.sess})
             return self.__dqf.improve_policy_(**kwargs)
         # if replay buffer is not filled yet.
         else:
             return {}
-    
-      
+
+

@@ -50,7 +50,7 @@ print "Test initialize QFunc with greedy_policy={} and ddqn={}:".format(
 
 dqn = DeepQFuncActionOut(
     gamma=0.99,
-    f_net=f_net, state_shape=state_shape, num_actions=num_actions,
+    f_net_dqn=f_net, state_shape=state_shape, num_actions=num_actions,
     training_params=training_params, schedule=(2,5),
     batch_size=batch_size,
     greedy_policy=greedy_policy, ddqn=ddqn,

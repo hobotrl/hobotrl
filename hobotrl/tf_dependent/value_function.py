@@ -36,7 +36,7 @@ class DeepQFuncActionOut(object):
     """
 
     def __init__(self, gamma,
-                 f_net, state_shape, num_actions,
+                 f_net_dqn, state_shape, num_actions,
                  training_params, schedule, batch_size,
                  greedy_policy=True, ddqn=False,
                  graph=None, **kwargs):
@@ -46,13 +46,13 @@ class DeepQFuncActionOut(object):
 
         Note regularization losses and moving average ops are retrieved with
         variable scope and default graphkey with `tf.get_collection()`.
-        Therefore f_net should properly register these ops to corresponding
+        Therefore f_net_dqn should properly register these ops to corresponding
         variable collections.
 
         Parameters
         ----------
         :param gamma : value discount factor.
-        :param f_net : functional interface for building parameterized value fcn.
+        :param f_net_dqn : functional interface for building parameterized value fcn.
         :param state_shape : shape of state and next_state
         :param num_actions : number of actions
         :param training_params : parameters for training value fcn.. A tuple of
@@ -72,7 +72,7 @@ class DeepQFuncActionOut(object):
         # Unpack params
         self.__GAMMA = gamma
 
-        self.__F_NET = f_net
+        self.__F_NET = f_net_dqn
         self.__STATE_SHAPE = state_shape
         self.__NUM_ACTIONS = num_actions
         optimizer_td, target_sync_rate = training_params
@@ -100,12 +100,12 @@ class DeepQFuncActionOut(object):
                 # Intermediates
                 # non-target network
                 with tf.variable_scope('non-target') as scope_non:
-                    q = f_net(state, num_actions, is_training)
+                    q = f_net_dqn(state, num_actions, is_training)
                     scope_non.reuse_variables()  # reuse non-target weights
-                    double_q = f_net(state, num_actions, is_training)
+                    double_q = f_net_dqn(state, num_actions, is_training)
                 # target network
                 with tf.variable_scope('target') as scope_target:
-                    next_q = f_net(next_state, num_actions, is_training)
+                    next_q = f_net_dqn(next_state, num_actions, is_training)
 
                 # current Q value
                 q_sel = tf.reduce_sum(
@@ -407,7 +407,7 @@ class DeepQFuncActionIn(object):
     """
 
     def __init__(self, gamma,
-                 f_net, state_shape, action_shape,
+                 f_net_dqn, state_shape, action_shape,
                  training_params, schedule, batch_size,
                  graph=None, **kwargs):
         """Initialization
@@ -416,13 +416,13 @@ class DeepQFuncActionIn(object):
 
         Note regularization losses and moving average ops are retrieved with
         variable scope and default graphkey with `tf.get_collection()`.
-        Therefore f_net should properly register these ops to corresponding
+        Therefore f_net_dqn should properly register these ops to corresponding
         variable collections.
 
         Parameters
         ----------
         :param gamma : value discount factor.
-        :param f_net : functional interface for building parameterized value fcn.
+        :param f_net_dqn : functional interface for building parameterized value fcn.
         :param state_shape : shape of states
         :param action_shape : shape of actions
         :param training_params : parameters for training value function. A tuple of
@@ -441,7 +441,7 @@ class DeepQFuncActionIn(object):
         # Unpack params
         self.__GAMMA = gamma
 
-        self.__F_NET = f_net
+        self.__F_NET = f_net_dqn
         self.__STATE_SHAPE = state_shape
         self.__ACTION_SHAPE = action_shape
         optimizer_td, target_sync_rate = training_params
@@ -467,9 +467,9 @@ class DeepQFuncActionIn(object):
                 # === Build Intermediates ===
                 # q values
                 with tf.variable_scope('non-target') as scope_non:
-                    q = f_net(state, action, is_training)
+                    q = f_net_dqn(state, action, is_training)
                 with tf.variable_scope('target') as scope_target:
-                    next_q = f_net(next_state, next_action, is_training)
+                    next_q = f_net_dqn(next_state, next_action, is_training)
                 assert len(q.get_shape().dims)== 1
                 assert len(next_q.get_shape().dims)== 1
 
