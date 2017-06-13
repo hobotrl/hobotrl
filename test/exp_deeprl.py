@@ -55,6 +55,9 @@ class ACDiscretePendulum(Experiment):
             return tf.nn.softmax(fc_out, name="softmax")
 
         state_shape = list(env.observation_space.shape)
+        global_step = tf.get_variable('global_step', [],
+                                      initializer=tf.constant_initializer(0),
+                                      trainable=False)
         agent = ac.ActorCritic(
             state_shape=state_shape,
             is_continuous_action=False,
@@ -78,15 +81,18 @@ class ACDiscretePendulum(Experiment):
                  }
             },
             # EpsilonGreedyPolicyMixin params
-            epsilon=0.02
+            epsilon=0.02,
+            global_step=global_step
         )
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
-        sess = tf.Session(config=config)
-        sess.run(tf.global_variables_initializer())
-        agent.set_session(sess)
-        runner = hrl.envs.EnvRunner(env, agent, evaluate_interval=100, render_interval=50, logdir=args.logdir)
-        runner.episode(1000)
+        sv = agent.init_supervisor(graph=tf.get_default_graph(), worker_index=0,
+                                   init_op=tf.global_variables_initializer(), save_dir=args.logdir)
+        with sv.managed_session(config=config) as sess:
+            agent.set_session(sess)
+            runner = hrl.envs.EnvRunner(env, agent, evaluate_interval=100, render_interval=50, logdir=args.logdir)
+            runner.episode(1000)
+
 
 Experiment.register(ACDiscretePendulum, "discrete actor critic for Pendulum")
 
@@ -124,6 +130,9 @@ class ACContinuousPendulum(Experiment):
             return {"stddev": stddev, "mean": mean}
 
         state_shape = list(env.observation_space.shape)
+        global_step = tf.get_variable('global_step', [],
+                                      initializer=tf.constant_initializer(0),
+                                      trainable=False)
         action_dim = env.action_space.shape[0]
         agent = ac.ActorCritic(
             state_shape=state_shape,
@@ -148,15 +157,18 @@ class ACContinuousPendulum(Experiment):
                  }
             },
             # EpsilonGreedyPolicyMixin params
-            epsilon=0.02
+            epsilon=0.02,
+            global_step=global_step
         )
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
-        sess = tf.Session(config=config)
-        sess.run(tf.global_variables_initializer())
-        agent.set_session(sess)
-        runner = hrl.envs.EnvRunner(env, agent, evaluate_interval=100, render_interval=50, logdir=args.logdir)
-        runner.episode(1000)
+        sv = agent.init_supervisor(graph=tf.get_default_graph(), worker_index=0,
+                                   init_op=tf.global_variables_initializer(), save_dir=args.logdir)
+        with sv.managed_session(config=config) as sess:
+            agent.set_session(sess)
+            runner = hrl.envs.EnvRunner(env, agent, evaluate_interval=100, render_interval=50, logdir=args.logdir)
+            runner.episode(1000)
+
 
 Experiment.register(ACContinuousPendulum, "continuous actor critic for Pendulum")
 
@@ -178,6 +190,9 @@ class DQNPendulum(Experiment):
             return fc_out
 
         state_shape = list(env.observation_space.shape)
+        global_step = tf.get_variable('global_step', [],
+                                      initializer=tf.constant_initializer(0),
+                                      trainable=False)
         agent = dqn.DQN(
             # EpsilonGreedyPolicyMixin params
             actions=range(env.action_space.n),
@@ -198,15 +213,17 @@ class DQNPendulum(Experiment):
                     'next_state': state_shape,
                     'episode_done': ()
                 }},
-            batch_size=8
+            batch_size=8,
+            global_step=global_step
         )
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
-        sess = tf.Session(config=config)
-        sess.run(tf.global_variables_initializer())
-        agent.set_session(sess)
-        runner = hrl.envs.EnvRunner(env, agent, evaluate_interval=100, render_interval=50, logdir=args.logdir)
-        runner.episode(1000)
+        sv = agent.init_supervisor(graph=tf.get_default_graph(), worker_index=0,
+                                   init_op=tf.global_variables_initializer(), save_dir=args.logdir)
+        with sv.managed_session(config=config) as sess:
+            agent.set_session(sess)
+            runner = hrl.envs.EnvRunner(env, agent, evaluate_interval=100, render_interval=50, logdir=args.logdir)
+            runner.episode(1000)
 
 Experiment.register(DQNPendulum, "DQN for Pendulum")
 
@@ -228,13 +245,16 @@ class DDQNPendulum(Experiment):
             return fc_out
 
         state_shape = list(env.observation_space.shape)
+        global_step = tf.get_variable('global_step', [],
+                                      initializer=tf.constant_initializer(0),
+                                      trainable=False)
         agent = dqn.DQN(
             # EpsilonGreedyPolicyMixin params
             actions=range(env.action_space.n),
             epsilon=0.2,
             # DeepQFuncMixin params
             gamma=0.9,
-            f_net=f_net, state_shape=state_shape, num_actions=env.action_space.n,
+            f_net_dqn=f_net, state_shape=state_shape, num_actions=env.action_space.n,
             training_params=training_params, schedule=(1, 10),
             greedy_policy=True,
             ddqn=True,
@@ -249,15 +269,17 @@ class DDQNPendulum(Experiment):
                     'next_state': state_shape,
                     'episode_done': (1,)
                 }},
-            batch_size=8
+            batch_size=8,
+            global_step=global_step
         )
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
-        sess = tf.Session(config=config)
-        sess.run(tf.global_variables_initializer())
-        agent.set_session(sess)
-        runner = hrl.envs.EnvRunner(env, agent, evaluate_interval=100, render_interval=50, logdir=args.logdir)
-        runner.episode(1000)
+        sv = agent.init_supervisor(graph=tf.get_default_graph(), worker_index=0,
+                                   init_op=tf.global_variables_initializer(), save_dir=args.logdir)
+        with sv.managed_session(config=config) as sess:
+            agent.set_session(sess)
+            runner = hrl.envs.EnvRunner(env, agent, evaluate_interval=100, render_interval=50, logdir=args.logdir)
+            runner.episode(1000)
 
 Experiment.register(DDQNPendulum, "Double DQN for Pendulum")
 
@@ -283,13 +305,16 @@ class DuelDQNPendulum(Experiment):
             return q
 
         state_shape = list(env.observation_space.shape)
+        global_step = tf.get_variable('global_step', [],
+                                      initializer=tf.constant_initializer(0),
+                                      trainable=False)
         agent = dqn.DQN(
             # EpsilonGreedyPolicyMixin params
             actions=range(env.action_space.n),
             epsilon=0.2,
             # DeepQFuncMixin params
             gamma=0.9,
-            f_net=f_net, state_shape=state_shape, num_actions=env.action_space.n,
+            f_net_dqn=f_net, state_shape=state_shape, num_actions=env.action_space.n,
             training_params=training_params, schedule=(1, 10),
             greedy_policy=True,
             ddqn=False,
@@ -299,20 +324,25 @@ class DuelDQNPendulum(Experiment):
                 "capacity": 1000,
                 "sample_shapes": {
                     'state': state_shape,
-                    'action': (1,),
-                    'reward': (1,),
+                    'action': (),
+                    'reward': (),
                     'next_state': state_shape,
-                    'episode_done': (1,)
+                    'episode_done': ()
                 }},
-            batch_size=8
+            batch_size=8,
+            graph=tf.get_default_graph(),
+            global_step=global_step
         )
+
+        sv = agent.init_supervisor(graph=tf.get_default_graph(), worker_index=0,
+                              init_op=tf.global_variables_initializer(), save_dir=args.logdir)
+
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
-        sess = tf.Session(config=config)
-        sess.run(tf.global_variables_initializer())
-        agent.set_session(sess)
-        runner = hrl.envs.EnvRunner(env, agent, evaluate_interval=100, render_interval=50, logdir=args.logdir)
-        runner.episode(1000)
+        with sv.managed_session(config=config) as sess:
+            agent.set_session(sess)
+            runner = hrl.envs.EnvRunner(env, agent, evaluate_interval=100, render_interval=50, logdir=args.logdir)
+            runner.episode(1000)
 
 Experiment.register(DuelDQNPendulum, "Duel DQN for Pendulum")
 
@@ -420,13 +450,16 @@ class DQNCarRacing(Experiment):
             # return q
 
         state_shape = list(env.observation_space.shape)
+        global_step = tf.get_variable('global_step', [],
+                                      initializer=tf.constant_initializer(0),
+                                      trainable=False)
         agent = dqn.DQN(
             # EpsilonGreedyPolicyMixin params
             actions=range(env.action_space.n),
             epsilon=0.2,
             # DeepQFuncMixin params
             gamma=reward_decay,
-            f_net=f_net, state_shape=state_shape, num_actions=env.action_space.n,
+            f_net_dqn=f_net, state_shape=state_shape, num_actions=env.action_space.n,
             training_params=training_params, schedule=(1, 10),
             greedy_policy=True,
             ddqn=True,
@@ -450,15 +483,17 @@ class DQNCarRacing(Experiment):
                     'next_state': 1.0/128,
                 }
             },
-            batch_size=32
+            batch_size=32,
+            global_step=global_step
         )
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
-        sess = tf.Session(config=config)
-        sess.run(tf.global_variables_initializer())
-        agent.set_session(sess)
-        runner = hrl.envs.EnvRunner(env, agent, evaluate_interval=100, render_interval=50, logdir=args.logdir)
-        runner.episode(100000)
+        sv = agent.init_supervisor(graph=tf.get_default_graph(), worker_index=0,
+                                   init_op=tf.global_variables_initializer(), save_dir=args.logdir)
+        with sv.managed_session(config=config) as sess:
+            agent.set_session(sess)
+            runner = hrl.envs.EnvRunner(env, agent, evaluate_interval=100, render_interval=50, logdir=args.logdir)
+            runner.episode(100000)
 
 Experiment.register(DQNCarRacing, "DQN for CarRacing, tuned with ddqn, duel network, etc.")
 
