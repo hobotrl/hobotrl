@@ -30,8 +30,8 @@ class DeepQFuncMixin(BaseValueMixin):
         else:
             self.__dqf = DeepQFuncActionIn(**kwargs)
 
-        self.__GREEDY_POLICY = False if is_action_in else self.__dqf.greedy_policy
-        self.__BATCH_SIZE = kwargs['batch_size']
+        self._GREEDY_POLICY = False if is_action_in else self.__dqf.greedy_policy
+        self._BATCH_SIZE = kwargs['batch_size']
 
     def get_value(self, state, action=None, **kwargs):
         """Fetch action value(s)
@@ -40,6 +40,9 @@ class DeepQFuncMixin(BaseValueMixin):
         state, action = self.__check_shape(state, action)
         kwargs.update({"sess": self.sess})
         return self.__dqf.get_value(state, action, **kwargs)
+
+    def get_qfunction(self):
+        return self.__dqf
 
     def improve_value_(self, state, action, reward, next_state,
                        episode_done, **kwargs):
@@ -52,8 +55,8 @@ class DeepQFuncMixin(BaseValueMixin):
 
         # if replay buffer has more samples than the batch_size.
         # TODO: the following is actually not necessary for sampling with replaycement.
-        if replay_buffer.get_count() >= self.__BATCH_SIZE:
-            batch = replay_buffer.sample_batch(self.__BATCH_SIZE)
+        if replay_buffer.get_count() >= self._BATCH_SIZE:
+            batch = replay_buffer.sample_batch(self._BATCH_SIZE)
             batch = {k: np.array(v) for k, v in batch.iteritems()}  # force convert
 
             # check mandatory keys
@@ -64,7 +67,7 @@ class DeepQFuncMixin(BaseValueMixin):
 
             # sample `next_action` if not using greedy policy and the replay buffer
             # does not store `next_action` explicitly
-            if not self.__GREEDY_POLICY and 'next_action' not in batch:
+            if not self._GREEDY_POLICY and 'next_action' not in batch:
                 next_action = np.array(
                     [self.act(s_slice, **kwargs) for s_slice in batch['next_state']]
                 )
