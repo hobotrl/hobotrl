@@ -264,10 +264,10 @@ class DDQNPendulum(Experiment):
                 "capacity": 1000,
                 "sample_shapes": {
                     'state': state_shape,
-                    'action': (1,),
-                    'reward': (1,),
+                    'action': (),
+                    'reward': (),
                     'next_state': state_shape,
-                    'episode_done': (1,)
+                    'episode_done': ()
                 }},
             batch_size=8,
             global_step=global_step
