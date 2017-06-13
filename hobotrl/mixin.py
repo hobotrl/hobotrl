@@ -275,7 +275,7 @@ class OUExplorationMixin(BasePolicyMixin):
         self.__mu, self.__theta, self.__sigma = \
                 ou_params
         self.__x_shape = kwargs['action_shape']
-        self.__x = np.zeros(self.__x_shape)
+        self.__x = np.ones(self.__x_shape) * self.__mu
 
     def act(self, state, **kwargs):
         action = super(OUExplorationMixin, self).act(state, **kwargs)

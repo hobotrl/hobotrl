@@ -476,8 +476,8 @@ class DeepQFuncActionIn(object):
                 # get gradients:
                 #   if q.shape = [batch_size,], action.shape = [batch_size]+action_shape,
                 #   tf.gradients() will compute per-sample grad by default
-                grad_q_action = tf.gradients(q, action, name='grad_q_action')
-                grad_q_action_t = tf.gradients(next_q, next_action, name='grad_q_action_t')
+                grad_q_action = tf.gradients(q, action, name='grad_q_action')[0]
+                grad_q_action_t = tf.gradients(next_q, next_action, name='grad_q_action_t')[0]
 
                 # td_loss
                 target_q = tf.add(

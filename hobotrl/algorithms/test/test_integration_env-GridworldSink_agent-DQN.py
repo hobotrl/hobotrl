@@ -60,7 +60,7 @@ agent = DQN(
     epsilon=0.2,
     # DeepQFuncMixin params
     gamma = 0.9,
-    f_net=f_net, state_shape=state_shape, num_actions=len(env.ACTIONS),
+    f_net_dqn=f_net, state_shape=state_shape, num_actions=len(env.ACTIONS),
     training_params=training_params, schedule=(1, 10),
     greedy_policy=True, graph=graph,
     # ReplayMixin params
