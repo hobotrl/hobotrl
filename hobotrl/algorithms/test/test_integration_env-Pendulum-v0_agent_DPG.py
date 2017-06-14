@@ -1,0 +1,191 @@
+# -*- coding: utf-8 -*-
+
+"""Intergration test for deep deterministic policy (mixin-based)
+"""
+
+import sys
+sys.path.append('../../../')
+
+import numpy as np
+
+import tensorflow as tf
+from tensorflow import layers
+from tensorflow.contrib.layers import l2_regularizer
+
+from hobotrl.playback import MapPlayback
+from hobotrl.algorithms.dpg import DPG
+
+import gym
+
+# Environment
+def video_callable(episode_id):
+    return episode_id%10 == 0
+env = gym.make('Pendulum-v0')
+env = gym.wrappers.Monitor(
+    env, './test_integration_env-Pendulum-v0_agent_DPG/test02/',
+    force=True, video_callable=video_callable
+)
+# Agent
+def f_net_dqn(inputs_state, inputs_action, is_training):
+    depth = inputs_state.get_shape()[1:].num_elements()
+    inputs_state = tf.reshape(inputs_state, shape=[-1, depth])
+    # inputs_state = layers.batch_normalization(inputs_state, axis=1, training=is_training)
+    hidden1 = layers.dense(
+        inputs=inputs_state, units=400,
+        activation=None,
+        kernel_regularizer=l2_regularizer(scale=1e-2),
+        trainable=True, name='hidden1',
+    )   
+    hidden1 = tf.nn.relu(layers.batch_normalization(hidden1, axis=1, training=is_training))
+    depth = inputs_action.get_shape()[1:].num_elements()
+    inputs_action = tf.reshape(inputs_action, shape=[-1, depth])
+    hidden1 = tf.concat([hidden1, inputs_action], axis=1)
+    hidden2 = layers.dense(
+        inputs=hidden1, units=300,
+        activation=None,
+        kernel_regularizer=l2_regularizer(scale=1e-2),
+        trainable=True, name='hidden2',
+    )
+    hidden2 = tf.nn.relu(layers.batch_normalization(hidden2, axis=1, training=is_training))
+    q = layers.dense(
+        inputs=hidden2, units=1,
+        activation=tf.nn.tanh,
+        kernel_initializer=tf.random_uniform_initializer(minval=-3e-3, maxval=3e-3),
+        kernel_regularizer=l2_regularizer(scale=1e-2),
+        trainable=True, name='out',
+    )
+    q = tf.squeeze(q, axis=1, name='out_sqz')
+    return q
+
+
+def f_net_ddp(inputs, action_shape, is_training):
+    depth_state = inputs.get_shape()[1:].num_elements()
+    inputs = tf.reshape(inputs, shape=[-1, depth_state], name='inputs')
+    # inputs = layers.batch_normalization(inputs, axis=1, training=is_training)
+    hidden1 = layers.dense(
+        inputs=inputs, units=400,
+        activation=None,
+        kernel_regularizer=l2_regularizer(scale=1e-2),
+        trainable=True, name='hidden1',
+    )
+    hidden1 = tf.nn.relu(layers.batch_normalization(hidden1, axis=1, training=is_training))
+    hidden2 = layers.dense(
+        inputs=hidden1, units=300,
+        activation=None,
+        kernel_regularizer=l2_regularizer(scale=1e-2),
+        trainable=True, name='hidden2',
+    )
+    hidden2 = tf.nn.relu(layers.batch_normalization(hidden2, axis=1, training=is_training))
+    depth_action = reduce(lambda x, y: x*y, action_shape, 1)
+    action = layers.dense(
+        inputs=hidden2, units=depth_action,
+        activation=tf.nn.tanh,
+        kernel_initializer=tf.random_uniform_initializer(minval=-3e-3, maxval=3e-3),
+        kernel_regularizer=l2_regularizer(scale=1e-2),
+        trainable=True, name='out'
+    )
+    action = tf.reshape(2.0*action, shape=[-1]+list(action_shape), name='out')
+
+    return action
+
+ou_params = (0.0, 0.15, 0.2)
+optimizer_td = tf.train.AdamOptimizer(learning_rate=0.001)
+optimizer_dpg = tf.train.AdamOptimizer(learning_rate=0.001)
+target_sync_rate = 0.001
+training_params_dqn = (optimizer_td, target_sync_rate)
+training_params_ddp = (optimizer_dpg, target_sync_rate)
+schedule_ddp = (1, 1)
+schedule_dqn = (1, 1)
+state_shape = env.observation_space.shape
+action_shape = env.action_space.shape
+batch_size = 64
+graph = tf.get_default_graph()
+
+agent = DPG(
+    # === ReplayMixin params ===
+    buffer_class=MapPlayback,
+    buffer_param_dict={
+        "capacity": 100000,
+        "sample_shapes": {
+            'state': state_shape,
+            'action': action_shape,
+            'reward': (),
+            'next_state': state_shape,
+            'episode_done': ()
+         }},
+    batch_size=batch_size,
+    # === OUExplorationMixin ===
+    ou_params=ou_params,
+    action_shape=action_shape,
+    # === DeepDeterministicPolicyMixin ===
+    ddp_param_dict={
+        'f_net_ddp': f_net_ddp,
+        'state_shape': state_shape,
+        'action_shape': action_shape,
+        'training_params': training_params_ddp,
+        'schedule': schedule_ddp,
+        'batch_size': batch_size,
+        'graph': graph
+    },
+    # === DeepQFuncMixin params ===
+    dqn_param_dict={
+        'gamma': 0.99,
+        'f_net_dqn': f_net_dqn,
+        'state_shape': state_shape,
+        'action_shape': action_shape,
+        'training_params': training_params_dqn,
+        'schedule': schedule_dqn,
+        'batch_size': batch_size,
+        'greedy_policy': True,
+        'graph': graph
+    },
+    is_action_in=True
+)
+
+n_interactive = 1000
+
+sess = tf.Session()
+sess.run(tf.global_variables_initializer())
+agent.set_session(sess)
+while True:
+    cum_reward = 0.0
+    n_steps = 0
+    cum_td_loss = 0.0
+    cum_dpg_loss = 0.0
+    cum_q_vals = 0.0
+    cum_grad_norm = 0.0
+    state, action = env.reset(), env.action_space.sample()
+    next_state, reward, done, info = env.step(action)
+    while True:
+        n_steps += 1
+        cum_reward += reward
+        next_action, update_info = agent.step(
+            sess=sess,
+            state=state,
+            action=action,
+            reward=reward/100.0,
+            next_state=next_state,
+            episode_done=done,
+        )
+        # print (state, action, reward)
+        cum_td_loss += update_info['td_loss'] if 'td_loss' in update_info else 0
+        cum_dpg_loss += update_info['dpg_loss'] if 'dpg_loss' in update_info else 0
+        cum_q_vals += np.mean(update_info['q_vals']) if 'q_vals' in update_info else 0
+        cum_grad_norm += update_info['grad_norm_q_action'] if 'grad_norm_q_action' in update_info else 0
+        # print update_info
+        if done is True:
+            print "Episode done in {} steps, reward is {}, average td_loss is {}, dpg_loss is {}, average q is {}, grad_norm is {}".format(
+                n_steps, cum_reward, cum_td_loss/n_steps, cum_dpg_loss/n_steps, cum_q_vals/n_steps, cum_grad_norm/n_steps
+            )
+            n_steps = 0
+            cum_reward = 0.0
+            if n_interactive == 0:
+                raw_input('Next episode?')
+                n_interactive = 1000
+            else:
+                n_interactive -= 1
+            break
+        state, action = next_state, next_action
+        next_state, reward, done, info = env.step(action)
+sess.close()
+

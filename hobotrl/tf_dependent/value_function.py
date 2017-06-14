@@ -409,7 +409,7 @@ class DeepQFuncActionIn(object):
     def __init__(self, gamma,
                  f_net_dqn, state_shape, action_shape,
                  training_params, schedule, batch_size,
-                 graph=None, **kwargs):
+                 greedy_policy=True, graph=None, **kwargs):
         """Initialization
         Unpacks parameters, build related ops on graph (placeholders, networks,
         and training ops), and register handels to important ops.
@@ -449,6 +449,7 @@ class DeepQFuncActionIn(object):
         self.__TARGET_SYNC_RATE = target_sync_rate
         self.__N_STEP_TD = schedule[0]
         self.__N_STEP_SYNC = schedule[1]
+        self.__GREEDY_POLICY = greedy_policy
         self.countdown_td_ = self.__N_STEP_TD
         self.countdown_sync_ = self.__N_STEP_SYNC
 
@@ -574,7 +575,10 @@ class DeepQFuncActionIn(object):
         if episode_done is not None:
             feed_dict[self.sym_episode_done] = episode_done
 
-        return sess.run([self.op_train_td, self.sym_td_loss, self.sym_target_q], feed_dict)
+        return sess.run(
+            [self.op_train_td, self.sym_td_loss, self.sym_q, self.sym_next_q, self.sym_target_q],
+            feed_dict
+        )
 
     def fetch_td_loss_(self,
                        state, action, reward,
@@ -596,12 +600,10 @@ class DeepQFuncActionIn(object):
 
         return sess.run(self.sym_td_loss, feed_dict)
 
-    def improve_value_(self,
-                       state, action, reward,
-                       next_state, next_action,
-                       episode_done=None, importance=None,
-                       sess=None,
-                       **kwargs):
+    def improve_value_(self, state, action, reward,
+                 next_state, next_action,
+                 episode_done=None, importance=None,
+                 sess=None, **kwargs):
         """Interface for Training Value Fcn.
         The Deep Q-Network training procedure: apply `op_train_td`
         and `op_sync_target` with the periodic schedule specified by
@@ -625,14 +627,14 @@ class DeepQFuncActionIn(object):
 
         info = {}
         if self.countdown_td_ == 0:
-            _, td_loss, target_q = self.apply_op_train_td_(
+            _, td_loss, q, next_q, target_q = self.apply_op_train_td_(
                 sess=sess, state=state, action=action,
                 reward=reward, next_state=next_state, next_action=next_action,
                 episode_done=episode_done, importance=importance,
                 **kwargs
             )
             self.countdown_td_ = self.__N_STEP_TD
-            info = {"td_loss": td_loss, "target_q": target_q}
+            info = {"td_loss": td_loss, "q_vals": q, "next_q_vals": next_q, "target_q": target_q}
 
         if self.countdown_sync_ == 0:
             self.apply_op_sync_target_(sess=sess)
@@ -666,6 +668,10 @@ class DeepQFuncActionIn(object):
         """Action shape getter
         """
         return self.__ACTION_SHAPE
+
+    @property
+    def greedy_policy(self):
+        return self.__GREEDY_POLICY
 
     def get_subgraph_value(self):
         input_dict = {

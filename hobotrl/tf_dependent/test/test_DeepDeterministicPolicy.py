@@ -25,7 +25,7 @@ def f_net(inputs, action_shape, is_training):
     return action
 
 optimizer_dpg = tf.train.GradientDescentOptimizer(learning_rate=0.001)
-training_params = (optimizer_dpg,)
+training_params = (optimizer_dpg, 0.01)
 state_shape = (99, 99, 3)
 action_shape = (3, 2)
 batch_size = 10
@@ -35,7 +35,7 @@ print "=============="
 print "Test initialize QFunc : ",
 ddp = DeepDeterministicPolicy(
     f_net_ddp=f_net, state_shape=state_shape, action_shape=action_shape,
-    training_params=training_params, schedule=(3,),
+    training_params=training_params, schedule=(3,4),
     batch_size=batch_size,
     graph=None
 )
@@ -68,8 +68,18 @@ for i in range(10):
         state=state, grad_q_action=grad_q_action,
         sess=sess
     )
-    print "td_loss after td step {}".format(i),
+    print "dpg_loss after td step {}".format(i),
     print sess.run(ddp.sym_dpg_loss, feed_dict)
+print "pass!"
+    
+print "================="
+print "Test apply_op_sync_target_():"
+print "Initial diff_target: ",
+print sess.run(ddp.sym_target_diff_l2, feed_dict)
+for i in range(10):
+    ddp.apply_op_sync_target_(sess=sess)
+    print "diff_target after td step {}".format(i),
+    print sess.run(ddp.sym_target_diff_l2, feed_dict)
 
 print "================="
 print "Test improve policy:"
@@ -80,7 +90,7 @@ for i in range(20):
         state=state, grad_q_action=grad_q_action,
         sess=sess
     )
-    print "counters dpg {}".format(ddp.countdown_dpg_),
+    print "counters dpg {} sync{} ".format(ddp.countdown_dpg_, ddp.countdown_sync_),
     print "dpg_loss after td step {}".format(i),
     print sess.run(ddp.sym_dpg_loss, feed_dict)
 print 'pass!\n'
@@ -101,6 +111,11 @@ finally:
 
 print "Case 3: single sample with batch dim.:"
 print ddp.act(state[0, :][np.newaxis, :], sess=sess).shape
+print "pass!\n"
+
+print "Case 4: single sample with batch dim, use target:"
+print ddp.act(state=state[0, :][np.newaxis, :], sess=sess)
+print ddp.act(state=state[0, :][np.newaxis, :], sess=sess, use_target=True)
 print "pass!\n"
 
 sess.close()

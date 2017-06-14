@@ -4,7 +4,6 @@
 
 import numpy as np
 import hobotrl as hrl
-from value_function import DeepQFuncActionOut
 from hobotrl.mixin import BaseValueMixin, BasePolicyMixin
 from value_function import DeepQFuncActionOut, DeepQFuncActionIn
 from policy import NNStochasticPolicy, DeepDeterministicPolicy
@@ -20,17 +19,18 @@ class DeepQFuncMixin(BaseValueMixin):
     NOTE: assumes there is a mixing class implementing the `get_replay_buffer()`
           method.
     """
-    def __init__(self, is_action_in=False, **kwargs):
+    def __init__(self, dqn_param_dict, is_action_in=False, **kwargs):
         super(DeepQFuncMixin, self).__init__(**kwargs)
 
         self.__IS_ACTION_IN = is_action_in
-
+        dqn_param_dict.update(kwargs)
         if not is_action_in:
-            self.__dqf = DeepQFuncActionOut(**kwargs)
+            self.__dqf = DeepQFuncActionOut(**dqn_param_dict)
         else:
-            self.__dqf = DeepQFuncActionIn(**kwargs)
+            self.__dqf = DeepQFuncActionIn(**dqn_param_dict)
 
-        self.__GREEDY_POLICY = False if is_action_in else self.__dqf.greedy_policy
+        # self.__GREEDY_POLICY = False if is_action_in else self.__dqf.greedy_policy
+        self.__GREEDY_POLICY = self.__dqf.greedy_policy
         self.__BATCH_SIZE = kwargs['batch_size']
 
     def get_value(self, state, action=None, **kwargs):
@@ -64,10 +64,17 @@ class DeepQFuncMixin(BaseValueMixin):
 
             # sample `next_action` if not using greedy policy and the replay buffer
             # does not store `next_action` explicitly
-            if not self.__GREEDY_POLICY and 'next_action' not in batch:
-                next_action = np.array(
-                    [self.act(s_slice, **kwargs) for s_slice in batch['next_state']]
-                )
+            if 'next_action' not in batch:
+                if not self.__GREEDY_POLICY:  # policy + exploration
+                    next_action = np.array([
+                        self.act(s_slice, use_target=True, **kwargs)
+                        for s_slice in batch['next_state']
+                    ])
+                else:  # pure policy, no exploration
+                    next_action = np.array([
+                        self.act(s_slice, exploration_off=True, use_target=True, **kwargs)
+                        for s_slice in batch['next_state']
+                    ])
                 batch['next_action'] = next_action
 
             kwargs.update(batch)  # pass the batch in as kwargs
@@ -157,9 +164,10 @@ class NNStochasticPolicyMixin(BasePolicyMixin):
 
 # TODO: inherit from a base class which improves policy?
 class DeepDeterministicPolicyMixin(BasePolicyMixin):
-    def __init__(self, **kwargs):
+    def __init__(self, ddp_param_dict, **kwargs):
         super(DeepDeterministicPolicyMixin, self).__init__(**kwargs)
-        self.__ddp = DeepDeterministicPolicy(**kwargs)
+        ddp_param_dict.update(kwargs)
+        self.__ddp = DeepDeterministicPolicy(**ddp_param_dict)
         self.__BATCH_SIZE = kwargs['batch_size']
 
     def act(self, state, **kwargs):
@@ -167,7 +175,7 @@ class DeepDeterministicPolicyMixin(BasePolicyMixin):
         assert state.shape == self.__ddp.state_shape
         state = state[np.newaxis, :]
         kwargs.update({"sess": self.sess})
-        return self.__ddp.act(state=state, **kwargs)
+        return self.__ddp.act(state=state, **kwargs)[0, :]
 
     def reinforce_(self, state, action, reward, next_state,
                    episode_done=False, **kwargs):
@@ -178,7 +186,8 @@ class DeepDeterministicPolicyMixin(BasePolicyMixin):
         self_info = self.improve_policy_(
             state, action, reward, next_state, episode_done, **kwargs
         )
-        return parent_info.update(self.info)
+        parent_info.update(self_info)
+        return parent_info
 
     def improve_policy_(self, state, action, reward, next_state,
                    episode_done=False, **kwargs):
@@ -201,7 +210,9 @@ class DeepDeterministicPolicyMixin(BasePolicyMixin):
 
             kwargs.update(batch)  # pass the batch in as kwargs
             kwargs.update({"sess": self.sess})
-            return self.__dqf.improve_policy_(**kwargs)
+            info = self.__ddp.improve_policy_(**kwargs)
+            info.update({'grad_norm_q_action': np.sqrt(np.sum(batch['grad_q_action']**2))})
+            return info
         # if replay buffer is not filled yet.
         else:
             return {}

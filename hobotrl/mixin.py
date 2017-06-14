@@ -279,9 +279,13 @@ class OUExplorationMixin(BasePolicyMixin):
 
     def act(self, state, **kwargs):
         action = super(OUExplorationMixin, self).act(state, **kwargs)
-        self.__x += self.__theta * (self.__mu - self.__x) + \
-                    self.__sigma * np.random.randn(*self.__x_shape)
-        return action + self.__x
+        if 'exploration_off' in kwargs and kwargs['exploration_off']:
+            pass
+        else:
+            self.__x += self.__theta * (self.__mu - self.__x) + \
+                        self.__sigma * np.random.randn(*self.__x_shape)
+            action += self.__x
+        return action
 
     @property
     def ou_state(self):

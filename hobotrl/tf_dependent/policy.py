@@ -174,9 +174,12 @@ class DeepDeterministicPolicy(object):
         self.__STATE_SHAPE = state_shape
         self.__ACTION_SHAPE = action_shape
         optimizer_dpg = training_params[0]
+        target_sync_rate = training_params[1]
         self.__optimizer_dpg = optimizer_dpg
         self.__N_STEP_DPG = schedule[0]
+        self.__N_STEP_SYNC = schedule[1]
         self.countdown_dpg_ = self.__N_STEP_DPG
+        self.countdown_sync_ = self.__N_STEP_SYNC
 
         # === Graph check ===
         if graph is None:
@@ -190,12 +193,17 @@ class DeepDeterministicPolicy(object):
                     self.__init_placeholders()
 
                 # === Intermediates ===
-                with tf.variable_scope('policy') as scope_pi:
+                with tf.variable_scope('non-target') as scope_non:
                     action = f_net_ddp(state, action_shape, is_training)
-
-                policy_vars = tf.get_collection(
+                with tf.variable_scope('target') as scope_target:
+                    target_action = f_net_ddp(state, action_shape, is_training)
+                non_target_vars = tf.get_collection(
                     key=tf.GraphKeys.TRAINABLE_VARIABLES,
-                    scope=scope_pi.name
+                    scope=scope_non.name
+                )
+                target_vars = tf.get_collection(
+                    key=tf.GraphKeys.TRAINABLE_VARIABLES,
+                    scope=scope_target.name
                 )
 
                 # dpg loss                
@@ -207,22 +215,51 @@ class DeepDeterministicPolicy(object):
                 # regularization loss
                 list_reg_loss = tf.get_collection(
                     key=tf.GraphKeys.REGULARIZATION_LOSSES,
-                    scope=scope_pi.name
+                    scope=scope_non.name
                 )
                 reg_loss = sum(list_reg_loss)
 
-                # dpg, TODO: merge moving_averages_op with op_train_td
+                # dpg
+                ops_update = tf.get_collection(
+                    key=tf.GraphKeys.UPDATE_OPS,
+                    scope=scope_non.name
+                )
                 op_train_dpg = optimizer_dpg.minimize(
                     tf.add(dpg_loss, reg_loss, name='op_train_dpg'),
-                    var_list=policy_vars
+                    var_list=non_target_vars
+                )
+                op_train_dpg = tf.group(
+                    op_train_dpg, *ops_update,
+                    name='op_train_td'
                 )
 
+                # sync
+                op_list_sync_target = [
+                    target_var.assign_sub(
+                        target_sync_rate*(target_var-non_target_var)
+                    ) for target_var, non_target_var in zip(target_vars, non_target_vars)
+                ]
+                target_diff_l2 = sum([
+                    tf.reduce_sum(tf.square(target_var - non_target_var))
+                    for target_var, non_target_var in zip(target_vars, non_target_vars)]
+                )
+                op_sync_target = tf.group(
+                    *op_list_sync_target,
+                    name='op_sync_target'
+                )
         self.sym_state = state
         self.sym_grad_q_action = grad_q_action
         self.sym_is_training = is_training
         self.sym_action = action
+        self.sym_target_action = target_action
         self.sym_dpg_loss = dpg_loss
-        self.op_train_dpg = op_train_dpg        
+        self.sym_target_diff_l2 = target_diff_l2
+        self.op_train_dpg = op_train_dpg
+        self.op_sync_target = op_sync_target
+
+    def apply_op_sync_target_(self, sess, **kwargs):
+        """Wrapper method for evaluating op_sync_target"""
+        return sess.run(self.op_sync_target)
 
     def apply_op_train_dpg_(self, state, grad_q_action, sess=None, **kwargs):
         """Wrapper method for evaluating op_train_dpg"""
@@ -256,6 +293,7 @@ class DeepDeterministicPolicy(object):
         :return:
         """
         self.countdown_dpg_ -= 1
+        self.countdown_sync_ -= 1
         info = {}
         if self.countdown_dpg_ == 0:
             _, dpg_loss = self.apply_op_train_dpg_(
@@ -265,10 +303,17 @@ class DeepDeterministicPolicy(object):
             info['dpg_loss'] = dpg_loss
             self.countdown_dpg_ = self.__N_STEP_DPG
 
+        if self.countdown_sync_ == 0:
+            self.apply_op_sync_target_(sess=sess)
+            self.countdown_sync_ = self.__N_STEP_SYNC
+
         return info
 
-    def act(self, state, sess=None, **kwargs):
-        return sess.run(self.sym_action, {self.sym_state: state})
+    def act(self, state, sess=None, use_target=False, **kwargs):
+        if use_target:
+            return sess.run(self.sym_target_action, {self.sym_state: state})
+        else:
+            return sess.run(self.sym_action, {self.sym_state: state})
 
     @property
     def state_shape(self):
