@@ -25,7 +25,7 @@ def f_net(inputs, action_shape, is_training):
     return action
 
 optimizer_dpg = tf.train.GradientDescentOptimizer(learning_rate=0.001)
-training_params = (optimizer_dpg, 0.01)
+training_params = (optimizer_dpg, 0.01, 10.0)
 state_shape = (99, 99, 3)
 action_shape = (3, 2)
 batch_size = 10
@@ -34,9 +34,8 @@ graph = tf.get_default_graph()
 print "=============="
 print "Test initialize QFunc : ",
 ddp = DeepDeterministicPolicy(
-    f_net_ddp=f_net, state_shape=state_shape, action_shape=action_shape,
+    f_net=f_net, state_shape=state_shape, action_shape=action_shape,
     training_params=training_params, schedule=(3,4),
-    batch_size=batch_size,
     graph=None
 )
 print 'pass!\n'

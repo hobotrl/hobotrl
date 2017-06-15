@@ -35,10 +35,8 @@ class DeepQFuncActionOut(object):
     instance parameters.
     """
 
-    def __init__(self, gamma,
-                 f_net_dqn, state_shape, num_actions,
-                 training_params, schedule, batch_size,
-                 greedy_policy=True, ddqn=False,
+    def __init__(self, gamma, f_net, state_shape, num_actions,
+                 training_params, schedule, greedy_policy=True, ddqn=False,
                  graph=None, **kwargs):
         """Initialization
         Unpacks parameters, build related ops on graph (placeholders, networks,
@@ -46,83 +44,84 @@ class DeepQFuncActionOut(object):
 
         Note regularization losses and moving average ops are retrieved with
         variable scope and default graphkey with `tf.get_collection()`.
-        Therefore f_net_dqn should properly register these ops to corresponding
+        Therefore f_net should properly register these ops to corresponding
         variable collections.
 
-        Parameters
-        ----------
-        :param gamma : value discount factor.
-        :param f_net_dqn : functional interface for building parameterized value fcn.
-        :param state_shape : shape of state and next_state
-        :param num_actions : number of actions
-        :param training_params : parameters for training value fcn.. A tuple of
+        :param gamma: value discount factor.
+        :param f_net: functional interface for building parameterized value fcn.
+        :param state_shape: shape of state and next_state
+        :param num_actions: number of actions
+        :param training_params: parameters for training value fcn.. A tuple of
             two members:
-                optimizer_td : Tensorflow optimizer for gradient-based opt.
-                target_sync_rate: rate for copying the weights of the
+                0. optimizer_td: Tensorflow optimizer for gradient-based opt.
+                1. target_sync_rate: rate for copying the weights of the
                     non-target network to the target network. 1.0 means
                     hard-copy and [0, 1.0) means soft copy.
-        :param schedule : periods of TD and Target Sync. ops. A length-2 tuple:
-                n_step_td : steps between TD updates.
-                n_step_sync : steps between weight syncs.
-        :param batch_size : batch_size
-        :param greedy_policy : if evaluate the greedy policy.
-        :param ddqn : True to enable Double DQN.
-        :param graph : tf.Graph to build ops. Use default graph if None
+                2. max_td_grad_norm: maximum l2 norm for TD gradient.
+        :param schedule: periods of TD and Target Sync. ops. A length-2 tuple:
+                0. n_step_td: steps between TD updates.
+                1. n_step_sync: steps between weight syncs.
+        :param greedy_policy: if evaluate the greedy policy.
+        :param ddqn: True to enable Double DQN.
+        :param graph: tf.Graph to build ops. Use default graph if None
         """
-        # Unpack params
+        # === Unpack params ===
+        # graph related
         self.__GAMMA = gamma
-
-        self.__F_NET = f_net_dqn
+        self.__F_NET = f_net
         self.__STATE_SHAPE = state_shape
         self.__NUM_ACTIONS = num_actions
-        optimizer_td, target_sync_rate = training_params
+        if graph is None:
+            graph = tf.get_default_graph()
+        self.__GREEDY_POLICY = greedy_policy
+        self.__DDQN = ddqn
+        # optimization related
+        optimizer_td = training_params[0]
+        target_sync_rate = training_params[1]
+        max_td_grad_norm = training_params[2]
         self.__optimizer_td = optimizer_td
         self.__TARGET_SYNC_RATE = target_sync_rate
+        self.__MAX_TD_GRAD_NROM = max_td_grad_norm
+        # meta schedule
         self.__N_STEP_TD = schedule[0]
         self.__N_STEP_SYNC = schedule[1]
         self.countdown_td_ = self.__N_STEP_TD
         self.countdown_sync_ = self.__N_STEP_SYNC
 
-        self.__GREEDY_POLICY = greedy_policy
-
-        # Graph check
-        if graph is None:
-            graph = tf.get_default_graph()
-
-        # Build ops
+        # === Build ops ===
         with graph.as_default():
             with tf.variable_scope('DQN') as scope_dqn:
-                # Placeholders
+                # placeholders
                 state, action, reward, next_state, next_action, \
                 importance, episode_done, is_training = \
                     self.__init_placeholders()
-
-                # Intermediates
-                # non-target network
+                # value network
                 with tf.variable_scope('non-target') as scope_non:
-                    q = f_net_dqn(state, num_actions, is_training)
+                    q = f_net(state, num_actions, is_training)
                     scope_non.reuse_variables()  # reuse non-target weights
-                    double_q = f_net_dqn(state, num_actions, is_training)
-                # target network
+                    double_q = f_net(state, num_actions, is_training)
                 with tf.variable_scope('target') as scope_target:
-                    next_q = f_net_dqn(next_state, num_actions, is_training)
-
-                # current Q value
+                    next_q = f_net(next_state, num_actions, is_training)
+                n_vars = tf.get_collection(
+                    key=tf.GraphKeys.TRAINABLE_VARIABLES,
+                    scope=scope_non.name
+                )
+                t_vars = tf.get_collection(
+                    key=tf.GraphKeys.TRAINABLE_VARIABLES,
+                    scope=scope_target.name
+                )
+                # select Q values and actions
                 q_sel = tf.reduce_sum(
-                            q * tf.one_hot(action, num_actions),
-                            axis=1, name='q_sel'
-                        )
-
-                # next Q value
+                    q * tf.one_hot(action, num_actions), axis=1, name='q_sel'
+                )
                 if greedy_policy:
                     if ddqn:  # use non-target network to select the greedy action.
-                        greedy_action = tf.argmax(double_q, axis=1, name='action_greedy')
-                        next_q_sel = tf.stop_gradient(
-                            tf.reduce_sum(
-                                next_q*tf.one_hot(greedy_action, num_actions),
-                                axis=1
-                            ), name='next_q_sel'
+                        greedy_action = tf.argmax(
+                            double_q, axis=1, name='action_greedy'
                         )
+                        next_q_sel = tf.stop_gradient(tf.reduce_sum(
+                            next_q*tf.one_hot(greedy_action, num_actions), axis=1
+                        ), name='next_q_sel')
                     else:  # use target network to select the greedy actions
                         next_q_sel = tf.reduce_max(next_q, axis=1, name='next_q_sel')
                 else:
@@ -130,57 +129,52 @@ class DeepQFuncActionOut(object):
                         next_q * tf.one_hot(next_action, num_actions),
                         axis=1, name='next_q_sel'
                     )
-
-                target_q = tf.add(reward, gamma * next_q_sel * (1 - episode_done), name='target_q')
-                td = importance * tf.subtract(
-                     target_q,
-                     q_sel,
-                     name='td')
+                # td loss
+                td_target = tf.add(
+                    reward, gamma*next_q_sel*(1-episode_done), name='td_target'
+                )
+                td = importance * tf.subtract(td_target, q_sel, name='td')
                 td_loss = tf.reduce_mean(tf.square(td), name='td_loss')
-
+                # regularization loss
                 list_reg_loss = tf.get_collection(
                     key=tf.GraphKeys.REGULARIZATION_LOSSES,
                     scope=scope_non.name
                 )
                 reg_loss = sum(list_reg_loss)
-
-                non_target_vars = tf.get_collection(
-                    key=tf.GraphKeys.TRAINABLE_VARIABLES,
-                    scope=scope_non.name
+                # td grad, with regularization, grad clipped, and updates
+                total_loss = tf.add(td_loss, reg_loss, name='op_train_td')
+                grad_and_vars = optimizer_td.compute_gradients(
+                     total_loss, n_vars
                 )
-                target_vars = tf.get_collection(
-                    key=tf.GraphKeys.TRAINABLE_VARIABLES,
-                    scope=scope_target.name
+                list_clipped, td_grad_norm = tf.clip_by_global_norm(
+                    [grad for grad, var in grad_and_vars], max_td_grad_norm
                 )
-                # Training ops
+                op_train_td = optimizer_td.apply_gradients(
+                    [(grad_clipped, var) for grad_clipped, (grad, var) in
+                     zip(list_clipped, grad_and_vars)]
+                )
                 ops_update = tf.get_collection(
-                    key=tf.GraphKeys.UPDATE_OPS,
-                    scope=scope_non.name
-                )
-                op_train_td = optimizer_td.minimize(
-                    tf.add(td_loss, reg_loss),
-                    var_list=non_target_vars
+                    key=tf.GraphKeys.UPDATE_OPS, scope=scope_non.name
                 )
                 op_train_td = tf.group(
-                    op_train_td, *ops_update,
-                    name='op_train_td'
+                    op_train_td, *ops_update, name='op_train_td'
                 )
                 # sync
                 op_list_sync_target = [
-                    target_var.assign_sub(
-                        target_sync_rate*(target_var-non_target_var)
-                    ) for target_var, non_target_var in zip(target_vars, non_target_vars)
+                    t_var.assign_sub(target_sync_rate*(t_var-n_var))
+                    for t_var, n_var in zip(t_vars, n_vars)
                 ]
                 target_diff_l2 = sum([
-                    tf.reduce_sum(tf.square(target_var - non_target_var))
-                    for target_var, non_target_var in zip(target_vars, non_target_vars)]
+                    tf.reduce_sum(tf.square(t_var - n_var))
+                    for t_var, n_var in zip(t_vars, n_vars)]
                 )
                 op_sync_target = tf.group(
-                    *op_list_sync_target,
-                    name='op_sync_target'
+                    *op_list_sync_target, name='op_sync_target'
                 )
+                op_copy = [t_var.assign(n_var) for t_var, n_var in zip(t_vars, n_vars)]
 
-        # Register op handles
+        # === Register symbols ===
+        # inputs
         self.sym_state = state
         self.sym_action = action
         self.sym_reward = reward
@@ -189,26 +183,30 @@ class DeepQFuncActionOut(object):
         self.sym_importance = importance
         self.sym_episode_done = episode_done
         self.sym_is_training = is_training
+        # outputs and intermediates
         self.sym_q = q
         self.sym_double_q = double_q
         self.sym_q_sel = q_sel
-        # TODO: target_q
         self.sym_next_q = next_q
         self.sym_next_q_sel = next_q_sel
+        self.sym_td_target = td_target
         self.sym_td_loss = td_loss
+        self.sym_td_grad_norm = td_grad_norm
         self.sym_target_diff_l2 = target_diff_l2
+        # training ops
         self.op_train_td = op_train_td
         self.op_sync_target = op_sync_target
+        self.op_copy = op_copy
 
     def apply_op_sync_target_(self, sess, **kwargs):
-        """Wrapper method for evaluating op_sync_target"""
-        return sess.run(self.op_sync_target)
+        """Apply op_sync_target"""
+        return sess.run([self.op_sync_target, self.sym_target_diff_l2])
 
     def apply_op_train_td_(self, state, action, reward,
                            next_state, next_action=None,
                            episode_done=None, importance=None,
                            sess=None, **kwargs):
-        """Wrapper method for evaluating op_train_td"""
+        """Apply op_train_td"""
         feed_dict = {
             self.sym_state: state,
             self.sym_action: action,
@@ -224,16 +222,17 @@ class DeepQFuncActionOut(object):
             feed_dict[self.sym_importance] = importance
         if episode_done is not None:
             feed_dict[self.sym_episode_done] = episode_done
+        return sess.run(
+            [self.op_train_td, self.sym_td_loss, self.sym_q_sel,
+             self.sym_next_q_sel, self.sym_td_target, self.sym_td_grad_norm],
+            feed_dict
+        )
 
-        # TODO: should fetch target q?
-        return sess.run([self.op_train_td, self.sym_td_loss, self.sym_next_q_sel], feed_dict)
-
-    def fetch_td_loss_(self,
-                       state, action, reward,
+    def fetch_td_loss_(self, state, action, reward,
                        next_state, next_action=None,
                        episode_done=None, importance=None,
                        sess=None, **kwargs):
-        """Wrapper method for fetching td_loss"""
+        """Fetch td_loss"""
         feed_dict = {
             self.sym_state: state,
             self.sym_action: action,
@@ -276,36 +275,34 @@ class DeepQFuncActionOut(object):
         :param kwargs:
         :return:
         """
-        self.countdown_td_ -= 1
-        self.countdown_sync_ -= 1
+        self.countdown_td_ -= 1 if self.countdown_td_>=0 else 0
+        self.countdown_sync_ -= 1 if self.countdown_sync_>=0 else 0
         info = {}
-        td_loss = 0
         if self.countdown_td_ == 0:
-            _, td_loss, next_q = self.apply_op_train_td_(
+            _, td_loss, q, next_q, td_target, td_grad_norm = self.apply_op_train_td_(
                 sess=sess, state=state, action=action,
                 reward=reward, next_state=next_state, next_action=next_action,
                 episode_done=episode_done, importance=importance,
                 **kwargs
             )
             self.countdown_td_ = self.__N_STEP_TD
-            info = {"td_loss": td_loss, "target_q": next_q}
-
+            info.update({
+                "td_loss": td_loss, "q_vals": q, "next_q_vals": next_q,
+                "td_target": td_target, 'td_grad_norm': td_grad_norm})
         if self.countdown_sync_ == 0:
-            self.apply_op_sync_target_(sess=sess)
+            _, diff_l2 = self.apply_op_sync_target_(sess=sess)
             self.countdown_sync_ = self.__N_STEP_SYNC
-
+            info.update({"dqn_target_diff_l2": diff_l2})
         return info
 
     def get_value(self, state, action=None, sess=None, **kwargs):
         if action is None:
             return sess.run(
-                self.sym_q,
-                feed_dict={self.sym_state: state}
+                self.sym_q, feed_dict={self.sym_state: state}
             )
         else:
             return sess.run(
-                self.sym_q_sel,
-                feed_dict={
+                self.sym_q_sel, feed_dict={
                     self.sym_state: state,
                     self.sym_action: action
                 }
@@ -406,136 +403,133 @@ class DeepQFuncActionIn(object):
     instance parameters.
     """
 
-    def __init__(self, gamma,
-                 f_net_dqn, state_shape, action_shape,
-                 training_params, schedule, batch_size,
-                 greedy_policy=True, graph=None, **kwargs):
+    def __init__(self, gamma, f_net, state_shape, action_shape,
+                 training_params, schedule, greedy_policy=True,
+                 graph=None, **kwargs):
         """Initialization
         Unpacks parameters, build related ops on graph (placeholders, networks,
         and training ops), and register handels to important ops.
 
         Note regularization losses and moving average ops are retrieved with
         variable scope and default graphkey with `tf.get_collection()`.
-        Therefore f_net_dqn should properly register these ops to corresponding
+        Therefore f_net should properly register these ops to corresponding
         variable collections.
 
-        Parameters
-        ----------
-        :param gamma : value discount factor.
-        :param f_net_dqn : functional interface for building parameterized value fcn.
-        :param state_shape : shape of states
-        :param action_shape : shape of actions
-        :param training_params : parameters for training value function. A tuple of
+        :param gamma: value discount factor.
+        :param f_net: functional interface for building parameterized value fcn.
+        :param state_shape: shape of state and next_state
+        :param action_shape: shape of actions
+        :param training_params: parameters for training value fcn.. A tuple of
             two members:
-                optimizer_td : Tensorflow optimizer for gradient-based opt.
-                target_sync_rate: rate for copying the weights of the
+                0. optimizer_td: Tensorflow optimizer for gradient-based opt.
+                1. target_sync_rate: rate for copying the weights of the
                     non-target network to the target network. 1.0 means
                     hard-copy and [0, 1.0) means soft copy.
-        :param schedule : periods of TD and Target Sync. ops. A length-2 tuple:
-                n_step_td : steps between TD updates.
-                n_step_sync : steps between weight syncs.
-        :param batch_size :
-        :param greedy_policy : if evaluate the greedy policy.
-        :param graph : tf.Graph to build ops. Use default graph if None:
+                2. max_td_grad_norm: maximum l2 norm for TD gradient.
+        :param schedule: periods of TD and Target Sync. ops. A length-2 tuple:
+                0. n_step_td: steps between TD updates.
+                1. n_step_sync: steps between weight syncs.
+        :param greedy_policy: if evaluate the greedy policy.
+        :param ddqn: True to enable Double DQN.
+        :param graph: tf.Graph to build ops. Use default graph if None
         """
         # Unpack params
+        # === Unpack params ===
+        # graph related
         self.__GAMMA = gamma
-
-        self.__F_NET = f_net_dqn
+        self.__F_NET = f_net
         self.__STATE_SHAPE = state_shape
         self.__ACTION_SHAPE = action_shape
-        optimizer_td, target_sync_rate = training_params
-        self.__optimizer_td = optimizer_td
-        self.__TARGET_SYNC_RATE = target_sync_rate
-        self.__N_STEP_TD = schedule[0]
-        self.__N_STEP_SYNC = schedule[1]
-        self.__GREEDY_POLICY = greedy_policy
-        self.countdown_td_ = self.__N_STEP_TD
-        self.countdown_sync_ = self.__N_STEP_SYNC
-
-        # === Graph check ===
         if graph is None:
             graph = tf.get_default_graph()
+        self.__GREEDY_POLICY = greedy_policy
+        # optimization related
+        optimizer_td = training_params[0]
+        target_sync_rate = training_params[1]
+        max_td_grad_norm = training_params[2]
+        self.__optimizer_td = optimizer_td
+        self.__TARGET_SYNC_RATE = target_sync_rate
+        self.__MAX_TD_GRAD_NROM = max_td_grad_norm
+        # meta schedule
+        self.__N_STEP_TD = schedule[0]
+        self.__N_STEP_SYNC = schedule[1]
+        self.countdown_td_ = self.__N_STEP_TD
+        self.countdown_sync_ = self.__N_STEP_SYNC
 
         # === Build ops ===
         with graph.as_default():
             with tf.variable_scope('DQN') as scope_dqn:
-                # === Build Placeholders ===
+                # placeholders
                 state, action, reward, next_state, next_action, \
                 importance, episode_done, is_training = \
                     self.__init_placeholders()
-
-                # === Build Intermediates ===
-                # q values
+                # value network
                 with tf.variable_scope('non-target') as scope_non:
-                    q = f_net_dqn(state, action, is_training)
+                    q = f_net(state, action, is_training)
                 with tf.variable_scope('target') as scope_target:
-                    next_q = f_net_dqn(next_state, next_action, is_training)
+                    next_q = f_net(next_state, next_action, is_training)
                 assert len(q.get_shape().dims)== 1
                 assert len(next_q.get_shape().dims)== 1
-
+                n_vars = tf.get_collection(
+                    key=tf.GraphKeys.TRAINABLE_VARIABLES,
+                    scope=scope_non.name
+                )
+                t_vars = tf.get_collection(
+                    key=tf.GraphKeys.TRAINABLE_VARIABLES,
+                    scope=scope_target.name
+                )
                 # get gradients:
                 #   if q.shape = [batch_size,], action.shape = [batch_size]+action_shape,
                 #   tf.gradients() will compute per-sample grad by default
                 grad_q_action = tf.gradients(q, action, name='grad_q_action')[0]
                 grad_q_action_t = tf.gradients(next_q, next_action, name='grad_q_action_t')[0]
-
                 # td_loss
-                target_q = tf.add(
-                    reward, gamma * next_q * (1 - episode_done),
+                td_target = tf.add(
+                    reward, importance * gamma * next_q * (1 - episode_done),
                     name='target_q'
                 )
-                td = importance * tf.subtract(target_q, q, name='td')
+                td = tf.subtract(td_target, q, name='td')
                 td_loss = tf.reduce_mean(tf.square(td), name='td_loss')
-
                 # regularization loss
                 list_reg_loss = tf.get_collection(
                     key=tf.GraphKeys.REGULARIZATION_LOSSES,
                     scope=scope_non.name
                 )
                 reg_loss = sum(list_reg_loss)
-
-                # === Build Training Ops ===
-                # get variables
-                non_target_vars = tf.get_collection(
-                    key=tf.GraphKeys.TRAINABLE_VARIABLES,
-                    scope=scope_non.name
+                # td grad
+                total_loss = tf.add(td_loss, reg_loss, name='op_train_td')
+                grad_and_vars = optimizer_td.compute_gradients(
+                     total_loss, n_vars
                 )
-                target_vars = tf.get_collection(
-                    key=tf.GraphKeys.TRAINABLE_VARIABLES,
-                    scope=scope_target.name
+                list_clipped, td_grad_norm = tf.clip_by_global_norm(
+                    [grad for grad, var in grad_and_vars], max_td_grad_norm 
                 )
-
-                # td ops
+                op_train_td = optimizer_td.apply_gradients(
+                    [(grad_clipped, var) for grad_clipped, (grad, var) in
+                     zip(list_clipped, grad_and_vars)]
+                )
                 ops_update = tf.get_collection(
-                    key=tf.GraphKeys.UPDATE_OPS,
-                    scope=scope_non.name
-                )
-                op_train_td = optimizer_td.minimize(
-                    tf.add(td_loss, reg_loss),
-                    var_list=non_target_vars
+                    key=tf.GraphKeys.UPDATE_OPS, scope=scope_non.name
                 )
                 op_train_td = tf.group(
-                    op_train_td, *ops_update,
-                    name='op_train_td'
+                    op_train_td, *ops_update, name='op_train_td'
                 )
-
                 # sync
                 op_list_sync_target = [
-                    target_var.assign_sub(
-                        target_sync_rate*(target_var-non_target_var)
-                    ) for target_var, non_target_var in zip(target_vars, non_target_vars)
+                    t_var.assign_sub(target_sync_rate*(t_var-n_var))
+                    for t_var, n_var in zip(t_vars, n_vars)
                 ]
                 target_diff_l2 = sum([
-                    tf.reduce_sum(tf.square(target_var - non_target_var))
-                    for target_var, non_target_var in zip(target_vars, non_target_vars)]
+                    tf.reduce_sum(tf.square(t_var - n_var))
+                    for t_var, n_var in zip(t_vars, n_vars)]
                 )
                 op_sync_target = tf.group(
-                    *op_list_sync_target,
-                    name='op_sync_target'
+                    *op_list_sync_target, name='op_sync_target'
                 )
+                op_copy = [t_var.assign(n_var) for t_var, n_var in zip(t_vars, n_vars)]
 
-        # === Register op handles ===
+        # === Register symbols ===
+        # inputs
         self.sym_state = state
         self.sym_action = action
         self.sym_reward = reward
@@ -544,25 +538,28 @@ class DeepQFuncActionIn(object):
         self.sym_importance = importance
         self.sym_episode_done = episode_done
         self.sym_is_training = is_training
+        # outputs and intermediates
         self.sym_q = q
         self.sym_next_q = next_q
         self.sym_grad_q_action = grad_q_action
         self.sym_grad_q_action_t = grad_q_action_t
-        self.sym_target_q = target_q
+        self.sym_td_grad_norm = td_grad_norm
+        self.sym_td_target = td_target
         self.sym_td_loss = td_loss
         self.sym_target_diff_l2 = target_diff_l2
         self.op_train_td = op_train_td
         self.op_sync_target = op_sync_target
+        self.op_copy = op_copy
 
     def apply_op_sync_target_(self, sess, **kwargs):
-        """Wrapper method for evaluating op_sync_target"""
-        return sess.run(self.op_sync_target)
+        """Apply op_sync_target."""
+        return sess.run([self.op_sync_target, self.sym_target_diff_l2])
 
     def apply_op_train_td_(self, state, action, reward,
                            next_state, next_action,
                            episode_done=None, importance=None,
                            sess=None, **kwargs):
-        """Wrapper method for evaluating op_train_td"""
+        """Apply op_train_td"""
         feed_dict = {
             self.sym_state: state,
             self.sym_action: action,
@@ -574,18 +571,17 @@ class DeepQFuncActionIn(object):
             feed_dict[self.sym_importance] = importance
         if episode_done is not None:
             feed_dict[self.sym_episode_done] = episode_done
-
         return sess.run(
-            [self.op_train_td, self.sym_td_loss, self.sym_q, self.sym_next_q, self.sym_target_q],
+            [self.op_train_td, self.sym_td_loss, self.sym_q,
+             self.sym_next_q, self.sym_td_target, self.sym_td_grad_norm],
             feed_dict
         )
 
-    def fetch_td_loss_(self,
-                       state, action, reward,
-                       next_state, next_action,
-                       episode_done=None, importance=None,
-                       sess=None, **kwargs):
-        """Wrapper method for fetching td_loss"""
+    def fetch_td_loss_(self, state, action, reward,
+                 next_state, next_action,
+                 episode_done=None, importance=None,
+                 sess=None, **kwargs):
+        """Fetch td_loss"""
         feed_dict = {
             self.sym_state: state,
             self.sym_action: action,
@@ -597,7 +593,6 @@ class DeepQFuncActionIn(object):
             feed_dict[self.sym_importance] = importance
         if episode_done is not None:
             feed_dict[self.sym_episode_done] = episode_done
-
         return sess.run(self.sym_td_loss, feed_dict)
 
     def improve_value_(self, state, action, reward,
@@ -609,8 +604,6 @@ class DeepQFuncActionIn(object):
         and `op_sync_target` with the periodic schedule specified by
         `self.__N_STEP_TD` and `self.__N_STEP_SYNC`.
 
-        Parameters
-        ----------
         :param state: a batch of state
         :param action: a batch of action
         :param reward: a batch of reward
@@ -622,24 +615,24 @@ class DeepQFuncActionIn(object):
         :param kwargs:
         :return:
         """
-        self.countdown_td_ -= 1
-        self.countdown_sync_ -= 1
-
+        self.countdown_td_ -= 1 if self.countdown_td_>=0 else 0
+        self.countdown_sync_ -= 1 if self.countdown_sync_>=0 else 0
         info = {}
         if self.countdown_td_ == 0:
-            _, td_loss, q, next_q, target_q = self.apply_op_train_td_(
+            _, td_loss, q, next_q, td_target, td_grad_norm = self.apply_op_train_td_(
                 sess=sess, state=state, action=action,
                 reward=reward, next_state=next_state, next_action=next_action,
                 episode_done=episode_done, importance=importance,
                 **kwargs
             )
             self.countdown_td_ = self.__N_STEP_TD
-            info = {"td_loss": td_loss, "q_vals": q, "next_q_vals": next_q, "target_q": target_q}
-
+            info.update({
+                "td_loss": td_loss, "q_vals": q, "next_q_vals": next_q,
+                "td_target": td_target, 'td_grad_norm': td_grad_norm})
         if self.countdown_sync_ == 0:
-            self.apply_op_sync_target_(sess=sess)
+            _, diff_l2 = self.apply_op_sync_target_(sess=sess)
             self.countdown_sync_ = self.__N_STEP_SYNC
-
+            info.update({"dqn_target_diff_l2": diff_l2})
         return info
 
     def get_value(self, state, action, sess=None, **kwargs):

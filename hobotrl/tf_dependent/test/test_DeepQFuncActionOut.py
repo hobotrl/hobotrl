@@ -34,7 +34,7 @@ def f_net(inputs, num_outputs, is_training):
 
 optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
 target_sync_rate = 0.01
-training_params = (optimizer_td, target_sync_rate)
+training_params = (optimizer_td, target_sync_rate, 10.0)
 state_shape = (99, 99, 3)
 batch_size = 10
 num_actions = 5
@@ -50,9 +50,8 @@ print "Test initialize QFunc with greedy_policy={} and ddqn={}:".format(
 
 dqn = DeepQFuncActionOut(
     gamma=0.99,
-    f_net_dqn=f_net, state_shape=state_shape, num_actions=num_actions,
+    f_net=f_net, state_shape=state_shape, num_actions=num_actions,
     training_params=training_params, schedule=(2,5),
-    batch_size=batch_size,
     greedy_policy=greedy_policy, ddqn=ddqn,
     graph=None
 )

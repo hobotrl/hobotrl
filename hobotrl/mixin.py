@@ -93,6 +93,12 @@ class BasePolicyMixin(object):
         return parent_info
 
     def act(self, state, **kwargs):
+        if 'batch' not in kwargs or not kwargs['batch']:
+            return self.act_single_(state, **kwargs)
+        else:
+            return [self.act_single_(s_slice, **kwargs) for s_slice in state]
+
+    def act_single_(self, state, **kwargs):
         raise NotImplementedError(
             "BasePolicyMixin.act() :" +
             "abstract method not implemented."
@@ -156,8 +162,8 @@ class EpsilonGreedyPolicyMixin(BasePolicyMixin):
 
         self.__epgp = EpsilonGreedyPolicy(**kwargs)
 
-    def act(self, *args, **kwargs):
-        return self.__epgp.act(*args, **kwargs)
+    def act_single_(self, *args, **kwargs):
+        return self.__epgp.act_single_(*args, **kwargs)
 
 
 class ReplayMixin(object):
@@ -281,6 +287,8 @@ class OUExplorationMixin(BasePolicyMixin):
         action = super(OUExplorationMixin, self).act(state, **kwargs)
         if 'exploration_off' in kwargs and kwargs['exploration_off']:
             pass
+        elif 'batch' in kwargs and kwargs['batch']:
+            raise ValueError("OU noise does not support batch sampling.")
         else:
             self.__x += self.__theta * (self.__mu - self.__x) + \
                         self.__sigma * np.random.randn(*self.__x_shape)
