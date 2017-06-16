@@ -22,7 +22,7 @@ def video_callable(episode_id):
     return episode_id%50 == 0
 env = gym.make('Pendulum-v0')
 env = gym.wrappers.Monitor(
-    env, './test_integration_env-Pendulum-v0_agent_DPG/test01/',
+    env, './test_integration_env-Pendulum-v0_agent_DPG/test02/',
     force=True,
     # video_callable=video_callable
 )

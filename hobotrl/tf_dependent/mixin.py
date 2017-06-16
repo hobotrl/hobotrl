@@ -29,7 +29,11 @@ class DeepQFuncMixin(BaseValueMixin):
         else:
             self.__dqf = DeepQFuncActionIn(**dqn_param_dict)
 
-        # self.__GREEDY_POLICY = False if is_action_in else self.__dqf.greedy_policy
+        # for action-in, greedy_policy will by pass exploration for act() 
+        # TODO: this means the no-exploration limit of the policy is greedy.
+        #       while this is true for DPG. Does this generally holds
+        #       sementically? Or maybe on- and off-policy is more semantically
+        #       accurate.
         self.__GREEDY_POLICY = self.__dqf.greedy_policy
         self.__BATCH_SIZE = kwargs['batch_size']
 
@@ -40,6 +44,9 @@ class DeepQFuncMixin(BaseValueMixin):
         state, action = self.__check_shape(state, action)
         kwargs.update({"sess": self.sess})
         return self.__dqf.get_value(state, action, **kwargs)
+
+    def get_qfunction(self):
+        return self.__dqf
 
     def improve_value_(self, state, action, reward, next_state,
                        episode_done, **kwargs):
@@ -165,7 +172,7 @@ class DeepDeterministicPolicyMixin(BasePolicyMixin):
         self.__ddp = DeepDeterministicPolicy(**ddp_param_dict)
         self.__BATCH_SIZE = kwargs['batch_size']  # for sampling replay buffer
 
-    def act(self, state, **kwargs):
+    def act(self, state, batch=False, **kwargs):
         """Emit action for this state.
         Accepts both a single sample and a batch of samples. In the former
         case, automatically inssert the batch dimension to match the shape of
@@ -178,7 +185,8 @@ class DeepDeterministicPolicyMixin(BasePolicyMixin):
         """
         state = np.array(state)
         # prepend batch dim and use deterministic inference for single sample
-        if list(state.shape) == list(self.__ddp.state_shape):
+        if not batch:
+            assert list(state.shape) == list(self.__ddp.state_shape)
             state = state[np.newaxis, :]
             return self.__ddp.act(state, is_training=False, **kwargs)[0, :]
         # use default stochastic inference of batch
@@ -206,8 +214,12 @@ class DeepDeterministicPolicyMixin(BasePolicyMixin):
             batch = replay_buffer.sample_batch(self.__BATCH_SIZE)
             state = np.array(batch['state'])
             kwargs.update({'sess': self.sess})
+            # TODO: here we need two forward passes for the policy network:
+            #       One time for accesing policy, the other for computing
+            #       DPG. Can we do better?
             action_on = self.act(
-                state, exploration_off=True, use_target=False, **kwargs
+                state, exploration_off=True, use_target=False, batch=True,
+                **kwargs
             )
             grad_q_action = self.get_grad_q_action(state, action_on)
             info = self.__ddp.improve_policy_(

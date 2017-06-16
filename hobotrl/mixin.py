@@ -288,7 +288,10 @@ class OUExplorationMixin(BasePolicyMixin):
         if 'exploration_off' in kwargs and kwargs['exploration_off']:
             pass
         elif 'batch' in kwargs and kwargs['batch']:
-            raise ValueError("OU noise does not support batch sampling.")
+            # TODO: OU is designed for sequential state series. Adding OU
+            #       to temporally uncorrelated samples doesn't make sence.
+            #       if do want to do so, should save OU state.
+            raise ValueError("OU noise does not support batch operation.")
         else:
             self.__x += self.__theta * (self.__mu - self.__x) + \
                         self.__sigma * np.random.randn(*self.__x_shape)

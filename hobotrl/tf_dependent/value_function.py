@@ -134,7 +134,8 @@ class DeepQFuncActionOut(object):
                     reward, gamma*next_q_sel*(1-episode_done), name='td_target'
                 )
                 td = importance * tf.subtract(td_target, q_sel, name='td')
-                td_loss = tf.reduce_mean(tf.square(td), name='td_loss')
+                td_losses = tf.square(td, name='td_losses')
+                td_loss = tf.reduce_mean(td_losses, name='td_loss')
                 # regularization loss
                 list_reg_loss = tf.get_collection(
                     key=tf.GraphKeys.REGULARIZATION_LOSSES,
@@ -191,6 +192,7 @@ class DeepQFuncActionOut(object):
         self.sym_next_q_sel = next_q_sel
         self.sym_td_target = td_target
         self.sym_td_loss = td_loss
+        self.sym_td_losses = td_losses
         self.sym_td_grad_norm = td_grad_norm
         self.sym_target_diff_l2 = target_diff_l2
         # training ops
@@ -222,10 +224,10 @@ class DeepQFuncActionOut(object):
             feed_dict[self.sym_importance] = importance
         if episode_done is not None:
             feed_dict[self.sym_episode_done] = episode_done
-        return sess.run(
-            [self.op_train_td, self.sym_td_loss, self.sym_q_sel,
-             self.sym_next_q_sel, self.sym_td_target, self.sym_td_grad_norm],
-            feed_dict
+        return sess.run([
+            self.op_train_td, self.sym_td_loss, self.sym_td_losses,
+            self.sym_q_sel, self.sym_next_q_sel, self.sym_td_target,
+            self.sym_td_grad_norm], feed_dict=feed_dict
         )
 
     def fetch_td_loss_(self, state, action, reward,
@@ -279,7 +281,8 @@ class DeepQFuncActionOut(object):
         self.countdown_sync_ -= 1 if self.countdown_sync_>=0 else 0
         info = {}
         if self.countdown_td_ == 0:
-            _, td_loss, q, next_q, td_target, td_grad_norm = self.apply_op_train_td_(
+            _, td_loss, td_losses, q, next_q, td_target, td_grad_norm = \
+            self.apply_op_train_td_(
                 sess=sess, state=state, action=action,
                 reward=reward, next_state=next_state, next_action=next_action,
                 episode_done=episode_done, importance=importance,
@@ -287,7 +290,8 @@ class DeepQFuncActionOut(object):
             )
             self.countdown_td_ = self.__N_STEP_TD
             info.update({
-                "td_loss": td_loss, "q_vals": q, "next_q_vals": next_q,
+                "td_loss": td_loss, "td_losses": td_losses,
+                "q_vals": q, "next_q_vals": next_q,
                 "td_target": td_target, 'td_grad_norm': td_grad_norm})
         if self.countdown_sync_ == 0:
             _, diff_l2 = self.apply_op_sync_target_(sess=sess)
@@ -489,7 +493,8 @@ class DeepQFuncActionIn(object):
                     name='target_q'
                 )
                 td = tf.subtract(td_target, q, name='td')
-                td_loss = tf.reduce_mean(tf.square(td), name='td_loss')
+                td_losses = tf.square(td, name='td_losses')
+                td_loss = tf.reduce_mean(td_losses, name='td_loss')
                 # regularization loss
                 list_reg_loss = tf.get_collection(
                     key=tf.GraphKeys.REGULARIZATION_LOSSES,
@@ -546,6 +551,7 @@ class DeepQFuncActionIn(object):
         self.sym_td_grad_norm = td_grad_norm
         self.sym_td_target = td_target
         self.sym_td_loss = td_loss
+        self.sym_td_losses = td_losses
         self.sym_target_diff_l2 = target_diff_l2
         self.op_train_td = op_train_td
         self.op_sync_target = op_sync_target
@@ -571,10 +577,10 @@ class DeepQFuncActionIn(object):
             feed_dict[self.sym_importance] = importance
         if episode_done is not None:
             feed_dict[self.sym_episode_done] = episode_done
-        return sess.run(
-            [self.op_train_td, self.sym_td_loss, self.sym_q,
-             self.sym_next_q, self.sym_td_target, self.sym_td_grad_norm],
-            feed_dict
+        return sess.run([
+            self.op_train_td, self.sym_td_loss, self.sym_td_losses,
+            self.sym_q, self.sym_next_q, self.sym_td_target,
+            self.sym_td_grad_norm], feed_dict=feed_dict
         )
 
     def fetch_td_loss_(self, state, action, reward,
@@ -619,7 +625,8 @@ class DeepQFuncActionIn(object):
         self.countdown_sync_ -= 1 if self.countdown_sync_>=0 else 0
         info = {}
         if self.countdown_td_ == 0:
-            _, td_loss, q, next_q, td_target, td_grad_norm = self.apply_op_train_td_(
+            _, td_loss, td_losses, q, next_q, td_target, td_grad_norm = \
+            self.apply_op_train_td_(
                 sess=sess, state=state, action=action,
                 reward=reward, next_state=next_state, next_action=next_action,
                 episode_done=episode_done, importance=importance,
@@ -627,7 +634,8 @@ class DeepQFuncActionIn(object):
             )
             self.countdown_td_ = self.__N_STEP_TD
             info.update({
-                "td_loss": td_loss, "q_vals": q, "next_q_vals": next_q,
+                "td_loss": td_loss, "td_losses": td_losses,
+                "q_vals": q, "next_q_vals": next_q,
                 "td_target": td_target, 'td_grad_norm': td_grad_norm})
         if self.countdown_sync_ == 0:
             _, diff_l2 = self.apply_op_sync_target_(sess=sess)

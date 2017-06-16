@@ -181,11 +181,15 @@ class MapPlayback(Playback):
 
 
 class NearPrioritizedPlayback(MapPlayback):
-
-    def __init__(self, capacity, sample_shapes, epsilon=1e-5, dtype=None):
-        sample_shapes["_score"] = [1]
-        super(NearPrioritizedPlayback, self).__init__(capacity, sample_shapes, "sequence", "random", dtype)
-        self.epsilon = epsilon
+    """
+    using field '_score', typically training error, to store sample score when pushing samples;
+    using field '_priority' as priority probability when sample batch from this playback;
+    using field '_index' as sample index when sample batch from this playback, for later update_score()
+    """
+    def __init__(self, capacity, sample_shapes, epsilon=1e-3, exponent=1.0, dtype=None):
+        sample_shapes["_score"] = []
+        super(NearPrioritizedPlayback, self).__init__(capacity, sample_shapes, "sequence", "random", dtype=dtype)
+        self.epsilon, self.exponent = epsilon, exponent
 
     def push_sample(self, sample, sample_score=None):
         if sample_score is None:
@@ -199,15 +203,20 @@ class NearPrioritizedPlayback(MapPlayback):
             MapPlayback.push_sample(self, sample)
         else:
             # evict according to score; lower score evict first
-            p = self.data["_score"].data
-            p = 1 / self.norm(p.reshape(-1))
-            p = p / np.sum(p)
+            score = self.data["_score"].data
+            score = 1 / score + self.epsilon
+            p = self.compute_distribution(score.reshape(-1))
             index = np.random.choice(np.arange(len(p)), p=p)
             # logging.warning("evict sample index:%s, score:%s", index, self.data["_score"].data[index])
             self.add_sample(sample, index)
 
-    def norm(self, score):
-        return score - np.min(score) + self.epsilon
+    def compute_distribution(self, score):
+        s_min = np.min(score)
+        if s_min < 0:
+            score = score - s_min
+        score = np.power(score + self.epsilon, self.exponent)
+        p = score / np.sum(score)
+        return p
 
     def reset(self):
         for i in self.data:
@@ -218,12 +227,21 @@ class NearPrioritizedPlayback(MapPlayback):
             p = self.data["_score"].data[:self.get_count()]
         else:
             p = self.data["_score"].data
-        p = self.norm(p.reshape(-1))
-        p = p / np.sum(p)
+        p = self.compute_distribution(p.reshape(-1))
         index = np.random.choice(np.arange(len(p)), size=batch_size, replace=False, p=p)
-        scores = self.data["_score"].data[index]
-        # logging.warning("batch score: %s - %s", np.min(scores), np.max(scores))
         return index
+
+    def sample_batch(self, batch_size):
+        if self.get_count() < self.get_capacity():
+            p = self.data["_score"].data[:self.get_count()]
+        else:
+            p = self.data["_score"].data
+        p = self.compute_distribution(p.reshape(-1))
+        index = np.random.choice(np.arange(len(p)), size=batch_size, replace=False, p=p)
+        priority = p[index]
+        batch = super(NearPrioritizedPlayback, self).get_batch(index)
+        batch["_index"], batch["_priority"] = index, priority
+        return batch
 
     def update_score(self, index, score):
         # logging.warning("update score[%s]: %s -> %s", index, self.data["_score"].data[index], score)

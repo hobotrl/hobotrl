@@ -149,7 +149,11 @@ class EpsilonGreedyPolicy(object):
         Choose greedy action with 1-epsilon probability and random action with
         epsilon probability. Ties are broken randomly for greedy actions.
         """
-        if state is None or rand() < self.__EPSILON:
+        exploration_off = kwargs['exploration_off'] \
+            if 'exploration_off' in kwargs else False
+        if state is None:
+            idx_action = randint(0, len(self.__ACTIONS))
+        elif not exploration_off and rand() < self.__EPSILON:
             idx_action = randint(0, len(self.__ACTIONS))
         else:
             # Follow greedy policy with 1-epsilon prob.
