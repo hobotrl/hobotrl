@@ -13,6 +13,7 @@ from tensorflow.contrib.layers import l2_regularizer
 
 
 import hobotrl as hrl
+from hobotrl.utils import LinearSequence
 from hobotrl.experiment import Experiment
 import hobotrl.algorithms.ac as ac
 import hobotrl.algorithms.dqn as dqn
@@ -508,6 +509,7 @@ class PERDQNPendulum(Experiment):
         optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
         target_sync_rate = 0.01
         training_params = (optimizer_td, target_sync_rate)
+        n_episodes = 500
 
         def f_net(inputs, num_action, is_training):
             input_var = inputs
@@ -539,10 +541,11 @@ class PERDQNPendulum(Experiment):
                     'next_state': state_shape,
                     'episode_done': ()
                 },
-                "exponent": 0.5  # todo search what combination of exponent/importance_correction works better
-            },
+                "priority_bias": 0.5,  # todo search what combination of exponent/importance_correction works better
+                "importance_weight": LinearSequence(n_episodes, 0.5, 1.0),
+
+        },
             batch_size=8,
-            importance_correction=0.5,
             global_step=global_step,
         )
         config = tf.ConfigProto()
@@ -552,7 +555,7 @@ class PERDQNPendulum(Experiment):
         with sv.managed_session(config=config) as sess:
             agent.set_session(sess)
             runner = hrl.envs.EnvRunner(env, agent, evaluate_interval=100, render_interval=50, logdir=args.logdir)
-            runner.episode(500)
+            runner.episode(n_episodes)
 
 Experiment.register(PERDQNPendulum, "Prioritized Exp Replay with DQN, for Pendulum")
 

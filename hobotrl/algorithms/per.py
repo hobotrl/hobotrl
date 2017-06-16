@@ -13,14 +13,10 @@ from hobotrl.playback import NearPrioritizedPlayback
 
 class PrioritizedExpReplayValue(DeepQFuncMixin):
 
-    def __init__(self, importance_correction=1.0, **kwargs):
+    def __init__(self, **kwargs):
         """
-        :param importance_correction: correction exponent term for importance sampling.
-            could be a single float; or a callable for variant importance correction.
-        :param kwargs:
         """
         super(PrioritizedExpReplayValue, self).__init__(**kwargs)
-        self.importance_correction = importance_correction
 
     def improve_value_(self, state, action, reward, next_state,
                        episode_done, **kwargs):
@@ -32,7 +28,7 @@ class PrioritizedExpReplayValue(DeepQFuncMixin):
         replay_buffer = self.get_replay_buffer()
 
         # if replay buffer has more samples than the batch_size.
-        # TODO: the following is actually not necessary for sampling with replaycement.
+        # TODO: the following is actually not necessary for sampling with replacement.
         batch_size = self._BATCH_SIZE
         if replay_buffer.get_count() >= batch_size:
             batch = replay_buffer.sample_batch(batch_size)
@@ -43,18 +39,9 @@ class PrioritizedExpReplayValue(DeepQFuncMixin):
             assert 'reward' in batch
             assert 'next_state' in batch
             # compute sampling weight
-            priority = batch["_priority"]
-            sample_count = replay_buffer.get_count()
-            print "priority, sample count:", priority, sample_count
-            is_exponent = self.importance_correction() if callable(self.importance_correction) \
-                else self.importance_correction
-            w = np.power(sample_count * priority, -is_exponent)
-            max_w = np.max(w)
-            if max_w > 1.0:
-                w = w / np.max(w)
-
-            kwargs.update({"importance": w})
-            print "importance:", w
+            importance_weight = batch.pop("_weight")
+            sample_index = batch.pop("_index")
+            batch["importance"] = importance_weight
             # sample `next_action` if not using greedy policy and the replay buffer
             # does not store `next_action` explicitly
             if not self._GREEDY_POLICY and 'next_action' not in batch:
@@ -69,7 +56,6 @@ class PrioritizedExpReplayValue(DeepQFuncMixin):
             info = self.get_qfunction().improve_value_(**kwargs)
             if "td_losses" in info:
                 td_losses = info["td_losses"]
-                sample_index = batch["_index"]
                 replay_buffer.update_score(sample_index, td_losses)
             return info
 
