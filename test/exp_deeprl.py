@@ -58,6 +58,7 @@ class ACDiscretePendulum(Experiment):
 
         state_shape = list(env.observation_space.shape)
         global_step = tf.get_variable('global_step', [],
+                                      dtype=tf.int32,
                                       initializer=tf.constant_initializer(0),
                                       trainable=False)
         agent = ac.ActorCritic(
@@ -133,6 +134,7 @@ class ACContinuousPendulum(Experiment):
 
         state_shape = list(env.observation_space.shape)
         global_step = tf.get_variable('global_step', [],
+                                      dtype=tf.int32,
                                       initializer=tf.constant_initializer(0),
                                       trainable=False)
         action_dim = env.action_space.shape[0]
@@ -193,6 +195,7 @@ class DQNPendulum(Experiment):
 
         state_shape = list(env.observation_space.shape)
         global_step = tf.get_variable('global_step', [],
+                                      dtype=tf.int32,
                                       initializer=tf.constant_initializer(0),
                                       trainable=False)
         agent = dqn.DQN(
@@ -248,6 +251,7 @@ class DDQNPendulum(Experiment):
 
         state_shape = list(env.observation_space.shape)
         global_step = tf.get_variable('global_step', [],
+                                      dtype=tf.int32,
                                       initializer=tf.constant_initializer(0),
                                       trainable=False)
         agent = dqn.DQN(
@@ -308,6 +312,7 @@ class DuelDQNPendulum(Experiment):
 
         state_shape = list(env.observation_space.shape)
         global_step = tf.get_variable('global_step', [],
+                                      dtype=tf.int32,
                                       initializer=tf.constant_initializer(0),
                                       trainable=False)
         agent = dqn.DQN(
@@ -453,6 +458,7 @@ class DQNCarRacing(Experiment):
 
         state_shape = list(env.observation_space.shape)
         global_step = tf.get_variable('global_step', [],
+                                      dtype=tf.int32,
                                       initializer=tf.constant_initializer(0),
                                       trainable=False)
         agent = dqn.DQN(
@@ -519,6 +525,7 @@ class PERDQNPendulum(Experiment):
 
         state_shape = list(env.observation_space.shape)
         global_step = tf.get_variable('global_step', [],
+                                      dtype=tf.int32,
                                       initializer=tf.constant_initializer(0),
                                       trainable=False)
         agent = per.PrioritizedDQN(

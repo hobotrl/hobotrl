@@ -11,6 +11,13 @@ class BaseDeepAgent(BaseAgent):
         self.sess, self.graph = sess, graph
         self.__sv = None
         self.__global_step = global_step
+        self.__global_step = global_step
+        if self.__global_step is not None:
+            self.sess = None
+            with tf.name_scope("update_global_step"):
+                self.__step_input = tf.placeholder(tf.int32, shape=None, name="input_global_step")
+                self.__op_update_step = tf.assign(self.__global_step, self.__step_input)
+        self.__step_n = 0
 
     def init_supervisor(self, graph=None, worker_index=0, init_op=None, save_dir=None):
         if init_op is None:
@@ -42,3 +49,9 @@ class BaseDeepAgent(BaseAgent):
 
     def get_graph(self):
         return self.graph
+
+    def step(self, state, action, reward, next_state, episode_done=False, **kwargs):
+        self.__step_n += 1
+        if self.__global_step is not None:
+            self.sess.run(self.__op_update_step, feed_dict={self.__step_input: self.__step_n})
+        return super(BaseDeepAgent, self).step(state, action, reward, next_state, episode_done, **kwargs)
