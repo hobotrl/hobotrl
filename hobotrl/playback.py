@@ -186,9 +186,23 @@ class NearPrioritizedPlayback(MapPlayback):
     using field '_priority' as priority probability when sample batch from this playback;
     using field '_index' as sample index when sample batch from this playback, for later update_score()
     """
-    def __init__(self, capacity, sample_shapes, epsilon=1e-3, exponent=1.0, dtype=None):
+    def __init__(self, capacity, sample_shapes, evict_policy="sequence", epsilon=1e-3, exponent=1.0, dtype=None):
+        """
+
+        :param capacity:
+        :param sample_shapes:
+        :param evict_policy: how old sample is replaced if replay buffer reaches capacity limit.
+            "sequence": old sample is replaced as FIFO style;
+            "random": old sample is replaced with probability be inversely proportional to sample's 'score_'.
+        :param epsilon: minimum score_ regularizer preventing score_ == 0
+        :param exponent: [0, 1]:
+            0 for uniform distribution, no bias from priority;
+            1 for fully-prioritized distribution, with bias
+        :param dtype:
+        """
         sample_shapes["_score"] = []
         super(NearPrioritizedPlayback, self).__init__(capacity, sample_shapes, "sequence", "random", dtype=dtype)
+        self.evict_policy = evict_policy
         self.epsilon, self.exponent = epsilon, exponent
 
     def push_sample(self, sample, sample_score=None):
@@ -197,18 +211,21 @@ class NearPrioritizedPlayback(MapPlayback):
                 sample_score = np.max(self.data["_score"].data)
             else:
                 sample_score = 0.0
-        # print "pushed sample score:", sample_score
+        print "pushed sample score:", sample_score
         sample["_score"] = np.asarray([float(sample_score)], dtype=float)
-        if self.get_count() < self.get_capacity():
-            MapPlayback.push_sample(self, sample)
+        if self.evict_policy == "sequence":
+            super(NearPrioritizedPlayback, self).push_sample(sample, sample_score)
         else:
-            # evict according to score; lower score evict first
-            score = self.data["_score"].data
-            score = 1 / score + self.epsilon
-            p = self.compute_distribution(score.reshape(-1))
-            index = np.random.choice(np.arange(len(p)), p=p)
-            # logging.warning("evict sample index:%s, score:%s", index, self.data["_score"].data[index])
-            self.add_sample(sample, index)
+            if self.get_count() < self.get_capacity():
+                MapPlayback.push_sample(self, sample)
+            else:
+                # evict according to score; lower score evict first
+                score = self.data["_score"].data
+                score = 1 / (score + self.epsilon)
+                p = self.compute_distribution(score.reshape(-1))
+                index = np.random.choice(np.arange(len(p)), replace=False, p=p)
+                # logging.warning("evict sample index:%s, score:%s", index, self.data["_score"].data[index])
+                self.add_sample(sample, index)
 
     def compute_distribution(self, score):
         s_min = np.min(score)

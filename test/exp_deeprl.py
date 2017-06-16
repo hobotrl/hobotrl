@@ -539,10 +539,10 @@ class PERDQNPendulum(Experiment):
                     'next_state': state_shape,
                     'episode_done': ()
                 },
-                "exponent": 0.  # todo search what combination of exponent/importance_correction works better
+                "exponent": 0.5  # todo search what combination of exponent/importance_correction works better
             },
             batch_size=8,
-            importance_correction=0.,
+            importance_correction=0.5,
             global_step=global_step,
         )
         config = tf.ConfigProto()
@@ -552,7 +552,7 @@ class PERDQNPendulum(Experiment):
         with sv.managed_session(config=config) as sess:
             agent.set_session(sess)
             runner = hrl.envs.EnvRunner(env, agent, evaluate_interval=100, render_interval=50, logdir=args.logdir)
-            runner.episode(1000)
+            runner.episode(500)
 
 Experiment.register(PERDQNPendulum, "Prioritized Exp Replay with DQN, for Pendulum")
 

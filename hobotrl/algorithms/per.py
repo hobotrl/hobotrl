@@ -45,10 +45,14 @@ class PrioritizedExpReplayValue(DeepQFuncMixin):
             # compute sampling weight
             priority = batch["_priority"]
             sample_count = replay_buffer.get_count()
+            print "priority, sample count:", priority, sample_count
             is_exponent = self.importance_correction() if callable(self.importance_correction) \
                 else self.importance_correction
             w = np.power(sample_count * priority, -is_exponent)
-            w = w / np.max(w)
+            max_w = np.max(w)
+            if max_w > 1.0:
+                w = w / np.max(w)
+
             kwargs.update({"importance": w})
             print "importance:", w
             # sample `next_action` if not using greedy policy and the replay buffer
