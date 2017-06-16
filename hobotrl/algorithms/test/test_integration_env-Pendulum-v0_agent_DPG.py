@@ -22,8 +22,9 @@ def video_callable(episode_id):
     return episode_id%50 == 0
 env = gym.make('Pendulum-v0')
 env = gym.wrappers.Monitor(
-    env, './test_integration_env-Pendulum-v0_agent_DPG/test07/',
-    force=True, video_callable=video_callable
+    env, './test_integration_env-Pendulum-v0_agent_DPG/test01/',
+    force=True,
+    # video_callable=video_callable
 )
 # Agent
 def f_net_dqn(inputs_state, inputs_action, is_training):
@@ -144,7 +145,7 @@ agent = DPG(
     is_action_in=True
 )
 
-N_interactive = 200000
+N_interactive = 0
 n_interactive = N_interactive - 1
 
 sess = tf.Session()
@@ -202,7 +203,7 @@ while True:
                 raw_input('Next episode?')
                 n_interactive = N_interactive - 1
             else:
-                n_interactive -= 1
+                n_interactive -= 1 if n_interactive>0 else 0
             break
         state, action = next_state, next_action
         next_state, reward, done, info = env.step(action)
