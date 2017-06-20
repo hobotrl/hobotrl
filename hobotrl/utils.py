@@ -211,3 +211,23 @@ class Network(object):
                                    kernel_regularizer=layers.l2_regularizer(l2),
                                    bias_regularizer=layers.l2_regularizer(l2))
         return out
+
+
+class Sequence(object):
+    """
+    Sequence value generator, can be used for variable hyperparameter
+    """
+    def __init__(self, func):
+        self.n = 0
+        self.func = func
+
+    def __call__(self, *args, **kwargs):
+        func = self.func
+        ret = func(self.n)
+        self.n += 1
+        return ret
+
+
+class LinearSequence(Sequence):
+    def __init__(self, step, start, end):
+        super(LinearSequence, self).__init__(lambda n: start + (end - start) * n / step)

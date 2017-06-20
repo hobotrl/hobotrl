@@ -13,6 +13,7 @@ from tensorflow.contrib.layers import l2_regularizer
 
 
 import hobotrl as hrl
+from hobotrl.utils import LinearSequence
 from hobotrl.experiment import Experiment
 import hobotrl.algorithms.ac as ac
 import hobotrl.algorithms.dqn as dqn
@@ -57,6 +58,7 @@ class ACDiscretePendulum(Experiment):
 
         state_shape = list(env.observation_space.shape)
         global_step = tf.get_variable('global_step', [],
+                                      dtype=tf.int32,
                                       initializer=tf.constant_initializer(0),
                                       trainable=False)
         agent = ac.ActorCritic(
@@ -132,6 +134,7 @@ class ACContinuousPendulum(Experiment):
 
         state_shape = list(env.observation_space.shape)
         global_step = tf.get_variable('global_step', [],
+                                      dtype=tf.int32,
                                       initializer=tf.constant_initializer(0),
                                       trainable=False)
         action_dim = env.action_space.shape[0]
@@ -192,6 +195,7 @@ class DQNPendulum(Experiment):
 
         state_shape = list(env.observation_space.shape)
         global_step = tf.get_variable('global_step', [],
+                                      dtype=tf.int32,
                                       initializer=tf.constant_initializer(0),
                                       trainable=False)
         agent = dqn.DQN(
@@ -247,6 +251,7 @@ class DDQNPendulum(Experiment):
 
         state_shape = list(env.observation_space.shape)
         global_step = tf.get_variable('global_step', [],
+                                      dtype=tf.int32,
                                       initializer=tf.constant_initializer(0),
                                       trainable=False)
         agent = dqn.DQN(
@@ -307,6 +312,7 @@ class DuelDQNPendulum(Experiment):
 
         state_shape = list(env.observation_space.shape)
         global_step = tf.get_variable('global_step', [],
+                                      dtype=tf.int32,
                                       initializer=tf.constant_initializer(0),
                                       trainable=False)
         agent = dqn.DQN(
@@ -452,6 +458,7 @@ class DQNCarRacing(Experiment):
 
         state_shape = list(env.observation_space.shape)
         global_step = tf.get_variable('global_step', [],
+                                      dtype=tf.int32,
                                       initializer=tf.constant_initializer(0),
                                       trainable=False)
         agent = dqn.DQN(
@@ -508,6 +515,7 @@ class PERDQNPendulum(Experiment):
         optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
         target_sync_rate = 0.01
         training_params = (optimizer_td, target_sync_rate)
+        n_episodes = 500
 
         def f_net(inputs, num_action, is_training):
             input_var = inputs
@@ -517,6 +525,7 @@ class PERDQNPendulum(Experiment):
 
         state_shape = list(env.observation_space.shape)
         global_step = tf.get_variable('global_step', [],
+                                      dtype=tf.int32,
                                       initializer=tf.constant_initializer(0),
                                       trainable=False)
         agent = per.PrioritizedDQN(
@@ -539,10 +548,11 @@ class PERDQNPendulum(Experiment):
                     'next_state': state_shape,
                     'episode_done': ()
                 },
-                "exponent": 0.  # todo search what combination of exponent/importance_correction works better
-            },
+                "priority_bias": 0.5,  # todo search what combination of exponent/importance_correction works better
+                "importance_weight": LinearSequence(n_episodes, 0.5, 1.0),
+
+        },
             batch_size=8,
-            importance_correction=0.,
             global_step=global_step,
         )
         config = tf.ConfigProto()
@@ -552,7 +562,7 @@ class PERDQNPendulum(Experiment):
         with sv.managed_session(config=config) as sess:
             agent.set_session(sess)
             runner = hrl.envs.EnvRunner(env, agent, evaluate_interval=100, render_interval=50, logdir=args.logdir)
-            runner.episode(1000)
+            runner.episode(n_episodes)
 
 Experiment.register(PERDQNPendulum, "Prioritized Exp Replay with DQN, for Pendulum")
 

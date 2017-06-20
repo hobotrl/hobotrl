@@ -183,13 +183,33 @@ class MapPlayback(Playback):
 class NearPrioritizedPlayback(MapPlayback):
     """
     using field '_score', typically training error, to store sample score when pushing samples;
-    using field '_priority' as priority probability when sample batch from this playback;
+    using field '_weight' as priority probability when sample batch from this playback;
     using field '_index' as sample index when sample batch from this playback, for later update_score()
     """
-    def __init__(self, capacity, sample_shapes, epsilon=1e-3, exponent=1.0, dtype=None):
+    def __init__(self, capacity, sample_shapes, evict_policy="sequence", epsilon=1e-3,
+                 priority_bias=1.0, importance_weight=1.0, dtype=None):
+        """
+
+        :param capacity:
+        :param sample_shapes:
+        :param evict_policy: how old sample is replaced if replay buffer reaches capacity limit.
+            "sequence": old sample is replaced as FIFO style;
+            "random": old sample is replaced with probability be inversely proportional to sample's 'score_'.
+        :param epsilon: minimum score_ regularizer preventing score_ == 0
+        :param priority_bias: `alpha`, [0, 1]:  bias introduced from priority sampling.
+            can be a constant or a callable for variable value.
+            0 for uniform distribution, no bias from priority;
+            1 for fully-prioritized distribution, with bias
+        :param importance_weight: `beta`, [0, 1]: importance sampling weight correcting priority biases.
+            can be a constant or a callable for variable value.
+            0 for no correction at all.
+            1 for fully compensation for priority bias.
+        :param dtype:
+        """
         sample_shapes["_score"] = []
         super(NearPrioritizedPlayback, self).__init__(capacity, sample_shapes, "sequence", "random", dtype=dtype)
-        self.epsilon, self.exponent = epsilon, exponent
+        self.evict_policy = evict_policy
+        self.epsilon, self.priority_bias, self.importance_weight = epsilon, priority_bias, importance_weight
 
     def push_sample(self, sample, sample_score=None):
         if sample_score is None:
@@ -197,24 +217,28 @@ class NearPrioritizedPlayback(MapPlayback):
                 sample_score = np.max(self.data["_score"].data)
             else:
                 sample_score = 0.0
-        # print "pushed sample score:", sample_score
+        print "pushed sample score:", sample_score
         sample["_score"] = np.asarray([float(sample_score)], dtype=float)
-        if self.get_count() < self.get_capacity():
-            MapPlayback.push_sample(self, sample)
+        if self.evict_policy == "sequence":
+            super(NearPrioritizedPlayback, self).push_sample(sample, sample_score)
         else:
-            # evict according to score; lower score evict first
-            score = self.data["_score"].data
-            score = 1 / score + self.epsilon
-            p = self.compute_distribution(score.reshape(-1))
-            index = np.random.choice(np.arange(len(p)), p=p)
-            # logging.warning("evict sample index:%s, score:%s", index, self.data["_score"].data[index])
-            self.add_sample(sample, index)
+            if self.get_count() < self.get_capacity():
+                MapPlayback.push_sample(self, sample)
+            else:
+                # evict according to score; lower score evict first
+                score = self.data["_score"].data
+                score = 1 / (score + self.epsilon)
+                p = self.compute_distribution(score.reshape(-1))
+                index = np.random.choice(np.arange(len(p)), replace=False, p=p)
+                # logging.warning("evict sample index:%s, score:%s", index, self.data["_score"].data[index])
+                self.add_sample(sample, index)
 
     def compute_distribution(self, score):
         s_min = np.min(score)
         if s_min < 0:
             score = score - s_min
-        score = np.power(score + self.epsilon, self.exponent)
+        exponent = self.priority_bias() if callable(self.priority_bias) else self.priority_bias
+        score = np.power(score + self.epsilon, exponent)
         p = score / np.sum(score)
         return p
 
@@ -240,7 +264,20 @@ class NearPrioritizedPlayback(MapPlayback):
         index = np.random.choice(np.arange(len(p)), size=batch_size, replace=False, p=p)
         priority = p[index]
         batch = super(NearPrioritizedPlayback, self).get_batch(index)
-        batch["_index"], batch["_priority"] = index, priority
+        sample_count = self.get_count()
+        is_exponent = self.importance_weight() if callable(self.importance_weight) \
+            else self.importance_weight
+        w = np.power(sample_count * priority, -is_exponent)
+        # global max instead of batch max.
+        # todo mathematically, global max is the correct one to use.
+        # but in larger replay buffer, this could cause much slower effective learning rate.
+        max_all_w = np.power(np.min(p) * sample_count, - is_exponent)
+        w = w / max_all_w
+        # max_w = np.max(w)
+        # if max_w > 1.0:
+        #     w = w / np.max(w)
+
+        batch["_index"], batch["_weight"] = index, w
         return batch
 
     def update_score(self, index, score):
