@@ -9,6 +9,7 @@ import numpy as np
 
 import hobotrl as hrl
 import hobotrl.playback
+from hobotrl.utils import Network
 
 
 class OTDQN(
@@ -21,16 +22,17 @@ class OTDQN(
                  reward_decay,
                  batch_size,
                  K,
-                 bounds_weight,  # weight: λ for upper / lower bounds
                  optimizer,
+                 weight_upper,
+                 weight_lower,
                  target_sync_interval=100,
                  replay_capacity=10000,
                  replay_class=hrl.playback.MapPlayback,
                  **kwargs):
         super(OTDQN, self).__init__(**kwargs)
         self.state_shape, self.action_n, self.reward_decay, self.batch_size, self.K, \
-            self.bounds_weight, self.target_sync_interval = \
-            state_shape, action_n, reward_decay, batch_size, K, bounds_weight, target_sync_interval
+            self.weight_upper, self.weight_lower, self.target_sync_interval = \
+            state_shape, action_n, reward_decay, batch_size, K, weight_upper, weight_lower, target_sync_interval
         self.step_n = 0
         self.replay = replay_class(capacity=replay_capacity, sample_shapes={
             "state": state_shape,
@@ -65,12 +67,13 @@ class OTDQN(
                 current_value = tf.reduce_sum(self.q * tf.one_hot(self.input_action, action_n), axis=1)
                 td = self.input_reward + reward_decay * (1.0 - self.input_episode_done) * target_value\
                      - current_value
-                td_loss = tf.square(td)
-                lower_violated = tf.square(tf.maximum(self.input_lower_bound - current_value, 0))
-                upper_violated = tf.square(tf.maximum(current_value - self.input_upper_bound, 0))
-                loss = tf.reduce_mean(td_loss) \
-                       + bounds_weight * tf.reduce_mean(lower_violated) \
-                       + bounds_weight * tf.reduce_mean(upper_violated)
+                td_loss = Network.clipped_square(td)
+                loss = tf.reduce_mean(td_loss)
+                lower_violated = Network.clipped_square(tf.maximum(self.input_lower_bound - current_value, 0))
+                upper_violated = Network.clipped_square(tf.maximum(current_value - self.input_upper_bound, 0))
+                # loss = 1.0 / (1+bounds_weight) * tf.reduce_mean(td_loss) \
+                #        + bounds_weight/(1.0+bounds_weight) * tf.reduce_mean(lower_violated)
+                #        + bounds_weight/(1.0+bounds_weight) * tf.reduce_mean(upper_violated)
 
                 training_op = optimizer.minimize(loss)
         vars_learn = tf.get_collection(
@@ -154,12 +157,13 @@ class OTDQN(
             for _i in range(len(nearby_batch_index)):
                 nb_bi, sample_i = nearby_batch_index[_i]
                 targets = state_targets[_i]
-                low, high = batch["future_reward"][_i], sys.maxint
                 nb_indices = [x[1] for x in nb_bi]
                 sample_index = nb_indices.index(sample_i)
+                sample_target = targets[sample_index+1]
+                low, high = batch["future_reward"][_i], sample_target + 0.1
                 # print "sample_i, nb_indices, sample_index:", sample_i, nb_indices, sample_index
                 r = 0.0
-                for k in range(1, self.K+1):  # upper bound: k -> [1, K]
+                for k in range(1, self.K + 1):  # upper bound: k -> [1, K]
                     neighbor_index = sample_index - k
                     if neighbor_index < 0:
                         break
@@ -170,7 +174,7 @@ class OTDQN(
                     if new_high < high:
                         high = new_high
                 r = batch["reward"][_i]
-                for k in range(1, self.K+1):
+                for k in range(1, self.K + 1):
                     neighbor_index = sample_index + k
                     if neighbor_index >= len(nb_bi):
                         break
@@ -182,10 +186,21 @@ class OTDQN(
                         new_low = r
                     if new_low > low:
                         low = new_low
-                low, high = batch["future_reward"][_i], sys.maxint
+                # low, high = batch["future_reward"][_i], sys.maxint
+                # high = sys.mxaxint
                 lower_bounds.append(low)
                 upper_bounds.append(high)
-                target_values.append(targets[sample_index+1])
+                w = 1.0 + self.weight_lower + self.weight_upper
+                w0, w_lower, w_upper = 1.0 / w, self.weight_lower / w, self.weight_upper / w
+                if low > sample_target > high:
+                    sample_target = w0 * sample_target + w_lower * low + w_upper * high
+                elif low > sample_target:
+                    sample_target = (w0 * sample_target + w_lower * low) / (w0 + w_lower)
+                elif high < sample_target:
+                    sample_target = (w0 * sample_target + w_upper * high) / (w0 + w_upper)
+
+                target_values.append(sample_target)
+
             # print "target_values:", target_values
             # print "upper_bounds:", upper_bounds
             # print "lower_bounds:", lower_bounds
@@ -197,11 +212,13 @@ class OTDQN(
                                                                      target_value=np.asarray(target_values),
                                                                      upper_bounds=np.asarray(upper_bounds),
                                                                      lower_bounds=np.asarray(lower_bounds))
-            info["td_losses"] = td_losses
             info.update({
-                "td_losses": td_losses,
-                "L_losses": lower_loss,
-                "U_losses": upper_loss
+                "losses/td_losses": td_losses,
+                "losses/L_losses": lower_loss,
+                "losses/U_losses": upper_loss,
+                "bounds/lower_bound": np.asarray(lower_bounds),
+                "bounds/upper_bound": np.asarray(upper_bounds),
+                "bounds/target_value": np.asarray(target_values)
             })
         if self.step_n % self.target_sync_interval == 0:
             self.get_session().run(self.follows)

@@ -569,12 +569,19 @@ Experiment.register(PERDQNPendulum, "Prioritized Exp Replay with DQN, for Pendul
 
 
 class OTDQNPendulum(Experiment):
+    """
+    converges on Pendulum.
+    However, in Pendulum, weight_upper > 0 hurts performance.
+    should verify on more difficult problems
+    """
     def run(self, args):
         reward_decay = 0.9
         K = 4
         batch_size = 8
-        bounds_weight = 4.0
-        target_sync_interval = 100
+        weight_lower = 1.0
+        weight_upper = 1.0
+        target_sync_interval = 10
+        replay_size = 1000
 
         env = gym.make("Pendulum-v0")
         env = hrl.envs.C2DEnvWrapper(env, [5])
@@ -607,9 +614,11 @@ class OTDQNPendulum(Experiment):
             reward_decay=reward_decay,
             batch_size=batch_size,
             K=K,
-            bounds_weight=bounds_weight,
+            weight_lower=weight_lower,
+            weight_upper=weight_upper,
             optimizer=optimizer_td,
             target_sync_interval=target_sync_interval,
+            replay_capacity=replay_size,
             # BaseDeepAgent
             global_step=global_step
         )
@@ -619,7 +628,8 @@ class OTDQNPendulum(Experiment):
                                    init_op=tf.global_variables_initializer(), save_dir=args.logdir)
         with sv.managed_session(config=config) as sess:
             agent.set_session(sess)
-            runner = hrl.envs.EnvRunner(env, agent, evaluate_interval=100, render_interval=50, logdir=args.logdir)
+            runner = hrl.envs.EnvRunner(env, agent, reward_decay=reward_decay,
+                                        evaluate_interval=sys.maxint, render_interval=sys.maxint, logdir=args.logdir)
             runner.episode(1000)
 
 Experiment.register(OTDQNPendulum, "Optimaly Tightening DQN for Pendulum")
