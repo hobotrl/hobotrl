@@ -64,9 +64,9 @@ class OTDQN(
             with tf.variable_scope("train"):
                 target_value = self.input_target_v
                 # target_value = tf.reduce_max(self.target_q, axis=1, keep_dims=True)
+                # target_value = self.input_reward + reward_decay * (1.0 - self.input_episode_done) * target_value
                 current_value = tf.reduce_sum(self.q * tf.one_hot(self.input_action, action_n), axis=1)
-                td = self.input_reward + reward_decay * (1.0 - self.input_episode_done) * target_value\
-                     - current_value
+                td = target_value - current_value
                 td_loss = Network.clipped_square(td)
                 loss = tf.reduce_mean(td_loss)
                 lower_violated = Network.clipped_square(tf.maximum(self.input_lower_bound - current_value, 0))
@@ -141,6 +141,23 @@ class OTDQN(
             nearby_batch = [hrl.playback.MapPlayback.to_rowwise(self.replay.get_batch(i)) for i in nearby_index]
             nearby_batch_index = [(filter(lambda x: x[0]["episode_n"] == n, zip(nb, ni)), i)
                                        for n, i, nb, ni in zip(batch["episode_n"], index, nearby_batch, nearby_index)]
+            """
+            nearby_batch_index = [
+                ([
+                    ({"state": state, "action": action, ...}, nearby_index_0),
+                    ({"state": state, "action": action, ...}, nearby_index_1),
+                    ...,
+                    ({"state": state, "action": action, ...}, nearby_index_n),
+                ], sample_index_0),
+                ([
+                    ({"state": state, "action": action, ...}, nearby_index_0),
+                    ({"state": state, "action": action, ...}, nearby_index_1),
+                    ...,
+                    ({"state": state, "action": action, ...}, nearby_index_n),
+                ], sample_index_1),
+                ...
+            ]
+            """
             # all 'state'
             nearby_states = [[nb_batch['state'] for nb_batch, nb_i in nb_bi] for nb_bi, b_i in nearby_batch_index]
             # last 'next_state'
@@ -159,7 +176,8 @@ class OTDQN(
                 targets = state_targets[_i]
                 nb_indices = [x[1] for x in nb_bi]
                 sample_index = nb_indices.index(sample_i)
-                sample_target = targets[sample_index+1]
+                sample_target = targets[sample_index+1] * (1.0 - batch["episode_done"][_i]) * self.reward_decay \
+                                + batch["reward"][_i]
                 low, high = batch["future_reward"][_i], sample_target + 0.1
                 # print "sample_i, nb_indices, sample_index:", sample_i, nb_indices, sample_index
                 r = 0.0

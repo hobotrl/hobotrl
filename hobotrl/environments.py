@@ -33,7 +33,7 @@ class EnvRunner(object):
         self.total_reward = 0.0
         self.summary_writer = None
         if logdir is not None:
-            self.summary_writer = tf.summary.FileWriter(logdir)
+            self.summary_writer = tf.summary.FileWriter(logdir, graph=tf.get_default_graph())
 
     def step(self, evaluate=False):
         """

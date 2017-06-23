@@ -18,7 +18,8 @@ from hobotrl.experiment import Experiment
 import hobotrl.algorithms.ac as ac
 import hobotrl.algorithms.dqn as dqn
 import hobotrl.algorithms.per as per
-import playground.optimal_tighten as ot
+import playground.optimal_tighten as play_ot
+import hobotrl.algorithms.ot as ot
 
 
 class ACDiscretePendulum(Experiment):
@@ -205,7 +206,7 @@ class DQNPendulum(Experiment):
             epsilon=0.2,
             # DeepQFuncMixin params
             gamma=0.9,
-            f_net=f_net, state_shape=state_shape, num_actions=env.action_space.n,
+            f_net_dqn=f_net, state_shape=state_shape, num_actions=env.action_space.n,
             training_params=training_params, schedule=(1, 10),
             greedy_policy=True,
             # ReplayMixin params
@@ -228,8 +229,8 @@ class DQNPendulum(Experiment):
                                    init_op=tf.global_variables_initializer(), save_dir=args.logdir)
         with sv.managed_session(config=config) as sess:
             agent.set_session(sess)
-            runner = hrl.envs.EnvRunner(env, agent, evaluate_interval=100, render_interval=50, logdir=args.logdir)
-            runner.episode(1000)
+            runner = hrl.envs.EnvRunner(env, agent, evaluate_interval=sys.maxint, render_interval=sys.maxint, logdir=args.logdir)
+            runner.episode(500)
 
 Experiment.register(DQNPendulum, "DQN for Pendulum")
 
@@ -550,7 +551,7 @@ class PERDQNPendulum(Experiment):
                     'episode_done': ()
                 },
                 "priority_bias": 0.5,  # todo search what combination of exponent/importance_correction works better
-                "importance_weight": LinearSequence(n_episodes, 0.5, 1.0),
+                "importance_weight": LinearSequence(n_episodes * 200, 0.5, 1.0),
 
         },
             batch_size=8,
@@ -603,7 +604,7 @@ class OTDQNPendulum(Experiment):
                                       dtype=tf.int32,
                                       initializer=tf.constant_initializer(0),
                                       trainable=False)
-        agent = ot.OTDQN(
+        agent = play_ot.OTDQN(
             # EpsilonGreedyPolicyMixin params
             actions=range(env.action_space.n),
             epsilon=0.2,
@@ -630,9 +631,70 @@ class OTDQNPendulum(Experiment):
             agent.set_session(sess)
             runner = hrl.envs.EnvRunner(env, agent, reward_decay=reward_decay,
                                         evaluate_interval=sys.maxint, render_interval=sys.maxint, logdir=args.logdir)
-            runner.episode(1000)
+            runner.episode(500)
 
 Experiment.register(OTDQNPendulum, "Optimaly Tightening DQN for Pendulum")
+
+
+class AOTDQNPendulum(Experiment):
+    """
+    converges on Pendulum. OT implementation from hobotrl.algorithms package.
+    However, in Pendulum, weight_upper > 0 hurts performance.
+    should verify on more difficult problems
+    """
+    def run(self, args):
+        reward_decay = 0.9
+        K = 4
+        batch_size = 8
+        weight_lower = 1.0
+        weight_upper = 1.0
+        replay_size = 1000
+
+        env = gym.make("Pendulum-v0")
+        env = hrl.envs.C2DEnvWrapper(env, [5])
+        env = hrl.envs.AugmentEnvWrapper(env, reward_decay=reward_decay, reward_scale=0.1)
+
+        def f_net(inputs, num_action, is_training):
+            input_var = inputs
+            fc_out = hrl.utils.Network.layer_fcs(input_var, [200, 200], num_action,
+                                                 activation_hidden=tf.nn.relu, activation_out=None, l2=1e-4)
+            return fc_out
+
+        state_shape = list(env.observation_space.shape)
+        global_step = tf.get_variable('global_step', [],
+                                      dtype=tf.int32,
+                                      initializer=tf.constant_initializer(0),
+                                      trainable=False)
+        agent = ot.OTDQN(
+            # EpsilonGreedyPolicyMixin params
+            actions=range(env.action_space.n),
+            epsilon=0.2,
+            # OTDQN
+            f_net_dqn=f_net,
+            state_shape=state_shape,
+            num_actions=env.action_space.n,
+            reward_decay=reward_decay,
+            batch_size=batch_size,
+            K=K,
+            weight_lower_bound=weight_lower,
+            weight_upper_bound=weight_upper,
+            training_params=(tf.train.AdamOptimizer(learning_rate=0.001), 0.01),
+            schedule=(1, 10),
+            replay_capacity=replay_size,
+            # BaseDeepAgent
+            global_step=global_step
+        )
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        sv = agent.init_supervisor(graph=tf.get_default_graph(), worker_index=0,
+                                   init_op=tf.global_variables_initializer(), save_dir=args.logdir)
+        with sv.managed_session(config=config) as sess:
+            agent.set_session(sess)
+            runner = hrl.envs.EnvRunner(env, agent, reward_decay=reward_decay,
+                                        evaluate_interval=sys.maxint, render_interval=sys.maxint, logdir=args.logdir)
+            runner.episode(500)
+
+Experiment.register(AOTDQNPendulum, "Optimaly Tightening DQN for Pendulum")
 
 
 if __name__ == '__main__':

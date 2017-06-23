@@ -78,10 +78,10 @@ class DeepQFuncActionOut(object):
         optimizer_td, target_sync_rate = training_params
         self.__optimizer_td = optimizer_td
         self.__TARGET_SYNC_RATE = target_sync_rate
-        self.__N_STEP_TD = schedule[0]
-        self.__N_STEP_SYNC = schedule[1]
-        self.countdown_td_ = self.__N_STEP_TD
-        self.countdown_sync_ = self.__N_STEP_SYNC
+        self._N_STEP_TD = schedule[0]
+        self._N_STEP_SYNC = schedule[1]
+        self.countdown_td_ = self._N_STEP_TD
+        self.countdown_sync_ = self._N_STEP_SYNC
 
         self.__GREEDY_POLICY = greedy_policy
 
@@ -102,7 +102,7 @@ class DeepQFuncActionOut(object):
                 with tf.variable_scope('non-target') as scope_non:
                     q = f_net_dqn(state, num_actions, is_training)
                     scope_non.reuse_variables()  # reuse non-target weights
-                    double_q = f_net_dqn(state, num_actions, is_training)
+                    double_q = f_net_dqn(next_state, num_actions, is_training)
                 # target network
                 with tf.variable_scope('target') as scope_target:
                     next_q = f_net_dqn(next_state, num_actions, is_training)
@@ -198,6 +198,7 @@ class DeepQFuncActionOut(object):
         self.sym_next_q_sel = next_q_sel
         self.sym_td_loss = td_loss
         self.sym_td_losses = td_losses
+        self.sym_regularization_loss = reg_loss
         self.sym_target_diff_l2 = target_diff_l2
         self.op_train_td = op_train_td
         self.op_sync_target = op_sync_target
@@ -289,12 +290,12 @@ class DeepQFuncActionOut(object):
                 episode_done=episode_done, importance=importance,
                 **kwargs
             )
-            self.countdown_td_ = self.__N_STEP_TD
+            self.countdown_td_ = self._N_STEP_TD
             info = {"td_loss": td_loss, "td_losses": td_losses, "target_q": next_q}
 
         if self.countdown_sync_ == 0:
             self.apply_op_sync_target_(sess=sess)
-            self.countdown_sync_ = self.__N_STEP_SYNC
+            self.countdown_sync_ = self._N_STEP_SYNC
 
         return info
 
@@ -312,6 +313,20 @@ class DeepQFuncActionOut(object):
                     self.sym_action: action
                 }
             )
+
+    def get_target_v(self, state, sess=None, **kwargs):
+        """
+        get state value from target network.
+        :param state:
+        :param sess:
+        :param kwargs:
+        :return:
+        """
+        return sess.run(
+            self.sym_next_q_sel,
+            feed_dict={self.sym_next_state: state}
+        )
+
     @property
     def state_shape(self):
         return self.__STATE_SHAPE
@@ -372,12 +387,12 @@ class DeepQFuncActionOut(object):
                 name='next_action'
             )
             importance = tf.placeholder_with_default(
-                tf.ones_like(reward, dtype=tf.float32, name='default_importance'),
+                tf.ones_like(action, dtype=tf.float32, name='default_importance'),
                 shape=[None],
                 name='importance'
             )
             episode_done = tf.placeholder_with_default(
-                tf.zeros_like(reward, dtype=tf.float32, name='default_episode_done'),
+                tf.zeros_like(action, dtype=tf.float32, name='default_episode_done'),
                 shape=[None],
                 name='episode_done'
             )
