@@ -211,6 +211,13 @@ class Network(object):
                                    bias_regularizer=layers.l2_regularizer(l2))
         return out
 
+    @staticmethod
+    def clipped_square(value, clip=1.0):
+        abs_value = tf.abs(value)
+        quadratic = tf.minimum(abs_value, clip)
+        linear = abs_value - quadratic
+        return 0.5 * tf.square(quadratic) + clip * linear
+
 
 class Sequence(object):
     """
