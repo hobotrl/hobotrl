@@ -84,6 +84,7 @@ class OTValueUpdateMixin(hrl.mixin.BaseValueMixin):
     """
     def __init__(self, state_shape, num_actions, batch_size, reward_decay, K, weight_upper_bound, weight_lower_bound,
                  replay_capacity=1000, replay_class=hrl.playback.MapPlayback,
+                 state_offset_scale=(0, 1),
                  **kwargs):
         kwargs.update({
             "state_shape": state_shape,
@@ -102,6 +103,10 @@ class OTValueUpdateMixin(hrl.mixin.BaseValueMixin):
         self.step_n = 0
         self.episode_n = 0  # counter for episode
         self.episode_samples = []  # store samples from this episode, for calculating future_reward
+        augment_offset, augment_scale = {}, {}
+        if list(state_offset_scale) != [0, 1]:
+            augment_offset['state'], augment_scale['state'] = state_offset_scale[0], state_offset_scale[1]
+            augment_offset['next_state'], augment_scale['next_state'] = state_offset_scale[0], state_offset_scale[1]
 
         self.replay = replay_class(capacity=replay_capacity, sample_shapes={
             "state": state_shape,
@@ -111,7 +116,7 @@ class OTValueUpdateMixin(hrl.mixin.BaseValueMixin):
             "episode_done": [],
             "future_reward": [],
             "episode_n": [],
-        })
+        }, augment_scale=augment_scale, augment_offset=augment_offset)
 
     def improve_value_(self, state, action, reward, next_state, episode_done, **kwargs):
         self.step_n += 1
@@ -272,6 +277,7 @@ class OTDQN(
                  weight_lower_bound,
                  replay_capacity=1000,
                  replay_class=hrl.playback.MapPlayback,
+                 state_offset_scale=(0, 1),
                  schedule=(1, 10),
                  training_params=tf.train.AdamOptimizer(0.001),
                  f_net_dqn=None,
@@ -291,4 +297,5 @@ class OTDQN(
                                     training_params=training_params,
                                     f_net_dqn=f_net_dqn,
                                     gamma=reward_decay,
+                                    state_offset_scale=state_offset_scale,
                                     **kwargs)

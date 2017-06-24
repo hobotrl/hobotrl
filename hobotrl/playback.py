@@ -240,7 +240,8 @@ class NearPrioritizedPlayback(MapPlayback):
     using field '_weight' as priority probability when sample batch from this playback;
     using field '_index' as sample index when sample batch from this playback, for later update_score()
     """
-    def __init__(self, capacity, sample_shapes, evict_policy="sequence", epsilon=1e-3,
+    def __init__(self, capacity, sample_shapes, augment_offset={}, augment_scale={},
+                 evict_policy="sequence", epsilon=1e-3,
                  priority_bias=1.0, importance_weight=1.0, dtype=None):
         """
 
@@ -261,7 +262,10 @@ class NearPrioritizedPlayback(MapPlayback):
         :param dtype:
         """
         sample_shapes["_score"] = []
-        super(NearPrioritizedPlayback, self).__init__(capacity, sample_shapes, "sequence", "random", dtype=dtype)
+        super(NearPrioritizedPlayback, self).__init__(capacity, sample_shapes, "sequence", "random",
+                                                      augment_offset=augment_offset,
+                                                      augment_scale=augment_scale,
+                                                      dtype=dtype)
         self.evict_policy = evict_policy
         self.epsilon, self.priority_bias, self.importance_weight = epsilon, priority_bias, importance_weight
 

@@ -200,7 +200,7 @@ class Network(object):
         return out
 
     @staticmethod
-    def conv2d(input_var, h, w, out_channel, strides=[1,1], padding="VALID",
+    def conv2d(input_var, h, w, out_channel, strides=[1, 1], padding="VALID",
                activation=tf.nn.relu, l2=1e-4, var_scope=""):
         with tf.variable_scope(var_scope):
             out = tf.layers.conv2d(inputs=input_var, filters=out_channel, kernel_size=[w, h],

@@ -5,12 +5,12 @@ import sys
 sys.path.append(".")
 import logging
 
+import cv2
 import gym
 import numpy as np
 import tensorflow as tf
 from tensorflow import layers
 from tensorflow.contrib.layers import l2_regularizer
-
 
 import hobotrl as hrl
 from hobotrl.utils import LinearSequence
@@ -695,6 +695,91 @@ class AOTDQNPendulum(Experiment):
             runner.episode(500)
 
 Experiment.register(AOTDQNPendulum, "Optimaly Tightening DQN for Pendulum")
+
+
+class AOTDQNBreakout(Experiment):
+    """
+    converges on Pendulum. OT implementation from hobotrl.algorithms package.
+    However, in Pendulum, weight_upper > 0 hurts performance.
+    should verify on more difficult problems
+    """
+    def run(self, args):
+        reward_decay = 0.9
+        K = 4
+        batch_size = 8
+        weight_lower = 1.0
+        weight_upper = 1.0
+        replay_size = 1000
+
+        env = gym.make("Breakout-v0")
+        # env = hrl.envs.C2DEnvWrapper(env, [5])
+
+        def state_trans(state):
+            gray = np.asarray(np.dot(state, [0.299, 0.587, 0.114]))
+            gray = cv2.resize(gray, (84, 84))
+            return np.asarray(gray.reshape(gray.shape + (1,)), dtype=np.int8)
+
+        env = hrl.envs.AugmentEnvWrapper(env, reward_decay=reward_decay, reward_scale=0.1,
+                                         state_augment_proc=state_trans, state_stack_n=4)
+
+        def f_net(inputs, num_action, is_training):
+            input_var = inputs
+            print "input size:", input_var
+            out = hrl.utils.Network.conv2d(input_var=input_var, h=8, w=8, out_channel=32,
+                                           strides=[4, 4], activation=tf.nn.relu, var_scope="conv1")
+            # 20 * 20 * 32
+            print "out size:", out
+            out = hrl.utils.Network.conv2d(input_var=out, h=4, w=4, out_channel=64,
+                                           strides=[2, 2], activation=tf.nn.relu, var_scope="conv2")
+            # 9 * 9 * 64
+            print "out size:", out
+            out = hrl.utils.Network.conv2d(input_var=out, h=3, w=3, out_channel=64,
+                                           strides=[1, 1], activation=tf.nn.relu, var_scope="conv3")
+            # 7 * 7 * 64
+            print "out size:", out
+            out = tf.reshape(out, [-1, 7 * 7 * 64])
+            out = hrl.utils.Network.layer_fcs(input_var=out, shape=[512], out_count=num_action,
+                                              activation_hidden=tf.nn.relu,
+                                              activation_out=None, var_scope="fc")
+            return out
+
+        state_shape = [84, 84, 4]  # list(env.observation_space.shape)
+        global_step = tf.get_variable('global_step', [],
+                                      dtype=tf.int32,
+                                      initializer=tf.constant_initializer(0),
+                                      trainable=False)
+
+        agent = ot.OTDQN(
+            # EpsilonGreedyPolicyMixin params
+            actions=range(env.action_space.n),
+            epsilon=0.2,
+            # OTDQN
+            f_net_dqn=f_net,
+            state_shape=state_shape,
+            num_actions=env.action_space.n,
+            reward_decay=reward_decay,
+            batch_size=batch_size,
+            K=K,
+            weight_lower_bound=weight_lower,
+            weight_upper_bound=weight_upper,
+            training_params=(tf.train.AdamOptimizer(learning_rate=0.001), 0.01),
+            schedule=(1, 10),
+            replay_capacity=replay_size,
+            state_offset_scale=(-128, 1.0 / 128),
+            # BaseDeepAgent
+            global_step=global_step
+        )
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        sv = agent.init_supervisor(graph=tf.get_default_graph(), worker_index=0,
+                                   init_op=tf.global_variables_initializer(), save_dir=args.logdir)
+        with sv.managed_session(config=config) as sess:
+            agent.set_session(sess)
+            runner = hrl.envs.EnvRunner(env, agent, reward_decay=reward_decay,
+                                        evaluate_interval=sys.maxint, render_interval=sys.maxint, logdir=args.logdir)
+            runner.episode(500)
+
+Experiment.register(AOTDQNBreakout, "Optimaly Tightening DQN for Breakout")
 
 
 if __name__ == '__main__':
