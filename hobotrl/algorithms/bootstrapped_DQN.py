@@ -9,6 +9,12 @@ import random
 
 
 def bernoulli_mask(p):
+    """
+    Return a function that can generate bootstrap mask using bernoulli distribution.
+
+    :param p: parameter for bernoulli distribution
+    :return: a mask generator that take an integer 'n' as input and generates 'n' masks.
+    """
     return lambda n: [1 if random.random() < p else 0 for i in range(n)]
 
 
@@ -18,6 +24,36 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
                  reward_decay, td_learning_rate, target_sync_interval,
                  replay_buffer_class, replay_buffer_args, min_buffer_size, batch_size=20,
                  n_heads=10, bootstrap_mask=bernoulli_mask(0.5)):
+        """
+        A bootstrapped DQN.
+        Based on arXiv:1602.04621 [cs.LG]
+
+        :param observation_space: the environment's observation space.
+        :param action_space: the environment's action space.
+        :param nn_constructor(callable): a constructor that constructs the neurual network.
+            param observation_space: the environment's observation space.
+            param action_space: the environment's action space.
+            return: a dictionary.
+                The key "input" contains a list of input nodes(placeholder) for each head;
+                the key "head" contains a list of output nodes for each head.
+        :param loss_function(callable): represents the loss function.
+            param output: node for the neural network's output .
+            param target: node for the training target.
+            return: a node that represents the training loss.
+        :param trainer(callable): a trainer.
+            param loss: the training loss.
+            return: a tensorflow operation that can train the neural network.
+        :param reward_decay(float): reward decay(lambda).
+        :param td_learning_rate(float): learning rate for temporal difference learning(alpha).
+        :param target_sync_interval(int): controls the frequency of synchronizing the target network.
+        :param replay_buffer_class(callable): a class that can be used as a replay buffer.
+            param sample_shapes: shape for each sample.
+        :param replay_buffer_args(dict): arguments that will be passed to "replay_buffer_class.__init__()".
+        :param min_buffer_size(int): start training after the buffer grows to this size.
+        :param batch_size(int): size for each batch of training data.
+        :param n_heads(int): number of heads.
+        :param bootstrap_mask(callable): a bootstrap_mask generator.
+        """
         assert 0. <= reward_decay <= 1.
         assert 0 < td_learning_rate <= 1.
         assert target_sync_interval > 0
@@ -30,6 +66,7 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
 
         super(BootstrappedDQN, self).__init__(sess=tf.Session())
 
+        # Initialize parameters
         self.observation_space = observation_space
         self.action_space = action_space
         self.reward_decay = reward_decay
@@ -43,7 +80,7 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         self.current_head = 0
         self.step_count = 0
 
-        # Initialize replay buffer
+        # Initialize the replay buffer
         self.reply_buffer = replay_buffer_class(sample_shapes={
                                                     "state": observation_space.shape,
                                                     "next_state": observation_space.shape,
@@ -54,6 +91,7 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
                                                 **replay_buffer_args)
 
         # Construct the neural network
+        # Non-target network
         with tf.variable_scope('non-target') as scope_non_target:
             nn = nn_constructor(observation_space=observation_space,
                                 action_space=action_space,
@@ -64,6 +102,7 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
             self.nn_inputs = nn["input"]
             self.nn_heads = nn["head"]
 
+        # Target network
         with tf.variable_scope('non-target') as scope_target:
             nn = nn_constructor(observation_space=observation_space,
                                 action_space=action_space,
@@ -79,8 +118,9 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
                                             scope=scope_non_target.name)
         target_vars = tf.get_collection(key=tf.GraphKeys.TRAINABLE_VARIABLES,
                                         scope=scope_target.name)
-        self.op_sync = [tf.assign(target_var, non_target_var) for target_var, non_target_var
-                        in zip(target_vars, non_target_vars)]
+        self.op_sync_target = [tf.assign(target_var, non_target_var)
+                               for target_var, non_target_var
+                               in zip(target_vars, non_target_vars)]
 
         # Construct loss function
         self.nn_outputs = [tf.placeholder(tf.float32, (None, action_space.n))
@@ -92,9 +132,15 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
 
         # Initialize the neural network
         self.get_session().run(tf.global_variables_initializer())
-        self.get_session().run(self.op_sync)
+        self.get_session().run(self.op_sync_target)
 
     def act(self, state, **kwargs):
+        """
+        Choose an action to take.
+
+        :param state: current state.
+        :return: an action.
+        """
         action_values = self.get_session().run(self.nn_heads[self.current_head],
                              {self.nn_inputs[self.current_head]: [state]})
         print action_values
@@ -102,6 +148,16 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
 
     def reinforce_(self, state, action, reward, next_state,
                    episode_done=False, **kwargs):
+        """
+        Saves training data and train the neural network.
+        Asserts that "state" and "next_state" are already arrays.
+
+        :param state:
+        :param action:
+        :param reward:
+        :param next_state:
+        :param episode_done:
+        """
         self.reply_buffer.push_sample({
             "state": state,
             "next_state": next_state,
@@ -109,7 +165,7 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
             "reward": np.asarray(reward),
             "episode_done": np.asarray(episode_done)})
 
-        # Randomly choose a head
+        # Randomly choose next head if this episode ends
         if episode_done:
             self.current_head = random.randrange(self.n_heads)
 
@@ -123,15 +179,28 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
             self.sync_target()
 
     def generate_feed_dict(self):
+        """
+        Generate "feed_dict" for tf.Session().run() using next batch's data.
+        :return(dict): "feed_dict"
+        """
         def get_action_values(input_node, output_node, state):
+            """
+            Calculate action values.
+
+            :param input_node: neural network's input node.
+            :param output_node: neural network's output node.
+            :param state: game state.
+            :return(numpy.ndarray): action values.
+            """
             return self.get_session().run(output_node, feed_dict={input_node: [state]})[0]
 
-        batch = self.reply_buffer.sample_batch(self.batch_size)
         feed_dict = {node: [] for node in self.nn_inputs + self.nn_outputs}
 
+        batch = self.reply_buffer.sample_batch(self.batch_size)
         for i in range(self.batch_size):
             bootstrap_mask = self.mask_generator(self.n_heads)
 
+            # Unpack data
             state = batch["state"][i]
             next_state = batch["next_state"][i]
             action = batch["action"][i]
@@ -139,7 +208,6 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
             done = batch["episode_done"][i]
 
             for head in range(self.n_heads):
-                # TODO: empty list?
                 # Mask out some heads
                 if not bootstrap_mask[head]:
                     continue
@@ -168,7 +236,10 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         return feed_dict
 
     def sync_target(self):
-        self.get_session().run(self.op_sync)
+        """
+        Update the target network.
+        """
+        self.get_session().run(self.op_sync_target)
 
 
 def test():
