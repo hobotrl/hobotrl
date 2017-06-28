@@ -15,7 +15,7 @@ def bernoulli_mask(p):
     :param p: parameter for bernoulli distribution
     :return: a mask generator that take an integer 'n' as input and generates 'n' masks.
     """
-    return lambda n: [1 if random.random() < p else 0 for i in range(n)]
+    return lambda n: [np.random.binomial(1, p) for _ in range(n)]
 
 
 class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
@@ -122,13 +122,14 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
                                for target_var, non_target_var
                                in zip(target_vars, non_target_vars)]
 
-        # Construct loss function
+        # Construct training operation
         self.nn_outputs = [tf.placeholder(tf.float32, (None, action_space.n))
                            for _ in range(self.n_heads)]
         nn_output = tf.concat(self.nn_heads, 0)
         nn_target = tf.concat(self.nn_outputs, 0)
-        self.loss = loss_function(output=nn_output, target=nn_target)
-        self.train_op = trainer(self.loss)
+
+        loss = loss_function(output=nn_output, target=nn_target)
+        self.op_train = trainer(loss)
 
         # Initialize the neural network
         self.get_session().run(tf.global_variables_initializer())
@@ -142,12 +143,11 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         :return: an action.
         """
         action_values = self.get_session().run(self.nn_heads[self.current_head],
-                             {self.nn_inputs[self.current_head]: [state]})
-        print action_values
+                                               {self.nn_inputs[self.current_head]: [state]})[0]
         return np.argmax(action_values)
 
     def reinforce_(self, state, action, reward, next_state,
-                   episode_done=False, **kwargs):
+                   episode_done=None, **kwargs):
         """
         Saves training data and train the neural network.
         Asserts that "state" and "next_state" are already arrays.
@@ -158,12 +158,14 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         :param next_state:
         :param episode_done:
         """
-        self.reply_buffer.push_sample({
-            "state": state,
-            "next_state": next_state,
-            "action": np.asarray(action),
-            "reward": np.asarray(reward),
-            "episode_done": np.asarray(episode_done)})
+        # TODO: don't give the default value for "episode_done" in the base class
+        assert episode_done is not None
+
+        self.reply_buffer.push_sample({"state": state,
+                                       "next_state": next_state,
+                                       "action": np.asarray(action),
+                                       "reward": np.asarray(reward),
+                                       "episode_done": np.asarray(episode_done)})
 
         # Randomly choose next head if this episode ends
         if episode_done:
@@ -171,16 +173,18 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
 
         # Training
         if self.reply_buffer.get_count() > self.min_buffer_size:
-            self.get_session().run(self.train_op, feed_dict=self.generate_feed_dict())
+            self.get_session().run(self.op_train, feed_dict=self.generate_feed_dict())
 
         # Synchronize target network
         self.step_count += 1
+
         if self.step_count % self.target_sync_interval == 0:
             self.sync_target()
 
     def generate_feed_dict(self):
         """
         Generate "feed_dict" for tf.Session().run() using next batch's data.
+
         :return(dict): "feed_dict"
         """
         def get_action_values(input_node, output_node, state):
@@ -198,8 +202,6 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
 
         batch = self.reply_buffer.sample_batch(self.batch_size)
         for i in range(self.batch_size):
-            bootstrap_mask = self.mask_generator(self.n_heads)
-
             # Unpack data
             state = batch["state"][i]
             next_state = batch["next_state"][i]
@@ -207,6 +209,7 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
             reward = batch["reward"][i]
             done = batch["episode_done"][i]
 
+            bootstrap_mask = self.mask_generator(self.n_heads)
             for head in range(self.n_heads):
                 # Mask out some heads
                 if not bootstrap_mask[head]:
@@ -229,7 +232,7 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
                 updated_action_value[action] += \
                     self.td_learning_rate*(learning_target - updated_action_value[action])
 
-                # Add to feed dict
+                # Add to feed_dict
                 feed_dict[self.nn_inputs[head]].append(state)
                 feed_dict[self.nn_outputs[head]].append(updated_action_value)
 
