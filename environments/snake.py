@@ -15,6 +15,7 @@ N_LAYER = 4  # Number of layers
 class SnakeGame(gym.core.Env):
     action_space = spaces.Discrete(4)  # Action space
     metadata = {'render.modes': ['ansi']}
+    spec = None
 
     offset_for_direction = [(0,-1), (0,1),
                             (-1, 0), (1,0)]  # Position offset for moving up, down, left and right
