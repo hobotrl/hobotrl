@@ -112,6 +112,9 @@ class SnakeGame(gym.core.Env):
         """
         Render the environment in console.
         """
+        if close:
+            return
+
         assert mode == 'ansi'
 
         result = ''
