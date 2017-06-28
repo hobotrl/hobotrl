@@ -1,4 +1,5 @@
 from gym import spaces
+import gym
 import numpy as np
 import random
 
@@ -6,13 +7,14 @@ import random
 FOOD = 0
 BODY = 1
 HEAD = 2
-EMPTY = 3
+ONES = 3  # A layer of all ones
 
 N_LAYER = 4  # Number of layers
 
 
-class SnakeGame(object):
+class SnakeGame(gym.core.Env):
     action_space = spaces.Discrete(4)  # Action space
+    metadata = {'render.modes': ['ansi']}
 
     offset_for_direction = [(0,-1), (0,1),
                             (-1, 0), (1,0)]  # Position offset for moving up, down, left and right
@@ -78,7 +80,7 @@ class SnakeGame(object):
 
         return True
 
-    def reset(self):
+    def _reset(self):
         """
         Reset the environment.
         """
@@ -87,7 +89,7 @@ class SnakeGame(object):
 
         for i in range(self.size_x):
             for j in range(self.size_y):
-                self.state[i][j][EMPTY] = 1
+                self.state[i][j][ONES] = 1
 
         # Reset the snake
         self.body_direction = []
@@ -104,11 +106,15 @@ class SnakeGame(object):
         self.frame_count = 0
         self.done = False
 
-    def render(self):
+        return np.array(self.state)
+
+    def _render(self, mode='ansi', close=False):
         """
         Render the environment in console.
         """
-        import sys
+        assert mode == 'ansi'
+
+        result = ''
 
         def str_for_grid(x, y):
             """
@@ -135,10 +141,12 @@ class SnakeGame(object):
         # Enumerate the grids including the border
         for y in range(-1, self.size_y + 1):
             for x in range(-1, self.size_x + 1):
-                sys.stdout.write(str_for_grid(x, y))
-            print ""
+                result += str_for_grid(x, y)
+            result += '\n'
 
-    def step(self, action):
+        return result
+
+    def _step(self, action):
         """
         Take an action.
 
@@ -190,3 +198,26 @@ class SnakeGame(object):
         self.frame_count += 1
 
         return np.array(self.state), reward, self.done, {}
+
+
+def test():
+    import time
+    frame_time = 0.5
+
+    env = SnakeGame(5, 5, 2, 2)
+
+    print env.render('ansi')
+    time.sleep(frame_time)
+
+    while True:
+        result = env.step(env.action_space.sample())
+        print result
+        print env.render('ansi')
+
+        if result[2]:
+            print env.reset()
+
+        time.sleep(frame_time)
+
+if __name__ == "__main__":
+    test()
