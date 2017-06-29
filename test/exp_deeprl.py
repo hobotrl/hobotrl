@@ -5,7 +5,7 @@ import sys
 sys.path.append(".")
 import logging
 
-# import cv2
+import cv2
 import gym
 import numpy as np
 import tensorflow as tf
@@ -811,7 +811,7 @@ class BootstrappedDQNSnakeGame(Experiment):
         # Parameters
         random.seed(1105)  # Seed
 
-        n_head = 10  # Number of heads
+        n_head = 1  # Number of heads
 
         display = False  # Whether to display the game
         frame_time = 0.05  # Interval between each frame
@@ -823,6 +823,8 @@ class BootstrappedDQNSnakeGame(Experiment):
 
         save_checkpoint = True  # Whether to save checkpoint
         save_interval = 100  # Save after this number of episodes
+
+        stop_at_episode = 1800
 
         # Reward recorder
         reward_counter = [0.]
@@ -876,9 +878,12 @@ class BootstrappedDQNSnakeGame(Experiment):
                         del reward_counter[0]
 
                     if save_checkpoint and episode_counter % save_interval == 0:
-                        print "Checkpoint saved"
+                        print "%d Checkpoint saved" % episode_counter
                         saver = tf.train.Saver()
                         saver.save(agent.get_session(), os.path.join(log_dir, '%d.ckpt' % episode_counter))
+
+                    if episode_counter > stop_at_episode:
+                        exit()
 
     @staticmethod
     def loss_function(output, target):
