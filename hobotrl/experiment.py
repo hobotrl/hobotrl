@@ -45,6 +45,7 @@ class Experiment:
 
     @staticmethod
     def main():
+        import os
         parser = argparse.ArgumentParser()
         parser.add_argument("operation", default="list")
         parser.add_argument("--name", default="HelloWorld")
@@ -55,7 +56,7 @@ class Experiment:
                             default="{'ps':['localhost:2222'], " \
                                     "'worker':['localhost:2223', 'localhost:2224', 'localhost:2225']}")
         args = parser.parse_args()
-        args.logdir = "log/" + args.name if args.logdir is None else args.logdir
+        args.logdir = os.path.join("log", args.name if args.logdir is None else args.logdir)
         if args.operation == "list":
             print Experiment.list()
         elif args.operation == "run":
