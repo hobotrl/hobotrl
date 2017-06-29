@@ -46,7 +46,7 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         :param reward_decay(float): reward decay(lambda).
         :param td_learning_rate(float): learning rate for temporal difference learning(alpha).
         :param target_sync_interval(int): controls the frequency of synchronizing the target network.
-        :param replay_buffer_class(callable): a class that can be used as a replay buffer.
+        :param replay_buffer_class(class): a class that can be used as a replay buffer.
             param sample_shapes: shape for each sample.
         :param replay_buffer_args(dict): arguments that will be passed to "replay_buffer_class.__init__()".
         :param min_buffer_size(int): start training after the buffer grows to this size.
@@ -244,103 +244,129 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         """
         self.get_session().run(self.op_sync_target)
 
+from hobotrl.experiment import Experiment
 
-def test():
-    def render():
-        print env.render(mode='ansi')
-        print "Reward:", reward
-        print "Head:", agent.current_head
-        print "Done:", done
-        print ""
-        time.sleep(frame_time)
 
-    import time
-    frame_time = 0.1
+class BootstrappedDQNSnakeGame(Experiment):
+    def run(self, args):
+        """
+        Run the experiment.
 
-    env = snake.SnakeGame(3, 3, 1, 1, max_episode_length=20)
-    agent = BootstrappedDQN(observation_space=env.observation_space,
-                            action_space=env.action_space,
-                            reward_decay=1.,
-                            td_learning_rate=0.5,
-                            target_sync_interval=200,
-                            nn_constructor=nn_constructor,
-                            loss_function=loss_function,
-                            trainer=tf.train.GradientDescentOptimizer(learning_rate=0.01).minimize,
-                            replay_buffer_class=hrl.playback.MapPlayback,
-                            replay_buffer_args={"capacity": 20000},
-                            min_buffer_size=100,
-                            batch_size=20)
-    next_state = np.array(env.state)
-    while True:
-        state = next_state
-        action = agent.act(state)
-        next_state, reward, done, info = env.step(action)
-        render()
+        :param args: the key "frame_time" is the time interval between each frame.
+        :type args: dict
+        """
+        def render():
+            """
+            Render the environment and related information to the console.
+            """
+            print env.render(mode='ansi')
+            print "Reward:", reward
+            print "Head:", agent.current_head
+            print "Done:", done
+            print ""
+            time.sleep(frame_time)
 
-        agent.reinforce_(state=state,
-                         action=action,
-                         reward=reward,
-                         next_state=next_state,
-                         episode_done=done)
+        import time
 
-        if done:
-            next_state = np.array(env.reset())
+        # Unpack parameters
+        try:
+            frame_time = float(args["frame_time"])
+        except KeyError:
+            frame_time = 0.05
+
+        # Initialize the environment and the agent
+        env = snake.SnakeGame(3, 3, 1, 1, max_episode_length=20)
+        agent = BootstrappedDQN(observation_space=env.observation_space,
+                                action_space=env.action_space,
+                                reward_decay=1.,
+                                td_learning_rate=0.5,
+                                target_sync_interval=200,
+                                nn_constructor=self.nn_constructor,
+                                loss_function=self.loss_function,
+                                trainer=tf.train.GradientDescentOptimizer(learning_rate=0.01).minimize,
+                                replay_buffer_class=hrl.playback.MapPlayback,
+                                replay_buffer_args={"capacity": 20000},
+                                min_buffer_size=100,
+                                batch_size=20)
+
+        # Start training
+        next_state = np.array(env.state)
+        while True:
+            state = next_state
+            action = agent.act(state)
+            next_state, reward, done, info = env.step(action)
             render()
 
-def loss_function(output, target):
-    return tf.reduce_sum(tf.squared_difference(output, target))
+            agent.reinforce_(state=state,
+                             action=action,
+                             reward=reward,
+                             next_state=next_state,
+                             episode_done=done)
 
+            if done:
+                next_state = np.array(env.reset())
+                render()
 
-def nn_constructor(observation_space, action_space, n_heads, **kwargs):
-    # use different weights for each head
-    def leakyRelu(x):
-        return tf.maximum(0.01*x, x)
+    @staticmethod
+    def loss_function(output, target):
+        """
+        Calculate the loss.
+        """
+        return tf.reduce_sum(tf.squared_difference(output, target))
 
-    def conv2d(x, w):
-        return tf.nn.conv2d(x, w, strides=[1, 1, 1, 1], padding="SAME")
+    @staticmethod
+    def nn_constructor(observation_space, action_space, n_heads, **kwargs):
+        """
+        Construct the neural network.
+        """
+        def leakyRelu(x):
+            return tf.maximum(0.01*x, x)
 
-    def weight(shape):
-        return tf.Variable(tf.truncated_normal(shape, stddev=0.1))
+        def conv2d(x, w):
+            return tf.nn.conv2d(x, w, strides=[1, 1, 1, 1], padding="SAME")
 
-    def bias(shape):
-        return tf.Variable(tf.constant(0.1, shape=shape))
+        def weight(shape):
+            return tf.Variable(tf.truncated_normal(shape, stddev=0.1))
 
-    eshape = observation_space.shape
-    nn_inputs = []
-    nn_outputs = []
+        def bias(shape):
+            return tf.Variable(tf.constant(0.1, shape=shape))
 
-    n_channel1 = 8
-    w1 = weight([3, 3, eshape[-1], n_channel1])
-    b1 = bias([n_channel1])
+        eshape = observation_space.shape
+        nn_inputs = []
+        nn_outputs = []
 
-    n_channel2 = 16
-    w2 = weight([n_channel1*eshape[0]*eshape[1], n_channel2])
-    b2 = bias([n_channel2])
+        # Layer 1 parameters
+        n_channel1 = 8
+        w1 = weight([3, 3, eshape[-1], n_channel1])
+        b1 = bias([n_channel1])
 
-    for i in range(n_heads):
-        x = tf.placeholder(tf.float32, (None,) + observation_space.shape)
+        # Layer 2 parameters
+        n_channel2 = 16
+        w2 = weight([n_channel1*eshape[0]*eshape[1], n_channel2])
+        b2 = bias([n_channel2])
 
-        w3 = weight([n_channel2, 4])
-        b3 = bias([4])
+        for i in range(n_heads):
+            x = tf.placeholder(tf.float32, (None,) + observation_space.shape)
 
-        layer1 = leakyRelu(conv2d(x, w1) + b1)
-        layer1_flatten = tf.reshape(layer1, [-1, n_channel1*eshape[0]*eshape[1]])
+            # Layer 3 parameters
+            w3 = weight([n_channel2, 4])
+            b3 = bias([4])
 
-        layer2 = leakyRelu(tf.matmul(layer1_flatten, w2) + b2)
+            # Layer 1
+            layer1 = leakyRelu(conv2d(x, w1) + b1)
+            layer1_flatten = tf.reshape(layer1, [-1, n_channel1*eshape[0]*eshape[1]])
 
-        layer3 = tf.matmul(layer2, w3) + b3
+            # Layer 2
+            layer2 = leakyRelu(tf.matmul(layer1_flatten, w2) + b2)
 
-        nn_inputs.append(x)
-        nn_outputs.append(layer3)
+            # Layer 3
+            layer3 = tf.matmul(layer2, w3) + b3
 
-    return {"input": nn_inputs, "head": nn_outputs}
+            nn_inputs.append(x)
+            nn_outputs.append(layer3)
 
-
-def test_bernoulli_mask():
-    while True:
-        print bernoulli_mask(0.5)(10)
-        raw_input()
+        return {"input": nn_inputs, "head": nn_outputs}
 
 if __name__ == "__main__":
-    test()
-    # test_bernoulli_mask()
+    exp = BootstrappedDQNSnakeGame()
+    exp.run(args={"frame_time": "0.1"})
