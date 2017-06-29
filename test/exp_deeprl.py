@@ -811,12 +811,18 @@ class BootstrappedDQNSnakeGame(Experiment):
         # Parameters
         random.seed(1105)  # Seed
 
+        n_head = 10 # Number of heads
+
         display = False  # Whether to display the
         frame_time = 0.05  # Interval between each frame
 
-        if not os.path.exists(args.logdir):
-            os.makedirs(args.logdir)
-        log_file = open(os.path.join(args.logdir, "booststrapped_DQN_Snake_head10.csv"), "w") # Log file
+        log_dir = os.path.join(args.logdir, "head%d" % n_head)
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        log_file = open(os.path.join(log_dir, "booststrapped_DQN_Snake.csv"), "w") # Log file
+
+        save_checkpoint = True
+        save_interval = 100
 
         # Reward recorder
         reward_counter = [0.]
@@ -836,10 +842,11 @@ class BootstrappedDQNSnakeGame(Experiment):
                                 replay_buffer_args={"capacity": 20000},
                                 min_buffer_size=100,
                                 batch_size=20,
-                                n_heads=10)
+                                n_heads=n_head)
 
         # Start training
         next_state = np.array(env.state)
+        episode_counter = 0
         while True:
             state = next_state
             action = agent.act(state)
@@ -855,6 +862,7 @@ class BootstrappedDQNSnakeGame(Experiment):
             if done:
                 next_state = np.array(env.reset())
                 render()
+                episode_counter += 1
 
             if log_file:
                 reward_counter[-1] += reward
@@ -866,6 +874,12 @@ class BootstrappedDQNSnakeGame(Experiment):
                     reward_counter.append(0.)
                     if len(reward_counter) > counter_window:
                         del reward_counter[0]
+
+                    if save_checkpoint and episode_counter % save_interval == 0:
+                        print "Checkpoint saved"
+                        saver = tf.train.Saver()
+                        saver.save(agent.get_session(), os.path.join(log_dir, '%d.ckpt' % episode_counter))
+
     @staticmethod
     def loss_function(output, target):
         """
