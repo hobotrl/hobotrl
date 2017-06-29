@@ -782,5 +782,170 @@ class AOTDQNBreakout(Experiment):
 Experiment.register(AOTDQNBreakout, "Optimaly Tightening DQN for Breakout")
 
 
+class BootstrappedDQNSnakeGame(Experiment):
+    def run(self, args):
+        """
+        Run the experiment.
+        """
+        def render():
+            """
+            Render the environment and related information to the console.
+            """
+            if not display:
+                return
+
+            print env.render(mode='ansi')
+            print "Reward:", reward
+            print "Head:", agent.current_head
+            print "Done:", done
+            print ""
+            time.sleep(frame_time)
+
+        from environments.snake import SnakeGame
+        from hobotrl.algorithms.bootstrapped_DQN import BootstrappedDQN
+
+        import time
+        import os
+        import random
+
+        # Parameters
+        random.seed(1105)  # Seed
+
+        n_head = 1  # Number of heads
+
+        display = False  # Whether to display the game
+        frame_time = 0.05  # Interval between each frame
+
+        log_dir = os.path.join(args.logdir, "head%d" % n_head)
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        log_file = open(os.path.join(log_dir, "booststrapped_DQN_Snake.csv"), "w") # Log file
+
+        save_checkpoint = True  # Whether to save checkpoint
+        save_interval = 100  # Save after this number of episodes
+
+        stop_at_episode = 1800
+
+        # Reward recorder
+        reward_counter = [0.]
+        counter_window = 100
+
+        # Initialize the environment and the agent
+        env = SnakeGame(3, 3, 1, 1, max_episode_length=30)
+        agent = BootstrappedDQN(observation_space=env.observation_space,
+                                action_space=env.action_space,
+                                reward_decay=1.,
+                                td_learning_rate=0.5,
+                                target_sync_interval=200,
+                                nn_constructor=self.nn_constructor,
+                                loss_function=self.loss_function,
+                                trainer=tf.train.GradientDescentOptimizer(learning_rate=0.01).minimize,
+                                replay_buffer_class=hrl.playback.MapPlayback,
+                                replay_buffer_args={"capacity": 20000},
+                                min_buffer_size=100,
+                                batch_size=20,
+                                n_heads=n_head)
+
+        # Start training
+        next_state = np.array(env.state)
+        episode_counter = 0
+        while True:
+            state = next_state
+            action = agent.act(state)
+            next_state, reward, done, info = env.step(action)
+            render()
+
+            agent.reinforce_(state=state,
+                             action=action,
+                             reward=reward,
+                             next_state=next_state,
+                             episode_done=done)
+
+            if done:
+                next_state = np.array(env.reset())
+                render()
+                episode_counter += 1
+
+            if log_file:
+                reward_counter[-1] += reward
+                if done:
+                    average = sum(reward_counter)/len(reward_counter)
+                    print "Average reward: %.2f" % average
+                    log_file.write("%d,%.2f\n" % (int(reward_counter[-1] + 0.01), average))
+
+                    reward_counter.append(0.)
+                    if len(reward_counter) > counter_window:
+                        del reward_counter[0]
+
+                    if save_checkpoint and episode_counter % save_interval == 0:
+                        print "%d Checkpoint saved" % episode_counter
+                        saver = tf.train.Saver()
+                        saver.save(agent.get_session(), os.path.join(log_dir, '%d.ckpt' % episode_counter))
+
+                    if episode_counter > stop_at_episode:
+                        exit()
+
+    @staticmethod
+    def loss_function(output, target):
+        """
+        Calculate the loss.
+        """
+        return tf.reduce_sum(tf.squared_difference(output, target))
+
+    @staticmethod
+    def nn_constructor(observation_space, action_space, n_heads, **kwargs):
+        """
+        Construct the neural network.
+        """
+        def leakyRelu(x):
+            return tf.maximum(0.01*x, x)
+
+        def conv2d(x, w):
+            return tf.nn.conv2d(x, w, strides=[1, 1, 1, 1], padding="SAME")
+
+        def weight(shape):
+            return tf.Variable(tf.truncated_normal(shape, stddev=0.1))
+
+        def bias(shape):
+            return tf.Variable(tf.constant(0.1, shape=shape))
+
+        eshape = observation_space.shape
+        nn_inputs = []
+        nn_outputs = []
+
+        # Layer 1 parameters
+        n_channel1 = 8
+        w1 = weight([3, 3, eshape[-1], n_channel1])
+        b1 = bias([n_channel1])
+
+        # Layer 2 parameters
+        n_channel2 = 16
+        w2 = weight([n_channel1*eshape[0]*eshape[1], n_channel2])
+        b2 = bias([n_channel2])
+
+        for i in range(n_heads):
+            x = tf.placeholder(tf.float32, (None,) + observation_space.shape)
+
+            # Layer 3 parameters
+            w3 = weight([n_channel2, 4])
+            b3 = bias([4])
+
+            # Layer 1
+            layer1 = leakyRelu(conv2d(x, w1) + b1)
+            layer1_flatten = tf.reshape(layer1, [-1, n_channel1*eshape[0]*eshape[1]])
+
+            # Layer 2
+            layer2 = leakyRelu(tf.matmul(layer1_flatten, w2) + b2)
+
+            # Layer 3
+            layer3 = tf.matmul(layer2, w3) + b3
+
+            nn_inputs.append(x)
+            nn_outputs.append(layer3)
+
+        return {"input": nn_inputs, "head": nn_outputs}
+
+Experiment.register(BootstrappedDQNSnakeGame, "Bootstrapped DQN for the Snake game")
+
 if __name__ == '__main__':
     Experiment.main()

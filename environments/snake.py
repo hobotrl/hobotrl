@@ -15,11 +15,12 @@ N_LAYER = 4  # Number of layers
 class SnakeGame(gym.core.Env):
     action_space = spaces.Discrete(4)  # Action space
     metadata = {'render.modes': ['ansi']}
+    spec = None
 
     offset_for_direction = [(0,-1), (0,1),
                             (-1, 0), (1,0)]  # Position offset for moving up, down, left and right
 
-    def __init__(self, size_x, size_y, head_x, head_y, food_reward=1., wall_reward=0., n_food=1):
+    def __init__(self, size_x, size_y, head_x, head_y, max_episode_length=float('inf'), food_reward=1., wall_reward=0., n_food=1):
         """
         The classic Snake game.
 
@@ -27,6 +28,7 @@ class SnakeGame(gym.core.Env):
         :param size_y(int): map height
         :param head_x(int): x coordinate of the snake's initial position
         :param head_y(int): y coordinate of the snake's initial position
+        :param max_episode_length(int): maximum episode length
         :param food_reward(float): reward for getting food
         :param wall_reward(float): reward for hitting the border or the snake itself
         :param n_food(int): number of foods in the map
@@ -44,6 +46,7 @@ class SnakeGame(gym.core.Env):
         self.size_y = size_y
         self.init_head_x = head_x
         self.init_head_y = head_y
+        self.max_episode_length = max_episode_length
         self.food_reward = food_reward
         self.wall_reward = wall_reward
 
@@ -112,6 +115,9 @@ class SnakeGame(gym.core.Env):
         """
         Render the environment in console.
         """
+        if close:
+            return
+
         assert mode == 'ansi'
 
         result = ''
@@ -196,6 +202,9 @@ class SnakeGame(gym.core.Env):
                 self.tail_y += dy
 
         self.frame_count += 1
+
+        if self.frame_count > self.max_episode_length:
+            self.done = True
 
         return np.array(self.state), reward, self.done, {}
 
