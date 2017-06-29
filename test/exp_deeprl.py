@@ -791,6 +791,9 @@ class BootstrappedDQNSnakeGame(Experiment):
             """
             Render the environment and related information to the console.
             """
+            if not display:
+                return
+
             print env.render(mode='ansi')
             print "Reward:", reward
             print "Head:", agent.current_head
@@ -798,11 +801,26 @@ class BootstrappedDQNSnakeGame(Experiment):
             print ""
             time.sleep(frame_time)
 
-        import time
         from environments.snake import SnakeGame
         from hobotrl.algorithms.bootstrapped_DQN import BootstrappedDQN
 
-        frame_time = 0.05
+        import time
+        import os
+        import random
+
+        # Parameters
+        random.seed(1105)  # Seed
+
+        display = False  # Whether to display the
+        frame_time = 0.05  # Interval between each frame
+
+        if not os.path.exists(args.logdir):
+            os.makedirs(args.logdir)
+        log_file = open(os.path.join(args.logdir, "booststrapped_DQN_Snake.csv"), "w") # Log file
+
+        # Reward recorder
+        reward_counter = [0.]
+        counter_window = 100
 
         # Initialize the environment and the agent
         env = SnakeGame(3, 3, 1, 1, max_episode_length=20)
@@ -837,6 +855,16 @@ class BootstrappedDQNSnakeGame(Experiment):
                 next_state = np.array(env.reset())
                 render()
 
+            if log_file:
+                reward_counter[-1] += reward
+                if done:
+                    average = sum(reward_counter)/len(reward_counter)
+                    print "Average reward:", average
+                    log_file.write("%f,%f\n" % (reward_counter[-1], average))
+
+                    reward_counter.append(0.)
+                    if len(reward_counter) > counter_window:
+                        del reward_counter[0]
     @staticmethod
     def loss_function(output, target):
         """
