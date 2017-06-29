@@ -786,9 +786,6 @@ class BootstrappedDQNSnakeGame(Experiment):
     def run(self, args):
         """
         Run the experiment.
-
-        :param args: the key "frame_time" is the time interval between each frame.
-        :type args: dict
         """
         def render():
             """
@@ -805,11 +802,7 @@ class BootstrappedDQNSnakeGame(Experiment):
         from environments.snake import SnakeGame
         from hobotrl.algorithms.bootstrapped_DQN import BootstrappedDQN
 
-        # Unpack parameters
-        try:
-            frame_time = float(args["frame_time"])
-        except KeyError:
-            frame_time = 0.05
+        frame_time = 0.05
 
         # Initialize the environment and the agent
         env = SnakeGame(3, 3, 1, 1, max_episode_length=20)
