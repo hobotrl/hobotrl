@@ -816,14 +816,14 @@ class BootstrappedDQNSnakeGame(Experiment):
 
         if not os.path.exists(args.logdir):
             os.makedirs(args.logdir)
-        log_file = open(os.path.join(args.logdir, "booststrapped_DQN_Snake.csv"), "w") # Log file
+        log_file = open(os.path.join(args.logdir, "booststrapped_DQN_Snake_head10.csv"), "w") # Log file
 
         # Reward recorder
         reward_counter = [0.]
         counter_window = 100
 
         # Initialize the environment and the agent
-        env = SnakeGame(3, 3, 1, 1, max_episode_length=20)
+        env = SnakeGame(3, 3, 1, 1, max_episode_length=30)
         agent = BootstrappedDQN(observation_space=env.observation_space,
                                 action_space=env.action_space,
                                 reward_decay=1.,
@@ -835,7 +835,8 @@ class BootstrappedDQNSnakeGame(Experiment):
                                 replay_buffer_class=hrl.playback.MapPlayback,
                                 replay_buffer_args={"capacity": 20000},
                                 min_buffer_size=100,
-                                batch_size=20)
+                                batch_size=20,
+                                n_heads=10)
 
         # Start training
         next_state = np.array(env.state)
@@ -859,8 +860,8 @@ class BootstrappedDQNSnakeGame(Experiment):
                 reward_counter[-1] += reward
                 if done:
                     average = sum(reward_counter)/len(reward_counter)
-                    print "Average reward:", average
-                    log_file.write("%f,%f\n" % (reward_counter[-1], average))
+                    print "Average reward: %.2f" % average
+                    log_file.write("%d,%.2f\n" % (int(reward_counter[-1] + 0.01), average))
 
                     reward_counter.append(0.)
                     if len(reward_counter) > counter_window:
