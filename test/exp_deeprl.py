@@ -811,9 +811,9 @@ class BootstrappedDQNSnakeGame(Experiment):
         # Parameters
         random.seed(1105)  # Seed
 
-        n_head = 10 # Number of heads
+        n_head = 10  # Number of heads
 
-        display = False  # Whether to display the
+        display = False  # Whether to display the game
         frame_time = 0.05  # Interval between each frame
 
         log_dir = os.path.join(args.logdir, "head%d" % n_head)
@@ -821,8 +821,8 @@ class BootstrappedDQNSnakeGame(Experiment):
             os.makedirs(log_dir)
         log_file = open(os.path.join(log_dir, "booststrapped_DQN_Snake.csv"), "w") # Log file
 
-        save_checkpoint = True
-        save_interval = 100
+        save_checkpoint = True  # Whether to save checkpoint
+        save_interval = 100  # Save after this number of episodes
 
         # Reward recorder
         reward_counter = [0.]
