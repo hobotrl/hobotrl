@@ -82,7 +82,8 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
                                                     "next_state": observation_space.shape,
                                                     "action": [],
                                                     "reward": [],
-                                                    "episode_done": []
+                                                    "episode_done": [],
+                                                    "mask": [self.n_heads]
                                                 },
                                                 **replay_buffer_args)
 
@@ -161,7 +162,8 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
                                        "next_state": next_state,
                                        "action": np.asarray(action),
                                        "reward": np.asarray(reward),
-                                       "episode_done": np.asarray(episode_done)})
+                                       "episode_done": np.asarray(episode_done),
+                                       "mask": self.mask_generator(self.n_heads)})
 
         # Randomly choose next head if this episode ends
         if episode_done:
@@ -169,7 +171,11 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
 
         # Training
         if self.reply_buffer.get_count() > self.min_buffer_size:
-            self.get_session().run(self.op_train, feed_dict=self.generate_feed_dict())
+            feed_dict = self.generate_feed_dict()
+            try:
+                self.get_session().run(self.op_train, feed_dict=feed_dict)
+            except ValueError:
+                pass
 
         # Synchronize target network
         self.step_count += 1
@@ -204,8 +210,8 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
             action = batch["action"][i]
             reward = batch["reward"][i]
             done = batch["episode_done"][i]
+            bootstrap_mask = batch["mask"][i]
 
-            bootstrap_mask = self.mask_generator(self.n_heads)
             for head in range(self.n_heads):
                 # Mask out some heads
                 if not bootstrap_mask[head]:
