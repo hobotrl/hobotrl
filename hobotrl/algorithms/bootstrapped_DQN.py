@@ -163,7 +163,7 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
                                        "action": np.asarray(action),
                                        "reward": np.asarray(reward),
                                        "episode_done": np.asarray(episode_done),
-                                       "mask": self.mask_generator(self.n_heads)})
+                                       "mask": np.array(self.mask_generator(self.n_heads))})
 
         # Randomly choose next head if this episode ends
         if episode_done:

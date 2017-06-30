@@ -811,7 +811,7 @@ class BootstrappedDQNSnakeGame(Experiment):
         # Parameters
         random.seed(1105)  # Seed
 
-        for n_head in# [15, 20]:
+        for n_head in [15, 20]:
             # n_head = 10  # Number of heads
 
             display = False  # Whether to display the game
@@ -949,7 +949,7 @@ class BootstrappedDQNSnakeGame(Experiment):
 Experiment.register(BootstrappedDQNSnakeGame, "Bootstrapped DQN for the Snake game")
 
 
-class BootstrappedDQNCartPole(Experiment):
+class BootstrappedDQNPendulum(Experiment):
     def run(self, args):
         """
         Run the experiment.
@@ -980,13 +980,13 @@ class BootstrappedDQNCartPole(Experiment):
 
         n_head = 20  # Number of heads
 
-        display = True  # Whether to display the game
+        display = False  # Whether to display the game
         frame_time = 0  # Interval between each frame
 
         log_dir = os.path.join(args.logdir, "head%d" % n_head)
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
-        log_file = open(os.path.join(log_dir, "booststrapped_DQN_Snake.csv"), "w") # Log file
+        log_file = open(os.path.join(log_dir, "booststrapped_DQN_Pendulum.csv"), "w") # Log file
 
         save_checkpoint = True  # Whether to save checkpoint
         save_interval = 100  # Save after this number of episodes
@@ -1017,7 +1017,9 @@ class BootstrappedDQNCartPole(Experiment):
         # Start training
         next_state = env.reset()
         episode_counter = 0
+        step_count = -1
         while True:
+            step_count += 1
             state = next_state
             action = agent.act(state)
             next_state, reward, done, info = env.step(action)
@@ -1039,6 +1041,7 @@ class BootstrappedDQNCartPole(Experiment):
                 if done:
                     average = sum(reward_counter)/len(reward_counter)
                     print "%d Average reward: %.2f" % (episode_counter, average)
+                    print "%d Steps" % step_count
                     log_file.write("%d,%.2f\n" % (int(reward_counter[-1] + 0.01), average))
 
                     reward_counter.append(0.)
@@ -1112,7 +1115,7 @@ class BootstrappedDQNCartPole(Experiment):
 
         return {"input": nn_inputs, "head": nn_outputs}
 
-Experiment.register(BootstrappedDQNCartPole, "Bootstrapped DQN for the Cart Pole")
+Experiment.register(BootstrappedDQNPendulum, "Bootstrapped DQN for the Pendulum")
 
 if __name__ == '__main__':
     Experiment.main()
