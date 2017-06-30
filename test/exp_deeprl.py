@@ -811,79 +811,80 @@ class BootstrappedDQNSnakeGame(Experiment):
         # Parameters
         random.seed(1105)  # Seed
 
-        n_head = 1  # Number of heads
+        for n_head in# [15, 20]:
+            # n_head = 10  # Number of heads
 
-        display = False  # Whether to display the game
-        frame_time = 0.05  # Interval between each frame
+            display = False  # Whether to display the game
+            frame_time = 0.05  # Interval between each frame
 
-        log_dir = os.path.join(args.logdir, "head%d" % n_head)
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-        log_file = open(os.path.join(log_dir, "booststrapped_DQN_Snake.csv"), "w") # Log file
+            log_dir = os.path.join(args.logdir, "head%d" % n_head)
+            if not os.path.exists(log_dir):
+                os.makedirs(log_dir)
+            log_file = open(os.path.join(log_dir, "booststrapped_DQN_Snake.csv"), "w") # Log file
 
-        save_checkpoint = True  # Whether to save checkpoint
-        save_interval = 100  # Save after this number of episodes
+            save_checkpoint = True  # Whether to save checkpoint
+            save_interval = 100  # Save after this number of episodes
 
-        stop_at_episode = 1800
+            stop_at_episode = 3000
 
-        # Reward recorder
-        reward_counter = [0.]
-        counter_window = 100
+            # Reward recorder
+            reward_counter = [0.]
+            counter_window = 100
 
-        # Initialize the environment and the agent
-        env = SnakeGame(3, 3, 1, 1, max_episode_length=30)
-        agent = BootstrappedDQN(observation_space=env.observation_space,
-                                action_space=env.action_space,
-                                reward_decay=1.,
-                                td_learning_rate=0.5,
-                                target_sync_interval=200,
-                                nn_constructor=self.nn_constructor,
-                                loss_function=self.loss_function,
-                                trainer=tf.train.GradientDescentOptimizer(learning_rate=0.01).minimize,
-                                replay_buffer_class=hrl.playback.MapPlayback,
-                                replay_buffer_args={"capacity": 20000},
-                                min_buffer_size=100,
-                                batch_size=20,
-                                n_heads=n_head)
+            # Initialize the environment and the agent
+            env = SnakeGame(3, 3, 1, 1, max_episode_length=30)
+            agent = BootstrappedDQN(observation_space=env.observation_space,
+                                    action_space=env.action_space,
+                                    reward_decay=1.,
+                                    td_learning_rate=0.5,
+                                    target_sync_interval=200,
+                                    nn_constructor=self.nn_constructor,
+                                    loss_function=self.loss_function,
+                                    trainer=tf.train.GradientDescentOptimizer(learning_rate=0.01).minimize,
+                                    replay_buffer_class=hrl.playback.MapPlayback,
+                                    replay_buffer_args={"capacity": 20000},
+                                    min_buffer_size=100,
+                                    batch_size=20,
+                                    n_heads=n_head)
 
-        # Start training
-        next_state = np.array(env.state)
-        episode_counter = 0
-        while True:
-            state = next_state
-            action = agent.act(state)
-            next_state, reward, done, info = env.step(action)
-            render()
-
-            agent.reinforce_(state=state,
-                             action=action,
-                             reward=reward,
-                             next_state=next_state,
-                             episode_done=done)
-
-            if done:
-                next_state = np.array(env.reset())
+            # Start training
+            next_state = np.array(env.state)
+            episode_counter = 0
+            while True:
+                state = next_state
+                action = agent.act(state)
+                next_state, reward, done, info = env.step(action)
                 render()
-                episode_counter += 1
 
-            if log_file:
-                reward_counter[-1] += reward
+                agent.reinforce_(state=state,
+                                 action=action,
+                                 reward=reward,
+                                 next_state=next_state,
+                                 episode_done=done)
+
                 if done:
-                    average = sum(reward_counter)/len(reward_counter)
-                    print "Average reward: %.2f" % average
-                    log_file.write("%d,%.2f\n" % (int(reward_counter[-1] + 0.01), average))
+                    next_state = np.array(env.reset())
+                    render()
+                    episode_counter += 1
 
-                    reward_counter.append(0.)
-                    if len(reward_counter) > counter_window:
-                        del reward_counter[0]
+                if log_file:
+                    reward_counter[-1] += reward
+                    if done:
+                        average = sum(reward_counter)/len(reward_counter)
+                        print "%d Average reward: %.2f" % (episode_counter, average)
+                        log_file.write("%d,%.2f\n" % (int(reward_counter[-1] + 0.01), average))
 
-                    if save_checkpoint and episode_counter % save_interval == 0:
-                        print "%d Checkpoint saved" % episode_counter
-                        saver = tf.train.Saver()
-                        saver.save(agent.get_session(), os.path.join(log_dir, '%d.ckpt' % episode_counter))
+                        reward_counter.append(0.)
+                        if len(reward_counter) > counter_window:
+                            del reward_counter[0]
 
-                    if episode_counter > stop_at_episode:
-                        exit()
+                        if save_checkpoint and episode_counter % save_interval == 0:
+                            print "%d Checkpoint saved" % episode_counter
+                            saver = tf.train.Saver()
+                            saver.save(agent.get_session(), os.path.join(log_dir, '%d.ckpt' % episode_counter))
+
+                        if episode_counter > stop_at_episode:
+                            break
 
     @staticmethod
     def loss_function(output, target):
@@ -960,11 +961,11 @@ class BootstrappedDQNCartPole(Experiment):
             if not display:
                 return
 
-            print env.render()
-            print "Reward:", reward
-            print "Head:", agent.current_head
-            print "Done:", done
-            print ""
+            env.render()
+            # print "Reward:", reward
+            # print "Head:", agent.current_head
+            # print "Done:", done
+            # print ""
             time.sleep(frame_time)
 
         from environments.snake import SnakeGame
@@ -980,7 +981,7 @@ class BootstrappedDQNCartPole(Experiment):
         n_head = 20  # Number of heads
 
         display = True  # Whether to display the game
-        frame_time = 0.05  # Interval between each frame
+        frame_time = 0  # Interval between each frame
 
         log_dir = os.path.join(args.logdir, "head%d" % n_head)
         if not os.path.exists(log_dir):
@@ -990,14 +991,15 @@ class BootstrappedDQNCartPole(Experiment):
         save_checkpoint = True  # Whether to save checkpoint
         save_interval = 100  # Save after this number of episodes
 
-        stop_at_episode = 1800
+        stop_at_episode = -1
 
         # Reward recorder
         reward_counter = [0.]
         counter_window = 100
 
         # Initialize the environment and the agent
-        env = gym.make('CartPole-v0')
+        env = gym.make('Pendulum-v0')
+        env = hrl.envs.C2DEnvWrapper(env, [5])
         agent = BootstrappedDQN(observation_space=env.observation_space,
                                 action_space=env.action_space,
                                 reward_decay=1.,
@@ -1036,7 +1038,7 @@ class BootstrappedDQNCartPole(Experiment):
                 reward_counter[-1] += reward
                 if done:
                     average = sum(reward_counter)/len(reward_counter)
-                    print "Average reward: %.2f" % average
+                    print "%d Average reward: %.2f" % (episode_counter, average)
                     log_file.write("%d,%.2f\n" % (int(reward_counter[-1] + 0.01), average))
 
                     reward_counter.append(0.)
@@ -1048,7 +1050,7 @@ class BootstrappedDQNCartPole(Experiment):
                         saver = tf.train.Saver()
                         saver.save(agent.get_session(), os.path.join(log_dir, '%d.ckpt' % episode_counter))
 
-                    if episode_counter > stop_at_episode:
+                    if episode_counter == stop_at_episode:
                         exit()
 
     @staticmethod
@@ -1097,10 +1099,10 @@ class BootstrappedDQNCartPole(Experiment):
             b3 = bias([action_space.n])
 
             # Layer 1
-            layer1 = leakyRelu(tf.matmul(x, w1) + b1)
+            layer1 = tf.sigmoid(tf.matmul(x, w1) + b1)
 
             # Layer 2
-            layer2 = leakyRelu(tf.matmul(layer1, w2) + b2)
+            layer2 = tf.sigmoid(tf.matmul(layer1, w2) + b2)
 
             # Layer 3
             layer3 = tf.matmul(layer2, w3) + b3
