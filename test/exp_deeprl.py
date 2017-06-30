@@ -978,7 +978,7 @@ class BootstrappedDQNPendulum(Experiment):
         # Parameters
         random.seed(1105)  # Seed
 
-        n_head = 20  # Number of heads
+        n_head = 10  # Number of heads
 
         display = False  # Whether to display the game
         frame_time = 0  # Interval between each frame
@@ -1011,7 +1011,7 @@ class BootstrappedDQNPendulum(Experiment):
                                 replay_buffer_class=hrl.playback.MapPlayback,
                                 replay_buffer_args={"capacity": 20000},
                                 min_buffer_size=100,
-                                batch_size=20,
+                                batch_size=5,
                                 n_heads=n_head)
 
         # Start training
@@ -1023,7 +1023,7 @@ class BootstrappedDQNPendulum(Experiment):
             state = next_state
             action = agent.act(state)
             next_state, reward, done, info = env.step(action)
-            render()
+            # render()
 
             agent.reinforce_(state=state,
                              action=action,
@@ -1085,12 +1085,12 @@ class BootstrappedDQNPendulum(Experiment):
         nn_outputs = []
 
         # Layer 1 parameters
-        n_channel1 = 8
-        w1 = weight([eshape, 8])
+        n_channel1 = 16
+        w1 = weight([eshape, n_channel1])
         b1 = bias([n_channel1])
 
         # Layer 2 parameters
-        n_channel2 = 4
+        n_channel2 = 8
         w2 = weight([n_channel1, n_channel2])
         b2 = bias([n_channel2])
 
