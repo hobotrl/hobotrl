@@ -102,6 +102,7 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
 
             self.nn_input = nn["input"]
             self.nn_heads = nn["head"]
+            self.masks = [tf.placeholder(tf.float32, shape=(None,)) for _ in range(self.n_heads)]
 
         # Target network
         with tf.variable_scope('non-target') as scope_target:
@@ -127,8 +128,10 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
                            for _ in range(self.n_heads)]
         nn_output = tf.concat(self.nn_heads, 0)
         nn_target = tf.concat(self.nn_outputs, 0)
+        masks = tf.concat(self.masks, 0)
 
-        loss = loss_function(output=nn_output, target=nn_target)
+        loss_list = loss_function(output=nn_output, target=nn_target)
+        loss = tf.reduce_sum(tf.multiply(loss_list, masks))
         self.op_train = trainer(loss)
 
         # Initialize the neural network
@@ -143,7 +146,8 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         :return: an action.
         """
         action_values = self.get_session().run(self.nn_heads[self.current_head],
-                                               {self.nn_input: [state]})[0]
+                                               {self.nn_input: [state],
+                                                self.masks[self.current_head]: [1]})[0]
         return np.argmax(action_values)
 
     def reinforce_(self, state, action, reward, next_state,
@@ -204,7 +208,7 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
             """
             return self.get_session().run(output_node, feed_dict={input_node: [state]})
 
-        feed_dict = {node: [] for node in [self.nn_input] + self.nn_outputs}
+        feed_dict = {node: [] for node in [self.nn_input] + self.nn_outputs + self.masks}
 
         batch = self.reply_buffer.sample_batch(self.batch_size)
         for i in range(self.batch_size):
@@ -216,14 +220,18 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
             done = batch["episode_done"][i]
             bootstrap_mask = batch["mask"][i]
 
-            next_state_action_values = get_action_values(self.target_nn_input, self.target_nn_heads, next_state)
-            current_state_action_values = get_action_values(self.nn_input, self.nn_heads, state)
+            next_state_action_values = \
+                get_action_values(self.target_nn_input, self.target_nn_heads, next_state)
+
+            current_state_action_values = \
+                get_action_values(self.nn_input, self.nn_heads, state)
 
             feed_dict[self.nn_input].append(state)
 
             for head in range(self.n_heads):
                 target_action_values = next_state_action_values[head][0]
                 updated_action_values = list(current_state_action_values[head][0])
+                feed_dict[self.masks[head]].append(bootstrap_mask[head])
 
                 # Mask out some heads
                 if not bootstrap_mask[head]:

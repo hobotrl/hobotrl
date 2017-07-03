@@ -891,7 +891,7 @@ class BootstrappedDQNSnakeGame(Experiment):
         """
         Calculate the loss.
         """
-        return tf.reduce_sum(tf.squared_difference(output, target))
+        return tf.reduce_sum(tf.squared_difference(output, target), axis=-1)
 
     @staticmethod
     def nn_constructor(observation_space, action_space, n_heads, **kwargs):
@@ -925,17 +925,17 @@ class BootstrappedDQNSnakeGame(Experiment):
         w2 = weight([n_channel1*eshape[0]*eshape[1], n_channel2])
         b2 = bias([n_channel2])
 
+        # Layer 1
+        layer1 = leakyRelu(conv2d(x, w1) + b1)
+        layer1_flatten = tf.reshape(layer1, [-1, n_channel1*eshape[0]*eshape[1]])
+
+        # Layer 2
+        layer2 = leakyRelu(tf.matmul(layer1_flatten, w2) + b2)
+
         for i in range(n_heads):
             # Layer 3 parameters
             w3 = weight([n_channel2, 4])
             b3 = bias([4])
-
-            # Layer 1
-            layer1 = leakyRelu(conv2d(x, w1) + b1)
-            layer1_flatten = tf.reshape(layer1, [-1, n_channel1*eshape[0]*eshape[1]])
-
-            # Layer 2
-            layer2 = leakyRelu(tf.matmul(layer1_flatten, w2) + b2)
 
             # Layer 3
             layer3 = tf.matmul(layer2, w3) + b3
