@@ -85,7 +85,10 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         self.reply_buffer = replay_buffer_class(sample_shapes={
                                                     "state": observation_space.shape,
                                                     "mask": (self.n_heads,),
-                                                    "updated_action_values": (self.n_heads,) + self.action_space_shape
+                                                    "next_state": observation_space.shape,
+                                                    "action": [],
+                                                    "reward": [],
+                                                    "episode_done": [],
                                                 },
                                                 **replay_buffer_args)
 
@@ -157,50 +160,16 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         :param next_state:
         :param episode_done:
         """
-        def get_action_values(input_node, output_node, state):
-            """
-            Calculate action values.
-
-            :param input_node: neural network's input node.
-            :param output_node: neural network's output node.
-            :param state: game state.
-            :return(numpy.ndarray): action values.
-            """
-            return self.get_session().run(output_node, feed_dict={input_node: [state]})[0]
-
         # TODO: don't give the default value for "episode_done" in the base class
         assert episode_done is not None
 
-        # Calculate new action-values
-        bootstrap_mask = self.mask_generator(self.n_heads)
-
-        updated_action_values = np.zeros((self.n_heads,) + self.action_space_shape)
-        for head in range(self.n_heads):
-            if not bootstrap_mask[head]:
-                continue
-
-            # Update action value
-            target_action_values = get_action_values(self.target_nn_inputs[head],
-                                                     self.target_nn_heads[head],
-                                                     next_state)
-            updated_action_value = get_action_values(self.nn_inputs[head],
-                                                     self.nn_heads[head],
-                                                     state)
-            updated_action_value = list(updated_action_value)
-
-            if episode_done:
-                learning_target = reward
-            else:
-                learning_target = reward + self.reward_decay*np.max(target_action_values)
-
-            updated_action_value[action] += \
-                self.td_learning_rate*(learning_target - updated_action_value[action])
-
-            updated_action_values[head] = updated_action_value
-
+        # Add to buffer
         self.reply_buffer.push_sample({"state": state,
-                                       "mask": np.array(bootstrap_mask),
-                                       "updated_action_values": updated_action_values})
+                                       "next_state": next_state,
+                                       "action": np.asarray(action),
+                                       "reward": np.asarray(reward),
+                                       "episode_done": np.asarray(episode_done),
+                                       "mask": np.array(self.mask_generator(self.n_heads))})
 
         # Randomly choose next head if this episode ends
         if episode_done:
@@ -226,23 +195,55 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
 
         :return(dict): "feed_dict"
         """
+        def get_action_values(input_node, output_node, state):
+            """
+            Calculate action values.
+
+            :param input_node: neural network's input node.
+            :param output_node: neural network's output node.
+            :param state: game state.
+            :return(numpy.ndarray): action values.
+            """
+            return self.get_session().run(output_node, feed_dict={input_node: [state]})[0]
+
         feed_dict = {node: [] for node in self.nn_inputs + self.nn_outputs}
 
         batch = self.reply_buffer.sample_batch(self.batch_size)
         for i in range(self.batch_size):
             # Unpack data
             state = batch["state"][i]
+            next_state = batch["next_state"][i]
+            action = batch["action"][i]
+            reward = batch["reward"][i]
+            done = batch["episode_done"][i]
             bootstrap_mask = batch["mask"][i]
-            updated_action_values = batch["updated_action_values"][i]
 
             for head in range(self.n_heads):
                 # Mask out some heads
                 if not bootstrap_mask[head]:
                     continue
 
+                #TODO: shared network
+                # Update action value
+                target_action_values = get_action_values(self.target_nn_inputs[head],
+                                                         self.target_nn_heads[head],
+                                                         next_state)
+                updated_action_value = get_action_values(self.nn_inputs[head],
+                                                         self.nn_heads[head],
+                                                         state)
+                updated_action_value = list(updated_action_value)
+
+                if done:
+                    learning_target = reward
+                else:
+                    learning_target = reward + self.reward_decay * np.max(target_action_values)
+
+                updated_action_value[action] += \
+                    self.td_learning_rate * (learning_target - updated_action_value[action])
+
                 # Add to feed_dict
                 feed_dict[self.nn_inputs[head]].append(state)
-                feed_dict[self.nn_outputs[head]].append(updated_action_values[head])
+                feed_dict[self.nn_outputs[head]].append(updated_action_value)
 
         return feed_dict
 
