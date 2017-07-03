@@ -910,8 +910,9 @@ class BootstrappedDQNSnakeGame(Experiment):
         def bias(shape):
             return tf.Variable(tf.constant(0.1, shape=shape))
 
+        x = tf.placeholder(tf.float32, (None,) + observation_space.shape)
+
         eshape = observation_space.shape
-        nn_inputs = []
         nn_outputs = []
 
         # Layer 1 parameters
@@ -925,8 +926,6 @@ class BootstrappedDQNSnakeGame(Experiment):
         b2 = bias([n_channel2])
 
         for i in range(n_heads):
-            x = tf.placeholder(tf.float32, (None,) + observation_space.shape)
-
             # Layer 3 parameters
             w3 = weight([n_channel2, 4])
             b3 = bias([4])
@@ -941,14 +940,13 @@ class BootstrappedDQNSnakeGame(Experiment):
             # Layer 3
             layer3 = tf.matmul(layer2, w3) + b3
 
-            nn_inputs.append(x)
             nn_outputs.append(layer3)
 
-        return {"input": nn_inputs, "head": nn_outputs}
+        return {"input": x, "head": nn_outputs}
 
 Experiment.register(BootstrappedDQNSnakeGame, "Bootstrapped DQN for the Snake game")
 
-
+# TODO: update the nn_constructor
 class BootstrappedDQNPendulum(Experiment):
     def run(self, args):
         """
@@ -1117,7 +1115,7 @@ class BootstrappedDQNPendulum(Experiment):
 
 Experiment.register(BootstrappedDQNPendulum, "Bootstrapped DQN for the Pendulum")
 
-
+# TODO: update the nn_constructor
 class BootstrappedDQNBeamRider(Experiment):
     def run(self, args):
         """

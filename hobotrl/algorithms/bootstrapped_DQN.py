@@ -98,10 +98,9 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
             nn = nn_constructor(observation_space=observation_space,
                                 action_space=action_space,
                                 n_heads=n_heads)
-            assert len(nn["input"]) == self.n_heads
             assert len(nn["head"]) == self.n_heads
 
-            self.nn_inputs = nn["input"]
+            self.nn_input = nn["input"]
             self.nn_heads = nn["head"]
 
         # Target network
@@ -109,10 +108,9 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
             nn = nn_constructor(observation_space=observation_space,
                                 action_space=action_space,
                                 n_heads=n_heads)
-            assert len(nn["input"]) == self.n_heads
             assert len(nn["head"]) == self.n_heads
 
-            self.target_nn_inputs = nn["input"]
+            self.target_nn_input = nn["input"]
             self.target_nn_heads = nn["head"]
 
         # Construct synchronize operation
@@ -145,7 +143,7 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         :return: an action.
         """
         action_values = self.get_session().run(self.nn_heads[self.current_head],
-                                               {self.nn_inputs[self.current_head]: [state]})[0]
+                                               {self.nn_input: [state]})[0]
         return np.argmax(action_values)
 
     def reinforce_(self, state, action, reward, next_state,
@@ -204,9 +202,9 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
             :param state: game state.
             :return(numpy.ndarray): action values.
             """
-            return self.get_session().run(output_node, feed_dict={input_node: [state]})[0]
+            return self.get_session().run(output_node, feed_dict={input_node: [state]})
 
-        feed_dict = {node: [] for node in self.nn_inputs + self.nn_outputs}
+        feed_dict = {node: [] for node in [self.nn_input] + self.nn_outputs}
 
         batch = self.reply_buffer.sample_batch(self.batch_size)
         for i in range(self.batch_size):
@@ -218,32 +216,31 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
             done = batch["episode_done"][i]
             bootstrap_mask = batch["mask"][i]
 
+            next_state_action_values = get_action_values(self.target_nn_input, self.target_nn_heads, next_state)
+            current_state_action_values = get_action_values(self.nn_input, self.nn_heads, state)
+
+            feed_dict[self.nn_input].append(state)
+
             for head in range(self.n_heads):
+                target_action_values = next_state_action_values[head][0]
+                updated_action_values = list(current_state_action_values[head][0])
+
                 # Mask out some heads
                 if not bootstrap_mask[head]:
+                    feed_dict[self.nn_outputs[head]].append(updated_action_values)
                     continue
 
-                #TODO: shared network
                 # Update action value
-                target_action_values = get_action_values(self.target_nn_inputs[head],
-                                                         self.target_nn_heads[head],
-                                                         next_state)
-                updated_action_value = get_action_values(self.nn_inputs[head],
-                                                         self.nn_heads[head],
-                                                         state)
-                updated_action_value = list(updated_action_value)
-
                 if done:
                     learning_target = reward
                 else:
                     learning_target = reward + self.reward_decay * np.max(target_action_values)
 
-                updated_action_value[action] += \
-                    self.td_learning_rate * (learning_target - updated_action_value[action])
+                updated_action_values[action] += \
+                    self.td_learning_rate * (learning_target - updated_action_values[action])
 
                 # Add to feed_dict
-                feed_dict[self.nn_inputs[head]].append(state)
-                feed_dict[self.nn_outputs[head]].append(updated_action_value)
+                feed_dict[self.nn_outputs[head]].append(updated_action_values)
 
         return feed_dict
 
