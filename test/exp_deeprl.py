@@ -946,7 +946,7 @@ class BootstrappedDQNSnakeGame(Experiment):
 
 Experiment.register(BootstrappedDQNSnakeGame, "Bootstrapped DQN for the Snake game")
 
-# TODO: update the nn_constructor
+
 class BootstrappedDQNPendulum(Experiment):
     def run(self, args):
         """
@@ -976,7 +976,7 @@ class BootstrappedDQNPendulum(Experiment):
         # Parameters
         random.seed(1105)  # Seed
 
-        n_head = 10  # Number of heads
+        n_head = 5  # Number of heads
 
         display = False  # Whether to display the game
         frame_time = 0  # Interval between each frame
@@ -1002,7 +1002,7 @@ class BootstrappedDQNPendulum(Experiment):
                                 action_space=env.action_space,
                                 reward_decay=1.,
                                 td_learning_rate=0.5,
-                                target_sync_interval=200,
+                                target_sync_interval=4000,
                                 nn_constructor=self.nn_constructor,
                                 loss_function=self.loss_function,
                                 trainer=tf.train.GradientDescentOptimizer(learning_rate=0.01).minimize,
@@ -1059,19 +1059,13 @@ class BootstrappedDQNPendulum(Experiment):
         """
         Calculate the loss.
         """
-        return tf.reduce_sum(tf.squared_difference(output, target))
+        return tf.reduce_sum(tf.squared_difference(output, target), axis=-1)
 
     @staticmethod
     def nn_constructor(observation_space, action_space, n_heads, **kwargs):
         """
         Construct the neural network.
         """
-        def leakyRelu(x):
-            return tf.maximum(0.01*x, x)
-
-        def conv2d(x, w):
-            return tf.nn.conv2d(x, w, strides=[1, 1, 1, 1], padding="SAME")
-
         def weight(shape):
             return tf.Variable(tf.truncated_normal(shape, stddev=0.1))
 
@@ -1081,6 +1075,8 @@ class BootstrappedDQNPendulum(Experiment):
         eshape = observation_space.shape[0]
         nn_inputs = []
         nn_outputs = []
+
+        x = tf.placeholder(tf.float32, (None,) + observation_space.shape)
 
         # Layer 1 parameters
         n_channel1 = 16
@@ -1092,30 +1088,27 @@ class BootstrappedDQNPendulum(Experiment):
         w2 = weight([n_channel1, n_channel2])
         b2 = bias([n_channel2])
 
-        for i in range(n_heads):
-            x = tf.placeholder(tf.float32, (None,) + observation_space.shape)
+        # Layer 1
+        layer1 = tf.sigmoid(tf.matmul(x, w1) + b1)
 
+        # Layer 2
+        layer2 = tf.sigmoid(tf.matmul(layer1, w2) + b2)
+
+        for i in range(n_heads):
             # Layer 3 parameters
             w3 = weight([n_channel2, action_space.n])
             b3 = bias([action_space.n])
 
-            # Layer 1
-            layer1 = tf.sigmoid(tf.matmul(x, w1) + b1)
-
-            # Layer 2
-            layer2 = tf.sigmoid(tf.matmul(layer1, w2) + b2)
-
             # Layer 3
             layer3 = tf.matmul(layer2, w3) + b3
 
-            nn_inputs.append(x)
             nn_outputs.append(layer3)
 
-        return {"input": nn_inputs, "head": nn_outputs}
+        return {"input": x, "head": nn_outputs}
 
 Experiment.register(BootstrappedDQNPendulum, "Bootstrapped DQN for the Pendulum")
 
-# TODO: update the nn_constructor
+
 class BootstrappedDQNBeamRider(Experiment):
     def run(self, args):
         """
