@@ -1159,13 +1159,13 @@ class BootstrappedDQNBeamRider(Experiment):
                                 action_space=env.action_space,
                                 reward_decay=1.,
                                 td_learning_rate=0.5,
-                                target_sync_interval=4000,
+                                target_sync_interval=10000,
                                 nn_constructor=self.nn_constructor,
                                 loss_function=self.loss_function,
                                 trainer=tf.train.GradientDescentOptimizer(learning_rate=0.01).minimize,
                                 replay_buffer_class=hrl.playback.MapPlayback,
-                                replay_buffer_args={"capacity": 10000},
-                                min_buffer_size=500,
+                                replay_buffer_args={"capacity": 200000},
+                                min_buffer_size=2000,
                                 batch_size=5,
                                 n_heads=n_head)
 
@@ -1190,7 +1190,7 @@ class BootstrappedDQNBeamRider(Experiment):
                 print "Got reward"
                 last_got_reward = step_count
 
-            if step_count - last_got_reward == 1000:
+            if step_count - last_got_reward == 2000:
                 print "Reset for no reward"
                 done = True
 
@@ -1231,7 +1231,7 @@ class BootstrappedDQNBeamRider(Experiment):
         """
         Calculate the loss.
         """
-        return tf.reduce_sum(tf.squared_difference(output, target))
+        return tf.reduce_sum(tf.squared_difference(output, target), -1)
 
     @staticmethod
     def nn_constructor(observation_space, action_space, n_heads, **kwargs):
@@ -1254,8 +1254,9 @@ class BootstrappedDQNBeamRider(Experiment):
             return tf.Variable(tf.constant(0.1, shape=shape))
 
         eshape = observation_space.shape[-1]
-        nn_inputs = []
         nn_outputs = []
+
+        x = tf.placeholder(tf.float32, (None,) + observation_space.shape)
 
         # Layer 1 parameters
         n_channel1 = 16
@@ -1272,30 +1273,28 @@ class BootstrappedDQNBeamRider(Experiment):
         w3 = weight([2, 2, n_channel2, n_channel3])
         b3 = bias([n_channel3])
 
+        # Layer 1
+        layer1 = pooling(conv2d(x, w1) + b1)
+
+        # Layer 2
+        layer2 = pooling(leakyRelu(conv2d(layer1, w2) + b2))
+
+        # Layer 3
+        layer3 = pooling(leakyRelu(conv2d(layer2, w3) + b3))
+        layer3_flatten = tf.contrib.layers.flatten(layer3)
+
         for i in range(n_heads):
-            x = tf.placeholder(tf.float32, (None,) + observation_space.shape)
-
-            # Layer 1
-            layer1 = pooling(conv2d(x, w1) + b1)
-
-            # Layer 2
-            layer2 = pooling(leakyRelu(conv2d(layer1, w2) + b2))
-
-            layer3 = pooling(leakyRelu(conv2d(layer2, w3) + b3))
-            layer3_flatten = tf.contrib.layers.flatten(layer3)
-
-            # Layer 3 parameters
+            # Layer 4 parameters
             dim = np.prod(layer3.get_shape().as_list()[1:])
             w4 = weight([dim, action_space.n])
             b4 = bias([action_space.n])
 
-            # Layer 3
+            # Layer 4
             layer4 = tf.matmul(layer3_flatten, w4) + b4
 
-            nn_inputs.append(x)
             nn_outputs.append(layer4)
 
-        return {"input": nn_inputs, "head": nn_outputs}
+        return {"input": x, "head": nn_outputs}
 
 Experiment.register(BootstrappedDQNBeamRider, "Bootstrapped DQN for the Beam Rider")
 
