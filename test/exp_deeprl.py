@@ -803,6 +803,7 @@ class BootstrappedDQNSnakeGame(Experiment):
 
         from environments.snake import SnakeGame
         from hobotrl.algorithms.bootstrapped_DQN import BootstrappedDQN
+        from hobotrl.gpu_env_runner import BaseEnvironmentRunner
 
         import time
         import os
@@ -812,24 +813,11 @@ class BootstrappedDQNSnakeGame(Experiment):
         random.seed(1105)  # Seed
 
         for n_head in [15, 20]:
-            # n_head = 10  # Number of heads
-
-            display = False  # Whether to display the game
-            frame_time = 0.05  # Interval between each frame
 
             log_dir = os.path.join(args.logdir, "head%d" % n_head)
             if not os.path.exists(log_dir):
                 os.makedirs(log_dir)
-            log_file = open(os.path.join(log_dir, "booststrapped_DQN_Snake.csv"), "w") # Log file
-
-            save_checkpoint = True  # Whether to save checkpoint
-            save_interval = 100  # Save after this number of episodes
-
-            stop_at_episode = 3000
-
-            # Reward recorder
-            reward_counter = [0.]
-            counter_window = 100
+            log_file_name = "booststrapped_DQN_Snake.csv"
 
             # Initialize the environment and the agent
             env = SnakeGame(3, 3, 1, 1, max_episode_length=30)
@@ -848,43 +836,21 @@ class BootstrappedDQNSnakeGame(Experiment):
                                     n_heads=n_head)
 
             # Start training
-            next_state = np.array(env.state)
-            episode_counter = 0
-            while True:
-                state = next_state
-                action = agent.act(state)
-                next_state, reward, done, info = env.step(action)
-                render()
-
-                agent.reinforce_(state=state,
-                                 action=action,
-                                 reward=reward,
-                                 next_state=next_state,
-                                 episode_done=done)
-
-                if done:
-                    next_state = np.array(env.reset())
-                    render()
-                    episode_counter += 1
-
-                if log_file:
-                    reward_counter[-1] += reward
-                    if done:
-                        average = sum(reward_counter)/len(reward_counter)
-                        print "%d Average reward: %.2f" % (episode_counter, average)
-                        log_file.write("%d,%.2f\n" % (int(reward_counter[-1] + 0.01), average))
-
-                        reward_counter.append(0.)
-                        if len(reward_counter) > counter_window:
-                            del reward_counter[0]
-
-                        if save_checkpoint and episode_counter % save_interval == 0:
-                            print "%d Checkpoint saved" % episode_counter
-                            saver = tf.train.Saver()
-                            saver.save(agent.get_session(), os.path.join(log_dir, '%d.ckpt' % episode_counter))
-
-                        if episode_counter > stop_at_episode:
-                            break
+            env_runner = BaseEnvironmentRunner(env=env,
+                                               agent=agent,
+                                               n_episodes=3000,
+                                               moving_average_window_size=100,
+                                               no_reward_reset_interval=-1,
+                                               checkpoint_save_interval=1000,
+                                               log_dir=log_dir,
+                                               log_file_name=log_file_name,
+                                               render_env=True,
+                                               render_interval=1000,
+                                               render_length=200,
+                                               frame_time=0.1,
+                                               render_options={"mode": "ansi"}
+                                               )
+            env_runner.run()
 
     @staticmethod
     def loss_function(output, target):
@@ -1164,7 +1130,7 @@ class BootstrappedDQNBeamRider(Experiment):
                                 loss_function=self.loss_function,
                                 trainer=tf.train.GradientDescentOptimizer(learning_rate=0.01).minimize,
                                 replay_buffer_class=hrl.playback.MapPlayback,
-                                replay_buffer_args={"capacity": 200000},
+                                replay_buffer_args={"capacity": 2000},
                                 min_buffer_size=2000,
                                 batch_size=5,
                                 n_heads=n_head)
