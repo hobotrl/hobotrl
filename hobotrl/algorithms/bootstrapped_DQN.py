@@ -147,8 +147,7 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         :return: an action.
         """
         action_values = self.get_session().run(self.nn_heads[self.current_head],
-                                               {self.nn_input: [state],
-                                                self.masks[self.current_head]: [1]})[0]
+                                               {self.nn_input: [state]})[0]
         return np.argmax(action_values)
 
     def reinforce_(self, state, action, reward, next_state,
