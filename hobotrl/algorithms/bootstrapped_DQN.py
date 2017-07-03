@@ -35,7 +35,7 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         :param loss_function(callable): represents the loss function.
             param output: node for the neural network's output .
             param target: node for the training target.
-            return: a node that represents the training loss.
+            return: a tensorflow node that represents a list of training loss for each sample.
         :param trainer(callable): a trainer.
             param loss: the training loss.
             return: a tensorflow operation that can train the neural network.
@@ -78,8 +78,10 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         self.n_heads = n_heads
         self.mask_generator = bootstrap_mask
 
-        self.current_head = 0
-        self.step_count = 0
+        self.masks = [tf.placeholder(tf.float32, shape=(None,)) for head in range(self.n_heads)] \
+            # Placeholder for bootstrap masks
+        self.current_head = 0  # The head for current episode
+        self.step_count = 0  # Total number of steps for all episodes
 
         # Initialize the replay buffer
         self.reply_buffer = replay_buffer_class(sample_shapes={
@@ -102,7 +104,6 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
 
             self.nn_input = nn["input"]
             self.nn_heads = nn["head"]
-            self.masks = [tf.placeholder(tf.float32, shape=(None,)) for _ in range(self.n_heads)]
 
         # Target network
         with tf.variable_scope('non-target') as scope_target:
@@ -131,7 +132,7 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         masks = tf.concat(self.masks, 0)
 
         loss_list = loss_function(output=nn_output, target=nn_target)
-        loss = tf.reduce_sum(tf.multiply(loss_list, masks))
+        loss = tf.reduce_sum(tf.multiply(loss_list, masks))  # Apply bootstrap mask
         self.op_train = trainer(loss)
 
         # Initialize the neural network
@@ -220,17 +221,22 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
             done = batch["episode_done"][i]
             bootstrap_mask = batch["mask"][i]
 
+            # Calculate old action values for all heads
             next_state_action_values = \
                 get_action_values(self.target_nn_input, self.target_nn_heads, next_state)
 
             current_state_action_values = \
                 get_action_values(self.nn_input, self.nn_heads, state)
 
+            # Add current state to training data
             feed_dict[self.nn_input].append(state)
 
             for head in range(self.n_heads):
+                # Get old action values for current head
                 target_action_values = next_state_action_values[head][0]
                 updated_action_values = list(current_state_action_values[head][0])
+
+                # Add bootstrap mask to training data
                 feed_dict[self.masks[head]].append(bootstrap_mask[head])
 
                 # Mask out some heads
@@ -238,7 +244,7 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
                     feed_dict[self.nn_outputs[head]].append(updated_action_values)
                     continue
 
-                # Update action value
+                # Calculate new action values
                 if done:
                     learning_target = reward
                 else:
@@ -247,7 +253,7 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
                 updated_action_values[action] += \
                     self.td_learning_rate * (learning_target - updated_action_values[action])
 
-                # Add to feed_dict
+                # Add new action values to training data
                 feed_dict[self.nn_outputs[head]].append(updated_action_values)
 
         return feed_dict
