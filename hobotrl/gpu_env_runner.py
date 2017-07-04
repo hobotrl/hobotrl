@@ -93,7 +93,7 @@ class BaseEnvironmentRunner(object):
                 print "Episode %d Step %d:" % (self.episode_count, self.step_count),
                 print "%7.2f/%.2f" % (self.reward_history[-2], self.reward_summary)
 
-                self.log_file.write("%f,%f\n" % (self.reward_history[-2], self.reward_summary))
+                self.log_file.write("%d,%d,%f,%f\n" % (self.episode_count, self.step_count, self.reward_history[-2], self.reward_summary))
 
             # Save checkpoint
             if self.checkpoint_save_interval != -1 and self.step_count % self.checkpoint_save_interval == 0:

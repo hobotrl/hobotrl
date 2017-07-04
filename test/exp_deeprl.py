@@ -1061,8 +1061,8 @@ class BootstrappedDQNBattleZone(Experiment):
                                 loss_function=self.loss_function,
                                 trainer=tf.train.GradientDescentOptimizer(learning_rate=0.01).minimize,
                                 replay_buffer_class=hrl.playback.MapPlayback,
-                                replay_buffer_args={"capacity": 200000},
-                                min_buffer_size=50000,
+                                replay_buffer_args={"capacity": 100000},
+                                min_buffer_size=20000,
                                 batch_size=5,
                                 n_heads=n_head)
 
@@ -1072,7 +1072,7 @@ class BootstrappedDQNBattleZone(Experiment):
                                            n_episodes=-1,
                                            moving_average_window_size=50,
                                            no_reward_reset_interval=-1,
-                                           checkpoint_save_interval=100000,
+                                           checkpoint_save_interval=12000,
                                            log_dir=log_dir,
                                            log_file_name=log_file_name,
                                            render_env=False,
