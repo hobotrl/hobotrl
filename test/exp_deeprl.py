@@ -919,48 +919,17 @@ class BootstrappedDQNPendulum(Experiment):
         """
         Run the experiment.
         """
-        def render():
-            """
-            Render the environment and related information to the console.
-            """
-            if not display:
-                return
-
-            env.render()
-            # print "Reward:", reward
-            # print "Head:", agent.current_head
-            # print "Done:", done
-            # print ""
-            time.sleep(frame_time)
-
-        from environments.snake import SnakeGame
         from hobotrl.algorithms.bootstrapped_DQN import BootstrappedDQN
+        from hobotrl.gpu_env_runner import BaseEnvironmentRunner
 
-        import time
         import os
-        import random
-
-        # Parameters
-        random.seed(1105)  # Seed
 
         n_head = 5  # Number of heads
 
-        display = False  # Whether to display the game
-        frame_time = 0  # Interval between each frame
-
-        log_dir = os.path.join(args.logdir, "head%d" % n_head)
+        log_dir = args.logdir
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
-        log_file = open(os.path.join(log_dir, "booststrapped_DQN_Pendulum.csv"), "w") # Log file
-
-        save_checkpoint = True  # Whether to save checkpoint
-        save_interval = 100  # Save after this number of episodes
-
-        stop_at_episode = -1
-
-        # Reward recorder
-        reward_counter = [0.]
-        counter_window = 100
+        log_file_name = "bootstrapped_DQN_Pendulum.csv"
 
         # Initialize the environment and the agent
         env = gym.make('Pendulum-v0')
@@ -979,47 +948,20 @@ class BootstrappedDQNPendulum(Experiment):
                                 batch_size=5,
                                 n_heads=n_head)
 
-        # Start training
-        next_state = env.reset()
-        episode_counter = 0
-        step_count = -1
-        while True:
-            step_count += 1
-            state = next_state
-            action = agent.act(state)
-            next_state, reward, done, info = env.step(action)
-            # render()
-
-            agent.reinforce_(state=state,
-                             action=action,
-                             reward=reward,
-                             next_state=next_state,
-                             episode_done=done)
-
-            if done:
-                next_state = env.reset()
-                render()
-                episode_counter += 1
-
-            if log_file:
-                reward_counter[-1] += reward
-                if done:
-                    average = sum(reward_counter)/len(reward_counter)
-                    print "%d Average reward: %.2f" % (episode_counter, average)
-                    print "%d Steps" % step_count
-                    log_file.write("%d,%.2f\n" % (int(reward_counter[-1] + 0.01), average))
-
-                    reward_counter.append(0.)
-                    if len(reward_counter) > counter_window:
-                        del reward_counter[0]
-
-                    if save_checkpoint and episode_counter % save_interval == 0:
-                        print "%d Checkpoint saved" % episode_counter
-                        saver = tf.train.Saver()
-                        saver.save(agent.get_session(), os.path.join(log_dir, '%d.ckpt' % episode_counter))
-
-                    if episode_counter == stop_at_episode:
-                        exit()
+        env_runner = BaseEnvironmentRunner(env=env,
+                                           agent=agent,
+                                           n_episodes=-1,
+                                           moving_average_window_size=100,
+                                           no_reward_reset_interval=-1,
+                                           checkpoint_save_interval=20000,
+                                           log_dir=log_dir,
+                                           log_file_name=log_file_name,
+                                           render_env=True,
+                                           render_interval=20000,
+                                           render_length=200,
+                                           frame_time=0.1
+                                           )
+        env_runner.run()
 
     @staticmethod
     def loss_function(output, target):
