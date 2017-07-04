@@ -149,3 +149,26 @@ class BaseEnvironmentRunner(object):
         Get the average reward of last episodes.
         """
         return float(sum(self.reward_history[:-1]))/(len(self.reward_history)-1)
+
+    def run_demo(self, file_name):
+        """
+        Load a checkpoint and run a demo.
+
+        :param file_name: the checkpoint's file name.
+        """
+        saver = tf.train.Saver()
+        saver.restore(self.agent.get_session(), os.path.join(self.log_dir, file_name))
+
+        state = self.env.reset()
+        while True:
+            action = self.agent.act(state)
+            state, reward, done, info = self.env.step(action)
+
+            render_result = self.env.render(**self.render_options)
+            if render_result:
+                print render_result
+
+            if done:
+                self.env.reset()
+
+            time.sleep(self.frame_time)

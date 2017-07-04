@@ -844,13 +844,14 @@ class BootstrappedDQNSnakeGame(Experiment):
                                                checkpoint_save_interval=1000,
                                                log_dir=log_dir,
                                                log_file_name=log_file_name,
-                                               render_env=True,
+                                               render_env=False,
                                                render_interval=1000,
                                                render_length=200,
                                                frame_time=0.1,
                                                render_options={"mode": "ansi"}
                                                )
-            env_runner.run()
+            # env_runner.run()
+            env_runner.run_demo("17000.ckpt")
 
     @staticmethod
     def loss_function(output, target):
