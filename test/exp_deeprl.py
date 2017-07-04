@@ -717,7 +717,7 @@ class AOTDQNBreakout(Experiment):
         def state_trans(state):
             gray = np.asarray(np.dot(state, [0.299, 0.587, 0.114]))
             gray = cv2.resize(gray, (84, 84))
-            return np.asarray(gray.reshape(gray.shape + (1,)), dtype=np.int8)
+            return np.asarray(gray.reshape(gray.shape + (1,)), dtype=np.uint8)
 
         env = hrl.envs.AugmentEnvWrapper(env, reward_decay=reward_decay, reward_scale=0.1,
                                          state_augment_proc=state_trans, state_stack_n=4)
@@ -1039,6 +1039,19 @@ class BootstrappedDQNBattleZone(Experiment):
 
         # Initialize the environment and the agent
         env = gym.make('BattleZone-v0')
+
+        def state_trans(state):
+            gray = np.asarray(np.dot(state, [0.299, 0.587, 0.114]))
+            gray = cv2.resize(gray, (84, 84))
+            return np.asarray(gray.reshape(gray.shape + (1,)), dtype=np.int8)
+
+        env = hrl.envs.AugmentEnvWrapper(env,
+                                         reward_decay=1.,
+                                         reward_scale=0.001,
+                                         state_augment_proc=state_trans,
+                                         state_stack_n=4,
+                                         state_scale=1.0/255)
+
         agent = BootstrappedDQN(observation_space=env.observation_space,
                                 action_space=env.action_space,
                                 reward_decay=1.,
@@ -1048,8 +1061,8 @@ class BootstrappedDQNBattleZone(Experiment):
                                 loss_function=self.loss_function,
                                 trainer=tf.train.GradientDescentOptimizer(learning_rate=0.01).minimize,
                                 replay_buffer_class=hrl.playback.MapPlayback,
-                                replay_buffer_args={"capacity": 20000},
-                                min_buffer_size=2000,
+                                replay_buffer_args={"capacity": 200000},
+                                min_buffer_size=50000,
                                 batch_size=5,
                                 n_heads=n_head)
 
@@ -1102,7 +1115,7 @@ class BootstrappedDQNBattleZone(Experiment):
 
         # Layer 1 parameters
         n_channel1 = 16
-        w1 = weight([8, 8, eshape, n_channel1])
+        w1 = weight([4, 4, eshape, n_channel1])
         b1 = bias([n_channel1])
 
         # Layer 2 parameters
