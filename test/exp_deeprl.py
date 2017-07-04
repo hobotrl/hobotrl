@@ -1018,7 +1018,22 @@ class BootstrappedDQNCartPole(Experiment):
 Experiment.register(BootstrappedDQNCartPole, "Bootstrapped DQN for the CartPole")
 
 
-class BootstrappedDQNBattleZone(Experiment):
+class BootstrappedDQNAtari(Experiment):
+    def __init__(self, env):
+        Experiment.__init__(self)
+
+        def state_trans(state):
+            gray = np.asarray(np.dot(state, [0.299, 0.587, 0.114]))
+            gray = cv2.resize(gray, (84, 84))
+            return np.asarray(gray.reshape(gray.shape + (1,)), dtype=np.int8)
+
+        self.env = hrl.envs.AugmentEnvWrapper(env,
+                                              reward_decay=1.,
+                                              reward_scale=0.001,
+                                              state_augment_proc=state_trans,
+                                              state_stack_n=4,
+                                              state_scale=1.0/255)
+
     def run(self, args):
         """
         Run the experiment.
@@ -1026,9 +1041,7 @@ class BootstrappedDQNBattleZone(Experiment):
         from hobotrl.algorithms.bootstrapped_DQN import BootstrappedDQN
         from hobotrl.gpu_env_runner import BaseEnvironmentRunner
 
-        import time
         import os
-        import random
 
         n_head = 10  # Number of heads
 
@@ -1038,19 +1051,7 @@ class BootstrappedDQNBattleZone(Experiment):
         log_file_name = "booststrapped_DQN_BeamRider.csv"
 
         # Initialize the environment and the agent
-        env = gym.make('BattleZone-v0')
-
-        def state_trans(state):
-            gray = np.asarray(np.dot(state, [0.299, 0.587, 0.114]))
-            gray = cv2.resize(gray, (84, 84))
-            return np.asarray(gray.reshape(gray.shape + (1,)), dtype=np.int8)
-
-        env = hrl.envs.AugmentEnvWrapper(env,
-                                         reward_decay=1.,
-                                         reward_scale=0.001,
-                                         state_augment_proc=state_trans,
-                                         state_stack_n=4,
-                                         state_scale=1.0/255)
+        env = self.env
 
         agent = BootstrappedDQN(observation_space=env.observation_space,
                                 action_space=env.action_space,
@@ -1150,6 +1151,11 @@ class BootstrappedDQNBattleZone(Experiment):
             nn_outputs.append(layer4)
 
         return {"input": x, "head": nn_outputs}
+
+
+class BootstrappedDQNBattleZone(BootstrappedDQNAtari):
+    def __init__(self):
+        BootstrappedDQNAtari.__init__(self, gym.make('BattleZone-v0'))
 
 Experiment.register(BootstrappedDQNBattleZone, "Bootstrapped DQN for the BattleZone")
 
