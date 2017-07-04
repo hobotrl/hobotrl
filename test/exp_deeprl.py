@@ -943,7 +943,7 @@ class BootstrappedDQNCartPole(Experiment):
                                 loss_function=self.loss_function,
                                 trainer=tf.train.GradientDescentOptimizer(learning_rate=0.01).minimize,
                                 replay_buffer_class=hrl.playback.MapPlayback,
-                                replay_buffer_args={"capacity": 20000},
+                                replay_buffer_args={"capacity": 10000},
                                 min_buffer_size=1000,
                                 batch_size=10,
                                 n_heads=n_head)
@@ -951,13 +951,13 @@ class BootstrappedDQNCartPole(Experiment):
         env_runner = BaseEnvironmentRunner(env=env,
                                            agent=agent,
                                            n_episodes=-1,
-                                           moving_average_window_size=100,
+                                           moving_average_window_size=50,
                                            no_reward_reset_interval=-1,
-                                           checkpoint_save_interval=20000,
+                                           checkpoint_save_interval=2000,
                                            log_dir=log_dir,
                                            log_file_name=log_file_name,
                                            render_env=True,
-                                           render_interval=20000,
+                                           render_interval=4000,
                                            render_length=200,
                                            frame_time=0.1
                                            )
