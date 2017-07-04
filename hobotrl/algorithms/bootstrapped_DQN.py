@@ -123,6 +123,7 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         self.op_sync_target = [tf.assign(target_var, non_target_var)
                                for target_var, non_target_var
                                in zip(target_vars, non_target_vars)]
+        self.non_target_vars = non_target_vars
 
         # Construct training operation
         self.nn_outputs = [tf.placeholder(tf.float32, (None, action_space.n))
@@ -179,11 +180,9 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
 
         # Training
         if self.reply_buffer.get_count() > self.min_buffer_size:
-            feed_dict = self.generate_feed_dict()
-            try:
-                self.get_session().run(self.op_train, feed_dict=feed_dict)
-            except ValueError:
-                pass
+            batch = self.reply_buffer.sample_batch(self.batch_size)
+            feed_dict = self.generate_feed_dict(batch)
+            self.train(feed_dict)
 
         # Synchronize target network
         self.step_count += 1
@@ -191,7 +190,13 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         if self.step_count % self.target_sync_interval == 0:
             self.sync_target()
 
-    def generate_feed_dict(self):
+    def train(self, feed_dict):
+        try:
+            self.get_session().run(self.op_train, feed_dict=feed_dict)
+        except ValueError:
+            pass
+
+    def generate_feed_dict(self, batch):
         """
         Generate "feed_dict" for tf.Session().run() using next batch's data.
 
@@ -209,8 +214,6 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
             return self.get_session().run(output_node, feed_dict={input_node: [state]})
 
         feed_dict = {node: [] for node in [self.nn_input] + self.nn_outputs + self.masks}
-
-        batch = self.reply_buffer.sample_batch(self.batch_size)
         for i in range(self.batch_size):
             # Unpack data
             state = batch["state"][i]
@@ -262,3 +265,38 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         Update the target network.
         """
         self.get_session().run(self.op_sync_target)
+
+
+class GPUBootstrappedDQN(BootstrappedDQN):
+    def __init__(self, observation_space, action_space,
+                 nn_constructor, loss_function, trainer,
+                 reward_decay, td_learning_rate, target_sync_interval,
+                 replay_buffer_class, replay_buffer_args, min_buffer_size, batch_size=20,
+                 n_heads=10, bootstrap_mask=bernoulli_mask(0.5),
+                 n_gpu=1):
+        super(GPUBootstrappedDQN, self).__init__(observation_space, action_space,
+                                                 nn_constructor, loss_function, trainer,
+                                                 reward_decay, td_learning_rate, target_sync_interval,
+                                                 replay_buffer_class, replay_buffer_args, min_buffer_size, batch_size,
+                                                 n_heads, bootstrap_mask)
+
+        self.n_gpu = n_gpu
+        self.gpu_nn_input = []
+        self.gpu_nn_heads = []
+        self.op_gpu_sync = []
+
+        for gpu_id in range(n_gpu):
+            with tf.device("/gpu:%d" % gpu_id):
+                with tf.variable_scope("gpu%d" % gpu_id) as name_scope:
+                    nn = nn_constructor(observation_space=observation_space,
+                                        action_space=action_space,
+                                        n_heads=n_heads)
+                    self.gpu_nn_input.append(nn["input"])
+                    self.gpu_nn_heads.append(nn["head"])
+
+                gpu_vars = tf.get_collection(key=tf.GraphKeys.TRAINABLE_VARIABLES,
+                                             scope=name_scope.name)
+                self.op_gpu_sync += [tf.assign(gpu_var, non_target_var)
+                                     for gpu_var, non_target_var
+                                     in zip(gpu_vars, self.non_target_vars)]
+
