@@ -914,7 +914,7 @@ class BootstrappedDQNSnakeGame(Experiment):
 Experiment.register(BootstrappedDQNSnakeGame, "Bootstrapped DQN for the Snake game")
 
 
-class BootstrappedDQNPendulum(Experiment):
+class BootstrappedDQNCartPole(Experiment):
     def run(self, args):
         """
         Run the experiment.
@@ -924,7 +924,7 @@ class BootstrappedDQNPendulum(Experiment):
 
         import os
 
-        n_head = 5  # Number of heads
+        n_head = 10  # Number of heads
 
         log_dir = args.logdir
         if not os.path.exists(log_dir):
@@ -932,20 +932,20 @@ class BootstrappedDQNPendulum(Experiment):
         log_file_name = "bootstrapped_DQN_Pendulum.csv"
 
         # Initialize the environment and the agent
-        env = gym.make('Pendulum-v0')
-        env = hrl.envs.C2DEnvWrapper(env, [5])
+        env = gym.make('CartPole-v0')
+        # env = hrl.envs.C2DEnvWrapper(env, [5])
         agent = BootstrappedDQN(observation_space=env.observation_space,
                                 action_space=env.action_space,
                                 reward_decay=1.,
                                 td_learning_rate=0.5,
-                                target_sync_interval=4000,
+                                target_sync_interval=2000,
                                 nn_constructor=self.nn_constructor,
                                 loss_function=self.loss_function,
                                 trainer=tf.train.GradientDescentOptimizer(learning_rate=0.01).minimize,
                                 replay_buffer_class=hrl.playback.MapPlayback,
                                 replay_buffer_args={"capacity": 20000},
-                                min_buffer_size=100,
-                                batch_size=5,
+                                min_buffer_size=1000,
+                                batch_size=10,
                                 n_heads=n_head)
 
         env_runner = BaseEnvironmentRunner(env=env,
@@ -1015,7 +1015,7 @@ class BootstrappedDQNPendulum(Experiment):
 
         return {"input": x, "head": nn_outputs}
 
-Experiment.register(BootstrappedDQNPendulum, "Bootstrapped DQN for the Pendulum")
+Experiment.register(BootstrappedDQNCartPole, "Bootstrapped DQN for the CartPole")
 
 
 class BootstrappedDQNBeamRider(Experiment):
