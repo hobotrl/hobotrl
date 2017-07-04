@@ -8,7 +8,8 @@ class BaseEnvironmentRunner(object):
                  n_episodes=-1, moving_average_window_size=50,
                  no_reward_reset_interval=-1,
                  checkpoint_save_interval=-1, log_dir=None, log_file_name=None,
-                 render_env=False, render_interval=1, render_length=200, frame_time=0, render_options={}):
+                 render_env=False, render_interval=1, render_length=200, frame_time=0, render_options={},
+                 show_frame_rate=False, show_frame_rate_interval=100):
         """
         Trains the agent in the environment.
 
@@ -46,6 +47,8 @@ class BaseEnvironmentRunner(object):
         self.render_length = render_length
         self.frame_time = frame_time
         self.render_options = render_options
+        self.show_frame_rate = show_frame_rate
+        self.show_frame_rate_interval = show_frame_rate_interval
 
         # Open log file
         if log_file_name:
@@ -65,6 +68,8 @@ class BaseEnvironmentRunner(object):
         """
         # Initialize environment
         state = self.env.reset()
+
+        last_frame_rate_checkpoint = time.time()
 
         while self.episode_count != self.n_episodes:
             # Run a step
@@ -94,9 +99,14 @@ class BaseEnvironmentRunner(object):
             if self.checkpoint_save_interval != -1 and self.step_count % self.checkpoint_save_interval == 0:
                 saver = tf.train.Saver()
                 saver.save(self.agent.get_session(), os.path.join(self.log_dir, '%d.ckpt' % self.step_count))
-                print "Checkpoint saved for at step %d" % self.step_count
+                print "Checkpoint saved at step %d" % self.step_count
 
             self.step_count += 1
+
+            # Calculate frame rate
+            if self.show_frame_rate and self.step_count % self.show_frame_rate_interval == 0:
+                print "Frame rate:", self.show_frame_rate_interval/(time.time() - last_frame_rate_checkpoint)
+                last_frame_rate_checkpoint = time.time()
 
     def step(self, state):
         """
