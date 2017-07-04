@@ -1018,7 +1018,7 @@ class BootstrappedDQNCartPole(Experiment):
 Experiment.register(BootstrappedDQNCartPole, "Bootstrapped DQN for the CartPole")
 
 
-class BootstrappedDQNBeamRider(Experiment):
+class BootstrappedDQNBattleZone(Experiment):
     def run(self, args):
         """
         Run the experiment.
@@ -1038,7 +1038,7 @@ class BootstrappedDQNBeamRider(Experiment):
         log_file_name = "booststrapped_DQN_BeamRider.csv"
 
         # Initialize the environment and the agent
-        env = gym.make('BeamRider-v0')
+        env = gym.make('BattleZone-v0')
         agent = BootstrappedDQN(observation_space=env.observation_space,
                                 action_space=env.action_space,
                                 reward_decay=1.,
@@ -1049,7 +1049,7 @@ class BootstrappedDQNBeamRider(Experiment):
                                 trainer=tf.train.GradientDescentOptimizer(learning_rate=0.01).minimize,
                                 replay_buffer_class=hrl.playback.MapPlayback,
                                 replay_buffer_args={"capacity": 20000},
-                                min_buffer_size=200,
+                                min_buffer_size=2000,
                                 batch_size=5,
                                 n_heads=n_head)
 
@@ -1058,7 +1058,7 @@ class BootstrappedDQNBeamRider(Experiment):
                                            agent=agent,
                                            n_episodes=-1,
                                            moving_average_window_size=50,
-                                           no_reward_reset_interval=2000,
+                                           no_reward_reset_interval=-1,
                                            checkpoint_save_interval=100000,
                                            log_dir=log_dir,
                                            log_file_name=log_file_name,
@@ -1138,7 +1138,7 @@ class BootstrappedDQNBeamRider(Experiment):
 
         return {"input": x, "head": nn_outputs}
 
-Experiment.register(BootstrappedDQNBeamRider, "Bootstrapped DQN for the Beam Rider")
+Experiment.register(BootstrappedDQNBattleZone, "Bootstrapped DQN for the BattleZone")
 
 if __name__ == '__main__':
     Experiment.main()

@@ -179,7 +179,7 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
             self.current_head = random.randrange(self.n_heads)
 
         # Training
-        if self.reply_buffer.get_count() > self.min_buffer_size:
+        if self.step_count > self.min_buffer_size:
             batch = self.reply_buffer.sample_batch(self.batch_size)
             feed_dict = self.generate_feed_dict(batch)
             self.train(feed_dict)
