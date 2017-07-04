@@ -57,6 +57,12 @@ class BaseEnvironmentRunner(object):
         else:
             self.log_file = None
 
+        # Open summary writer
+        if log_dir:
+            self.summary_writer = tf.summary.FileWriter(log_dir, graph=tf.get_default_graph())
+        else:
+            self.summary_writer = None
+
         self.episode_count = 0  # Count episodes
         self.step_count = 0  # Count number of total steps
         self.reward_history = [0]  # Record the total reward of last episodes
@@ -89,11 +95,20 @@ class BaseEnvironmentRunner(object):
                     self.env.render(close=True)
 
             # Save data to log file
-            if done and self.log_file:
-                print "Episode %d Step %d:" % (self.episode_count, self.step_count),
-                print "%7.2f/%.2f" % (self.reward_history[-2], self.reward_summary)
+            if done:
+                if self.log_file:
+                    print "Episode %d Step %d:" % (self.episode_count, self.step_count),
+                    print "%7.2f/%.2f" % (self.reward_history[-2], self.reward_summary)
 
-                self.log_file.write("%d,%d,%f,%f\n" % (self.episode_count, self.step_count, self.reward_history[-2], self.reward_summary))
+                    self.log_file.write("%d,%d,%f,%f\n" % (self.episode_count, self.step_count, self.reward_history[-2], self.reward_summary))
+
+                if self.summary_writer:
+                    summary = tf.Summary()
+                    summary.value.add(tag="step count", simple_value=self.step_count)
+                    summary.value.add(tag="reward", simple_value=self.reward_history[-2])
+                    summary.value.add(tag="average reward", simple_value=self.reward_summary)
+
+                    self.summary_writer.add_summary(summary, self.episode_count)
 
             # Save checkpoint
             if self.checkpoint_save_interval != -1 and self.step_count % self.checkpoint_save_interval == 0:
