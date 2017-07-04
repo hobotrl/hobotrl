@@ -106,7 +106,7 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
             self.nn_heads = nn["head"]
 
         # Target network
-        with tf.variable_scope('non-target') as scope_target:
+        with tf.variable_scope('target') as scope_target:
             nn = nn_constructor(observation_space=observation_space,
                                 action_space=action_space,
                                 n_heads=n_heads)

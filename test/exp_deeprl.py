@@ -825,7 +825,7 @@ class BootstrappedDQNSnakeGame(Experiment):
                                     action_space=env.action_space,
                                     reward_decay=1.,
                                     td_learning_rate=0.5,
-                                    target_sync_interval=200,
+                                    target_sync_interval=2000,
                                     nn_constructor=self.nn_constructor,
                                     loss_function=self.loss_function,
                                     trainer=tf.train.GradientDescentOptimizer(learning_rate=0.01).minimize,
@@ -850,8 +850,8 @@ class BootstrappedDQNSnakeGame(Experiment):
                                                frame_time=0.1,
                                                render_options={"mode": "ansi"}
                                                )
-            # env_runner.run()
-            env_runner.run_demo("17000.ckpt")
+            env_runner.run()
+            # env_runner.run_demo("17000.ckpt")
 
     @staticmethod
     def loss_function(output, target):
