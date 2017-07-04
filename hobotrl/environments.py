@@ -125,7 +125,7 @@ class AugmentEnvWrapper(object):
             self.last_action, self.stack_counter, self.last_reward = None, 0, 0.0
             self.state_shape = None  # state dimension of 1 frame
             space = env.observation_space
-            state_low, state_high, state_shape = space.low, space.high, list(space.shape)
+            state_low, state_high, state_shape = space.low, space.high, list(self.state_augment_proc(self.env.reset()).shape)
             state_shape[self.stack_axis] *= self.stack_n
             # if type(state_low) == type(state_shape):
             #     # ndarray low and high
@@ -135,7 +135,6 @@ class AugmentEnvWrapper(object):
             self.observation_space = gym.spaces.box.Box(np.min(state_low), np.max(state_high), state_shape)
             self.state_shape = state_shape
             self.last_stacked_states = []  # lazy init
-            pass
 
     def __getattr__(self, name):
         if self.stack_n is not None and name == "observation_space":
