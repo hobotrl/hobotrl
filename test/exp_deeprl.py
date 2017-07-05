@@ -1071,7 +1071,7 @@ class BootstrappedDQNAtari(Experiment):
         env_runner = BaseEnvironmentRunner(env=env,
                                            agent=agent,
                                            n_episodes=3000,
-                                           moving_average_window_size=50,
+                                           moving_average_window_size=100,
                                            no_reward_reset_interval=-1,
                                            checkpoint_save_interval=12000,
                                            log_dir=log_dir,
@@ -1094,61 +1094,32 @@ class BootstrappedDQNAtari(Experiment):
         """
         Construct the neural network.
         """
-        def leakyRelu(x):
-            return tf.maximum(0.01*x, x)
-
-        def conv2d(x, w):
-            return tf.nn.conv2d(x, w, strides=[1, 1, 1, 1], padding="SAME")
-
-        def pooling(x):
-            return tf.layers.max_pooling2d(x, pool_size=[2, 2], strides=2)
-
-        def weight(shape):
-            return tf.Variable(tf.truncated_normal(shape, stddev=0.1))
-
-        def bias(shape):
-            return tf.Variable(tf.constant(0.1, shape=shape))
-
-        eshape = observation_space.shape[-1]
+        import tensorflow.contrib.layers as layers
         nn_outputs = []
 
         x = tf.placeholder(tf.float32, (None,) + observation_space.shape)
 
-        # Layer 1 parameters
-        n_channel1 = 16
-        w1 = weight([4, 4, eshape, n_channel1])
-        b1 = bias([n_channel1])
+        print "input size:", x
+        out = hrl.utils.Network.conv2d(input_var=x, h=8, w=8, out_channel=32,
+                                       strides=[4, 4], activation=tf.nn.relu, var_scope="conv1")
+        # 20 * 20 * 32
+        print "out size:", out
+        out = hrl.utils.Network.conv2d(input_var=out, h=4, w=4, out_channel=64,
+                                       strides=[2, 2], activation=tf.nn.relu, var_scope="conv2")
+        # 9 * 9 * 64
+        print "out size:", out
+        out = hrl.utils.Network.conv2d(input_var=out, h=3, w=3, out_channel=32,
+                                       strides=[1, 1], activation=tf.nn.relu, var_scope="conv3")
 
-        # Layer 2 parameters
-        n_channel2 = 8
-        w2 = weight([4, 4, n_channel1, n_channel2])
-        b2 = bias([n_channel2])
+        # 7 * 7 * 64
+        out = tf.reshape(out, [-1, 7 * 7 * 32])
+        out = layers.fully_connected(out, 512)
+        print "out size:", out
 
-        # Layer 3 para
-        n_channel3 = 4
-        w3 = weight([2, 2, n_channel2, n_channel3])
-        b3 = bias([n_channel3])
+        for _ in range(n_heads):
+            head = layers.fully_connected(out, action_space.n, activation_fn=None)
 
-        # Layer 1
-        layer1 = pooling(conv2d(x, w1) + b1)
-
-        # Layer 2
-        layer2 = pooling(leakyRelu(conv2d(layer1, w2) + b2))
-
-        # Layer 3
-        layer3 = pooling(leakyRelu(conv2d(layer2, w3) + b3))
-        layer3_flatten = tf.contrib.layers.flatten(layer3)
-
-        for i in range(n_heads):
-            # Layer 4 parameters
-            dim = np.prod(layer3.get_shape().as_list()[1:])
-            w4 = weight([dim, action_space.n])
-            b4 = bias([action_space.n])
-
-            # Layer 4
-            layer4 = tf.matmul(layer3_flatten, w4) + b4
-
-            nn_outputs.append(layer4)
+            nn_outputs.append(head)
 
         return {"input": x, "head": nn_outputs}
 
