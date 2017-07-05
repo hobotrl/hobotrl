@@ -9,6 +9,7 @@ both mixin-style and non-... usages.
 3. ExperienceReplay
 """
 
+import math
 import numpy as np
 from numpy import max
 from numpy.random import rand, randint
@@ -149,7 +150,8 @@ class EpsilonGreedyPolicy(object):
         Choose greedy action with 1-epsilon probability and random action with
         epsilon probability. Ties are broken randomly for greedy actions.
         """
-        if state is None or rand() < self.__EPSILON:
+        epsilon = self.__EPSILON() if callable(self.__EPSILON) else self.__EPSILON
+        if state is None or rand() < epsilon:
             idx_action = randint(0, len(self.__ACTIONS))
         else:
             # Follow greedy policy with 1-epsilon prob.
@@ -200,15 +202,28 @@ class Network(object):
         return out
 
     @staticmethod
-    def conv2d(input_var, h, w, out_channel, strides=[1, 1], padding="VALID",
+    def conv2d(input_var, h, w, out_channel, strides=[1, 1], padding="SAME",
                activation=tf.nn.relu, l2=1e-4, var_scope=""):
         with tf.variable_scope(var_scope):
             out = tf.layers.conv2d(inputs=input_var, filters=out_channel, kernel_size=[w, h],
                                    strides=strides, padding=padding, activation=activation,
                                    use_bias=True, kernel_initializer=layers.xavier_initializer(),
-                                   bias_initializer=layers.xavier_initializer(),
+                                   # bias_initializer=layers.xavier_initializer(),
                                    kernel_regularizer=layers.l2_regularizer(l2),
                                    bias_regularizer=layers.l2_regularizer(l2))
+        return out
+
+    @staticmethod
+    def conv2ds(input_var, shape=[(64, 4, 1)], out_flatten=True, padding="SAME",
+                activation_hidden=tf.nn.relu, l2=1e-4, var_scope=""):
+        out = input_var
+        with tf.variable_scope(var_scope):
+            for i in range(len(shape)):
+                s = shape[i]
+                out = Network.conv2d(out, h=s[1], w=s[1], out_channel=s[0], strides=[s[2], s[2]], padding=padding,
+                                     activation=activation_hidden, l2=l2, var_scope="conv%d" % i)
+        if out_flatten:
+            out = tf.contrib.layers.flatten(out)
         return out
 
     @staticmethod
@@ -217,6 +232,18 @@ class Network(object):
         quadratic = tf.minimum(abs_value, clip)
         linear = abs_value - quadratic
         return 0.5 * tf.square(quadratic) + clip * linear
+
+    @staticmethod
+    def minimize_and_clip(optimizer, objective, var_list, clip_val=10):
+        """Minimized `objective` using `optimizer` w.r.t. variables in
+        `var_list` while ensure the norm of the gradients for each
+        variable is clipped to `clip_val`
+        """
+        gradients = optimizer.compute_gradients(objective, var_list=var_list)
+        for i, (grad, var) in enumerate(gradients):
+            if grad is not None:
+                gradients[i] = (tf.clip_by_norm(grad, clip_val), var)
+        return optimizer.apply_gradients(gradients), gradients
 
 
 class Sequence(object):
@@ -237,3 +264,30 @@ class Sequence(object):
 class LinearSequence(Sequence):
     def __init__(self, step, start, end):
         super(LinearSequence, self).__init__(lambda n: start + (end - start) * n / step)
+
+
+class CappedLinearSequence(Sequence):
+    def __init__(self, step, start, end):
+        super(CappedLinearSequence, self).__init__(lambda n: end if n > step else start + 1.0 * (end - start) * n / step)
+
+
+class CosSequence(Sequence):
+    def __init__(self, step, start, end):
+        super(CosSequence, self).__init__(lambda n: start + (1 - math.cos(math.pi * 2 * n / step)) * (end - start)/2)
+
+
+class RunningAverage(object):
+    def __init__(self, decay=0.99, epsilon=1e-4):
+        self.decay = decay
+        self.value = epsilon
+        self.epsilon = epsilon
+        super(RunningAverage, self).__init__()
+
+    def add(self, value):
+        self.value = self.value * self.decay + np.mean(value) * (1 - self.decay)
+        if self.value < self.epsilon:
+            self.value = self.epsilon
+        return self.value
+
+    def get(self):
+        return self.value

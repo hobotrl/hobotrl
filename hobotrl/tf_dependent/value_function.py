@@ -19,6 +19,7 @@ ways to access the functionalities of a value function instance.
 import numpy as np
 
 import tensorflow as tf
+from hobotrl.utils import Network
 
 
 class DeepQFuncActionOut(object):
@@ -117,11 +118,9 @@ class DeepQFuncActionOut(object):
                 if greedy_policy:
                     if ddqn:  # use non-target network to select the greedy action.
                         greedy_action = tf.argmax(double_q, axis=1, name='action_greedy')
-                        next_q_sel = tf.stop_gradient(
-                            tf.reduce_sum(
-                                next_q*tf.one_hot(greedy_action, num_actions),
-                                axis=1
-                            ), name='next_q_sel'
+                        next_q_sel = tf.reduce_sum(
+                            next_q*tf.one_hot(greedy_action, num_actions),
+                            axis=1
                         )
                     else:  # use target network to select the greedy actions
                         next_q_sel = tf.reduce_max(next_q, axis=1, name='next_q_sel')
@@ -130,13 +129,14 @@ class DeepQFuncActionOut(object):
                         next_q * tf.one_hot(next_action, num_actions),
                         axis=1, name='next_q_sel'
                     )
+                next_q_sel = tf.stop_gradient(next_q_sel, name="next_q_sel")
 
                 target_q = tf.add(reward, gamma * next_q_sel * (1 - episode_done), name='target_q')
                 td = tf.subtract(
                      target_q,
                      q_sel,
                      name='td')
-                td_losses = tf.square(td)
+                td_losses = Network.clipped_square(td)
                 td_loss = tf.reduce_mean(importance * td_losses, name='td_loss')
 
                 list_reg_loss = tf.get_collection(
@@ -158,10 +158,9 @@ class DeepQFuncActionOut(object):
                     key=tf.GraphKeys.UPDATE_OPS,
                     scope=scope_non.name
                 )
-                op_train_td = optimizer_td.minimize(
-                    tf.add(td_loss, reg_loss),
-                    var_list=non_target_vars
-                )
+                op_train_td, gradients = Network.minimize_and_clip(optimizer_td, objective=tf.add(td_loss, reg_loss),
+                                                                   var_list=non_target_vars)
+
                 op_train_td = tf.group(
                     op_train_td, *ops_update,
                     name='op_train_td'
@@ -202,6 +201,7 @@ class DeepQFuncActionOut(object):
         self.sym_target_diff_l2 = target_diff_l2
         self.op_train_td = op_train_td
         self.op_sync_target = op_sync_target
+        self.sym_learnable_vars = non_target_vars
 
     def apply_op_sync_target_(self, sess, **kwargs):
         """Wrapper method for evaluating op_sync_target"""
@@ -229,7 +229,8 @@ class DeepQFuncActionOut(object):
             feed_dict[self.sym_episode_done] = episode_done
 
         # TODO: should fetch target q?
-        return sess.run([self.op_train_td, self.sym_td_loss, self.sym_td_losses, self.sym_next_q_sel], feed_dict)
+        result = sess.run([self.op_train_td, self.sym_td_loss, self.sym_td_losses, self.sym_next_q_sel], feed_dict)
+        return result[1], result[2], result[3]
 
     def fetch_td_loss_(self,
                        state, action, reward,
@@ -284,7 +285,7 @@ class DeepQFuncActionOut(object):
         info = {}
         td_loss = 0
         if self.countdown_td_ == 0:
-            _, td_loss, td_losses, next_q = self.apply_op_train_td_(
+            td_loss, td_losses, next_q = self.apply_op_train_td_(
                 sess=sess, state=state, action=action,
                 reward=reward, next_state=next_state, next_action=next_action,
                 episode_done=episode_done, importance=importance,
