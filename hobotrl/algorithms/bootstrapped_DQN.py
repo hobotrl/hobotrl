@@ -2,6 +2,7 @@ import hobotrl as hrl
 import tensorflow as tf
 import numpy as np
 import random
+import time
 
 
 def bernoulli_mask(p):
@@ -191,10 +192,14 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
             self.sync_target()
 
     def train(self, feed_dict):
+        # st = time.time()
+
         try:
             self.get_session().run(self.op_train, feed_dict=feed_dict)
         except ValueError:
             pass
+
+        # print "Train time", time.time() - st
 
     def generate_feed_dict(self, batch):
         """
@@ -202,6 +207,8 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
 
         :return(dict): "feed_dict"
         """
+        # st = time.time()
+
         def get_action_values(input_node, output_node, state):
             """
             Calculate action values.
@@ -257,6 +264,8 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
 
                 # Add new action values to training data
                 feed_dict[self.nn_outputs[head]].append(updated_action_values)
+
+        # print "Feed dict time", time.time() - st
 
         return feed_dict
 

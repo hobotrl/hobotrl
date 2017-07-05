@@ -1058,7 +1058,7 @@ class BootstrappedDQNAtari(Experiment):
                                 action_space=env.action_space,
                                 reward_decay=1.,
                                 td_learning_rate=0.5,
-                                target_sync_interval=10000,
+                                target_sync_interval=1000,
                                 nn_constructor=self.nn_constructor,
                                 loss_function=self.loss_function,
                                 trainer=tf.train.GradientDescentOptimizer(learning_rate=0.001).minimize,
@@ -1109,7 +1109,7 @@ class BootstrappedDQNAtari(Experiment):
                                        strides=[2, 2], activation=tf.nn.relu, var_scope="conv2")
         # 9 * 9 * 64
         print "out size:", out
-        out = hrl.utils.Network.conv2d(input_var=out, h=3, w=3, out_channel=32,
+        out = hrl.utils.Network.conv2d(input_var=out, h=3, w=3, out_channel=64,
                                        strides=[1, 1], activation=tf.nn.relu, var_scope="conv3")
 
         # 7 * 7 * 64
