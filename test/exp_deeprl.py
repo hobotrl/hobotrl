@@ -1060,9 +1060,9 @@ class BootstrappedDQNAtari(Experiment):
                                 target_sync_interval=10000,
                                 nn_constructor=self.nn_constructor,
                                 loss_function=self.loss_function,
-                                trainer=tf.train.GradientDescentOptimizer(learning_rate=0.01).minimize,
+                                trainer=tf.train.GradientDescentOptimizer(learning_rate=0.001).minimize,
                                 replay_buffer_class=hrl.playback.MapPlayback,
-                                replay_buffer_args={"capacity": 100000},
+                                replay_buffer_args={"capacity": 50000},
                                 min_buffer_size=20000,
                                 batch_size=5,
                                 n_heads=n_head)
@@ -1070,7 +1070,7 @@ class BootstrappedDQNAtari(Experiment):
         # Start training
         env_runner = BaseEnvironmentRunner(env=env,
                                            agent=agent,
-                                           n_episodes=-1,
+                                           n_episodes=3000,
                                            moving_average_window_size=50,
                                            no_reward_reset_interval=-1,
                                            checkpoint_save_interval=12000,
