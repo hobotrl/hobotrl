@@ -1017,6 +1017,9 @@ class BootstrappedDQNCartPole(Experiment):
 
 Experiment.register(BootstrappedDQNCartPole, "Bootstrapped DQN for the CartPole")
 
+# import gym.envs.classic_control.rendering as rendering
+#
+# image_viewer = rendering.SimpleImageViewer()
 
 class BootstrappedDQNAtari(Experiment):
     def __init__(self, env):
@@ -1025,7 +1028,17 @@ class BootstrappedDQNAtari(Experiment):
         def state_trans(state):
             gray = np.asarray(np.dot(state, [0.299, 0.587, 0.114]))
             gray = cv2.resize(gray, (84, 84))
+
             return np.asarray(gray.reshape(gray.shape + (1,)), dtype=np.int8)
+
+        def trans_wrapper(state):
+
+            image = state_trans(state)
+
+            im_view = np.stack([image.reshape((84, 84))]*3, axis=-1)
+
+            image_viewer.imshow(im_view)
+            return image
 
         self.env = hrl.envs.AugmentEnvWrapper(env,
                                               reward_decay=.999,
@@ -1056,7 +1069,7 @@ class BootstrappedDQNAtari(Experiment):
 
         agent = BootstrappedDQN(observation_space=env.observation_space,
                                 action_space=env.action_space,
-                                reward_decay=.999,
+                                reward_decay=.99,
                                 td_learning_rate=1.,
                                 target_sync_interval=1000,
                                 nn_constructor=self.nn_constructor,
