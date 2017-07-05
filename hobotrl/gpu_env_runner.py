@@ -130,8 +130,27 @@ class BaseEnvironmentRunner(object):
         :param state: current state
         :return: a tuple: (next state, whether current episode is done)
         """
+        # def calculate_time(prompt = ""):
+        #     global st
+        #     et = time.time()
+        #
+        #     if prompt and self.step_count > 201:
+        #         try:
+        #             print prompt, et - st
+        #         except NameError:
+        #             pass
+        #
+        #     st = time.time()
+
+        # calculate_time("\nOther time")
+
         action = self.agent.act(state)
+
+        # calculate_time("Action time")
+
         next_state, reward, done, info = self.env.step(action)
+
+        # calculate_time("Step time")
 
         self.reward_history[-1] += reward
 
@@ -143,12 +162,16 @@ class BaseEnvironmentRunner(object):
             print "Reset for no reward"
             done = True
 
+        # calculate_time("Calculate time")
+
         # Train the agent
         self.agent.reinforce_(state=state,
                               action=action,
                               reward=reward,
                               next_state=next_state,
                               episode_done=done)
+
+        # calculate_time("Reinforce time")
 
         # Episode done
         if done:

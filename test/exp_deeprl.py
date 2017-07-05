@@ -1033,6 +1033,7 @@ class BootstrappedDQNAtari(Experiment):
                                               state_augment_proc=state_trans,
                                               state_stack_n=4,
                                               state_scale=1.0/255)
+        # self.env = env
 
     def run(self, args):
         """
@@ -1112,7 +1113,7 @@ class BootstrappedDQNAtari(Experiment):
                                        strides=[1, 1], activation=tf.nn.relu, var_scope="conv3")
 
         # 7 * 7 * 64
-        out = tf.reshape(out, [-1, 7 * 7 * 32])
+        out = tf.reshape(out, [-1, int(np.product(out.shape[1:]))])
         out = layers.fully_connected(out, 512)
         print "out size:", out
 
