@@ -858,7 +858,7 @@ class BootstrappedDQNSnakeGame(Experiment):
         """
         Calculate the loss.
         """
-        return tf.reduce_sum(tf.squared_difference(output, target), axis=-1)
+        return tf.reduce_sum(tf.sqrt(tf.squared_difference(output, target)+1), axis=-1)
 
     @staticmethod
     def nn_constructor(observation_space, action_space, n_heads, **kwargs):
@@ -1028,7 +1028,7 @@ class BootstrappedDQNAtari(Experiment):
             return np.asarray(gray.reshape(gray.shape + (1,)), dtype=np.int8)
 
         self.env = hrl.envs.AugmentEnvWrapper(env,
-                                              reward_decay=1.,
+                                              reward_decay=.999,
                                               reward_scale=0.001,
                                               state_augment_proc=state_trans,
                                               state_stack_n=4,
@@ -1056,8 +1056,8 @@ class BootstrappedDQNAtari(Experiment):
 
         agent = BootstrappedDQN(observation_space=env.observation_space,
                                 action_space=env.action_space,
-                                reward_decay=1.,
-                                td_learning_rate=0.5,
+                                reward_decay=.999,
+                                td_learning_rate=1.,
                                 target_sync_interval=1000,
                                 nn_constructor=self.nn_constructor,
                                 loss_function=self.loss_function,
@@ -1088,7 +1088,7 @@ class BootstrappedDQNAtari(Experiment):
         """
         Calculate the loss.
         """
-        return tf.reduce_sum(tf.squared_difference(output, target), -1)
+        return tf.reduce_sum(tf.sqrt(tf.squared_difference(output, target)+1), -1)
 
     @staticmethod
     def nn_constructor(observation_space, action_space, n_heads, **kwargs):
