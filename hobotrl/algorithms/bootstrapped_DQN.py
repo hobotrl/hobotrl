@@ -129,14 +129,13 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         # Construct training operation
         self.nn_outputs = [tf.placeholder(tf.float32, (None, action_space.n))
                            for _ in range(self.n_heads)]
+        nn_output = tf.concat(self.nn_heads, 0)
+        nn_target = tf.concat(self.nn_outputs, 0)
+        masks = tf.concat(self.masks, 0)
 
-        loss_list = []
-        for head in range(n_heads):
-            loss = loss_function(output=self.nn_heads[head], target=self.nn_outputs[head])
-            loss_list.append(tf.multiply(loss, self.masks[head]))
-
-        loss_sum = tf.reduce_sum(loss_list)  # Apply bootstrap mask
-        self.op_train = trainer(loss_sum)
+        loss_list = loss_function(output=nn_output, target=nn_target)
+        loss = tf.reduce_sum(tf.multiply(loss_list, masks))  # Apply bootstrap mask
+        self.op_train = trainer(loss)
 
         # Initialize the neural network
         self.get_session().run(tf.global_variables_initializer())
