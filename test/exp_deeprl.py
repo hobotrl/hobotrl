@@ -1050,7 +1050,7 @@ class BootstrappedDQNAtari(Experiment):
 
         self.env = hrl.envs.AugmentEnvWrapper(env,
                                               reward_decay=.999,
-                                              reward_scale=0.1,
+                                              reward_scale=1.,
                                               state_augment_proc=state_trans,
                                               state_stack_n=4,
                                               state_scale=1.0/255)
@@ -1070,7 +1070,7 @@ class BootstrappedDQNAtari(Experiment):
         log_dir = args.logdir
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
-        log_file_name = "booststrapped_DQN_BeamRider.csv"
+        log_file_name = "booststrapped_DQN.csv"
 
         # Initialize the environment and the agent
         env = self.env
@@ -1085,7 +1085,7 @@ class BootstrappedDQNAtari(Experiment):
                                 trainer=tf.train.GradientDescentOptimizer(learning_rate=0.001).minimize,
                                 replay_buffer_class=hrl.playback.MapPlayback,
                                 replay_buffer_args={"capacity": 10000},
-                                min_buffer_size=10000,
+                                min_buffer_size=5000,
                                 batch_size=8,
                                 n_heads=n_head)
 
@@ -1094,7 +1094,7 @@ class BootstrappedDQNAtari(Experiment):
                                            agent=agent,
                                            n_episodes=-1,
                                            moving_average_window_size=100,
-                                           no_reward_reset_interval=1000,
+                                           no_reward_reset_interval=2000,
                                            checkpoint_save_interval=12000,
                                            log_dir=log_dir,
                                            log_file_name=log_file_name,
@@ -1161,6 +1161,12 @@ class BootstrappedDQNBreakOut(BootstrappedDQNAtari):
         BootstrappedDQNAtari.__init__(self, gym.make('Breakout-v0'))
 
 Experiment.register(BootstrappedDQNBreakOut, "Bootstrapped DQN for the BreakOut")
+
+class BootstrappedDQNPong(BootstrappedDQNAtari):
+    def __init__(self):
+        BootstrappedDQNAtari.__init__(self, gym.make('PongNoFrameskip-v4'))
+
+Experiment.register(BootstrappedDQNPong, "Bootstrapped DQN for the Pong")
 
 
 if __name__ == '__main__':
