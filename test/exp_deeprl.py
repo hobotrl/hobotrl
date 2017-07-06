@@ -1017,9 +1017,8 @@ class BootstrappedDQNCartPole(Experiment):
 
 Experiment.register(BootstrappedDQNCartPole, "Bootstrapped DQN for the CartPole")
 
-# import gym.envs.classic_control.rendering as rendering
-#
-# image_viewer = rendering.SimpleImageViewer()
+image_viewer = None
+
 
 class BootstrappedDQNAtari(Experiment):
     def __init__(self, env):
@@ -1031,18 +1030,27 @@ class BootstrappedDQNAtari(Experiment):
 
             return np.asarray(gray.reshape(gray.shape + (1,)), dtype=np.int8)
 
-        def trans_wrapper(state):
+        def show_state_trans_result_wrapper(state):
+            global image_viewer
+            import gym.envs.classic_control.rendering as rendering
+
+            if not image_viewer:
+                image_viewer = rendering.SimpleImageViewer()
 
             image = state_trans(state)
 
-            im_view = np.stack([image.reshape((84, 84))]*3, axis=-1)
+            im_view = image.reshape((84, 84))
+            im_view = np.array(im_view, dtype=np.float32)
+            im_view = cv2.resize(im_view, (336, 336), interpolation=cv2.INTER_NEAREST)
+            im_view = np.array(im_view, dtype=np.int8)
+            im_view = np.stack([im_view]*3, axis=-1)
 
             image_viewer.imshow(im_view)
             return image
 
         self.env = hrl.envs.AugmentEnvWrapper(env,
                                               reward_decay=.999,
-                                              reward_scale=0.001,
+                                              reward_scale=0.1,
                                               state_augment_proc=state_trans,
                                               state_stack_n=4,
                                               state_scale=1.0/255)
@@ -1084,9 +1092,9 @@ class BootstrappedDQNAtari(Experiment):
         # Start training
         env_runner = BaseEnvironmentRunner(env=env,
                                            agent=agent,
-                                           n_episodes=3000,
+                                           n_episodes=-1,
                                            moving_average_window_size=100,
-                                           no_reward_reset_interval=-1,
+                                           no_reward_reset_interval=1000,
                                            checkpoint_save_interval=12000,
                                            log_dir=log_dir,
                                            log_file_name=log_file_name,
@@ -1143,6 +1151,14 @@ class BootstrappedDQNBattleZone(BootstrappedDQNAtari):
         BootstrappedDQNAtari.__init__(self, gym.make('BattleZone-v0'))
 
 Experiment.register(BootstrappedDQNBattleZone, "Bootstrapped DQN for the BattleZone")
+
+
+class BootstrappedDQNBreakOut(BootstrappedDQNAtari):
+    def __init__(self):
+        BootstrappedDQNAtari.__init__(self, gym.make('Breakout-v0'))
+
+Experiment.register(BootstrappedDQNBreakOut, "Bootstrapped DQN for the BreakOut")
+
 
 if __name__ == '__main__':
     Experiment.main()
