@@ -1084,7 +1084,7 @@ class BootstrappedDQNAtari(Experiment):
                                 loss_function=self.loss_function,
                                 trainer=tf.train.GradientDescentOptimizer(learning_rate=0.001).minimize,
                                 replay_buffer_class=hrl.playback.MapPlayback,
-                                replay_buffer_args={"capacity": 10000},
+                                replay_buffer_args={"capacity": 50000},
                                 min_buffer_size=5000,
                                 batch_size=8,
                                 n_heads=n_head)
