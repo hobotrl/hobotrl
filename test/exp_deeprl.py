@@ -1125,20 +1125,20 @@ class BootstrappedDQNAtari(Experiment):
         x = tf.placeholder(tf.float32, (None,) + observation_space.shape)
 
         print "input size:", x
-        out = hrl.utils.Network.conv2d(input_var=x, h=8, w=8, out_channel=32,
+        out = hrl.utils.Network.conv2d(input_var=x, h=8, w=8, out_channel=16,
                                        strides=[4, 4], activation=leakyRelu, var_scope="conv1")
         # 20 * 20 * 32
         print "out size:", out
-        out = hrl.utils.Network.conv2d(input_var=out, h=4, w=4, out_channel=64,
+        out = hrl.utils.Network.conv2d(input_var=out, h=4, w=4, out_channel=16,
                                        strides=[2, 2], activation=leakyRelu, var_scope="conv2")
         # 9 * 9 * 64
         print "out size:", out
-        out = hrl.utils.Network.conv2d(input_var=out, h=3, w=3, out_channel=64,
+        out = hrl.utils.Network.conv2d(input_var=out, h=3, w=3, out_channel=32,
                                        strides=[1, 1], activation=leakyRelu, var_scope="conv3")
 
         # 7 * 7 * 64
         out = tf.reshape(out, [-1, int(np.product(out.shape[1:]))])
-        out = layers.fully_connected(out, 512, activation_fn=leakyRelu)
+        out = layers.fully_connected(out, 64, activation_fn=leakyRelu)
         print "out size:", out
 
         for _ in range(n_heads):
