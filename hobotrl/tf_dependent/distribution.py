@@ -1,4 +1,3 @@
-#
 # -*- coding: utf-8 -*-
 
 import tensorflow as tf
@@ -67,9 +66,10 @@ class DiscreteDistribution(NNDistribution):
         """
         :param f_create_net: function to create network.
                 output of network must be a 1-normalized distribution over `dist_n` categories: [batch_size, dist_n]
-        :param inputs_dist: list of distribution network input
-        :param dist_n: count of categories
+        :param inputs_dist: list of input symbols to the distribution network.
+        :param dist_n: number of categories.
         :param input_sample: sample input placeholder, with shape: [batch_size, 1]
+        :param epsilon: small positive offset to avoid zero probability.
         :param kwargs:
         """
         super(DiscreteDistribution, self).__init__(**kwargs)
@@ -92,21 +92,41 @@ class DiscreteDistribution(NNDistribution):
         return self.net_entropy
 
     def entropy_run(self, sess, inputs):
-        return sess.run([self.net_entropy], feed_dict=dict(zip(self.inputs_dist, inputs)))[0]
+        return sess.run(
+            [self.net_entropy],
+            feed_dict=dict(zip(self.inputs_dist, inputs))
+        )[0]
+
+    def dist(self):
+        return self.net_dist
+
+    def dist_run(self, sess, inputs):
+        return sess.run(
+            [self.net_dist],
+            feed_dict=dict(zip(self.inputs_dist, inputs))
+        )[0]
 
     def prob(self):
         return self.net_prob
 
     def prob_run(self, sess, inputs, sample):
-        return sess.run([self.net_prob],
-                        feed_dict=dict(zip(self.inputs_dist, inputs) + [self.input_sample, sample]))[0]
+        return sess.run(
+            [self.net_prob],
+            feed_dict=dict(
+                zip(self.inputs_dist, inputs) + [(self.input_sample, sample)]
+            )
+        )[0]
 
     def log_prob(self):
         return self.net_log_prob
 
     def log_prob_run(self, sess, inputs, sample):
-        return sess.run([self.net_log_prob],
-                        feed_dict=dict(zip(self.inputs_dist, inputs) + [self.input_sample, sample]))[0]
+        return sess.run(
+            [self.net_log_prob],
+            feed_dict=dict(
+                zip(self.inputs_dist, inputs) + [(self.input_sample, sample)]
+            )
+        )[0]
 
     def sample(self):
         # not implemented
@@ -114,7 +134,10 @@ class DiscreteDistribution(NNDistribution):
 
     def sample_run(self, sess, inputs):
         # distribution with shape [batch_size, dist_n]
-        distribution = sess.run([self.net_dist], feed_dict=dict(zip(self.inputs_dist, inputs)))[0]
+        distribution = sess.run(
+            [self.net_dist],
+            feed_dict=dict(zip(self.inputs_dist, inputs))
+        )[0]
         sample_i = []
         for p in distribution:
             sample_i.append(np.random.choice(np.arange(self.dist_n), p=p))
@@ -162,15 +185,23 @@ class NormalDistribution(NNDistribution):
         return self.net_prob
 
     def prob_run(self, sess, inputs, sample):
-        return sess.run([self.net_prob],
-                        feed_dict=dict(zip(self.inputs_dist, inputs) + [self.input_sample, sample]))[0]
+        return sess.run(
+            [self.net_prob],
+            feed_dict=dict(
+                zip(self.inputs_dist, inputs) + [(self.input_sample, sample)]
+            )
+        )[0]
 
     def log_prob(self):
         return self.net_log_prob
 
     def log_prob_run(self, sess, inputs, sample):
-        return sess.run([self.net_log_prob],
-                        feed_dict=dict(zip(self.inputs_dist, inputs) + [self.input_sample, sample]))[0]
+        return sess.run(
+            [self.net_log_prob],
+            feed_dict=dict(
+                zip(self.inputs_dist, inputs) + [self.input_sample, sample]
+            )
+        )[0]
 
     def mean(self):
         return self.net_mean
@@ -192,7 +223,10 @@ class NormalDistribution(NNDistribution):
 
     def sample_run(self, sess, inputs):
         # distribution with shape [batch_size, dist_n]
-        mean, stddev = sess.run([self.net_mean, self.net_stddev], feed_dict=dict(zip(self.inputs_dist, inputs)))
+        mean, stddev = sess.run(
+            [self.net_mean, self.net_stddev],
+            feed_dict=dict(zip(self.inputs_dist, inputs))
+        )
         sample_i = []
         stddev = np.sqrt(stddev)
         for i in range(len(mean)):
@@ -200,3 +234,5 @@ class NormalDistribution(NNDistribution):
             sample_i.append(np.random.normal(mu, sigma))
         sample_i = np.asarray(sample_i)
         return sample_i
+
+

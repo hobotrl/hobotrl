@@ -167,7 +167,6 @@ while True:
         n_steps += 1
         cum_reward += reward
         next_action, update_info = agent.step(
-            sess=sess,
             state=state,
             action=action,
             reward=reward,
