@@ -523,11 +523,11 @@ class EpisodicLifeEnv(gym.Wrapper):
 
 
 class MaxAndSkipEnv(gym.Wrapper):
-    def __init__(self, env=None, skip=4):
+    def __init__(self, env=None, max_len=2, skip=4):
         """Return only every `skip`-th frame"""
         super(MaxAndSkipEnv, self).__init__(env)
         # most recent raw observations (for max pooling across time steps)
-        self._obs_buffer = deque(maxlen=2)
+        self._obs_buffer = deque(maxlen=max_len)
         self._skip = skip
 
     def _step(self, action):
@@ -641,12 +641,12 @@ class ScaledFloatFrame(gym.ObservationWrapper):
 def wrap_dqn(env):
     """Apply a common set of wrappers for Atari games."""
     assert 'NoFrameskip' in env.spec.id
-    env = EpisodicLifeEnv(env)
-    env = NoopResetEnv(env, noop_max=30)
+    # env = EpisodicLifeEnv(env)
+    # env = NoopResetEnv(env, noop_max=30)
     env = MaxAndSkipEnv(env, skip=4)
     if 'FIRE' in env.unwrapped.get_action_meanings():
         env = FireResetEnv(env)
     env = ProcessFrame84(env)
     env = FrameStack(env, 4)
-    env = ClippedRewardsWrapper(env)
+    # env = ClippedRewardsWrapper(env)
     return env

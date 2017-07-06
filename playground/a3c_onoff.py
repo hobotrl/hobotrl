@@ -14,7 +14,7 @@ def escape(name):
 class ActorCritic(object):
 
     def __init__(self, id, name, state_shape, num_actions, create_net, optimizer, parent=None, global_step=None,
-                 ddqn=False, aux_r=False, aux_d=False, reward_decay=0.99):
+                 ddqn=False, aux_r=False, aux_d=False, reward_decay=0.99, prob_min=1e-2):
         """
 
         :param id:
@@ -307,6 +307,7 @@ class A3CAgent(hrl.tf_dependent.base.BaseDeepAgent):
                  aux_r=False,
                  aux_d=False,
                  name=None, index=0, global_step=None, parent_net=None, **kwargs):
+        kwargs.update({"entropy": entropy})
         super(A3CAgent, self).__init__(self, **kwargs)
         self.name, self.index = name, index
         self.state_shape, self.action_n = list(state_shape), num_actions
@@ -419,6 +420,7 @@ class A3CAgent(hrl.tf_dependent.base.BaseDeepAgent):
         :param episode_done: 0: not terminated; 1: terminated
         :return:
         """
+        self._stepper.step()
         info = {}
         has_update = False
         if self.train_on_interval > 0:
@@ -457,10 +459,9 @@ class A3CAgent(hrl.tf_dependent.base.BaseDeepAgent):
                 logging.warning("Target from %s: [ %s ... %s]", target_name, R[0], R[-1])
 
                 # train V Pi, entropy annealing
-                param_entropy = self.entropy if not callable(self.entropy) else self.entropy()
                 pi_loss, v_loss, td, entropy = self.net.compute_on_gradient(state=Si, action=Ai, reward=Ri, value=R,
-                                                                            entropy=param_entropy)
-                info.update({"on/target_v": R, "on/entropy": entropy, "on/entropy_param": param_entropy,
+                                                                            entropy=self.entropy)
+                info.update({"on/target_v": R, "on/entropy": entropy, "on/entropy_param": self.entropy,
                              "on/pi_loss": pi_loss, "on/v_loss": v_loss, "on/td": td})
 
         if self.train_off_interval > 0:
