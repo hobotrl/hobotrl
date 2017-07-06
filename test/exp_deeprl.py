@@ -1162,6 +1162,7 @@ class BootstrappedDQNBreakOut(BootstrappedDQNAtari):
 
 Experiment.register(BootstrappedDQNBreakOut, "Bootstrapped DQN for the BreakOut")
 
+
 class BootstrappedDQNPong(BootstrappedDQNAtari):
     def __init__(self):
         BootstrappedDQNAtari.__init__(self, gym.make('PongNoFrameskip-v4'))
