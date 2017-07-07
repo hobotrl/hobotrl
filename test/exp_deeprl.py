@@ -1021,7 +1021,7 @@ image_viewer = None
 
 
 class BootstrappedDQNAtari(Experiment):
-    def __init__(self, env):
+    def __init__(self, env, augment_wrapper_args={}, agent_args={}, runner_args={}):
         Experiment.__init__(self)
 
         def state_trans(state):
@@ -1048,13 +1048,17 @@ class BootstrappedDQNAtari(Experiment):
             image_viewer.imshow(im_view)
             return image
 
-        self.env = hrl.envs.AugmentEnvWrapper(env,
-                                              reward_decay=.999,
-                                              reward_scale=1.,
-                                              state_augment_proc=state_trans,
-                                              state_stack_n=4,
-                                              state_scale=1.0/255)
-        # self.env = env
+        self.augment_wrapper_args = augment_wrapper_args
+        self.agent_args = agent_args
+        self.runner_args = runner_args
+
+        augment_wrapper_args = {"reward_decay": .999,
+                                "reward_scale": 1.,
+                                "state_augment_proc": show_state_trans_result_wrapper,
+                                "state_stack_n": 4,
+                                "state_scale": 1.0/255.0}
+        augment_wrapper_args.update(self.augment_wrapper_args)
+        self.env = hrl.envs.AugmentEnvWrapper(env, **augment_wrapper_args)
 
     def run(self, args):
         """
@@ -1074,34 +1078,37 @@ class BootstrappedDQNAtari(Experiment):
 
         # Initialize the environment and the agent
         env = self.env
-
+        
+        agent_args = {"reward_decay": .99,
+                      "td_learning_rate": 1.,
+                      "target_sync_interval": 1000,
+                      "nn_constructor": self.nn_constructor,
+                      "loss_function": self.loss_function,
+                      "trainer": tf.train.GradientDescentOptimizer(learning_rate=0.001).minimize,
+                      "replay_buffer_class": hrl.playback.MapPlayback,
+                      "replay_buffer_args": {"capacity": 50000},
+                      "min_buffer_size": 5000,
+                      "batch_size": 8,
+                      "n_heads": n_head}
+        agent_args.update(self.agent_args)
         agent = BootstrappedDQN(observation_space=env.observation_space,
                                 action_space=env.action_space,
-                                reward_decay=.99,
-                                td_learning_rate=1.,
-                                target_sync_interval=1000,
-                                nn_constructor=self.nn_constructor,
-                                loss_function=self.loss_function,
-                                trainer=tf.train.GradientDescentOptimizer(learning_rate=0.001).minimize,
-                                replay_buffer_class=hrl.playback.MapPlayback,
-                                replay_buffer_args={"capacity": 50000},
-                                min_buffer_size=5000,
-                                batch_size=8,
-                                n_heads=n_head)
+                                **agent_args)
 
         # Start training
+        runner_args = {"n_episodes": -1,
+                       "moving_average_window_size": 100,
+                       "no_reward_reset_interval": -1,
+                       "checkpoint_save_interval": 12000,
+                       "render_env": False,
+                       "show_frame_rate": True,
+                       "show_frame_rate_interval": 2000}
+        runner_args.update(self.runner_args)
         env_runner = BaseEnvironmentRunner(env=env,
                                            agent=agent,
-                                           n_episodes=-1,
-                                           moving_average_window_size=100,
-                                           no_reward_reset_interval=2000,
-                                           checkpoint_save_interval=12000,
                                            log_dir=log_dir,
                                            log_file_name=log_file_name,
-                                           render_env=False,
-                                           show_frame_rate=True,
-                                           show_frame_rate_interval=2000
-                                           )
+                                           **runner_args)
         env_runner.run()
 
     @staticmethod
@@ -1125,20 +1132,20 @@ class BootstrappedDQNAtari(Experiment):
         x = tf.placeholder(tf.float32, (None,) + observation_space.shape)
 
         print "input size:", x
-        out = hrl.utils.Network.conv2d(input_var=x, h=8, w=8, out_channel=8,
+        out = hrl.utils.Network.conv2d(input_var=x, h=8, w=8, out_channel=32,
                                        strides=[4, 4], activation=leakyRelu, var_scope="conv1")
         # 20 * 20 * 32
         print "out size:", out
-        out = hrl.utils.Network.conv2d(input_var=out, h=4, w=4, out_channel=8,
+        out = hrl.utils.Network.conv2d(input_var=out, h=4, w=4, out_channel=64,
                                        strides=[2, 2], activation=leakyRelu, var_scope="conv2")
         # 9 * 9 * 64
         print "out size:", out
-        out = hrl.utils.Network.conv2d(input_var=out, h=3, w=3, out_channel=16,
+        out = hrl.utils.Network.conv2d(input_var=out, h=3, w=3, out_channel=64,
                                        strides=[1, 1], activation=leakyRelu, var_scope="conv3")
 
         # 7 * 7 * 64
         out = tf.reshape(out, [-1, int(np.product(out.shape[1:]))])
-        out = layers.fully_connected(out, 32, activation_fn=leakyRelu)
+        out = layers.fully_connected(out, 512, activation_fn=leakyRelu)
         print "out size:", out
 
         for _ in range(n_heads):
@@ -1151,14 +1158,20 @@ class BootstrappedDQNAtari(Experiment):
 
 class BootstrappedDQNBattleZone(BootstrappedDQNAtari):
     def __init__(self):
-        BootstrappedDQNAtari.__init__(self, gym.make('BattleZone-v0'))
+        BootstrappedDQNAtari.__init__(self,
+                                      env=gym.make('BattleZone-v0'),
+                                      augment_wrapper_args={"reward_scale": 0.001},
+                                      agent_args={"replay_buffer_args": {"capacity": 10000},
+                                                  "min_buffer_size": 10000})
 
 Experiment.register(BootstrappedDQNBattleZone, "Bootstrapped DQN for the BattleZone")
 
 
 class BootstrappedDQNBreakOut(BootstrappedDQNAtari):
     def __init__(self):
-        BootstrappedDQNAtari.__init__(self, gym.make('Breakout-v0'))
+        BootstrappedDQNAtari.__init__(self,
+                                      env=gym.make('Breakout-v0'),
+                                      runner_args={"no_reward_reset_interval": 2000})
 
 Experiment.register(BootstrappedDQNBreakOut, "Bootstrapped DQN for the BreakOut")
 
