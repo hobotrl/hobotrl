@@ -299,16 +299,31 @@ class DeepQFuncActionOut(object):
             info.update({"dqn_target_diff_l2": diff_l2})
         return info
 
-    def get_value(self, state, action=None, sess=None, **kwargs):
+    def get_value(self, state, action=None, is_batch=True, **kwargs):
+        """Retrieve value for a state (and action).
+        Retrieve the action values of a given state or of a particular (state,
+        action) tuple. Uses non-training mode if the sample passed in is a
+        single example.
+
+        :param state:
+        :param action:
+        :param is_batch: indicator for the batch case.
+        """
+        assert 'sess' in kwargs
+        sess = kwargs['sess']
         if action is None:
             return sess.run(
-                self.sym_q, feed_dict={self.sym_state: state}
+                self.sym_q, feed_dict={
+                    self.sym_state: state,
+                    self.sym_is_training: is_batch
+                }
             )
         else:
             return sess.run(
                 self.sym_q_sel, feed_dict={
                     self.sym_state: state,
-                    self.sym_action: action
+                    self.sym_action: action,
+                    self.sym_is_training: is_batch
                 }
             )
     @property
@@ -643,11 +658,24 @@ class DeepQFuncActionIn(object):
             info.update({"dqn_target_diff_l2": diff_l2})
         return info
 
-    def get_value(self, state, action, sess=None, **kwargs):
+    def get_value(self, state, action, is_batch=True, **kwargs):
+        """Retrieve value for a state (and action).
+        Retrieve the action value of a given (state, action) tuple. Uses
+        non-training mode if the sample passed in is a single example.
+
+        :param state:
+        :param action:
+        :param is_batch: indicator for the batch case.
+        """
+        assert 'sess' in kwargs
+        sess = kwargs['sess']
         return sess.run(
             self.sym_q, feed_dict={
-                self.sym_state: state, self.sym_action: action
-            })
+                self.sym_state: state,
+                self.sym_action: action,
+                self.sym_is_training: is_batch
+            }
+        )
 
     def get_grad_q_action(self, state, action,
                           sess=None, use_target=False, **kwargs):

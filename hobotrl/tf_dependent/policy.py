@@ -6,7 +6,7 @@ import tensorflow as tf
 import numpy as np
 
 import hobotrl as hrl
-from distribution import *
+from distribution import DiscreteDistribution, NormalDistribution
 
 
 class NNStochasticPolicy(object):
@@ -79,12 +79,12 @@ class NNStochasticPolicy(object):
             optimizer = training_params[0]
         self.op_train = optimizer.minimize(self.pi_loss, var_list=vars_policy)
         # self.pi_loss = self.pi_loss + tf.reduce_sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES), "policy")
-        self.train_countdown = self.train_interval
+        self.train_countdown =  self.train_interval
 
     def act(self, state, sess, **kwargs):
         return self.distribution.sample_run(sess, [np.asarray([state])])
 
-    def update_policy(self, state, action, reward, next_state, episode_done, sess, **kwargs):
+    def imporove_policy_(self, state, action, reward, next_state, episode_done, sess, **kwargs):
         self.episode_buffer.push_sample(
             {
                 's': state,
@@ -129,13 +129,25 @@ class NNStochasticPolicy(object):
 
         return {}
 
-    def get_value(self, state, sess):
+    def get_state_value(self, state, kwargs):
+        """Calculate state value."""
+        # Retrieve tf session
+        assert 'sess' in kwargs
+        sess = kwargs['sess']
+        # Average action values to get the state value
         if self.is_continuous_action:
-            action = self.distribution.mean_run(sess, [state])
-            V = self.parent_agent.get_value(state=state, action=action)
+            # Continuous action case:
+            # V(s)=\integral_a{\pi(s, a)*Q(s, a)}. Here we use the action value
+            # of mean action to avoid the integral. Note this is only
+            # approximately true when Q(s,a) is linear in `a'.
+            action_mean = self.distribution.mean_run(sess, [state])
+            V = self.get_value(state=state, action=action_mean, **kwargs)
         else:
-            V = self.parent_agent.get_value(state=state)
-            V = np.max(V, axis=-1, keepdims=False)
+            # Discrete action case:
+            # V(s) = \sum_a{\pi(s,a)*Q(s,a)}.
+            Q = self.get_value(state=state)
+            dist = self.distribution.dist_run(**kwargs)
+            V = np.sum(Q*dist, axis=1)
         return V
 
 

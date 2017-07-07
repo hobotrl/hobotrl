@@ -5,6 +5,7 @@
 import numpy as np
 import hobotrl as hrl
 from hobotrl.mixin import BaseValueMixin, BasePolicyMixin
+from hobotrl.playback import MapPlayback
 from value_function import DeepQFuncActionOut, DeepQFuncActionIn
 from policy import NNStochasticPolicy, DeepDeterministicPolicy
 
@@ -41,9 +42,9 @@ class DeepQFuncMixin(BaseValueMixin):
         """Fetch action value(s)
         Wrapper for self.__dqf.get_value(). Checks and corrects arguments.
         """
-        state, action = self.__check_shape(state, action)
+        state, action, is_batch = self.__check_shape(state, action)
         kwargs.update({"sess": self.sess})
-        return self.__dqf.get_value(state, action, **kwargs)
+        return self.__dqf.get_value(state, action, is_batch=is_batch, **kwargs)
 
     def get_qfunction(self):
         return self.__dqf
@@ -99,9 +100,9 @@ class DeepQFuncMixin(BaseValueMixin):
         arguments. Raise exception for action-out network.
         """
         if self.__IS_ACTION_IN:
-            state, action = self.__check_shape(state, action)
+            state, action, is_batch = self.__check_shape(state, action)
             kwargs.update({"sess": self.sess})
-            return self.__dqf.get_grad_q_action(state, action, **kwargs)
+            return self.__dqf.get_grad_q_action(state, action, is_batch, **kwargs)
         else:
             raise NotImplementedError(
                 "DeepQFuncMixin.get_grad_q_action(): "
@@ -116,7 +117,13 @@ class DeepQFuncMixin(BaseValueMixin):
         """Shape checking procedure
         Convert both state and action to numpy arrays. Prepends the batch
         dimension whereever needed and make sure the batch sizes of state
-        and action are equal.
+        and action are equal. Also returns an indicator for batch case.
+
+        :param state: state.
+        :param action: action.
+        :return state: converted state.
+        :return action: converted action.
+        :return is_batch: indicator for the batch case.
         """
         # force convert to numpy array
         state = np.array(state)
@@ -131,35 +138,137 @@ class DeepQFuncMixin(BaseValueMixin):
             if action is not None:
                 action = action[np.newaxis]
                 assert len(action.shape) == 1
+            is_batch = False
         else:  # batch format
             if action is not None:
                 assert state.shape[0] == action.shape[0]
-        return state, action
+            is_batch = True
+        return state, action, is_batch
 
 
 class NNStochasticPolicyMixin(BasePolicyMixin):
 
-    def __init__(self, **kwargs):
-        kwargs.update({
-            "parent_agent": self
-        })
-        self._policy = NNStochasticPolicy(**kwargs)
-        super(NNStochasticPolicyMixin, self).__init__(**kwargs)
+    def __init__(self, nnsp_param_dict, update_method, update_interval, **kwargs):
+        """Initialization
 
-    def act(self, state, **kwargs):
-        kwargs.update({
-            "sess": self.get_session()
-        })
-        return self._policy.act(state, **kwargs)[0]
+        :param nnsp_param_dict: kwarg dict for nnsp Initialization.
+        """
+        super(NNStochasticPolicyMixin, self).__init__(**kwargs)
+        self.__nnsp = NNStochasticPolicy(**nnsp_param_dict)
+        self.__BATCH_SIZE = kwargs['batch_size']  # assume exist for init. replay_buffer
+        # assign proper update method
+        dict_update_methods = {
+            "multistep": self.update_multistep_,
+            "replayed": self.update_replayed_,
+        }
+        self.__update_method = dict_update_methods[update_method]
+        self.__countdown_update = update_interval
+        self.__UPDATE_INTERVAL = update_interval
+        # initialize a buffer to store episodic experiences
+        if update_method=='episodic':
+            self.episode_buffer = MapPlayback(
+                update_interval,
+                {"state": state_shape,
+                 "action": action_shape,
+                 "reward": (),
+                 "episode_done": (),
+                 "next_state": state_shape,
+                 "state_value": (),},
+                pop_policy="sequence"
+            )
+
+    def act(self, state, batch=False, **kwargs):
+        """Emit action for this state.
+        Accepts both a single sample and a batch of samples. In the former
+        case, automatically insert the batch dimension to match the shape of
+        placeholders and use determistic inference to avoid inconsistency with
+        training phase. For the latter case, simply pass along the arguments to
+        the ddp member. Assumes there is a mixing class implementing the
+        `get_replay_buffer()` method.
+
+         TODO: do not use 'batch', distinguish batch case using
+              state.shape
+
+        :param state: the state.
+        """
+        state = np.array(state)
+        # prepend batch dim and use deterministic inference for single sample
+        if not batch:
+            assert list(state.shape) == list(self.__nnsp.state_shape)
+            state = state[np.newaxis, :]
+            # TODO: nnsp currently doesn't support `is_training` arg.
+            return self.__nnsp.act(state, is_training=False, **kwargs)[0, :]
+        # use default stochastic inference of batch
+        else:
+            return self.__nnsp.act(state, **kwargs)
 
     def reinforce_(self, state, action, reward, next_state, episode_done=False, **kwargs):
-        info = super(NNStochasticPolicyMixin, self).reinforce_(state, action, reward, next_state, episode_done, **kwargs)
-        kwargs.update({
-            "sess": self.get_session()
-        })
-        info.update(self._policy.update_policy(state, action, reward, next_state, episode_done, **kwargs))
-        return info
+        parent_info = super(NNStochasticPolicyMixin, self).reinforce_(
+            state=state, action=action, reward=reward, next_state=next_state,
+            episode_done=episode_done, **kwargs)
+        self_info = self.improve_policy_(
+            state, action, reward, next_state, episode_done, **kwargs
+        )
+        parent_info.update(self_info)
+        return parent_info
 
+    def improve_policy_(self, state, action, reward, next_state,
+                        episode_done=False, **kwargs):
+        """Wraps around the desired update method."""
+        return self.__update_method(
+            state, action, reward, next_state, episode_done, **kwargs
+        )
+
+    def update_direct_():
+        pass
+
+    def update_multistep_(self, state, action, reward, next_state,
+                         episode_done=False, **kwargs):
+        """
+        Update policy using episodic reward
+        """
+        # record new sample
+        state_value = self.get_state_value(state=state, **kwargs)
+        self.episode_buffer.push_sample(
+            sample={
+                'state': state,
+                'action': action,
+                'next_state': next_state,
+                'reward': np.asarray([reward], dtype=float),
+                'episode_done': np.asarray([episode_done], dtype=float),
+                'state_value': np.asarray([state_value], dtype=float)
+            }
+        )
+        # empty buffer and update
+        self.__countdown_update -= 1
+        if episode_done or self.__countdown_update == 0:
+            self.__countdown_update = self.__UPDATE_INTERVAL
+            # MapPlayback with 'sequence' option pop out trajectory
+            len_path = self.episode_buffer.get_count()
+            path = self.episode_buffer.sample_batch(len_path)
+            self.episode_buffer.reset()
+            # unpack
+            state = np.asarray(trajectory['state'])
+            action = trajectory['action']
+            reward = trajectory['reward']
+            next_state = np.asarray(trajectory['next_state'])
+            episode_done = trajectory['episode_done']
+            state_value = trajectory['state_value']
+            # TODO: is explicitly setting r to 0.0 necessary. Assuming Q that is
+            # estimated correctly, it should include such information.
+            G = np.zeros(shape=[batch_size], dtype=float)  # front return
+            r = self.get_value(
+                    state=np.asarray([next_state]),
+                    is_batch=False, **kwargs
+                )[0]  # tail return
+            for i in range(batch_size):
+                index = batch_size -1 - i
+                r = reward[index] + self.reward_decay * r
+                G[index] = r
+            advantage = G - state_value
+
+    def update_replayed_():
+        pass
 
 class DeepDeterministicPolicyMixin(BasePolicyMixin):
     """Wrapper mixin for a DDP."""
@@ -175,7 +284,7 @@ class DeepDeterministicPolicyMixin(BasePolicyMixin):
     def act(self, state, batch=False, **kwargs):
         """Emit action for this state.
         Accepts both a single sample and a batch of samples. In the former
-        case, automatically inssert the batch dimension to match the shape of
+        case, automatically insert the batch dimension to match the shape of
         placeholders and use determistic inference to avoid inconsistency with
         training phase. For the latter case, simply pass along the arguments to
         the ddp member. Assumes there is a mixing class implementing the
@@ -217,6 +326,10 @@ class DeepDeterministicPolicyMixin(BasePolicyMixin):
             # TODO: here we need two forward passes for the policy network:
             #       One time for accesing policy, the other for computing
             #       DPG. Can we do better?
+            # TODO: the following forward-backward pass are executed no matter
+            #       what. But ddp only needs it when countdown touches zero.
+            #       Maybe providing a function handle is better? But it is
+            #       messy to manage those handles anyway....
             action_on = self.act(
                 state, exploration_off=True, use_target=False, batch=True,
                 **kwargs
