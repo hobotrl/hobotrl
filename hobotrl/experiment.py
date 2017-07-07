@@ -20,7 +20,7 @@ class Experiment:
 
     @staticmethod
     def register(subclass, desc=None):
-        e = subclass()
+        e = subclass
         if desc is not None:
             e.desc = desc
         name = subclass.__name__
@@ -32,7 +32,8 @@ class Experiment:
     def start(name, args):
         if not args.logdir:
             args.logdir = args.name
-        Experiment.experiments[name].run(args)
+        experiment_class = Experiment.experiments[name]
+        experiment_class().run(args)
         pass
 
     @staticmethod
