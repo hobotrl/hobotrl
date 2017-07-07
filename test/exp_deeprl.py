@@ -1024,41 +1024,43 @@ class BootstrappedDQNAtari(Experiment):
     def __init__(self, env, augment_wrapper_args={}, agent_args={}, runner_args={}):
         Experiment.__init__(self)
 
-        def state_trans(state):
-            gray = np.asarray(np.dot(state, [0.299, 0.587, 0.114]))
-            gray = cv2.resize(gray, (84, 84))
-
-            return np.asarray(gray.reshape(gray.shape + (1,)), dtype=np.int8)
-
-        def show_state_trans_result_wrapper(state):
-            global image_viewer
-            import gym.envs.classic_control.rendering as rendering
-
-            if not image_viewer:
-                image_viewer = rendering.SimpleImageViewer()
-
-            image = state_trans(state)
-
-            im_view = image.reshape((84, 84))
-            im_view = np.array(im_view, dtype=np.float32)
-            im_view = cv2.resize(im_view, (336, 336), interpolation=cv2.INTER_NEAREST)
-            im_view = np.array(im_view, dtype=np.int8)
-            im_view = np.stack([im_view]*3, axis=-1)
-
-            image_viewer.imshow(im_view)
-            return image
-
         self.augment_wrapper_args = augment_wrapper_args
         self.agent_args = agent_args
         self.runner_args = runner_args
 
         augment_wrapper_args = {"reward_decay": .999,
                                 "reward_scale": 1.,
-                                "state_augment_proc": show_state_trans_result_wrapper,
+                                "state_augment_proc": BootstrappedDQNAtari.state_trans,
                                 "state_stack_n": 4,
                                 "state_scale": 1.0/255.0}
         augment_wrapper_args.update(self.augment_wrapper_args)
         self.env = hrl.envs.AugmentEnvWrapper(env, **augment_wrapper_args)
+
+    @staticmethod
+    def state_trans(state):
+        gray = np.asarray(np.dot(state, [0.299, 0.587, 0.114]))
+        gray = cv2.resize(gray, (84, 84))
+
+        return np.asarray(gray.reshape(gray.shape + (1,)), dtype=np.int8)
+
+    @staticmethod
+    def show_state_trans_result_wrapper(state):
+        global image_viewer
+        import gym.envs.classic_control.rendering as rendering
+
+        if not image_viewer:
+            image_viewer = rendering.SimpleImageViewer()
+
+        image = BootstrappedDQNAtari.state_trans(state)
+
+        im_view = image.reshape((84, 84))
+        im_view = np.array(im_view, dtype=np.float32)
+        im_view = cv2.resize(im_view, (336, 336), interpolation=cv2.INTER_NEAREST)
+        im_view = np.array(im_view, dtype=np.int8)
+        im_view = np.stack([im_view]*3, axis=-1)
+
+        image_viewer.imshow(im_view)
+        return image
 
     def run(self, args):
         """
