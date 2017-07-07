@@ -1017,8 +1017,6 @@ class BootstrappedDQNCartPole(Experiment):
 
 Experiment.register(BootstrappedDQNCartPole, "Bootstrapped DQN for the CartPole")
 
-image_viewer = None
-
 
 class BootstrappedDQNAtari(Experiment):
     def __init__(self, env, augment_wrapper_args={}, agent_args={}, runner_args={}):
@@ -1030,7 +1028,7 @@ class BootstrappedDQNAtari(Experiment):
 
         augment_wrapper_args = {"reward_decay": .999,
                                 "reward_scale": 1.,
-                                "state_augment_proc": BootstrappedDQNAtari.state_trans,
+                                "state_augment_proc": BootstrappedDQNAtari.show_state_trans_result_wrapper,
                                 "state_stack_n": 4,
                                 "state_scale": 1.0/255.0}
         augment_wrapper_args.update(self.augment_wrapper_args)
@@ -1048,17 +1046,23 @@ class BootstrappedDQNAtari(Experiment):
         global image_viewer
         import gym.envs.classic_control.rendering as rendering
 
-        if not image_viewer:
+        # Initialize image viewer
+        try:
+            image_viewer
+        except NameError:
             image_viewer = rendering.SimpleImageViewer()
 
+        # Wrap state_trans
         image = BootstrappedDQNAtari.state_trans(state)
 
+        # Resize image
         im_view = image.reshape((84, 84))
         im_view = np.array(im_view, dtype=np.float32)
         im_view = cv2.resize(im_view, (336, 336), interpolation=cv2.INTER_NEAREST)
         im_view = np.array(im_view, dtype=np.int8)
         im_view = np.stack([im_view]*3, axis=-1)
 
+        # Show image
         image_viewer.imshow(im_view)
         return image
 
