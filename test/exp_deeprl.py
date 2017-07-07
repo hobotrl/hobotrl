@@ -1092,7 +1092,7 @@ class BootstrappedDQNAtari(Experiment):
                       "loss_function": self.loss_function,
                       "trainer": tf.train.GradientDescentOptimizer(learning_rate=0.001).minimize,
                       "replay_buffer_class": hrl.playback.MapPlayback,
-                      "replay_buffer_args": {"capacity": 50000},
+                      "replay_buffer_args": {"capacity": 500},
                       "min_buffer_size": 5000,
                       "batch_size": 8,
                       "n_heads": n_head}
@@ -1188,6 +1188,19 @@ class BootstrappedDQNPong(BootstrappedDQNAtari):
 
 Experiment.register(BootstrappedDQNPong, "Bootstrapped DQN for the Pong")
 
+
+class BootstrappedDQNEnduro(BootstrappedDQNAtari):
+    def __init__(self):
+        BootstrappedDQNAtari.__init__(self,
+                                      env=gym.make('Enduro-v0'))
+                                      # augment_wrapper_args={
+                                      #     "state_augment_proc": self.show_state_trans_result_wrapper
+                                      #     },
+                                      # runner_args={
+                                      #     "render_env": True
+                                      #     })
+
+Experiment.register(BootstrappedDQNEnduro, "Bootstrapped DQN for the Enduro")
 
 if __name__ == '__main__':
     Experiment.main()

@@ -149,6 +149,8 @@ class BaseEnvironmentRunner(object):
         # calculate_time("Action time")
 
         next_state, reward, done, info = self.env.step(action)
+        if self.render_env:
+            print reward
 
         # calculate_time("Step time")
 
