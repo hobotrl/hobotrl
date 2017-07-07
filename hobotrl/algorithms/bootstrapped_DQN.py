@@ -61,7 +61,11 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         assert n_heads > 0
         assert callable(bootstrap_mask)
 
-        super(BootstrappedDQN, self).__init__(sess=tf.Session())
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        session = tf.Session(config=config)
+
+        super(BootstrappedDQN, self).__init__(sess=session)
 
         # Initialize parameters
         self.observation_space = observation_space

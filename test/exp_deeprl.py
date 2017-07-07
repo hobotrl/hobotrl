@@ -1028,7 +1028,7 @@ class BootstrappedDQNAtari(Experiment):
 
         augment_wrapper_args = {"reward_decay": .999,
                                 "reward_scale": 1.,
-                                "state_augment_proc": BootstrappedDQNAtari.show_state_trans_result_wrapper,
+                                "state_augment_proc": self.state_trans,
                                 "state_stack_n": 4,
                                 "state_scale": 1.0/255.0}
         augment_wrapper_args.update(self.augment_wrapper_args)
