@@ -1209,6 +1209,25 @@ class BootstrappedDQNEnduro(BootstrappedDQNAtari):
 Experiment.register(BootstrappedDQNEnduro, "Bootstrapped DQN for the Enduro")
 
 
+class RandomizedBootstrappedDQNBreakOut(BootstrappedDQNAtari):
+    def __init__(self):
+        from hobotrl.algorithms.bootstrapped_DQN import RandomizedBootstrappedDQN
+        BootstrappedDQNAtari.__init__(self,
+                                      env=gym.make('Breakout-v0'),
+                                      runner_args={"no_reward_reset_interval": 2000,
+                                                   # "render_env": True,
+                                                   # "frame_time": 0.05
+                                                   },
+                                      agent_args={"eps_function": LinearSequence(1e6, 0.2, 0.0)},
+                                      agent_type=RandomizedBootstrappedDQN
+                                      )
+
+    # def run(self, args):
+    #     BootstrappedDQNAtari.run(self, args, checkpoint_file_name='initial.ckpt')
+
+Experiment.register(RandomizedBootstrappedDQNBreakOut, "Randomized Bootstrapped DQN for the Breakout")
+
+
 class BootstrappedDQNBreakOutDemo(BootstrappedDQNBreakOut):
     def run(self, args):
         """
@@ -1222,25 +1241,40 @@ class BootstrappedDQNBreakOutDemo(BootstrappedDQNBreakOut):
                                            frame_time=0.05)
         env_runner.run_demo("1800000.ckpt")
 
-from hobotrl.algorithms.bootstrapped_DQN import RandomizedBootstrappedDQN
+Experiment.register(BootstrappedDQNBreakOutDemo, "Demo for the Breakout")
 
 
-class RandomizedBootstrappedDQNBreakOut(BootstrappedDQNAtari):
-    def __init__(self):
-        BootstrappedDQNAtari.__init__(self,
-                                      env=gym.make('Breakout-v0'),
-                                      runner_args={"no_reward_reset_interval": 2000,
-                                                   # "render_env": True,
-                                                   # "frame_time": 0.05
-                                                   },
-                                      agent_args={"eps_function": lambda x: 0},  # LinearSequence(1e6, 0.2, 0.0)},
-                                      agent_type=RandomizedBootstrappedDQN
-                                      )
-
+class BootstrappedDQNPongDemo(BootstrappedDQNPong):
     def run(self, args):
-        BootstrappedDQNAtari.run(self, args, checkpoint_file_name='initial.ckpt')
+        """
+        Run the experiment.
+        """
+        from hobotrl.gpu_env_runner import BaseEnvironmentRunner
 
-Experiment.register(RandomizedBootstrappedDQNBreakOut, "Randomized Bootstrapped DQN for the Breakout")
+        env_runner = BaseEnvironmentRunner(env=self.env,
+                                           agent=self.agent,
+                                           log_dir=args.logdir,
+                                           frame_time=0.05)
+        env_runner.run_demo("4092000.ckpt")
+
+Experiment.register(BootstrappedDQNPongDemo, "Demo for the Breakout")
+
+
+class BootstrappedDQNBattleZoneDemo(BootstrappedDQNBattleZone):
+    def run(self, args):
+        """
+        Run the experiment.
+        """
+        from hobotrl.gpu_env_runner import BaseEnvironmentRunner
+
+        env_runner = BaseEnvironmentRunner(env=self.env,
+                                           agent=self.agent,
+                                           log_dir=args.logdir,
+                                           frame_time=0.05)
+        env_runner.run_demo("2232000.ckpt")
+
+Experiment.register(BootstrappedDQNBattleZoneDemo, "Demo for the Battle Zone")
+
 
 if __name__ == '__main__':
     Experiment.main()
