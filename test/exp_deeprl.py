@@ -1173,6 +1173,9 @@ class BootstrappedDQNBattleZone(BootstrappedDQNAtari):
                                       agent_args={"replay_buffer_args": {"capacity": 10000},
                                                   "min_buffer_size": 10000})
 
+    def run(self, args):
+        BootstrappedDQNAtari.run(self, args, '2232000.ckpt')
+
 Experiment.register(BootstrappedDQNBattleZone, "Bootstrapped DQN for the BattleZone")
 
 
