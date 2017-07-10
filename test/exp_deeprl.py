@@ -1046,7 +1046,7 @@ class BootstrappedDQNAtari(Experiment):
                       "loss_function": self.loss_function,
                       "trainer": tf.train.GradientDescentOptimizer(learning_rate=0.001).minimize,
                       "replay_buffer_class": hrl.playback.MapPlayback,
-                      "replay_buffer_args": {"capacity": 500},
+                      "replay_buffer_args": {"capacity": 50000},
                       "min_buffer_size": 5000,
                       "batch_size": 8,
                       "n_heads": n_head}
@@ -1087,7 +1087,7 @@ class BootstrappedDQNAtari(Experiment):
         image_viewer.imshow(im_view)
         return image
 
-    def run(self, args):
+    def run(self, args, checkpoint_file_name=None):
         """
         Run the experiment.
         """
@@ -1104,7 +1104,7 @@ class BootstrappedDQNAtari(Experiment):
         runner_args = {"n_episodes": -1,
                        "moving_average_window_size": 100,
                        "no_reward_reset_interval": -1,
-                       "checkpoint_save_interval": 12000,
+                       "checkpoint_save_interval": 100000,
                        "render_env": False,
                        "show_frame_rate": True,
                        "show_frame_rate_interval": 2000}
@@ -1114,6 +1114,10 @@ class BootstrappedDQNAtari(Experiment):
                                            log_dir=log_dir,
                                            log_file_name=log_file_name,
                                            **runner_args)
+
+        if checkpoint_file_name:
+            env_runner.load_checkpoint(checkpoint_file_name)
+
         env_runner.run()
 
     @staticmethod
@@ -1229,6 +1233,9 @@ class RandomizedBootstrappedDQNBreakOut(BootstrappedDQNAtari):
                                       agent_args={"eps_function": LinearSequence(1e6, 0.2, 0.0)},
                                       agent_type=RandomizedBootstrappedDQN
                                       )
+
+    def run(self, args):
+        BootstrappedDQNAtari.run(self, args, checkpoint_file_name='initial.ckpt')
 
 Experiment.register(RandomizedBootstrappedDQNBreakOut, "Randomized Bootstrapped DQN for the Breakout")
 

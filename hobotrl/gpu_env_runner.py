@@ -200,14 +200,17 @@ class BaseEnvironmentRunner(object):
         """
         return float(sum(self.reward_history[:-1]))/(len(self.reward_history)-1)
 
+    def load_checkpoint(self, file_name):
+        saver = tf.train.Saver()
+        saver.restore(self.agent.get_session(), os.path.join(self.log_dir, file_name))
+
     def run_demo(self, file_name):
         """
         Load a checkpoint and run a demo.
 
         :param file_name: the checkpoint's file name.
         """
-        saver = tf.train.Saver()
-        saver.restore(self.agent.get_session(), os.path.join(self.log_dir, file_name))
+        self.load_checkpoint(file_name)
 
         state = self.env.reset()
         while True:
