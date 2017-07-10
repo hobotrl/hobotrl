@@ -140,6 +140,7 @@ class MapPlayback(Playback):
                  augment_offset={}, augment_scale={}, dtype=None):
         """
         stores map of ndarray.
+        returns field '_index' as index of batch samples in sample_batch()
         :param capacity:
         :param sample_shapes:
         :param push_policy:
@@ -177,7 +178,60 @@ class MapPlayback(Playback):
 
     def get_batch(self, index):
         batch = dict([(i, self.data[i].get_batch(index)) for i in self.data])
+        batch["_index"] = index
         return batch
+
+    @staticmethod
+    def to_rowwise(batch):
+        """
+        convert column-wise batch to row-wise
+        column wise:
+            {
+                'field_a': [a0, a1, ...],
+                'field_b': [b0, b1, ...],
+            }
+        row wise:[{'field_a': a0, 'field_b': b0}, {'field_a': a1, 'field_b': b1}, ...]
+        :param batch:
+        :return:
+        """
+        batch_size = 0
+        for i in batch:
+            batch_size = len(batch[i])
+            break
+
+        row_batch = [{} for _ in range(batch_size)]
+        for field in batch:
+            data = batch[field]
+            for i in range(len(data)):
+                row_batch[i][field] = data[i]
+        return row_batch
+
+    @staticmethod
+    def to_columnwise(batch):
+        """
+        convert  row-wise batch to column-wise
+        row wise:[{'field_a': a0, 'field_b': b0}, {'field_a': a1, 'field_b': b1}, ...]
+        column wise:
+            {
+                'field_a': [a0, a1, ...],
+                'field_b': [b0, b1, ...],
+            }
+        :param batch:
+        :return:
+        """
+        column_batch = {}
+        batch_size = len(batch)
+        if batch_size == 0:
+            return column_batch
+        for field in batch[0]:
+            column_batch[field] = []
+        for i in range(batch_size):
+            sample = batch[i]
+            for field in sample:
+                column_batch[field].append(sample[i])
+        for field in column_batch:
+            column_batch[field] = np.asarray(column_batch)
+        return column_batch
 
 
 class NearPrioritizedPlayback(MapPlayback):
@@ -186,7 +240,8 @@ class NearPrioritizedPlayback(MapPlayback):
     using field '_weight' as priority probability when sample batch from this playback;
     using field '_index' as sample index when sample batch from this playback, for later update_score()
     """
-    def __init__(self, capacity, sample_shapes, evict_policy="sequence", epsilon=1e-3,
+    def __init__(self, capacity, sample_shapes, augment_offset={}, augment_scale={},
+                 evict_policy="sequence", epsilon=1e-3,
                  priority_bias=1.0, importance_weight=1.0, dtype=None):
         """
 
@@ -207,7 +262,10 @@ class NearPrioritizedPlayback(MapPlayback):
         :param dtype:
         """
         sample_shapes["_score"] = []
-        super(NearPrioritizedPlayback, self).__init__(capacity, sample_shapes, "sequence", "random", dtype=dtype)
+        super(NearPrioritizedPlayback, self).__init__(capacity, sample_shapes, "sequence", "random",
+                                                      augment_offset=augment_offset,
+                                                      augment_scale=augment_scale,
+                                                      dtype=dtype)
         self.evict_policy = evict_policy
         self.epsilon, self.priority_bias, self.importance_weight = epsilon, priority_bias, importance_weight
 

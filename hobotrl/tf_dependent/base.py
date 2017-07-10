@@ -28,6 +28,8 @@ class BaseDeepAgent(BaseAgent):
                                         is_chief=(worker_index == 0),
                                         global_step=self.__global_step,
                                         init_op=init_op,
+                                        summary_op=None,
+                                        summary_writer=None,
                                         logdir=save_dir if worker_index == 0 else None,
                                         save_summaries_secs=0)
         return self.__sv

@@ -201,7 +201,7 @@ class Network(object):
         return out
 
     @staticmethod
-    def conv2d(input_var, h, w, out_channel, strides=[1,1], padding="VALID",
+    def conv2d(input_var, h, w, out_channel, strides=[1, 1], padding="VALID",
                activation=tf.nn.relu, l2=1e-4, var_scope=""):
         with tf.variable_scope(var_scope):
             out = tf.layers.conv2d(inputs=input_var, filters=out_channel, kernel_size=[w, h],
@@ -211,6 +211,13 @@ class Network(object):
                                    kernel_regularizer=layers.l2_regularizer(l2),
                                    bias_regularizer=layers.l2_regularizer(l2))
         return out
+
+    @staticmethod
+    def clipped_square(value, clip=1.0):
+        abs_value = tf.abs(value)
+        quadratic = tf.minimum(abs_value, clip)
+        linear = abs_value - quadratic
+        return 0.5 * tf.square(quadratic) + clip * linear
 
 
 class Sequence(object):

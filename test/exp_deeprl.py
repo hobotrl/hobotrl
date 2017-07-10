@@ -5,12 +5,12 @@ import sys
 sys.path.append(".")
 import logging
 
+import cv2
 import gym
 import numpy as np
 import tensorflow as tf
 from tensorflow import layers
 from tensorflow.contrib.layers import l2_regularizer
-
 
 import hobotrl as hrl
 from hobotrl.utils import LinearSequence
@@ -18,6 +18,8 @@ from hobotrl.experiment import Experiment
 import hobotrl.algorithms.ac as ac
 import hobotrl.algorithms.dqn as dqn
 import hobotrl.algorithms.per as per
+import playground.optimal_tighten as play_ot
+import hobotrl.algorithms.ot as ot
 
 
 class ACDiscretePendulum(Experiment):
@@ -244,7 +246,7 @@ class DQNPendulum(Experiment):
             epsilon=0.2,
             # DeepQFuncMixin params
             gamma=0.9,
-            f_net=f_net, state_shape=state_shape, num_actions=env.action_space.n,
+            f_net_dqn=f_net, state_shape=state_shape, num_actions=env.action_space.n,
             training_params=training_params, schedule=(1, 10),
             greedy_policy=True,
             # ReplayMixin params
@@ -267,8 +269,8 @@ class DQNPendulum(Experiment):
                                    init_op=tf.global_variables_initializer(), save_dir=args.logdir)
         with sv.managed_session(config=config) as sess:
             agent.set_session(sess)
-            runner = hrl.envs.EnvRunner(env, agent, evaluate_interval=100, render_interval=50, logdir=args.logdir)
-            runner.episode(1000)
+            runner = hrl.envs.EnvRunner(env, agent, evaluate_interval=sys.maxint, render_interval=sys.maxint, logdir=args.logdir)
+            runner.episode(500)
 
 Experiment.register(DQNPendulum, "DQN for Pendulum")
 
@@ -589,7 +591,7 @@ class PERDQNPendulum(Experiment):
                     'episode_done': ()
                 },
                 "priority_bias": 0.5,  # todo search what combination of exponent/importance_correction works better
-                "importance_weight": LinearSequence(n_episodes, 0.5, 1.0),
+                "importance_weight": LinearSequence(n_episodes * 200, 0.5, 1.0),
 
         },
             batch_size=8,
@@ -605,6 +607,550 @@ class PERDQNPendulum(Experiment):
             runner.episode(n_episodes)
 
 Experiment.register(PERDQNPendulum, "Prioritized Exp Replay with DQN, for Pendulum")
+
+
+class OTDQNPendulum(Experiment):
+    """
+    converges on Pendulum.
+    However, in Pendulum, weight_upper > 0 hurts performance.
+    should verify on more difficult problems
+    """
+    def run(self, args):
+        reward_decay = 0.9
+        K = 4
+        batch_size = 8
+        weight_lower = 1.0
+        weight_upper = 1.0
+        target_sync_interval = 10
+        replay_size = 1000
+
+        env = gym.make("Pendulum-v0")
+        env = hrl.envs.C2DEnvWrapper(env, [5])
+        env = hrl.envs.AugmentEnvWrapper(env, reward_decay=reward_decay, reward_scale=0.1)
+
+        optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
+
+        target_sync_rate = 0.01
+        training_params = (optimizer_td, target_sync_rate)
+
+        def f_net(inputs, num_action):
+            input_var = inputs
+            fc_out = hrl.utils.Network.layer_fcs(input_var, [200, 200], num_action,
+                                                 activation_hidden=tf.nn.relu, activation_out=None, l2=1e-4)
+            return fc_out
+
+        state_shape = list(env.observation_space.shape)
+        global_step = tf.get_variable('global_step', [],
+                                      dtype=tf.int32,
+                                      initializer=tf.constant_initializer(0),
+                                      trainable=False)
+        agent = play_ot.OTDQN(
+            # EpsilonGreedyPolicyMixin params
+            actions=range(env.action_space.n),
+            epsilon=0.2,
+            # OTDQN
+            f_net=f_net,
+            state_shape=state_shape,
+            action_n=env.action_space.n,
+            reward_decay=reward_decay,
+            batch_size=batch_size,
+            K=K,
+            weight_lower=weight_lower,
+            weight_upper=weight_upper,
+            optimizer=optimizer_td,
+            target_sync_interval=target_sync_interval,
+            replay_capacity=replay_size,
+            # BaseDeepAgent
+            global_step=global_step
+        )
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        sv = agent.init_supervisor(graph=tf.get_default_graph(), worker_index=0,
+                                   init_op=tf.global_variables_initializer(), save_dir=args.logdir)
+        with sv.managed_session(config=config) as sess:
+            agent.set_session(sess)
+            runner = hrl.envs.EnvRunner(env, agent, reward_decay=reward_decay,
+                                        evaluate_interval=sys.maxint, render_interval=sys.maxint, logdir=args.logdir)
+            runner.episode(500)
+
+Experiment.register(OTDQNPendulum, "Optimaly Tightening DQN for Pendulum")
+
+
+class AOTDQNPendulum(Experiment):
+    """
+    converges on Pendulum. OT implementation from hobotrl.algorithms package.
+    However, in Pendulum, weight_upper > 0 hurts performance.
+    should verify on more difficult problems
+    """
+    def run(self, args):
+        reward_decay = 0.9
+        K = 4
+        batch_size = 8
+        weight_lower = 1.0
+        weight_upper = 1.0
+        replay_size = 1000
+
+        env = gym.make("Pendulum-v0")
+        env = hrl.envs.C2DEnvWrapper(env, [5])
+        env = hrl.envs.AugmentEnvWrapper(env, reward_decay=reward_decay, reward_scale=0.1)
+
+        def f_net(inputs, num_action, is_training):
+            input_var = inputs
+            fc_out = hrl.utils.Network.layer_fcs(input_var, [200, 200], num_action,
+                                                 activation_hidden=tf.nn.relu, activation_out=None, l2=1e-4)
+            return fc_out
+
+        state_shape = list(env.observation_space.shape)
+        global_step = tf.get_variable('global_step', [],
+                                      dtype=tf.int32,
+                                      initializer=tf.constant_initializer(0),
+                                      trainable=False)
+        agent = ot.OTDQN(
+            # EpsilonGreedyPolicyMixin params
+            actions=range(env.action_space.n),
+            epsilon=0.2,
+            # OTDQN
+            f_net_dqn=f_net,
+            state_shape=state_shape,
+            num_actions=env.action_space.n,
+            reward_decay=reward_decay,
+            batch_size=batch_size,
+            K=K,
+            weight_lower_bound=weight_lower,
+            weight_upper_bound=weight_upper,
+            training_params=(tf.train.AdamOptimizer(learning_rate=0.001), 0.01),
+            schedule=(1, 10),
+            replay_capacity=replay_size,
+            # BaseDeepAgent
+            global_step=global_step
+        )
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        sv = agent.init_supervisor(graph=tf.get_default_graph(), worker_index=0,
+                                   init_op=tf.global_variables_initializer(), save_dir=args.logdir)
+        with sv.managed_session(config=config) as sess:
+            agent.set_session(sess)
+            runner = hrl.envs.EnvRunner(env, agent, reward_decay=reward_decay,
+                                        evaluate_interval=sys.maxint, render_interval=sys.maxint, logdir=args.logdir)
+            runner.episode(500)
+
+Experiment.register(AOTDQNPendulum, "Optimaly Tightening DQN for Pendulum")
+
+
+class AOTDQNBreakout(Experiment):
+    """
+    converges on Pendulum. OT implementation from hobotrl.algorithms package.
+    However, in Pendulum, weight_upper > 0 hurts performance.
+    should verify on more difficult problems
+    """
+    def run(self, args):
+        reward_decay = 0.9
+        K = 4
+        batch_size = 8
+        weight_lower = 1.0
+        weight_upper = 1.0
+        replay_size = 1000
+
+        env = gym.make("Breakout-v0")
+        # env = hrl.envs.C2DEnvWrapper(env, [5])
+
+        def state_trans(state):
+            gray = np.asarray(np.dot(state, [0.299, 0.587, 0.114]))
+            gray = cv2.resize(gray, (84, 84))
+            return np.asarray(gray.reshape(gray.shape + (1,)), dtype=np.int8)
+
+        env = hrl.envs.AugmentEnvWrapper(env, reward_decay=reward_decay, reward_scale=0.1,
+                                         state_augment_proc=state_trans, state_stack_n=4)
+
+        def f_net(inputs, num_action, is_training):
+            input_var = inputs
+            print "input size:", input_var
+            out = hrl.utils.Network.conv2d(input_var=input_var, h=8, w=8, out_channel=32,
+                                           strides=[4, 4], activation=tf.nn.relu, var_scope="conv1")
+            # 20 * 20 * 32
+            print "out size:", out
+            out = hrl.utils.Network.conv2d(input_var=out, h=4, w=4, out_channel=64,
+                                           strides=[2, 2], activation=tf.nn.relu, var_scope="conv2")
+            # 9 * 9 * 64
+            print "out size:", out
+            out = hrl.utils.Network.conv2d(input_var=out, h=3, w=3, out_channel=64,
+                                           strides=[1, 1], activation=tf.nn.relu, var_scope="conv3")
+            # 7 * 7 * 64
+            print "out size:", out
+            out = tf.reshape(out, [-1, 7 * 7 * 64])
+            out = hrl.utils.Network.layer_fcs(input_var=out, shape=[512], out_count=num_action,
+                                              activation_hidden=tf.nn.relu,
+                                              activation_out=None, var_scope="fc")
+            return out
+
+        state_shape = [84, 84, 4]  # list(env.observation_space.shape)
+        global_step = tf.get_variable('global_step', [],
+                                      dtype=tf.int32,
+                                      initializer=tf.constant_initializer(0),
+                                      trainable=False)
+
+        agent = ot.OTDQN(
+            # EpsilonGreedyPolicyMixin params
+            actions=range(env.action_space.n),
+            epsilon=0.2,
+            # OTDQN
+            f_net_dqn=f_net,
+            state_shape=state_shape,
+            num_actions=env.action_space.n,
+            reward_decay=reward_decay,
+            batch_size=batch_size,
+            K=K,
+            weight_lower_bound=weight_lower,
+            weight_upper_bound=weight_upper,
+            training_params=(tf.train.AdamOptimizer(learning_rate=0.001), 0.01),
+            schedule=(1, 10),
+            replay_capacity=replay_size,
+            state_offset_scale=(-128, 1.0 / 128),
+            # BaseDeepAgent
+            global_step=global_step
+        )
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        sv = agent.init_supervisor(graph=tf.get_default_graph(), worker_index=0,
+                                   init_op=tf.global_variables_initializer(), save_dir=args.logdir)
+        with sv.managed_session(config=config) as sess:
+            agent.set_session(sess)
+            runner = hrl.envs.EnvRunner(env, agent, reward_decay=reward_decay,
+                                        evaluate_interval=sys.maxint, render_interval=sys.maxint, logdir=args.logdir)
+            runner.episode(500)
+
+Experiment.register(AOTDQNBreakout, "Optimaly Tightening DQN for Breakout")
+
+
+class BootstrappedDQNSnakeGame(Experiment):
+    def run(self, args):
+        """
+        Run the experiment.
+        """
+        def render():
+            """
+            Render the environment and related information to the console.
+            """
+            if not display:
+                return
+
+            print env.render(mode='ansi')
+            print "Reward:", reward
+            print "Head:", agent.current_head
+            print "Done:", done
+            print ""
+            time.sleep(frame_time)
+
+        from environments.snake import SnakeGame
+        from hobotrl.algorithms.bootstrapped_DQN import BootstrappedDQN
+
+        import time
+        import os
+        import random
+
+        # Parameters
+        random.seed(1105)  # Seed
+
+        n_head = 1  # Number of heads
+
+        display = False  # Whether to display the game
+        frame_time = 0.05  # Interval between each frame
+
+        log_dir = os.path.join(args.logdir, "head%d" % n_head)
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        log_file = open(os.path.join(log_dir, "booststrapped_DQN_Snake.csv"), "w") # Log file
+
+        save_checkpoint = True  # Whether to save checkpoint
+        save_interval = 100  # Save after this number of episodes
+
+        stop_at_episode = 1800
+
+        # Reward recorder
+        reward_counter = [0.]
+        counter_window = 100
+
+        # Initialize the environment and the agent
+        env = SnakeGame(3, 3, 1, 1, max_episode_length=30)
+        agent = BootstrappedDQN(observation_space=env.observation_space,
+                                action_space=env.action_space,
+                                reward_decay=1.,
+                                td_learning_rate=0.5,
+                                target_sync_interval=200,
+                                nn_constructor=self.nn_constructor,
+                                loss_function=self.loss_function,
+                                trainer=tf.train.GradientDescentOptimizer(learning_rate=0.01).minimize,
+                                replay_buffer_class=hrl.playback.MapPlayback,
+                                replay_buffer_args={"capacity": 20000},
+                                min_buffer_size=100,
+                                batch_size=20,
+                                n_heads=n_head)
+
+        # Start training
+        next_state = np.array(env.state)
+        episode_counter = 0
+        while True:
+            state = next_state
+            action = agent.act(state)
+            next_state, reward, done, info = env.step(action)
+            render()
+
+            agent.reinforce_(state=state,
+                             action=action,
+                             reward=reward,
+                             next_state=next_state,
+                             episode_done=done)
+
+            if done:
+                next_state = np.array(env.reset())
+                render()
+                episode_counter += 1
+
+            if log_file:
+                reward_counter[-1] += reward
+                if done:
+                    average = sum(reward_counter)/len(reward_counter)
+                    print "Average reward: %.2f" % average
+                    log_file.write("%d,%.2f\n" % (int(reward_counter[-1] + 0.01), average))
+
+                    reward_counter.append(0.)
+                    if len(reward_counter) > counter_window:
+                        del reward_counter[0]
+
+                    if save_checkpoint and episode_counter % save_interval == 0:
+                        print "%d Checkpoint saved" % episode_counter
+                        saver = tf.train.Saver()
+                        saver.save(agent.get_session(), os.path.join(log_dir, '%d.ckpt' % episode_counter))
+
+                    if episode_counter > stop_at_episode:
+                        exit()
+
+    @staticmethod
+    def loss_function(output, target):
+        """
+        Calculate the loss.
+        """
+        return tf.reduce_sum(tf.squared_difference(output, target))
+
+    @staticmethod
+    def nn_constructor(observation_space, action_space, n_heads, **kwargs):
+        """
+        Construct the neural network.
+        """
+        def leakyRelu(x):
+            return tf.maximum(0.01*x, x)
+
+        def conv2d(x, w):
+            return tf.nn.conv2d(x, w, strides=[1, 1, 1, 1], padding="SAME")
+
+        def weight(shape):
+            return tf.Variable(tf.truncated_normal(shape, stddev=0.1))
+
+        def bias(shape):
+            return tf.Variable(tf.constant(0.1, shape=shape))
+
+        eshape = observation_space.shape
+        nn_inputs = []
+        nn_outputs = []
+
+        # Layer 1 parameters
+        n_channel1 = 8
+        w1 = weight([3, 3, eshape[-1], n_channel1])
+        b1 = bias([n_channel1])
+
+        # Layer 2 parameters
+        n_channel2 = 16
+        w2 = weight([n_channel1*eshape[0]*eshape[1], n_channel2])
+        b2 = bias([n_channel2])
+
+        for i in range(n_heads):
+            x = tf.placeholder(tf.float32, (None,) + observation_space.shape)
+
+            # Layer 3 parameters
+            w3 = weight([n_channel2, 4])
+            b3 = bias([4])
+
+            # Layer 1
+            layer1 = leakyRelu(conv2d(x, w1) + b1)
+            layer1_flatten = tf.reshape(layer1, [-1, n_channel1*eshape[0]*eshape[1]])
+
+            # Layer 2
+            layer2 = leakyRelu(tf.matmul(layer1_flatten, w2) + b2)
+
+            # Layer 3
+            layer3 = tf.matmul(layer2, w3) + b3
+
+            nn_inputs.append(x)
+            nn_outputs.append(layer3)
+
+        return {"input": nn_inputs, "head": nn_outputs}
+
+Experiment.register(BootstrappedDQNSnakeGame, "Bootstrapped DQN for the Snake game")
+
+
+class BootstrappedDQNCartPole(Experiment):
+    def run(self, args):
+        """
+        Run the experiment.
+        """
+        def render():
+            """
+            Render the environment and related information to the console.
+            """
+            if not display:
+                return
+
+            print env.render()
+            print "Reward:", reward
+            print "Head:", agent.current_head
+            print "Done:", done
+            print ""
+            time.sleep(frame_time)
+
+        from environments.snake import SnakeGame
+        from hobotrl.algorithms.bootstrapped_DQN import BootstrappedDQN
+
+        import time
+        import os
+        import random
+
+        # Parameters
+        random.seed(1105)  # Seed
+
+        n_head = 20  # Number of heads
+
+        display = True  # Whether to display the game
+        frame_time = 0.05  # Interval between each frame
+
+        log_dir = os.path.join(args.logdir, "head%d" % n_head)
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        log_file = open(os.path.join(log_dir, "booststrapped_DQN_Snake.csv"), "w") # Log file
+
+        save_checkpoint = True  # Whether to save checkpoint
+        save_interval = 100  # Save after this number of episodes
+
+        stop_at_episode = 1800
+
+        # Reward recorder
+        reward_counter = [0.]
+        counter_window = 100
+
+        # Initialize the environment and the agent
+        env = gym.make('CartPole-v0')
+        agent = BootstrappedDQN(observation_space=env.observation_space,
+                                action_space=env.action_space,
+                                reward_decay=1.,
+                                td_learning_rate=0.5,
+                                target_sync_interval=200,
+                                nn_constructor=self.nn_constructor,
+                                loss_function=self.loss_function,
+                                trainer=tf.train.GradientDescentOptimizer(learning_rate=0.01).minimize,
+                                replay_buffer_class=hrl.playback.MapPlayback,
+                                replay_buffer_args={"capacity": 20000},
+                                min_buffer_size=100,
+                                batch_size=20,
+                                n_heads=n_head)
+
+        # Start training
+        next_state = env.reset()
+        episode_counter = 0
+        while True:
+            state = next_state
+            action = agent.act(state)
+            next_state, reward, done, info = env.step(action)
+            render()
+
+            agent.reinforce_(state=state,
+                             action=action,
+                             reward=reward,
+                             next_state=next_state,
+                             episode_done=done)
+
+            if done:
+                next_state = env.reset()
+                render()
+                episode_counter += 1
+
+            if log_file:
+                reward_counter[-1] += reward
+                if done:
+                    average = sum(reward_counter)/len(reward_counter)
+                    print "Average reward: %.2f" % average
+                    log_file.write("%d,%.2f\n" % (int(reward_counter[-1] + 0.01), average))
+
+                    reward_counter.append(0.)
+                    if len(reward_counter) > counter_window:
+                        del reward_counter[0]
+
+                    if save_checkpoint and episode_counter % save_interval == 0:
+                        print "%d Checkpoint saved" % episode_counter
+                        saver = tf.train.Saver()
+                        saver.save(agent.get_session(), os.path.join(log_dir, '%d.ckpt' % episode_counter))
+
+                    if episode_counter > stop_at_episode:
+                        exit()
+
+    @staticmethod
+    def loss_function(output, target):
+        """
+        Calculate the loss.
+        """
+        return tf.reduce_sum(tf.squared_difference(output, target))
+
+    @staticmethod
+    def nn_constructor(observation_space, action_space, n_heads, **kwargs):
+        """
+        Construct the neural network.
+        """
+        def leakyRelu(x):
+            return tf.maximum(0.01*x, x)
+
+        def conv2d(x, w):
+            return tf.nn.conv2d(x, w, strides=[1, 1, 1, 1], padding="SAME")
+
+        def weight(shape):
+            return tf.Variable(tf.truncated_normal(shape, stddev=0.1))
+
+        def bias(shape):
+            return tf.Variable(tf.constant(0.1, shape=shape))
+
+        eshape = observation_space.shape[0]
+        nn_inputs = []
+        nn_outputs = []
+
+        # Layer 1 parameters
+        n_channel1 = 8
+        w1 = weight([eshape, 8])
+        b1 = bias([n_channel1])
+
+        # Layer 2 parameters
+        n_channel2 = 4
+        w2 = weight([n_channel1, n_channel2])
+        b2 = bias([n_channel2])
+
+        for i in range(n_heads):
+            x = tf.placeholder(tf.float32, (None,) + observation_space.shape)
+
+            # Layer 3 parameters
+            w3 = weight([n_channel2, action_space.n])
+            b3 = bias([action_space.n])
+
+            # Layer 1
+            layer1 = leakyRelu(tf.matmul(x, w1) + b1)
+
+            # Layer 2
+            layer2 = leakyRelu(tf.matmul(layer1, w2) + b2)
+
+            # Layer 3
+            layer3 = tf.matmul(layer2, w3) + b3
+
+            nn_inputs.append(x)
+            nn_outputs.append(layer3)
+
+        return {"input": nn_inputs, "head": nn_outputs}
+
+Experiment.register(BootstrappedDQNCartPole, "Bootstrapped DQN for the Cart Pole")
 
 if __name__ == '__main__':
     Experiment.main()

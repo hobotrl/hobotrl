@@ -100,6 +100,7 @@ class DeepQFuncActionOut(object):
                     q = f_net(state, num_actions, is_training)
                     scope_non.reuse_variables()  # reuse non-target weights
                     double_q = f_net(state, num_actions, is_training)
+                # target network
                 with tf.variable_scope('target') as scope_target:
                     next_q = f_net(next_state, num_actions, is_training)
                 n_vars = tf.get_collection(
@@ -194,6 +195,7 @@ class DeepQFuncActionOut(object):
         self.sym_td_loss = td_loss
         self.sym_td_losses = td_losses
         self.sym_td_grad_norm = td_grad_norm
+        self.sym_regularization_loss = reg_loss
         self.sym_target_diff_l2 = target_diff_l2
         # training ops
         self.op_train_td = op_train_td
@@ -326,6 +328,20 @@ class DeepQFuncActionOut(object):
                     self.sym_is_training: is_batch
                 }
             )
+
+    def get_target_v(self, state, sess=None, **kwargs):
+        """
+        get state value from target network.
+        :param state:
+        :param sess:
+        :param kwargs:
+        :return:
+        """
+        return sess.run(
+            self.sym_next_q_sel,
+            feed_dict={self.sym_next_state: state}
+        )
+
     @property
     def state_shape(self):
         return self.__STATE_SHAPE
@@ -386,12 +402,12 @@ class DeepQFuncActionOut(object):
                 name='next_action'
             )
             importance = tf.placeholder_with_default(
-                tf.ones_like(reward, dtype=tf.float32, name='default_importance'),
+                tf.ones_like(action, dtype=tf.float32, name='default_importance'),
                 shape=[None],
                 name='importance'
             )
             episode_done = tf.placeholder_with_default(
-                tf.zeros_like(reward, dtype=tf.float32, name='default_episode_done'),
+                tf.zeros_like(action, dtype=tf.float32, name='default_episode_done'),
                 shape=[None],
                 name='episode_done'
             )
@@ -677,8 +693,8 @@ class DeepQFuncActionIn(object):
             }
         )
 
-    def get_grad_q_action(self, state, action,
-                          sess=None, use_target=False, **kwargs):
+    def get_grad_q_action(self, state, action, sess=None,
+                          use_target=False, **kwargs):
         if not use_target:
             feed_dict = {self.sym_state: state, self.sym_action: action}
             return sess.run(self.sym_grad_q_action, feed_dict)

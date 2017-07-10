@@ -13,9 +13,19 @@ class EnvRunner(object):
     """
     def __init__(self, env, agent, reward_decay=0.99, max_episode_len=5000, evaluate_interval=20, render_interval=1,
                  logdir=None):
+        """
+
+        :param env: environment.
+        :param agent: agent.
+        :param reward_decay: deprecated. EnvRunner should not discount future rewards.
+        :param max_episode_len:
+        :param evaluate_interval:
+        :param render_interval:
+        :param logdir: dir to save info from agent as tensorboard log.
+        """
         super(EnvRunner, self).__init__()
         self.env, self.agent = env, agent
-        self.reward_decay, self.max_episode_len = reward_decay, max_episode_len
+        self.reward_decay, self.max_episode_len = 1.0, max_episode_len
         self.evaluate_interval, self.render_interval = evaluate_interval, render_interval
         self.episode_n, self.step_n = 0, 0
         self.state = None
@@ -23,7 +33,7 @@ class EnvRunner(object):
         self.total_reward = 0.0
         self.summary_writer = None
         if logdir is not None:
-            self.summary_writer = tf.summary.FileWriter(logdir)
+            self.summary_writer = tf.summary.FileWriter(logdir, graph=tf.get_default_graph())
 
     def step(self, evaluate=False):
         """
@@ -80,7 +90,7 @@ class EnvRunner(object):
                     break
             logging.warning("Episode %d finished after %d steps, total reward=%f", self.episode_n, t + 1,
                                 self.total_reward)
-            self.record({"episode_decayed_reward": self.total_reward})
+            self.record({"episode_total_reward": self.total_reward})
 
 
 class AugmentEnvWrapper(object):
@@ -92,6 +102,7 @@ class AugmentEnvWrapper(object):
                  reward_decay=0.99, reward_offset=0.0, reward_scale=1.0,
                  state_offset=0, state_scale=1,
                  state_stack_n=None, state_stack_axis=-1,
+                 state_augment_proc=None,
                  action_limit=None):
         """
 
@@ -110,6 +121,7 @@ class AugmentEnvWrapper(object):
         self.reward_decay, self.reward_offset, self.reward_scale = reward_decay, reward_offset, reward_scale
         self.state_offset, self.state_scale, self.stack_n, self.stack_axis = \
             state_offset, state_scale, state_stack_n, state_stack_axis
+        self.state_augment_proc = state_augment_proc
         self.is_continuous_action = env.action_space.__class__.__name__ == "Box"
         if self.is_continuous_action:
             self.action_limit = action_limit
@@ -143,19 +155,14 @@ class AugmentEnvWrapper(object):
         return action
 
     def augment_state(self, state):
+        if self.state_augment_proc is not None:
+            state = self.state_augment_proc(state)
         return (state + self.state_offset) * self.state_scale
 
     def augment_reward(self, reward):
         return (reward + self.reward_offset) * self.reward_scale
 
-    def step(self, *args, **kwargs):
-        # lives_before = self.env.ale.lives()
-
-        if len(args) > 0:
-            action = args[0]
-        else:
-            action = kwargs["action"]
-
+    def step(self, action):
         # augment action before apply
         action = self.augment_action(action)
         if self.stack_n is not None:
