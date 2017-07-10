@@ -1230,7 +1230,7 @@ class RandomizedBootstrappedDQNBreakOut(BootstrappedDQNAtari):
                                                    # "render_env": True,
                                                    # "frame_time": 0.05
                                                    },
-                                      agent_args={"eps_function": LinearSequence(1e6, 0.2, 0.0)},
+                                      agent_args={"eps_function": lambda x: 0},  # LinearSequence(1e6, 0.2, 0.0)},
                                       agent_type=RandomizedBootstrappedDQN
                                       )
 
