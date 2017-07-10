@@ -1047,7 +1047,7 @@ class BootstrappedDQNAtari(Experiment):
                       "trainer": tf.train.GradientDescentOptimizer(learning_rate=0.001).minimize,
                       "replay_buffer_class": hrl.playback.MapPlayback,
                       "replay_buffer_args": {"capacity": 50000},
-                      "min_buffer_size": 5000,
+                      "min_buffer_size": 10000,
                       "batch_size": 8,
                       "n_heads": n_head}
         agent_args.update(self.agent_args)
@@ -1211,14 +1211,19 @@ Experiment.register(BootstrappedDQNEnduro, "Bootstrapped DQN for the Enduro")
 
 class RandomizedBootstrappedDQNBreakOut(BootstrappedDQNAtari):
     def __init__(self):
+        import math
         from hobotrl.algorithms.bootstrapped_DQN import RandomizedBootstrappedDQN
+
+        def eps_function(step):
+            return 0.1*(math.cos(step/4.0e6*math.pi) + 1)
+
         BootstrappedDQNAtari.__init__(self,
                                       env=gym.make('Breakout-v0'),
                                       runner_args={"no_reward_reset_interval": 2000,
                                                    # "render_env": True,
                                                    # "frame_time": 0.05
                                                    },
-                                      agent_args={"eps_function": LinearSequence(1e6, 0.2, 0.0)},
+                                      agent_args={"eps_function": eps_function},  # LinearSequence(1e6, 0.2, 0.0)},
                                       agent_type=RandomizedBootstrappedDQN
                                       )
 
