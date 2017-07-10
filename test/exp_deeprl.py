@@ -1017,10 +1017,15 @@ class BootstrappedDQNCartPole(Experiment):
 
 Experiment.register(BootstrappedDQNCartPole, "Bootstrapped DQN for the CartPole")
 
+from hobotrl.algorithms.bootstrapped_DQN import BootstrappedDQN
 
 class BootstrappedDQNAtari(Experiment):
-    def __init__(self, env, augment_wrapper_args={}, agent_args={}, runner_args={}):
+    def __init__(self, env, augment_wrapper_args={}, agent_args={}, runner_args={}, agent_type=BootstrappedDQN):
         Experiment.__init__(self)
+
+
+
+        n_head = 10  # Number of heads
 
         self.augment_wrapper_args = augment_wrapper_args
         self.agent_args = agent_args
@@ -1032,7 +1037,23 @@ class BootstrappedDQNAtari(Experiment):
                                 "state_stack_n": 4,
                                 "state_scale": 1.0/255.0}
         augment_wrapper_args.update(self.augment_wrapper_args)
-        self.env = hrl.envs.AugmentEnvWrapper(env, **augment_wrapper_args)
+        env = self.env = hrl.envs.AugmentEnvWrapper(env, **augment_wrapper_args)
+
+        agent_args = {"reward_decay": .99,
+                      "td_learning_rate": 1.,
+                      "target_sync_interval": 1000,
+                      "nn_constructor": self.nn_constructor,
+                      "loss_function": self.loss_function,
+                      "trainer": tf.train.GradientDescentOptimizer(learning_rate=0.001).minimize,
+                      "replay_buffer_class": hrl.playback.MapPlayback,
+                      "replay_buffer_args": {"capacity": 500},
+                      "min_buffer_size": 5000,
+                      "batch_size": 8,
+                      "n_heads": n_head}
+        agent_args.update(self.agent_args)
+        self.agent = agent_type(observation_space=env.observation_space,
+                                action_space=env.action_space,
+                                **agent_args)
 
     @staticmethod
     def state_trans(state):
@@ -1070,36 +1091,14 @@ class BootstrappedDQNAtari(Experiment):
         """
         Run the experiment.
         """
-        from hobotrl.algorithms.bootstrapped_DQN import BootstrappedDQN
         from hobotrl.gpu_env_runner import BaseEnvironmentRunner
 
         import os
-
-        n_head = 10  # Number of heads
 
         log_dir = args.logdir
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
         log_file_name = "booststrapped_DQN.csv"
-
-        # Initialize the environment and the agent
-        env = self.env
-        
-        agent_args = {"reward_decay": .99,
-                      "td_learning_rate": 1.,
-                      "target_sync_interval": 1000,
-                      "nn_constructor": self.nn_constructor,
-                      "loss_function": self.loss_function,
-                      "trainer": tf.train.GradientDescentOptimizer(learning_rate=0.001).minimize,
-                      "replay_buffer_class": hrl.playback.MapPlayback,
-                      "replay_buffer_args": {"capacity": 500},
-                      "min_buffer_size": 5000,
-                      "batch_size": 8,
-                      "n_heads": n_head}
-        agent_args.update(self.agent_args)
-        agent = BootstrappedDQN(observation_space=env.observation_space,
-                                action_space=env.action_space,
-                                **agent_args)
 
         # Start training
         runner_args = {"n_episodes": -1,
@@ -1110,8 +1109,8 @@ class BootstrappedDQNAtari(Experiment):
                        "show_frame_rate": True,
                        "show_frame_rate_interval": 2000}
         runner_args.update(self.runner_args)
-        env_runner = BaseEnvironmentRunner(env=env,
-                                           agent=agent,
+        env_runner = BaseEnvironmentRunner(env=self.env,
+                                           agent=self.agent,
                                            log_dir=log_dir,
                                            log_file_name=log_file_name,
                                            **runner_args)
@@ -1201,6 +1200,37 @@ class BootstrappedDQNEnduro(BootstrappedDQNAtari):
                                       #     })
 
 Experiment.register(BootstrappedDQNEnduro, "Bootstrapped DQN for the Enduro")
+
+
+class BootstrappedDQNBreakOutDemo(BootstrappedDQNBreakOut):
+    def run(self, args):
+        """
+        Run the experiment.
+        """
+        from hobotrl.gpu_env_runner import BaseEnvironmentRunner
+
+        env_runner = BaseEnvironmentRunner(env=self.env,
+                                           agent=self.agent,
+                                           log_dir=args.logdir,
+                                           frame_time=0.05)
+        env_runner.run_demo("1800000.ckpt")
+
+from hobotrl.algorithms.bootstrapped_DQN import RandomizedBootstrappedDQN
+
+
+class RandomizedBootstrappedDQNBreakOut(BootstrappedDQNAtari):
+    def __init__(self):
+        BootstrappedDQNAtari.__init__(self,
+                                      env=gym.make('Breakout-v0'),
+                                      runner_args={"no_reward_reset_interval": 2000,
+                                                   # "render_env": True,
+                                                   # "frame_time": 0.05
+                                                   },
+                                      agent_args={"eps_function": LinearSequence(1e6, 0.2, 0.0)},
+                                      agent_type=RandomizedBootstrappedDQN
+                                      )
+
+Experiment.register(RandomizedBootstrappedDQNBreakOut, "Randomized Bootstrapped DQN for the Breakout")
 
 if __name__ == '__main__':
     Experiment.main()

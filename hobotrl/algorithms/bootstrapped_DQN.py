@@ -70,6 +70,7 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         # Initialize parameters
         self.observation_space = observation_space
 
+        self.action_space = action_space
         try:
             self.action_space_shape = (action_space.n,)
         except AttributeError:
@@ -280,6 +281,21 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         self.get_session().run(self.op_sync_target)
 
 
+class RandomizedBootstrappedDQN(BootstrappedDQN):
+    def __init__(self, eps_function, **args):
+        super(RandomizedBootstrappedDQN, self).__init__(**args)
+        self.eps_function = eps_function
+
+    def act(self, state, **kwargs):
+        if random.random() < self.eps_function(self.step_count):
+            return self.action_space.sample()
+        else:
+            return super(RandomizedBootstrappedDQN, self).act(state, **kwargs)
+
+    def random_action(self):
+        return self.action_space.sample()
+
+"""
 class GPUBootstrappedDQN(BootstrappedDQN):
     def __init__(self, observation_space, action_space,
                  nn_constructor, loss_function, trainer,
@@ -312,4 +328,4 @@ class GPUBootstrappedDQN(BootstrappedDQN):
                 self.op_gpu_sync += [tf.assign(gpu_var, non_target_var)
                                      for gpu_var, non_target_var
                                      in zip(gpu_vars, self.non_target_vars)]
-
+"""
