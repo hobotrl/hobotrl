@@ -9,146 +9,98 @@ import hobotrl as hrl
 from distribution import DiscreteDistribution, NormalDistribution
 
 
-class NNStochasticPolicy(object):
+class DeepStochasticPolicy(object):
 
-    def __init__(self, parent_agent, state_shape, num_actions, f_create_net, is_continuous_action=False,
-                 training_params=None, entropy=0.01, gamma=0.9, train_interval=8, **kwargs):
+    def __init__(self, state_shape, num_actions, is_continuous_action,
+                 f_create_net, training_params, entropy, **kwargs):
         """
 
-        :param parent_agent: agent which this policy belongs to.
-                in order to get access to other modules in the same agent.
         :param state_shape:
         :param num_actions:
-        :param f_create_net:
         :param is_continuous_action: True if output action of this policy is continuous
-        :param training_params: tuple containing training parameters.
-            two members:
-                optimizer_td : Tensorflow optimizer for gradient-based opt.
-                target_sync_rate: for other use.
+        :param f_create_net:
+        :param training_params: tuple containing training parameters. One member:
+                optimizer_spg : Tensorflow optimizer for gradient-based opt.
         :param entropy: entropy regularization term
-        :param gamma: reward discount factor
-        :param train_interval: policy update interval
         :param kwargs:
         """
-        kwargs.update({
-            "state_shape": state_shape,
-            "num_actions": num_actions,
-            "training_params": training_params,
-            "entropy": entropy,
-            "gamma": gamma,
-            "train_interval": train_interval
-        })
-        super(NNStochasticPolicy, self).__init__()  # TODO: super call with kwargs?
-        self.parent_agent = parent_agent
-        self.state_shape, self.num_actions = state_shape, num_actions
-        self.entropy, self.reward_decay, self.train_interval = entropy, gamma, train_interval
-        self.is_continuous_action = is_continuous_action
-        self.input_state = tf.placeholder(dtype=tf.float32, shape=[None] + state_shape, name="input_state")
+        super(DeepStochasticPolicy, self).__init__(**kwargs)
+        self.state_shape, self.num_actions, self.is_continuous_action = \
+                state_shape, num_actions, is_continuous_action
+        self.entropy = entropy
+        self.optimizer_spg = training_params[0]
+        # === initilize placeholders ===
+        self.input_state = tf.placeholder(
+            dtype=tf.float32, shape=[None] + list(state_shape), name="input_state"
+        )
         if is_continuous_action:
             action_shape = [num_actions]
-            self.input_action = tf.placeholder(dtype=tf.float32, shape=[None] + action_shape, name="input_action")
+            self.input_action = tf.placeholder(
+                dtype=tf.float32, shape=[None] + list(action_shape), name="input_action"
+            )
         else:
             action_shape = []
-            self.input_action = tf.placeholder(dtype=tf.int32, shape=[None], name="input_action")
-        self.input_advantage = tf.placeholder(dtype=tf.float32, shape=[None], name="input_advantage")
-        self.input_entropy = tf.placeholder(dtype=tf.float32, name="input_entropy")
+            self.input_action = tf.placeholder(
+                dtype=tf.int32, shape=[None], name="input_action"
+            )
+        self.action_shape = action_shape
+        self.input_advantage = tf.placeholder(
+            dtype=tf.float32, shape=[None], name="input_advantage"
+        )
+        self.input_entropy = tf.placeholder(
+            dtype=tf.float32, name="input_entropy"
+        )
+        # === build net ===
         with tf.variable_scope("policy") as vs:
             if not is_continuous_action:
-                self.distribution = DiscreteDistribution(f_create_net, [self.input_state], num_actions,
-                                                         input_sample=self.input_action, **kwargs)
+                self.distribution = DiscreteDistribution(
+                    f_create_net, [self.input_state], num_actions,
+                    input_sample=self.input_action, **kwargs
+                )
             else:
-                self.distribution = NormalDistribution(f_create_net, [self.input_state], num_actions,
-                                                       input_sample=self.input_action, **kwargs)
-        vars_policy = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "policy")
-        self.episode_buffer = hrl.playback.MapPlayback(train_interval, {
-            "s": state_shape,
-            "a": action_shape,
-            "r": [],
-            "t": [],
-            "s1": state_shape
-        }, pop_policy="sequence")
-
-        # other operators for training
+                self.distribution = NormalDistribution(
+                    f_create_net, [self.input_state], num_actions,
+                    input_sample=self.input_action, **kwargs
+                )
+        vars_policy = tf.get_collection(
+            tf.GraphKeys.TRAINABLE_VARIABLES, scope=vs.name
+        )
+        # === build operations === 
         self.op_entropy = tf.reduce_mean(self.distribution.entropy())
-        self.pi_loss = tf.reduce_mean(self.distribution.log_prob() * self.input_advantage) \
-                       + self.input_entropy * self.op_entropy
-        self.pi_loss = -self.pi_loss
-        if training_params is None:
-            optimizer = tf.train.AdamOptimizer()
-        else:
-            optimizer = training_params[0]
-        self.op_train = optimizer.minimize(self.pi_loss, var_list=vars_policy)
-        # self.pi_loss = self.pi_loss + tf.reduce_sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES), "policy")
-        self.train_countdown =  self.train_interval
+        self.spg_loss = -1.0 * tf.reduce_mean(
+            self.distribution.log_prob() * self.input_advantage
+        )
+        self.reg_loss = sum(tf.get_collection(
+            tf.GraphKeys.REGULARIZATION_LOSSES, scope=vs.name
+        )) + -1.0 * self.input_entropy * self.op_entropy
+        self.total_loss = self.spg_loss + self.reg_loss
+        self.op_train = self.optimizer_spg.minimize(
+            self.total_loss, var_list=vars_policy
+        )
 
     def act(self, state, sess, **kwargs):
-        return self.distribution.sample_run(sess, [np.asarray([state])])
+        return self.distribution.sample_run(sess, [state])
 
-    def imporove_policy_(self, state, action, reward, next_state, episode_done, sess, **kwargs):
-        self.episode_buffer.push_sample(
-            {
-                's': state,
-                'a': action,
-                's1': next_state,
-                'r': np.asarray([reward], dtype=float),
-                't': np.asarray([episode_done], dtype=float)
-            }, reward
-        )
-        self.train_countdown -= 1
-        if episode_done or self.train_countdown == 0:
-            self.train_countdown = self.train_interval
-            batch_size = self.episode_buffer.get_count()
-            batch = self.episode_buffer.sample_batch(batch_size)
-            self.episode_buffer.reset()
-            Si, Ai, Ri, Sj, T = np.asarray(batch['s'], dtype=float), batch['a'], batch['r'], \
-                                np.asarray(batch['s1'], dtype=float), batch['t']
-            # computing advantage
-            R = np.zeros(shape=[batch_size], dtype=float)
-            V = self.get_value(state=Si, sess=sess)
-            if episode_done:
-                r = 0.0
-            else:
-                last_v = self.get_value(state=np.asarray([next_state]), sess=sess)
-                r = last_v[0]
-
-            for i in range(batch_size):
-                index = batch_size - i - 1
-                if T[index] != 0:
-                    # logging.warning("Terminated!, Ri:%s, Vi:%s", Ri[index], Vi[index])
-                    r = 0
-                r = Ri[index] + self.reward_decay * r
-                R[index] = r
-            advantage = R - V
-            _, loss, entropy = sess.run([self.op_train, self.pi_loss, self.op_entropy],
-                                        feed_dict={self.input_state: Si,
-                                                   self.input_action: Ai,
-                                                   self.input_entropy: self.entropy,
-                                                   self.input_advantage: advantage})
-
-            return {"policy_loss": loss, "entropy": entropy, "advantage": advantage, "V": V}
-
-        return {}
-
-    def get_state_value(self, state, kwargs):
-        """Calculate state value."""
-        # Retrieve tf session
+    def improve_policy_(self, state, action, advantage, **kwargs):
+        """Wrapper for training ops."""
         assert 'sess' in kwargs
         sess = kwargs['sess']
-        # Average action values to get the state value
-        if self.is_continuous_action:
-            # Continuous action case:
-            # V(s)=\integral_a{\pi(s, a)*Q(s, a)}. Here we use the action value
-            # of mean action to avoid the integral. Note this is only
-            # approximately true when Q(s,a) is linear in `a'.
-            action_mean = self.distribution.mean_run(sess, [state])
-            V = self.get_value(state=state, action=action_mean, **kwargs)
-        else:
-            # Discrete action case:
-            # V(s) = \sum_a{\pi(s,a)*Q(s,a)}.
-            Q = self.get_value(state=state)
-            dist = self.distribution.dist_run(**kwargs)
-            V = np.sum(Q*dist, axis=1)
-        return V
+
+        _, loss, entropy = sess.run(
+            [self.op_train, self.spg_loss, self.op_entropy],
+            feed_dict={
+                self.input_state: state,
+                self.input_action: action,
+                self.input_entropy: self.entropy,
+                self.input_advantage: advantage
+            }
+        )
+
+        return {
+            "spg_loss": loss,
+            "policy_entropy": entropy,
+            "policy_adv": advantage,
+        }
 
 
 class DeepDeterministicPolicy(object):

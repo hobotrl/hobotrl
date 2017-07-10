@@ -3,11 +3,13 @@
 """
 
 import numpy as np
+from scipy.linalg import toeplitz
+
 import hobotrl as hrl
 from hobotrl.mixin import BaseValueMixin, BasePolicyMixin
 from hobotrl.playback import MapPlayback
 from value_function import DeepQFuncActionOut, DeepQFuncActionIn
-from policy import NNStochasticPolicy, DeepDeterministicPolicy
+from policy import DeepStochasticPolicy, DeepDeterministicPolicy
 
 
 class DeepQFuncMixin(BaseValueMixin):
@@ -146,26 +148,32 @@ class DeepQFuncMixin(BaseValueMixin):
         return state, action, is_batch
 
 
-class NNStochasticPolicyMixin(BasePolicyMixin):
+class DeepStochasticPolicyMixin(BasePolicyMixin):
 
-    def __init__(self, nnsp_param_dict, update_method, update_interval, **kwargs):
+    def  __init__(self, dsp_param_dict, backup_method, update_interval, gamma, **kwargs):
         """Initialization
 
-        :param nnsp_param_dict: kwarg dict for nnsp Initialization.
+        :param dsp_param_dict: kwarg dict for dsp Initialization.
+        :param backup_method: backup method for calculating eligibility.
+        :param update_interval: periodicity of SPG update.
+        :param gamma: reward discount factor.
         """
-        super(NNStochasticPolicyMixin, self).__init__(**kwargs)
-        self.__nnsp = NNStochasticPolicy(**nnsp_param_dict)
+        super(DeepStochasticPolicyMixin, self).__init__(**kwargs)
+        self.__dsp = DeepStochasticPolicy(**dsp_param_dict)
         self.__BATCH_SIZE = kwargs['batch_size']  # assume exist for init. replay_buffer
+        self.is_continuous_action = self.__dsp.is_continuous_action
+        state_shape, action_shape = self.__dsp.state_shape, self.__dsp.action_shape
+        self.reward_decay = gamma
         # assign proper update method
-        dict_update_methods = {
-            "multistep": self.update_multistep_,
-            "replayed": self.update_replayed_,
+        dict_backup_method = {
+            "multistep": self.__backup_multistep,  # multi-step backup along a path
+            "replayed": self.__backup_replayed,  # replayed one-step backup
         }
-        self.__update_method = dict_update_methods[update_method]
+        self.__fun_backup = dict_backup_method[backup_method]
         self.__countdown_update = update_interval
         self.__UPDATE_INTERVAL = update_interval
         # initialize a buffer to store episodic experiences
-        if update_method=='episodic':
+        if backup_method=='multistep':
             self.episode_buffer = MapPlayback(
                 update_interval,
                 {"state": state_shape,
@@ -194,16 +202,16 @@ class NNStochasticPolicyMixin(BasePolicyMixin):
         state = np.array(state)
         # prepend batch dim and use deterministic inference for single sample
         if not batch:
-            assert list(state.shape) == list(self.__nnsp.state_shape)
+            assert list(state.shape) == list(self.__dsp.state_shape)
             state = state[np.newaxis, :]
-            # TODO: nnsp currently doesn't support `is_training` arg.
-            return self.__nnsp.act(state, is_training=False, **kwargs)[0, :]
+            # TODO: dsp currently doesn't support `is_training` arg.
+            return self.__dsp.act(state, is_training=False, **kwargs)[0]
         # use default stochastic inference of batch
         else:
-            return self.__nnsp.act(state, **kwargs)
+            return self.__dsp.act(state, **kwargs)
 
     def reinforce_(self, state, action, reward, next_state, episode_done=False, **kwargs):
-        parent_info = super(NNStochasticPolicyMixin, self).reinforce_(
+        parent_info = super(DeepStochasticPolicyMixin, self).reinforce_(
             state=state, action=action, reward=reward, next_state=next_state,
             episode_done=episode_done, **kwargs)
         self_info = self.improve_policy_(
@@ -215,60 +223,98 @@ class NNStochasticPolicyMixin(BasePolicyMixin):
     def improve_policy_(self, state, action, reward, next_state,
                         episode_done=False, **kwargs):
         """Wraps around the desired update method."""
-        return self.__update_method(
+        return self.__fun_backup(
             state, action, reward, next_state, episode_done, **kwargs
         )
 
-    def update_direct_():
-        pass
+    def get_state_value_(self, state, **kwargs):
+        """Calculate state value based on action value.
 
-    def update_multistep_(self, state, action, reward, next_state,
-                         episode_done=False, **kwargs):
+        This method is called to calculate the state value when the value mixin
+        represents an action value function.
+
+        For the continuous action case, assume local linearity for the action
+        value function and use mean action to approximate the state value fcn.
+
+        For the discrete action case, use the action distribution from current
+        policy to average action values to get the state value.
         """
-        Update policy using episodic reward
-        """
-        # record new sample
-        state_value = self.get_state_value(state=state, **kwargs)
+        # Retrieve tf session
+        assert 'sess' in kwargs
+        sess = kwargs['sess']
+        # Average action values to get the state value
+        if self.is_continuous_action:
+            # Continuous action case:
+            # V(s)=\integral_a{\pi(s, a)*Q(s, a)}. Here we use the action value
+            # of mean action to avoid the integral. Note this is only
+            # approximately true when Q(s,a) is linear in `a'.
+            action_mean = self.__dsp.distribution.mean_run(sess, [state])
+            V = self.get_value(state=state, action=action_mean, **kwargs)
+        else:
+            # Discrete action case:
+            # V(s) = \sum_a{\pi(s,a)*Q(s,a)}.
+            Q = self.get_value(state=state)
+            dist = self.__dsp.distribution.dist_run(
+                sess=sess, inputs=[state],
+            )
+            V = np.sum(Q*dist, axis=1)
+        return V
+
+    def __backup_multistep(self, state, action, reward, next_state,
+                           episode_done=False, **kwargs):
+        """Update policy using return calculated from path rewards."""
+        # record new sample in path
+        state_value = self.get_state_value_(
+            state=np.array(state)[np.newaxis, :], **kwargs
+        )[0]
         self.episode_buffer.push_sample(
             sample={
-                'state': state,
-                'action': action,
-                'next_state': next_state,
-                'reward': np.asarray([reward], dtype=float),
-                'episode_done': np.asarray([episode_done], dtype=float),
-                'state_value': np.asarray([state_value], dtype=float)
+                'state': np.array(state),
+                'action': np.array(action),
+                'next_state': np.array(next_state),
+                'reward': np.asarray(reward, dtype=float),
+                'episode_done': np.asarray(episode_done, dtype=float),
+                'state_value': np.asarray(state_value, dtype=float)
             }
         )
-        # empty buffer and update
         self.__countdown_update -= 1
+        # pop out path experience for pg
         if episode_done or self.__countdown_update == 0:
             self.__countdown_update = self.__UPDATE_INTERVAL
-            # MapPlayback with 'sequence' option pop out trajectory
+            # pop out path up to now
             len_path = self.episode_buffer.get_count()
             path = self.episode_buffer.sample_batch(len_path)
             self.episode_buffer.reset()
             # unpack
-            state = np.asarray(trajectory['state'])
-            action = trajectory['action']
-            reward = trajectory['reward']
-            next_state = np.asarray(trajectory['next_state'])
-            episode_done = trajectory['episode_done']
-            state_value = trajectory['state_value']
-            # TODO: is explicitly setting r to 0.0 necessary. Assuming Q that is
-            # estimated correctly, it should include such information.
-            G = np.zeros(shape=[batch_size], dtype=float)  # front return
-            r = self.get_value(
-                    state=np.asarray([next_state]),
-                    is_batch=False, **kwargs
-                )[0]  # tail return
-            for i in range(batch_size):
-                index = batch_size -1 - i
-                r = reward[index] + self.reward_decay * r
-                G[index] = r
-            advantage = G - state_value
+            state = np.asarray(path['state'])
+            action = path['action']
+            reward = path['reward']
+            next_state = np.asarray(path['next_state'])
+            episode_done = path['episode_done']
+            # calculate return
+            gamma = self.reward_decay
+            tail_return = self.get_value(state=next_state[-1], **kwargs)[0]
+            total_return = self.__path_return(reward, gamma, tail_return)
+            state_value = path['state_value']
+            advantage = total_return - state_value
+            return self.__dsp.improve_policy_(
+                state=state, action=action, advantage=advantage, **kwargs
+            )
+        else:
+            return {}
 
-    def update_replayed_():
-        pass
+    def __backup_replayed(self, state, action, reward, next_state,
+                         episode_done=False, **kwargs):
+        raise NotImplementedError()
+
+    def __path_return(self, reward, gamma, tail=0.0):
+        len_path = len(reward)
+        G = np.zeros(len_path)
+        for i in range(len_path-1, -1, -1):
+            tail = reward[i] + gamma*tail
+            G[i] = tail
+        return G
+
 
 class DeepDeterministicPolicyMixin(BasePolicyMixin):
     """Wrapper mixin for a DDP."""
