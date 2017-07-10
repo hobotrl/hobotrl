@@ -57,6 +57,7 @@ class Experiment:
                                     "'worker':['localhost:2223', 'localhost:2224', 'localhost:2225']}")
         args = parser.parse_args()
         args.logdir = os.path.join("log", args.name if args.logdir is None else args.logdir)
+        args.index = int(args.index)
         if args.operation == "list":
             print Experiment.list()
         elif args.operation == "run":

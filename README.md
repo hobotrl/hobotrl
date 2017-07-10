@@ -19,6 +19,9 @@ Common RL framework and utilities.
 * [v] Double DQN
 * [v] Duel DQN
 * [v] Actor Critic
+* [v] Optimality Tightening
+* [v] A3C
+* Bootstrap DQN
 
 
 ## Getting started

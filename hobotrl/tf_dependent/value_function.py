@@ -19,6 +19,7 @@ ways to access the functionalities of a value function instance.
 import numpy as np
 
 import tensorflow as tf
+from hobotrl.utils import Network
 
 
 class DeepQFuncActionOut(object):
@@ -158,6 +159,10 @@ class DeepQFuncActionOut(object):
                 ops_update = tf.get_collection(
                     key=tf.GraphKeys.UPDATE_OPS, scope=scope_non.name
                 )
+                # TODO: what does this do? and what's the advantage?
+                # op_train_td, gradients = Network.minimize_and_clip(optimizer_td, objective=tf.add(td_loss, reg_loss),
+                #                                                   var_list=non_target_vars)
+
                 op_train_td = tf.group(
                     op_train_td, *ops_update, name='op_train_td'
                 )
@@ -201,6 +206,7 @@ class DeepQFuncActionOut(object):
         self.op_train_td = op_train_td
         self.op_sync_target = op_sync_target
         self.op_copy = op_copy
+        self.sym_learnable_vars = n_vars 
 
     def apply_op_sync_target_(self, sess, **kwargs):
         """Apply op_sync_target"""
@@ -538,7 +544,7 @@ class DeepQFuncActionIn(object):
                      total_loss, n_vars
                 )
                 list_clipped, td_grad_norm = tf.clip_by_global_norm(
-                    [grad for grad, var in grad_and_vars], max_td_grad_norm 
+                    [grad for grad, var in grad_and_vars], max_td_grad_norm
                 )
                 op_train_td = optimizer_td.apply_gradients(
                     [(grad_clipped, var) for grad_clipped, (grad, var) in
