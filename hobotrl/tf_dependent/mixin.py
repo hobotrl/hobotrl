@@ -199,7 +199,7 @@ class DeepStochasticPolicyMixin(BasePolicyMixin):
 
         :param state: the state.
         """
-        state = np.array(state)
+        stat = np.array(state)
         # prepend batch dim and use deterministic inference for single sample
         if not batch:
             assert list(state.shape) == list(self.__dsp.state_shape)
