@@ -1181,9 +1181,13 @@ Experiment.register(BootstrappedDQNBattleZone, "Bootstrapped DQN for the BattleZ
 
 class BootstrappedDQNBreakOut(BootstrappedDQNAtari):
     def __init__(self):
+        from hobotrl.algorithms.bootstrapped_DQN import bernoulli_mask
         BootstrappedDQNAtari.__init__(self,
                                       env=gym.make('Breakout-v0'),
-                                      runner_args={"no_reward_reset_interval": 2000})
+                                      runner_args={"no_reward_reset_interval": 2000},
+                                      agent_args={"n_heads": 30,
+                                                  "bootstrap_mask": bernoulli_mask(0.2)}
+                                      )
 
 Experiment.register(BootstrappedDQNBreakOut, "Bootstrapped DQN for the BreakOut")
 
