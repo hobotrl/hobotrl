@@ -146,15 +146,19 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         self.get_session().run(tf.global_variables_initializer())
         self.get_session().run(self.op_sync_target)
 
-    def act(self, state, **kwargs):
+    def act(self, state, show_action_values=False, **kwargs):
         """
         Choose an action to take.
 
         :param state: current state.
+        :param show_action_values: whether to print action values
         :return: an action.
         """
         action_values = self.get_session().run(self.nn_heads[self.current_head],
                                                {self.nn_input: [state]})[0]
+        if show_action_values:
+            print action_values
+
         return np.argmax(action_values)
 
     def reinforce_(self, state, action, reward, next_state,

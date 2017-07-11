@@ -144,7 +144,7 @@ class BaseEnvironmentRunner(object):
 
         # calculate_time("\nOther time")
 
-        action = self.agent.act(state)
+        action = self.agent.act(state, show_action_values=self.render_env)
 
         # calculate_time("Action time")
 
@@ -214,7 +214,7 @@ class BaseEnvironmentRunner(object):
 
         state = self.env.reset()
         while True:
-            action = self.agent.act(state)
+            action = self.agent.act(state, show_action_values=True)
             state, reward, done, info = self.env.step(action)
 
             render_result = self.env.render(**self.render_options)
