@@ -44,13 +44,20 @@ class EnvRunner(object):
         :return:
         """
         self.step_n += 1
-        action = self.agent.act(self.state, evaluate=evaluate)
-        observation, reward, done, info = self.env.step(action)
+        # TODO: directly calling agent.act will by-pass BaseDeepAgent, which
+        # checks and assigns 'sess' arugment. So we manually set sess here. But
+        # is there a better way to do this?
+        self.action = self.agent.act(
+            state=self.state, evaluate=evaluate, sess=self.agent.sess
+        )
+        next_state, reward, done, info = self.env.step(self.action)
         self.total_reward = reward + self.reward_decay * self.total_reward
-        _, info = self.agent.step(state=self.state, action=action, reward=reward, next_state=observation,
-                                  episode_done=done)
+        _, info = self.agent.step(
+            state=self.state, action=self.action, reward=reward,
+            next_state=next_state, episode_done=done
+        )
         self.record(info)
-        self.state = observation
+        self.state = next_state
         return done
 
     def record(self, info):

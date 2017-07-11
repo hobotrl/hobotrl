@@ -93,6 +93,12 @@ class BasePolicyMixin(object):
         return parent_info
 
     def act(self, state, **kwargs):
+        if 'batch' not in kwargs or not kwargs['batch']:
+            return self.act_single_(state, **kwargs)
+        else:
+            return [self.act_single_(s_slice, **kwargs) for s_slice in state]
+
+    def act_single_(self, state, **kwargs):
         raise NotImplementedError(
             "BasePolicyMixin.act() :" +
             "abstract method not implemented."
@@ -156,8 +162,8 @@ class EpsilonGreedyPolicyMixin(BasePolicyMixin):
 
         self.__epgp = EpsilonGreedyPolicy(**kwargs)
 
-    def act(self, *args, **kwargs):
-        return self.__epgp.act(*args, **kwargs)
+    def act_single_(self, *args, **kwargs):
+        return self.__epgp.act_single_(*args, **kwargs)
 
 
 class ReplayMixin(object):
@@ -279,9 +285,18 @@ class OUExplorationMixin(BasePolicyMixin):
 
     def act(self, state, **kwargs):
         action = super(OUExplorationMixin, self).act(state, **kwargs)
-        self.__x += self.__theta * (self.__mu - self.__x) + \
-                    self.__sigma * np.random.randn(*self.__x_shape)
-        return action + self.__x
+        if 'exploration_off' in kwargs and kwargs['exploration_off']:
+            pass
+        elif 'batch' in kwargs and kwargs['batch']:
+            # TODO: OU is designed for sequential state series. Adding OU
+            #       to temporally uncorrelated samples doesn't make sence.
+            #       if do want to do so, should save OU state.
+            raise ValueError("OU noise does not support batch operation.")
+        else:
+            self.__x += self.__theta * (self.__mu - self.__x) + \
+                        self.__sigma * np.random.randn(*self.__x_shape)
+            action += self.__x
+        return action
 
     @property
     def ou_state(self):
