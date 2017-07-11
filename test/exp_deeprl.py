@@ -1202,13 +1202,10 @@ Experiment.register(BootstrappedDQNPong, "Bootstrapped DQN for the Pong")
 class BootstrappedDQNEnduro(BootstrappedDQNAtari):
     def __init__(self):
         BootstrappedDQNAtari.__init__(self,
-                                      env=gym.make('Enduro-v0'))
-                                      # augment_wrapper_args={
-                                      #     "state_augment_proc": self.show_state_trans_result_wrapper
-                                      #     },
-                                      # runner_args={
-                                      #     "render_env": True
-                                      #     })
+                                      env=gym.make('Enduro-v0'),
+                                      augment_wrapper_args={
+                                          "reward_scale": 0.1
+                                          })
 
 Experiment.register(BootstrappedDQNEnduro, "Bootstrapped DQN for the Enduro")
 
@@ -1283,6 +1280,22 @@ class BootstrappedDQNBattleZoneDemo(BootstrappedDQNBattleZone):
         env_runner.run_demo("2232000.ckpt")
 
 Experiment.register(BootstrappedDQNBattleZoneDemo, "Demo for the Battle Zone")
+
+
+class BootstrappedDQNEnduroDemo(BootstrappedDQNEnduro):
+    def run(self, args):
+        """
+        Run the experiment.
+        """
+        from hobotrl.gpu_env_runner import BaseEnvironmentRunner
+
+        env_runner = BaseEnvironmentRunner(env=self.env,
+                                           agent=self.agent,
+                                           log_dir=args.logdir,
+                                           frame_time=0.2)
+        env_runner.run_demo("720000.ckpt")
+
+Experiment.register(BootstrappedDQNEnduroDemo, "Demo for the Enduro")
 
 
 if __name__ == '__main__':
