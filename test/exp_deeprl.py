@@ -1204,7 +1204,7 @@ class BootstrappedDQNEnduro(BootstrappedDQNAtari):
         BootstrappedDQNAtari.__init__(self,
                                       env=gym.make('Enduro-v0'),
                                       augment_wrapper_args={
-                                          "reward_scale": 0.1
+                                          "reward_scale": 0.3
                                           })
 
 Experiment.register(BootstrappedDQNEnduro, "Bootstrapped DQN for the Enduro")
