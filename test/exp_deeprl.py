@@ -76,7 +76,7 @@ class ACDiscretePendulum(Experiment):
             return action_dist
 
         gamma = 0.9
-        optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.01)
+        optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
         optimizer_pg = tf.train.GradientDescentOptimizer(learning_rate=0.005)
         target_sync_rate = 0.01
         training_params_td = (optimizer_td, target_sync_rate, 10.0)
@@ -353,7 +353,7 @@ class DDQNPendulum(Experiment):
                 'gamma': 0.9,
                 'f_net': f_net,
                 'state_shape': state_shape,
-                'num_actions': lenv.action_space.n,
+                'num_actions': env.action_space.n,
                 'training_params': training_params,
                 'schedule': (1, 10),
                 'greedy_policy':True,
@@ -399,12 +399,14 @@ class DuelDQNPendulum(Experiment):
 
         optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
         target_sync_rate = 0.01
-        training_params = (optimizer_td, target_sync_rate)
+        training_params = (optimizer_td, target_sync_rate, 10.0)
 
         def f_net(inputs, num_action, is_training):
             input_var = inputs
-            se = hrl.utils.Network.layer_fcs(input_var, [200, 200], num_action,
-                                                 activation_hidden=tf.nn.relu, activation_out=tf.nn.relu, l2=1e-4)
+            se = hrl.utils.Network.layer_fcs(
+                input_var, [200, 200], num_action,
+                activation_hidden=tf.nn.relu, activation_out=tf.nn.relu, l2=1e-4
+            )
             v = hrl.utils.Network.layer_fcs(se, [100], 1, var_scope="v")
             a = hrl.utils.Network.layer_fcs(se, [100], num_action, var_scope="a")
             a = a - tf.reduce_mean(a, axis=1, keep_dims=True)
@@ -412,20 +414,26 @@ class DuelDQNPendulum(Experiment):
             return q
 
         state_shape = list(env.observation_space.shape)
-        global_step = tf.get_variable('global_step', [],
-                                      dtype=tf.int32,
-                                      initializer=tf.constant_initializer(0),
-                                      trainable=False)
+        global_step = tf.get_variable(
+            'global_step', [], dtype=tf.int32,
+            initializer=tf.constant_initializer(0),
+            trainable=False
+        )
         agent = dqn.DQN(
             # EpsilonGreedyPolicyMixin params
             actions=range(env.action_space.n),
             epsilon=0.2,
             # DeepQFuncMixin params
-            gamma=0.9,
-            f_net_dqn=f_net, state_shape=state_shape, num_actions=env.action_space.n,
-            training_params=training_params, schedule=(1, 10),
-            greedy_policy=True,
-            ddqn=False,
+            dqn_param_dict={
+                'gamma': 0.9,
+                'f_net': f_net,
+                'state_shape': state_shape,
+                'num_actions': env.action_space.n,
+                'training_params': training_params,
+                'schedule': (1, 10),
+                'greedy_policy':True,
+                'ddqn': False,
+            },
             # ReplayMixin params
             buffer_class=hrl.playback.MapPlayback,
             buffer_param_dict={
@@ -438,7 +446,6 @@ class DuelDQNPendulum(Experiment):
                     'episode_done': ()
                 }},
             batch_size=8,
-            graph=tf.get_default_graph(),
             global_step=global_step
         )
 
