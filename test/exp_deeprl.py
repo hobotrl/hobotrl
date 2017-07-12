@@ -1046,7 +1046,7 @@ class BootstrappedDQNAtari(Experiment):
                       "loss_function": self.loss_function,
                       "trainer": tf.train.GradientDescentOptimizer(learning_rate=0.001).minimize,
                       "replay_buffer_class": hrl.playback.MapPlayback,
-                      "replay_buffer_args": {"capacity": 50000},
+                      "replay_buffer_args": {"capacity": 25000},
                       "min_buffer_size": 10000,
                       "batch_size": 8,
                       "n_heads": n_head}
@@ -1208,6 +1208,9 @@ class BootstrappedDQNEnduro(BootstrappedDQNAtari):
                                           "reward_scale": 0.3
                                           })
 
+    def run(self, args, **kwargs):
+        BootstrappedDQNAtari.run(self, args, checkpoint_number=1300000)
+
 Experiment.register(BootstrappedDQNEnduro, "Bootstrapped DQN for the Enduro")
 
 
@@ -1232,8 +1235,8 @@ class BootstrappedDQNKangaroo(BootstrappedDQNAtari):
                                       augment_wrapper_args={
                                           "reward_scale": 1.0
                                           },
-                                      # runner_args={"render_env": True,
-                                      #              "frame_time": 0.05}
+                                      runner_args={"render_env": True,
+                                                   "frame_time": 0.05}
                                       )
 
 Experiment.register(BootstrappedDQNKangaroo, "Bootstrapped DQN for the Kangaroo")
