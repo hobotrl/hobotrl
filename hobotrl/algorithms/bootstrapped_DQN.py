@@ -61,6 +61,7 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         assert n_heads > 0
         assert callable(bootstrap_mask)
 
+        # Create tensorflow session
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
         session = tf.Session(config=config)
@@ -156,6 +157,8 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         """
         action_values = self.get_session().run(self.nn_heads[self.current_head],
                                                {self.nn_input: [state]})[0]
+
+        # Print action values if needed
         if show_action_values:
             print action_values
 
@@ -201,14 +204,10 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
             self.sync_target()
 
     def train(self, feed_dict):
-        # st = time.time()
-
         try:
             self.get_session().run(self.op_train, feed_dict=feed_dict)
-        except ValueError:
+        except ValueError:  # If all masks happens to be zero, i.e. there's no sample
             pass
-
-        # print "Train time", time.time() - st
 
     def generate_feed_dict(self, batch):
         """
@@ -216,8 +215,6 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
 
         :return(dict): "feed_dict"
         """
-        # st = time.time()
-
         def get_action_values(input_node, output_node, state):
             """
             Calculate action values.
@@ -274,8 +271,6 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
                 # Add new action values to training data
                 feed_dict[self.nn_outputs[head]].append(updated_action_values)
 
-        # print "Feed dict time", time.time() - st
-
         return feed_dict
 
     def sync_target(self):
@@ -287,6 +282,10 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
 
 class RandomizedBootstrappedDQN(BootstrappedDQN):
     def __init__(self, eps_function, **args):
+        """
+        :param eps_function(callable): maps step count to epsilon.
+        :param args: other arguments that will be passed to "BootstrappedDQN".
+        """
         super(RandomizedBootstrappedDQN, self).__init__(**args)
         self.eps_function = eps_function
 
@@ -295,41 +294,3 @@ class RandomizedBootstrappedDQN(BootstrappedDQN):
             return self.action_space.sample()
         else:
             return super(RandomizedBootstrappedDQN, self).act(state, **kwargs)
-
-    def random_action(self):
-        return self.action_space.sample()
-
-"""
-class GPUBootstrappedDQN(BootstrappedDQN):
-    def __init__(self, observation_space, action_space,
-                 nn_constructor, loss_function, trainer,
-                 reward_decay, td_learning_rate, target_sync_interval,
-                 replay_buffer_class, replay_buffer_args, min_buffer_size, batch_size=20,
-                 n_heads=10, bootstrap_mask=bernoulli_mask(0.5),
-                 n_gpu=1):
-        super(GPUBootstrappedDQN, self).__init__(observation_space, action_space,
-                                                 nn_constructor, loss_function, trainer,
-                                                 reward_decay, td_learning_rate, target_sync_interval,
-                                                 replay_buffer_class, replay_buffer_args, min_buffer_size, batch_size,
-                                                 n_heads, bootstrap_mask)
-
-        self.n_gpu = n_gpu
-        self.gpu_nn_input = []
-        self.gpu_nn_heads = []
-        self.op_gpu_sync = []
-
-        for gpu_id in range(n_gpu):
-            with tf.device("/gpu:%d" % gpu_id):
-                with tf.variable_scope("gpu%d" % gpu_id) as name_scope:
-                    nn = nn_constructor(observation_space=observation_space,
-                                        action_space=action_space,
-                                        n_heads=n_heads)
-                    self.gpu_nn_input.append(nn["input"])
-                    self.gpu_nn_heads.append(nn["head"])
-
-                gpu_vars = tf.get_collection(key=tf.GraphKeys.TRAINABLE_VARIABLES,
-                                             scope=name_scope.name)
-                self.op_gpu_sync += [tf.assign(gpu_var, non_target_var)
-                                     for gpu_var, non_target_var
-                                     in zip(gpu_vars, self.non_target_vars)]
-"""

@@ -50,6 +50,11 @@ class BaseEnvironmentRunner(object):
         self.show_frame_rate = show_frame_rate
         self.show_frame_rate_interval = show_frame_rate_interval
 
+        self.episode_count = 0  # Count episodes
+        self.step_count = 0  # Count number of total steps
+        self.reward_history = [0]  # Record the total reward of last a few episodes
+        self.last_reward_step = 0  # The step when the agent gets last reward
+
         # Open log file
         if log_file_name:
             assert log_dir
@@ -63,11 +68,6 @@ class BaseEnvironmentRunner(object):
         else:
             self.summary_writer = None
 
-        self.episode_count = 0  # Count episodes
-        self.step_count = 0  # Count number of total steps
-        self.reward_history = [0]  # Record the total reward of last episodes
-        self.time_last_reward = 0  # The time when the agent get last reward
-
     def run(self):
         """
         Start training.
@@ -75,33 +75,36 @@ class BaseEnvironmentRunner(object):
         # Initialize environment
         state = self.env.reset()
 
-        last_frame_rate_checkpoint = time.time()
+        last_frame_rate_check_time = time.time()  # Time when last frame rate check was done
 
         while self.episode_count != self.n_episodes:
             # Run a step
             state, done = self.step(state)
 
-            # Render
+            # Render if needed
             if self.render_env and self.step_count % self.render_interval <= self.render_length:
                 render_result = self.env.render(**self.render_options)
 
+                # Print to terminal if the render result is a string(e.g. when render mode is "ansi")
                 if render_result:
                     print render_result
 
                 time.sleep(self.frame_time)
 
-                # Close the window
+                # Close the window at the last frame
                 if self.step_count % self.render_interval == self.render_length:
                     self.env.render(close=True)
 
-            # Save data to log file
+            # Save data to log files at the end of each episode
             if done:
+                # Save to csv
                 if self.log_file:
                     print "Episode %d Step %d:" % (self.episode_count, self.step_count),
                     print "%7.2f/%.2f" % (self.reward_history[-2], self.reward_summary)
 
                     self.log_file.write("%d,%d,%f,%f\n" % (self.episode_count, self.step_count, self.reward_history[-2], self.reward_summary))
 
+                # Save to summary writer
                 if self.summary_writer:
                     summary = tf.Summary()
                     summary.value.add(tag="step count", simple_value=self.step_count)
@@ -110,18 +113,19 @@ class BaseEnvironmentRunner(object):
 
                     self.summary_writer.add_summary(summary, self.episode_count)
 
-            # Save checkpoint
+            # Save checkpoint if needed
             if self.checkpoint_save_interval != -1 and self.step_count % self.checkpoint_save_interval == 0:
                 saver = tf.train.Saver()
                 saver.save(self.agent.get_session(), os.path.join(self.log_dir, '%d.ckpt' % self.step_count))
                 print "Checkpoint saved at step %d" % self.step_count
 
+            # Count steps
             self.step_count += 1
 
-            # Calculate frame rate
+            # Calculate frame rate if needed
             if self.show_frame_rate and self.step_count % self.show_frame_rate_interval == 0:
-                print "Frame rate:", self.show_frame_rate_interval/(time.time() - last_frame_rate_checkpoint)
-                last_frame_rate_checkpoint = time.time()
+                print "Frame rate:", self.show_frame_rate_interval/(time.time() - last_frame_rate_check_time)
+                last_frame_rate_check_time = time.time()
 
     def step(self, state):
         """
@@ -130,41 +134,24 @@ class BaseEnvironmentRunner(object):
         :param state: current state
         :return: a tuple: (next state, whether current episode is done)
         """
-        # def calculate_time(prompt = ""):
-        #     global st
-        #     et = time.time()
-        #
-        #     if prompt and self.step_count > 201:
-        #         try:
-        #             print prompt, et - st
-        #         except NameError:
-        #             pass
-        #
-        #     st = time.time()
-
-        # calculate_time("\nOther time")
-
+        # Take a step
         action = self.agent.act(state, show_action_values=self.render_env)
-
-        # calculate_time("Action time")
-
         next_state, reward, done, info = self.env.step(action)
+
+        # Print reward if needed
         if self.render_env:
             print reward
 
-        # calculate_time("Step time")
-
+        # Record reward
         self.reward_history[-1] += reward
 
         # Reset if no reward is seen for last a few steps
         if reward > 1e-6:
-            self.time_last_reward = self.step_count
+            self.last_reward_step = self.step_count
 
-        if self.step_count - self.time_last_reward == self.no_reward_reset_interval:
+        if self.step_count - self.last_reward_step == self.no_reward_reset_interval:
             print "Reset for no reward"
             done = True
-
-        # calculate_time("Calculate time")
 
         # Train the agent
         self.agent.reinforce_(state=state,
@@ -173,13 +160,11 @@ class BaseEnvironmentRunner(object):
                               next_state=next_state,
                               episode_done=done)
 
-        # calculate_time("Reinforce time")
-
         # Episode done
         if done:
             next_state = self.env.reset()
             self.add_reward()
-            self.time_last_reward = self.step_count
+            self.last_reward_step = self.step_count
             self.episode_count += 1
 
         return next_state, done
@@ -190,26 +175,34 @@ class BaseEnvironmentRunner(object):
         """
         self.reward_history.append(0)
 
+        # Trim the history record if it's length is longer than moving_average_window_size
         if len(self.reward_history) > self.moving_average_window_size:
             del self.reward_history[0]
 
     @property
     def reward_summary(self):
         """
-        Get the average reward of last episodes.
+        Get the average reward of last few episodes.
         """
         return float(sum(self.reward_history[:-1]))/(len(self.reward_history)-1)
 
-    def load_checkpoint(self, file_name, number=None):
-        saver = tf.train.Saver()
-        saver.restore(self.agent.get_session(), os.path.join(self.log_dir, file_name))
-
-        if number:
-            self.step_count = number
-
-    def run_demo(self, file_name, show_action_values=False):
+    def load_checkpoint(self, file_path, step_count=None):
         """
-        Load a checkpoint and run a demo.
+        Load a checkpoint.
+
+        :param file_path: path to the checkpoint
+        :param step_count: start to count steps with this number
+        :return:
+        """
+        saver = tf.train.Saver()
+        saver.restore(self.agent.get_session(), os.path.join(self.log_dir, file_path))
+
+        if step_count:
+            self.step_count = step_count
+
+    def run_demo(self, file_name, show_action_values=False, pause_before_start=True):
+        """
+        Load a checkpoint and show a demo.
 
         :param file_name: the checkpoint's file name.
         :param show_action_values: whether to show action values on terminal.
@@ -218,14 +211,15 @@ class BaseEnvironmentRunner(object):
             render_result = self.env.render(**self.render_options)
             if render_result:
                 print render_result
+            time.sleep(self.frame_time)
 
         self.load_checkpoint(file_name)
 
-        state = self.env.reset()
-
         # Render first frame
+        state = self.env.reset()
         render()
-        raw_input()
+        if pause_before_start:
+            raw_input("Press Enter to start demonstration")
 
         while True:
             # Act
@@ -235,10 +229,9 @@ class BaseEnvironmentRunner(object):
             # Render
             render()
 
-            # Reset if
+            # Reset if episode ends
             if done:
                 self.env.reset()
                 render()
-                raw_input()
-
-            time.sleep(self.frame_time)
+                if pause_before_start:
+                    raw_input("Press Enter to start demonstration")

@@ -982,7 +982,6 @@ class BootstrappedDQNCartPole(Experiment):
             return tf.Variable(tf.constant(0.1, shape=shape))
 
         eshape = observation_space.shape[0]
-        nn_inputs = []
         nn_outputs = []
 
         x = tf.placeholder(tf.float32, (None,) + observation_space.shape)
@@ -1019,11 +1018,19 @@ Experiment.register(BootstrappedDQNCartPole, "Bootstrapped DQN for the CartPole"
 
 from hobotrl.algorithms.bootstrapped_DQN import BootstrappedDQN
 
+
 class BootstrappedDQNAtari(Experiment):
     def __init__(self, env, augment_wrapper_args={}, agent_args={}, runner_args={}, agent_type=BootstrappedDQN):
+        """
+        Base class Experiments in Atari games.
+
+        :param env: environment.
+        :param augment_wrapper_args(dict): arguments for "AugmentEnvWrapper".
+        :param agent_args(dict): arguments for the agent.
+        :param runner_args(dict): arguments for the environment runner.
+        :param agent_type(class): class name of the agent.
+        """
         Experiment.__init__(self)
-
-
 
         n_head = 10  # Number of heads
 
@@ -1031,6 +1038,7 @@ class BootstrappedDQNAtari(Experiment):
         self.agent_args = agent_args
         self.runner_args = runner_args
 
+        # Wrap the environment
         augment_wrapper_args = {"reward_decay": .999,
                                 "reward_scale": 1.,
                                 "state_augment_proc": self.state_trans,
@@ -1039,6 +1047,7 @@ class BootstrappedDQNAtari(Experiment):
         augment_wrapper_args.update(self.augment_wrapper_args)
         env = self.env = hrl.envs.AugmentEnvWrapper(env, **augment_wrapper_args)
 
+        # Initialize the agent
         agent_args = {"reward_decay": .99,
                       "td_learning_rate": 1.,
                       "target_sync_interval": 1000,
@@ -1057,6 +1066,12 @@ class BootstrappedDQNAtari(Experiment):
 
     @staticmethod
     def state_trans(state):
+        """
+        Transform the state to 84*84 grayscale image.
+
+        :param state: state.
+        :return: transformed image.
+        """
         gray = np.asarray(np.dot(state, [0.299, 0.587, 0.114]))
         gray = cv2.resize(gray, (84, 84))
 
@@ -1064,19 +1079,25 @@ class BootstrappedDQNAtari(Experiment):
 
     @staticmethod
     def show_state_trans_result_wrapper(state):
+        """
+        Transform the state with "state_trans" and show the result in the image viewer.
+
+        :param state: state.
+        :return: transformed image
+        """
         global image_viewer
         import gym.envs.classic_control.rendering as rendering
 
-        # Initialize image viewer
+        # Initialize image viewer if needed
         try:
             image_viewer
         except NameError:
             image_viewer = rendering.SimpleImageViewer()
 
-        # Wrap state_trans
+        # Transform with state_trans
         image = BootstrappedDQNAtari.state_trans(state)
 
-        # Resize image
+        # Resize the image to see it clearly
         im_view = image.reshape((84, 84))
         im_view = np.array(im_view, dtype=np.float32)
         im_view = cv2.resize(im_view, (336, 336), interpolation=cv2.INTER_NEAREST)
@@ -1090,17 +1111,20 @@ class BootstrappedDQNAtari(Experiment):
     def run(self, args, checkpoint_number=None):
         """
         Run the experiment.
+
+        :param args: arguments.
+        :param checkpoint_number: if not None, checkpoint will be loaded before training.
         """
         from hobotrl.gpu_env_runner import BaseEnvironmentRunner
-
         import os
 
+        # Create logging folder if needed
         log_dir = args.logdir
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
         log_file_name = "booststrapped_DQN.csv"
 
-        # Start training
+        # Initialize the environment runner
         runner_args = {"n_episodes": -1,
                        "moving_average_window_size": 100,
                        "no_reward_reset_interval": -1,
@@ -1115,10 +1139,12 @@ class BootstrappedDQNAtari(Experiment):
                                            log_file_name=log_file_name,
                                            **runner_args)
 
+        # Load checkpoint if needed
         if checkpoint_number:
             checkpoint_file_name = '%d.ckpt' % checkpoint_number
             env_runner.load_checkpoint(checkpoint_file_name, checkpoint_number)
 
+        # Start training
         env_runner.run()
 
     @staticmethod
@@ -1174,8 +1200,8 @@ class BootstrappedDQNBattleZone(BootstrappedDQNAtari):
                                       agent_args={"replay_buffer_args": {"capacity": 10000},
                                                   "min_buffer_size": 10000})
 
-    def run(self, args):
-        BootstrappedDQNAtari.run(self, args, '2232000.ckpt')
+    def run(self, args, **kwargs):
+        BootstrappedDQNAtari.run(self, args, **kwargs)
 
 Experiment.register(BootstrappedDQNBattleZone, "Bootstrapped DQN for the BattleZone")
 
@@ -1260,14 +1286,11 @@ class RandomizedBootstrappedDQNBreakOut(BootstrappedDQNAtari):
                                       agent_type=RandomizedBootstrappedDQN
                                       )
 
-    # def run(self, args):
-    #     BootstrappedDQNAtari.run(self, args, checkpoint_number=300000)
-
 Experiment.register(RandomizedBootstrappedDQNBreakOut, "Randomized Bootstrapped DQN for the Breakout")
 
 
 class BootstrappedDQNBreakOutDemo(BootstrappedDQNBreakOut):
-    def run(self, args):
+    def run(self, args, **kwargs):
         """
         Run the experiment.
         """
@@ -1283,7 +1306,7 @@ Experiment.register(BootstrappedDQNBreakOutDemo, "Demo for the Breakout")
 
 
 class BootstrappedDQNPongDemo(BootstrappedDQNPong):
-    def run(self, args):
+    def run(self, args, **kwargs):
         """
         Run the experiment.
         """
@@ -1299,7 +1322,7 @@ Experiment.register(BootstrappedDQNPongDemo, "Demo for the Breakout")
 
 
 class BootstrappedDQNBattleZoneDemo(BootstrappedDQNBattleZone):
-    def run(self, args):
+    def run(self, args, **kwargs):
         """
         Run the experiment.
         """
@@ -1315,7 +1338,7 @@ Experiment.register(BootstrappedDQNBattleZoneDemo, "Demo for the Battle Zone")
 
 
 class BootstrappedDQNEnduroDemo(BootstrappedDQNEnduro):
-    def run(self, args):
+    def run(self, args, **kwargs):
         """
         Run the experiment.
         """
