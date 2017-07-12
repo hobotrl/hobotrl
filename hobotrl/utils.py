@@ -144,14 +144,16 @@ class EpsilonGreedyPolicy(object):
         self.__EPSILON = epsilon
         self.__TOL = tol
 
-    def act(self, state, **kwargs):
+    def act_single_(self, state, **kwargs):
         """Epsilon greedy action selection.
         Choose greedy action with 1-epsilon probability and random action with
         epsilon probability. Ties are broken randomly for greedy actions.
         """
-
-        epsilon = self.__EPSILON
-        if state is None or rand() < epsilon:
+        exploration_off = kwargs['exploration_off'] \
+            if 'exploration_off' in kwargs else False
+        if state is None:
+            idx_action = randint(0, len(self.__ACTIONS))
+        elif not exploration_off and rand() < self.__EPSILON:
             idx_action = randint(0, len(self.__ACTIONS))
         else:
             # Follow greedy policy with 1-epsilon prob.
@@ -159,15 +161,12 @@ class EpsilonGreedyPolicy(object):
             q_vals = np.asarray(
                 self.__get_value(state=state, **kwargs)
             ).flatten()
-            if 'print_qval' in kwargs and kwargs['print_qval']:
-                print q_vals
             max_q_val = max(q_vals)
             idx_best_actions = [
                 i for i in range(len(q_vals))
                 if (q_vals[i] - max_q_val)**2 < self.__TOL
             ]
             idx_action = idx_best_actions[randint(0, len(idx_best_actions))]
-
         return self.__ACTIONS[idx_action]
 
 

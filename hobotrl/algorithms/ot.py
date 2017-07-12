@@ -313,7 +313,7 @@ class OTDQN(
                  importance_weight=0.0,
                  state_offset_scale=(0, 1),
                  schedule=(1, 10),
-                 training_params=tf.train.AdamOptimizer(0.001),
+                 training_params=(tf.train.AdamOptimizer(0.001), 0.01, 10.0),
                  f_net_dqn=None,
                  **kwargs):
         super(OTDQN, self).__init__(state_shape=state_shape,
