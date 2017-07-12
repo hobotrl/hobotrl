@@ -803,7 +803,7 @@ class BootstrappedDQNSnakeGame(Experiment):
 
         from environments.snake import SnakeGame
         from hobotrl.algorithms.bootstrapped_DQN import BootstrappedDQN
-        from hobotrl.gpu_env_runner import BaseEnvironmentRunner
+        from hobotrl.environments import EnvRunner2
 
         import time
         import os
@@ -836,20 +836,20 @@ class BootstrappedDQNSnakeGame(Experiment):
                                     n_heads=n_head)
 
             # Start training
-            env_runner = BaseEnvironmentRunner(env=env,
-                                               agent=agent,
-                                               n_episodes=3000,
-                                               moving_average_window_size=100,
-                                               no_reward_reset_interval=-1,
-                                               checkpoint_save_interval=1000,
-                                               log_dir=log_dir,
-                                               log_file_name=log_file_name,
-                                               render_env=False,
-                                               render_interval=1000,
-                                               render_length=200,
-                                               frame_time=0.1,
-                                               render_options={"mode": "ansi"}
-                                               )
+            env_runner = EnvRunner2(env=env,
+                                    agent=agent,
+                                    n_episodes=3000,
+                                    moving_average_window_size=100,
+                                    no_reward_reset_interval=-1,
+                                    checkpoint_save_interval=1000,
+                                    log_dir=log_dir,
+                                    log_file_name=log_file_name,
+                                    render_env=False,
+                                    render_interval=1000,
+                                    render_length=200,
+                                    frame_time=0.1,
+                                    render_options={"mode": "ansi"}
+                                    )
             env_runner.run()
             # env_runner.run_demo("17000.ckpt")
 
@@ -920,7 +920,7 @@ class BootstrappedDQNCartPole(Experiment):
         Run the experiment.
         """
         from hobotrl.algorithms.bootstrapped_DQN import BootstrappedDQN
-        from hobotrl.gpu_env_runner import BaseEnvironmentRunner
+        from hobotrl.environments import EnvRunner2
 
         import os
 
@@ -948,19 +948,19 @@ class BootstrappedDQNCartPole(Experiment):
                                 batch_size=10,
                                 n_heads=n_head)
 
-        env_runner = BaseEnvironmentRunner(env=env,
-                                           agent=agent,
-                                           n_episodes=-1,
-                                           moving_average_window_size=50,
-                                           no_reward_reset_interval=-1,
-                                           checkpoint_save_interval=2000,
-                                           log_dir=log_dir,
-                                           log_file_name=log_file_name,
-                                           render_env=True,
-                                           render_interval=4000,
-                                           render_length=200,
-                                           frame_time=0.1
-                                           )
+        env_runner = EnvRunner2(env=env,
+                                agent=agent,
+                                n_episodes=-1,
+                                moving_average_window_size=50,
+                                no_reward_reset_interval=-1,
+                                checkpoint_save_interval=2000,
+                                log_dir=log_dir,
+                                log_file_name=log_file_name,
+                                render_env=True,
+                                render_interval=4000,
+                                render_length=200,
+                                frame_time=0.1
+                                )
         env_runner.run()
 
     @staticmethod
@@ -1115,7 +1115,7 @@ class BootstrappedDQNAtari(Experiment):
         :param args: arguments.
         :param checkpoint_number: if not None, checkpoint will be loaded before training.
         """
-        from hobotrl.gpu_env_runner import BaseEnvironmentRunner
+        from hobotrl.environments import EnvRunner2
         import os
 
         # Create logging folder if needed
@@ -1133,11 +1133,11 @@ class BootstrappedDQNAtari(Experiment):
                        "show_frame_rate": True,
                        "show_frame_rate_interval": 2000}
         runner_args.update(self.runner_args)
-        env_runner = BaseEnvironmentRunner(env=self.env,
-                                           agent=self.agent,
-                                           log_dir=log_dir,
-                                           log_file_name=log_file_name,
-                                           **runner_args)
+        env_runner = EnvRunner2(env=self.env,
+                                agent=self.agent,
+                                log_dir=log_dir,
+                                log_file_name=log_file_name,
+                                **runner_args)
 
         # Load checkpoint if needed
         if checkpoint_number:
@@ -1294,12 +1294,12 @@ class BootstrappedDQNBreakOutDemo(BootstrappedDQNBreakOut):
         """
         Run the experiment.
         """
-        from hobotrl.gpu_env_runner import BaseEnvironmentRunner
+        from hobotrl.environments import EnvRunner2
 
-        env_runner = BaseEnvironmentRunner(env=self.env,
-                                           agent=self.agent,
-                                           log_dir=args.logdir,
-                                           frame_time=0.05)
+        env_runner = EnvRunner2(env=self.env,
+                                agent=self.agent,
+                                log_dir=args.logdir,
+                                frame_time=0.05)
         env_runner.run_demo("1800000.ckpt")
 
 Experiment.register(BootstrappedDQNBreakOutDemo, "Demo for the Breakout")
@@ -1310,12 +1310,12 @@ class BootstrappedDQNPongDemo(BootstrappedDQNPong):
         """
         Run the experiment.
         """
-        from hobotrl.gpu_env_runner import BaseEnvironmentRunner
+        from hobotrl.environments import EnvRunner2
 
-        env_runner = BaseEnvironmentRunner(env=self.env,
-                                           agent=self.agent,
-                                           log_dir=args.logdir,
-                                           frame_time=0.05)
+        env_runner = EnvRunner2(env=self.env,
+                                agent=self.agent,
+                                log_dir=args.logdir,
+                                frame_time=0.05)
         env_runner.run_demo("1080000.ckpt")
 
 Experiment.register(BootstrappedDQNPongDemo, "Demo for the Breakout")
@@ -1326,12 +1326,12 @@ class BootstrappedDQNBattleZoneDemo(BootstrappedDQNBattleZone):
         """
         Run the experiment.
         """
-        from hobotrl.gpu_env_runner import BaseEnvironmentRunner
+        from hobotrl.environments import EnvRunner2
 
-        env_runner = BaseEnvironmentRunner(env=self.env,
-                                           agent=self.agent,
-                                           log_dir=args.logdir,
-                                           frame_time=0.05)
+        env_runner = EnvRunner2(env=self.env,
+                                agent=self.agent,
+                                log_dir=args.logdir,
+                                frame_time=0.05)
         env_runner.run_demo("2232000.ckpt")
 
 Experiment.register(BootstrappedDQNBattleZoneDemo, "Demo for the Battle Zone")
@@ -1342,12 +1342,12 @@ class BootstrappedDQNEnduroDemo(BootstrappedDQNEnduro):
         """
         Run the experiment.
         """
-        from hobotrl.gpu_env_runner import BaseEnvironmentRunner
+        from hobotrl.environments import EnvRunner2
 
-        env_runner = BaseEnvironmentRunner(env=self.env,
-                                           agent=self.agent,
-                                           log_dir=args.logdir,
-                                           frame_time=0.1)
+        env_runner = EnvRunner2(env=self.env,
+                                agent=self.agent,
+                                log_dir=args.logdir,
+                                frame_time=0.1)
         env_runner.run_demo("1100000.ckpt")
 
 Experiment.register(BootstrappedDQNEnduroDemo, "Demo for the Enduro")
