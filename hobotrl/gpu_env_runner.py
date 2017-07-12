@@ -200,9 +200,12 @@ class BaseEnvironmentRunner(object):
         """
         return float(sum(self.reward_history[:-1]))/(len(self.reward_history)-1)
 
-    def load_checkpoint(self, file_name):
+    def load_checkpoint(self, file_name, number=None):
         saver = tf.train.Saver()
         saver.restore(self.agent.get_session(), os.path.join(self.log_dir, file_name))
+
+        if number:
+            self.step_count = number
 
     def run_demo(self, file_name):
         """

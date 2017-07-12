@@ -1087,7 +1087,7 @@ class BootstrappedDQNAtari(Experiment):
         image_viewer.imshow(im_view)
         return image
 
-    def run(self, args, checkpoint_file_name=None):
+    def run(self, args, checkpoint_number=None):
         """
         Run the experiment.
         """
@@ -1115,8 +1115,9 @@ class BootstrappedDQNAtari(Experiment):
                                            log_file_name=log_file_name,
                                            **runner_args)
 
-        if checkpoint_file_name:
-            env_runner.load_checkpoint(checkpoint_file_name)
+        if checkpoint_number:
+            checkpoint_file_name = '%d.ckpt' % checkpoint_number
+            env_runner.load_checkpoint(checkpoint_file_name, checkpoint_number)
 
         env_runner.run()
 
@@ -1228,8 +1229,8 @@ class RandomizedBootstrappedDQNBreakOut(BootstrappedDQNAtari):
                                       agent_type=RandomizedBootstrappedDQN
                                       )
 
-    # def run(self, args):
-    #     BootstrappedDQNAtari.run(self, args, checkpoint_file_name='initial.ckpt')
+    def run(self, args):
+        BootstrappedDQNAtari.run(self, args, checkpoint_number=300000)
 
 Experiment.register(RandomizedBootstrappedDQNBreakOut, "Randomized Bootstrapped DQN for the Breakout")
 
@@ -1261,7 +1262,7 @@ class BootstrappedDQNPongDemo(BootstrappedDQNPong):
                                            agent=self.agent,
                                            log_dir=args.logdir,
                                            frame_time=0.05)
-        env_runner.run_demo("4092000.ckpt")
+        env_runner.run_demo("1080000.ckpt")
 
 Experiment.register(BootstrappedDQNPongDemo, "Demo for the Breakout")
 
