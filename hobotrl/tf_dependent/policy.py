@@ -10,73 +10,114 @@ from distribution import DiscreteDistribution, NormalDistribution
 
 
 class DeepStochasticPolicy(object):
+    """Stochastic policy parameterized by a deep neural network.
+    A deep stochastic policy (DSP) is a parameterized policy using deep
+    neural networks. It outputs a distribution over action space for each
+    state. DSPs can be trained with the policy gradient (DPG):
+        pg = d log(pi(s, a)) / d theta_pi * Eligiblity(s, a),
+    in which the eligiblity quantifies how "good" an action is for a particular
+    state.
 
+    This class builds a DSP and related ops. Subgraph contains the policy
+    network, which output a distribution over the action space given a
+    state tensor. The policy network is trained periodically with PG.
+
+    To calculate the eligibility, this class currently supports using the advantage
+    function derived from multi-step monte-carlo backup with real rewards and a
+    trained action-value function.
+    """
     def __init__(self, state_shape, num_actions, is_continuous_action,
-                 f_create_net, training_params, entropy, **kwargs):
-        """
+                 f_create_net, training_params, entropy, graph=None, **kwargs):
+        """Initialization.
 
         :param state_shape:
         :param num_actions:
         :param is_continuous_action: True if output action of this policy is continuous
         :param f_create_net:
         :param training_params: tuple containing training parameters. One member:
-                optimizer_spg : Tensorflow optimizer for gradient-based opt.
+                0. optimizer_spg : Tensorflow optimizer for gradient-based opt.
         :param entropy: entropy regularization term
-        :param kwargs:
+        :param graph: the Tensorflow graph to build ops on. Use default graph
+            if missing or None.
         """
-        super(DeepStochasticPolicy, self).__init__(**kwargs)
+        # === Unpack params ===
+        # graph related
         self.state_shape, self.num_actions, self.is_continuous_action = \
                 state_shape, num_actions, is_continuous_action
+        if graph is None:
+            graph = tf.get_default_graph()
+        # optimization related
         self.entropy = entropy
         self.optimizer_spg = training_params[0]
-        # === initilize placeholders ===
-        self.input_state = tf.placeholder(
-            dtype=tf.float32, shape=[None] + list(state_shape), name="input_state"
-        )
-        if is_continuous_action:
-            action_shape = [num_actions]
-            self.input_action = tf.placeholder(
-                dtype=tf.float32, shape=[None] + list(action_shape), name="input_action"
-            )
-        else:
-            action_shape = []
-            self.input_action = tf.placeholder(
-                dtype=tf.int32, shape=[None], name="input_action"
-            )
-        self.action_shape = action_shape
-        self.input_advantage = tf.placeholder(
-            dtype=tf.float32, shape=[None], name="input_advantage"
-        )
-        self.input_entropy = tf.placeholder(
-            dtype=tf.float32, name="input_entropy"
-        )
-        # === build net ===
-        with tf.variable_scope("policy") as vs:
-            if not is_continuous_action:
-                self.distribution = DiscreteDistribution(
-                    f_create_net, [self.input_state], num_actions,
-                    input_sample=self.input_action, **kwargs
+
+        # === Build graph ===
+        with graph.as_default():
+            with tf.variable_scope('DSP') as scope_dsp:
+                # placeholders
+                input_state = tf.placeholder(
+                    dtype=tf.float32, shape=[None] + list(state_shape),
+                    name="input_state"
                 )
-            else:
-                self.distribution = NormalDistribution(
-                    f_create_net, [self.input_state], num_actions,
-                    input_sample=self.input_action, **kwargs
+                if is_continuous_action:
+                    action_shape = [num_actions]
+                    input_action = tf.placeholder(
+                        dtype=tf.float32, shape=[None] + list(action_shape),
+                        name="input_action"
+                    )
+                else:
+                    action_shape = []
+                    input_action = tf.placeholder(
+                        dtype=tf.int32, shape=[None], name="input_action"
+                    )
+                self.action_shape = action_shape
+                input_advantage = tf.placeholder(
+                    dtype=tf.float32, shape=[None], name="input_advantage"
                 )
-        vars_policy = tf.get_collection(
-            tf.GraphKeys.TRAINABLE_VARIABLES, scope=vs.name
-        )
-        # === build operations === 
-        self.op_entropy = tf.reduce_mean(self.distribution.entropy())
-        self.spg_loss = -1.0 * tf.reduce_mean(
-            self.distribution.log_prob() * self.input_advantage
-        )
-        self.reg_loss = sum(tf.get_collection(
-            tf.GraphKeys.REGULARIZATION_LOSSES, scope=vs.name
-        )) + -1.0 * self.input_entropy * self.op_entropy
-        self.total_loss = self.spg_loss + self.reg_loss
-        self.op_train = self.optimizer_spg.minimize(
-            self.total_loss, var_list=vars_policy
-        )
+                input_entropy = tf.placeholder(
+                    dtype=tf.float32, name="input_entropy"
+                )
+                # policy network 
+                with tf.variable_scope("policy") as scope_policy:
+                    if not is_continuous_action:
+                        self.distribution = DiscreteDistribution(
+                            f_create_net, [input_state], num_actions,
+                            input_sample=input_action, **kwargs
+                        )
+                    else:
+                        self.distribution = NormalDistribution(
+                            f_create_net, [input_state], num_actions,
+                            input_sample=input_action, **kwargs
+                        )
+                vars_policy = tf.get_collection(
+                    tf.GraphKeys.TRAINABLE_VARIABLES,
+                    scope=scope_policy.name
+                )
+                # losses 
+                spg_loss = -1.0 * tf.reduce_mean(
+                    self.distribution.log_prob() * input_advantage
+                )
+                op_entropy = tf.reduce_mean(self.distribution.entropy())
+                reg_loss = sum(
+                    tf.get_collection(
+                        tf.GraphKeys.REGULARIZATION_LOSSES,
+                        scope=scope_policy.name)
+                ) + -1.0 * input_entropy * op_entropy
+                total_loss = spg_loss + reg_loss
+                # training op
+                op_train = self.optimizer_spg.minimize(
+                    total_loss, var_list=vars_policy
+                )
+
+        # === Register symbols ===
+        self.input_state = input_state
+        self.input_action = input_action
+        self.input_advantage = input_advantage
+        self.input_entropy = input_entropy
+        self.spg_loss = spg_loss
+        self.op_entropy = op_entropy
+        self.reg_loss = reg_loss
+        self.total_loss = total_loss
+        self.op_train = op_train
 
     def act(self, state, sess, **kwargs):
         return self.distribution.sample_run(sess, [state])
@@ -141,7 +182,7 @@ class DeepDeterministicPolicy(object):
             a tuple of 2 members. By position, these members are:
                 0. n_step_dpg : steps between DPG updates.
                 1. n_step_sync: steps between weight synchronizations.
-        :parm graph: the Tensorflow graph to build ops on. Use default graph
+        :param graph: the Tensorflow graph to build ops on. Use default graph
             if missing or None.
         """
         # === Unpack params ===

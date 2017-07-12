@@ -16,7 +16,7 @@ from tensorflow.contrib.layers import l2_regularizer
 
 from hobotrl.playback import MapPlayback
 
-from hobotrl.algorithms.discrete_ac import DiscreteActorCritic
+from hobotrl.algorithms.ac import ActorCritic
 from hobotrl.environments import GridworldSink
 
 # Environment
@@ -80,7 +80,7 @@ training_params_pg = (optimizer_pg,)
 state_shape = (len(env.DIMS),)
 graph = tf.get_default_graph()
 
-agent = DiscreteActorCritic(
+agent = ActorCritic(
     # DeepStochasticPolicyMixin
     dsp_param_dict={
         'state_shape': state_shape,

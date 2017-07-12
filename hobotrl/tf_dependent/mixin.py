@@ -150,7 +150,7 @@ class DeepQFuncMixin(BaseValueMixin):
 
 
 class DeepStochasticPolicyMixin(BasePolicyMixin):
-
+    """Wrapper mixin for a DSP."""
     def  __init__(self, dsp_param_dict, backup_method, update_interval, gamma, **kwargs):
         """Initialization
 
