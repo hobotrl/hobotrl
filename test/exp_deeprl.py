@@ -1229,8 +1229,8 @@ class RandomizedBootstrappedDQNBreakOut(BootstrappedDQNAtari):
                                       agent_type=RandomizedBootstrappedDQN
                                       )
 
-    def run(self, args):
-        BootstrappedDQNAtari.run(self, args, checkpoint_number=300000)
+    # def run(self, args):
+    #     BootstrappedDQNAtari.run(self, args, checkpoint_number=300000)
 
 Experiment.register(RandomizedBootstrappedDQNBreakOut, "Randomized Bootstrapped DQN for the Breakout")
 
