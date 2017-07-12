@@ -1293,8 +1293,8 @@ class BootstrappedDQNEnduroDemo(BootstrappedDQNEnduro):
         env_runner = BaseEnvironmentRunner(env=self.env,
                                            agent=self.agent,
                                            log_dir=args.logdir,
-                                           frame_time=0.2)
-        env_runner.run_demo("720000.ckpt")
+                                           frame_time=0.1)
+        env_runner.run_demo("1100000.ckpt")
 
 Experiment.register(BootstrappedDQNEnduroDemo, "Demo for the Enduro")
 

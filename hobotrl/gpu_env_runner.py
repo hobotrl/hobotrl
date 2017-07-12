@@ -207,24 +207,38 @@ class BaseEnvironmentRunner(object):
         if number:
             self.step_count = number
 
-    def run_demo(self, file_name):
+    def run_demo(self, file_name, show_action_values=False):
         """
         Load a checkpoint and run a demo.
 
         :param file_name: the checkpoint's file name.
+        :param show_action_values: whether to show action values on terminal.
         """
-        self.load_checkpoint(file_name)
-
-        state = self.env.reset()
-        while True:
-            action = self.agent.act(state, show_action_values=True)
-            state, reward, done, info = self.env.step(action)
-
+        def render():
             render_result = self.env.render(**self.render_options)
             if render_result:
                 print render_result
 
+        self.load_checkpoint(file_name)
+
+        state = self.env.reset()
+
+        # Render first frame
+        render()
+        raw_input()
+
+        while True:
+            # Act
+            action = self.agent.act(state, show_action_values=show_action_values)
+            state, reward, done, info = self.env.step(action)
+
+            # Render
+            render()
+
+            # Reset if
             if done:
                 self.env.reset()
+                render()
+                raw_input()
 
             time.sleep(self.frame_time)
