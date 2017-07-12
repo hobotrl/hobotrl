@@ -179,6 +179,9 @@ class MapPlayback(Playback):
     def get_batch(self, index):
         batch = dict([(i, self.data[i].get_batch(index)) for i in self.data])
         batch["_index"] = index
+        # logging.warning("batch: %s", batch)
+        # logging.warning("batch[state]: %s", batch['state'])
+        # logging.warning("batch[next_state]: %s", batch['next_state'])
         return batch
 
     @staticmethod

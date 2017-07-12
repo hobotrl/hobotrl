@@ -13,7 +13,7 @@ from tensorflow import layers
 from tensorflow.contrib.layers import l2_regularizer
 
 import hobotrl as hrl
-from hobotrl.utils import LinearSequence
+from hobotrl.utils import CappedLinear
 from hobotrl.experiment import Experiment
 import hobotrl.algorithms.ac as ac
 import hobotrl.algorithms.dqn as dqn
@@ -95,7 +95,8 @@ class ACDiscretePendulum(Experiment):
                                    init_op=tf.global_variables_initializer(), save_dir=args.logdir)
         with sv.managed_session(config=config) as sess:
             agent.set_session(sess)
-            runner = hrl.envs.EnvRunner(env, agent, evaluate_interval=100, render_interval=50, logdir=args.logdir)
+            runner = hrl.envs.EnvRunner(env, agent, evaluate_interval=sys.maxint,
+                                        render_interval=sys.maxint, logdir=args.logdir)
             runner.episode(1000)
 
 
@@ -551,7 +552,7 @@ class PERDQNPendulum(Experiment):
                     'episode_done': ()
                 },
                 "priority_bias": 0.5,  # todo search what combination of exponent/importance_correction works better
-                "importance_weight": LinearSequence(n_episodes * 200, 0.5, 1.0),
+                "importance_weight": CappedLinear(n_episodes * 200, 0.5, 1.0),
 
         },
             batch_size=8,

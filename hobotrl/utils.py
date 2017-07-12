@@ -580,3 +580,9 @@ class CappedLinear(ScheduledParam):
     def __init__(self, step, start, end, stepper=None):
         super(CappedLinear, self).__init__(lambda n: end if n > step else start + (end - start) * n / step, stepper)
 
+
+class Cosine(ScheduledParam):
+    def __init__(self, step, start, end, stepper=None):
+        super(Cosine, self).__init__(lambda n: start + (1 - math.cos(math.pi * 2 * n / step)) * (end - start)/2,
+                                     stepper)
+

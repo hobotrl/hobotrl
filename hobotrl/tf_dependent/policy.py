@@ -78,6 +78,11 @@ class NNStochasticPolicy(object):
             optimizer = tf.train.AdamOptimizer()
         else:
             optimizer = training_params[0]
+
+            # / mean
+            # sigma
+            # a normalize
+
         self.op_train = optimizer.minimize(self.pi_loss, var_list=vars_policy)
         # self.pi_loss = self.pi_loss + tf.reduce_sum(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES), "policy")
         self.train_countdown = self.train_interval

@@ -39,6 +39,11 @@ python test/exp_deeprl.py list
 ```
 to get a list of experiments in each file.
 
+```
+. scripts/a3c_pong.sh
+```
+to start processes to run a3c algorithm.
+
 
 ## Developers Guide
 ### Sharing network parameters across modules

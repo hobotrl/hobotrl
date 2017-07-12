@@ -635,15 +635,16 @@ class ScaledFloatFrame(gym.ObservationWrapper):
     def _observation(self, obs):
         # careful! This undoes the memory optimization, use
         # with smaller replay buffers only.
-        return np.array(obs).astype(np.float32) / 255.0
+        return (np.asarray(obs) + 0) * (1 / 255.0)
+        # return np.array(obs).astype(np.float32) / 255.0
 
 
 def wrap_dqn(env):
     """Apply a common set of wrappers for Atari games."""
     assert 'NoFrameskip' in env.spec.id
-    # env = EpisodicLifeEnv(env)
-    # env = NoopResetEnv(env, noop_max=30)
-    env = MaxAndSkipEnv(env, skip=4)
+    env = EpisodicLifeEnv(env)
+    env = NoopResetEnv(env, noop_max=30)
+    env = MaxAndSkipEnv(env, skip=4, max_len=1)
     if 'FIRE' in env.unwrapped.get_action_meanings():
         env = FireResetEnv(env)
     env = ProcessFrame84(env)

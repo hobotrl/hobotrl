@@ -257,40 +257,6 @@ class ActorCritic(object):
 
 class A3CAgent(hrl.tf_dependent.base.BaseDeepAgent):
 
-    # def init_hyper_params(self, hyper_param):
-    #     self.hyper_param = {"reward_decay": 0.99,
-    #                         "replay_size": 10 ** 4,
-    #                         "replay_state_scale": 1.0,
-    #                         "replay_state_offset": 0,
-    #                         "train_on_interval": 8,
-    #                         "train_off_interval": 4,
-    #                         "target_follow_interval": 1000,
-    #                         # "noise_count": 20,
-    #                         # "noise_scale": 1.0, "noise_decay": 0.99, "noise_decay_step": 1000000,
-    #                         "learning_rate": 0.0001,
-    #                         "off_batch_size": 32,
-    #                         "L2": 0.01,
-    #                         "max_gradient": 20.0,
-    #                         "entropy": 0.01,
-    #                         "min_stddev": 0.01,
-    #                         "max_stddev": 4.0,
-    #                         "max_mean": 0.98,
-    #                         "playback": "NP",  # "NP", "Playback", "LSH", "PER" for Prioritized Experience Replay
-    #                         "double_dqn": False,
-    #                         "soft_follow": True,  # soft: target slowly follows learned network;
-    #                         # hard: target reset to learned network periodically
-    #                         "soft_follow_speed": 0.001,  # soft follow speed
-    #                         "hard_follow_period": 500,  # train interval between target follow
-    #                         "aux_r": False,  # auxiliary task predicting immediate reward R
-    #                         "aux_d": False,  # auxiliary task predicting next status
-    #                         "action_on": True,  # True to choose action according to on policy: pi; False to q
-    #                         "e_greedy": 0.5,  # e-greedy
-    #                         "ddqn": True,
-    #                         }
-    #     self.hyper_param.update(hyper_param)
-    #     logging.warning("hyper param: %s", self.hyper_param)
-    #     pass
-
     def __init__(self, create_net, state_shape, num_actions,
                  replay_capacity,
                  reward_decay,
@@ -394,18 +360,6 @@ class A3CAgent(hrl.tf_dependent.base.BaseDeepAgent):
                         -np.sum(action * np.log(action)))
 
         last_action = np.random.choice(np.arange(self.action_n), p=action)
-        # else:
-        #     q = self.net.get_q(np.asarray([state]))[0]
-        #     if explore:
-        #         if np.random.rand() < self.hyper_param["e_greedy"]:
-        #             # greedy
-        #             q = np.exp(q)
-        #             self.last_action = np.random.choice(np.arange(self.action_n), p=q / np.sum(q))
-        #         else:
-        #             # random
-        #             self.last_action = np.argmax(q)
-        #     else:
-        #         self.last_action = np.argmax(q)
 
         return last_action
 
@@ -442,21 +396,7 @@ class A3CAgent(hrl.tf_dependent.base.BaseDeepAgent):
                 Si, Ai, Ri, Sj, T = np.asarray(batch['state'], dtype=float), batch['action'], batch['reward'], \
                                     np.asarray(batch['next_state'], dtype=float), batch['episode_done']
 
-                R = np.zeros(shape=[batch_size], dtype=float)
-                if episode_done:
-                    r = 0.0
-                else:
-                    last_v = self.net.get_v(np.asarray([next_state]))
-                    r = last_v[0]
-                for i in range(batch_size):
-                    index = batch_size - i - 1
-                    if T[index] != 0:
-                        # logging.warning("Terminated!, Ri:%s, Vi:%s", Ri[index], Vi[index])
-                        r = 0
-                    r = Ri[index] + self.reward_decay * r
-                    R[index] = r
-                target_name = "Terminate" if episode_done else "bootstrap"
-                logging.warning("Target from %s: [ %s ... %s]", target_name, R[0], R[-1])
+                R = self.compute_target(Si, Ai, Ri, Sj, T, batch_size)
 
                 # train V Pi, entropy annealing
                 pi_loss, v_loss, td, entropy = self.net.compute_on_gradient(state=Si, action=Ai, reward=Ri, value=R,
@@ -497,11 +437,57 @@ class A3CAgent(hrl.tf_dependent.base.BaseDeepAgent):
         if has_update:
             self.net.push_apply_gradient()
             self.net.pull_weights()
-            # # apply gradient no matter what
-            # if self.index == 0:
-            #     self.net.apply_gradient()
 
         if self.target_follow_interval > 0 and self.step_n % self.target_follow_interval == 0:
             self.net.update_target()
 
         return None, info
+
+    def compute_target(self, Si, Ai, Ri, Sj, T, batch_size):
+        # return self.n_step_trajectory_target(Si, Ai, Ri, Sj, T, batch_size)
+        return self.gae_target(Si, Ai, Ri, Sj, T, batch_size)
+
+    def n_step_trajectory_target(self, Si, Ai, Ri, Sj, T, batch_size):
+        next_state, episode_done = Sj[-1], T[-1]
+        R = np.zeros(shape=[batch_size], dtype=float)
+        if episode_done:
+            r = 0.0
+        else:
+            last_v = self.net.get_v(np.asarray([next_state]))
+            r = last_v[0]
+        for i in range(batch_size):
+            index = batch_size - i - 1
+            if T[index] != 0:
+                # logging.warning("Terminated!, Ri:%s, Vi:%s", Ri[index], Vi[index])
+                r = 0
+            r = Ri[index] + self.reward_decay * r
+            R[index] = r
+        target_name = "Terminate" if episode_done else "bootstrap"
+        logging.warning("Target from %s: [ %s ... %s]", target_name, R[0], R[-1])
+        return R
+
+    def gae_target(self, Si, Ai, Ri, Sj, T, batch_size, lambda_decay=0.95):
+        """
+        target value, based on generalized advantage estimator
+        https://arxiv.org/abs/1506.02438
+        :param Si:
+        :param Ai:
+        :param Ri:
+        :param Sj:
+        :param T:
+        :param batch_size:
+        :param lambda_decay:
+        :return:
+        """
+        states = [s for s in Si]
+        if not T[-1]:
+            states.append(Sj[-1])  # need last next_state
+        state_values = self.net.get_v(np.asarray(states))
+        if T[-1]:
+            state_values = np.append(state_values, 0.0)
+        delta = state_values[1:] * self.reward_decay + Ri - state_values[:-1]
+        factor = (lambda_decay * self.reward_decay) ** np.arange(batch_size)
+        advantage = [np.sum(factor * delta)] \
+                    + [np.sum(factor[:-i] * delta[i:]) for i in range(1, batch_size)]
+        target_value = np.asarray(advantage) + state_values[:-1]
+        return target_value
