@@ -1211,6 +1211,34 @@ class BootstrappedDQNEnduro(BootstrappedDQNAtari):
 Experiment.register(BootstrappedDQNEnduro, "Bootstrapped DQN for the Enduro")
 
 
+class BootstrappedDQNIceHockey(BootstrappedDQNAtari):
+    def __init__(self):
+        BootstrappedDQNAtari.__init__(self,
+                                      env=gym.make('IceHockey-v0'),
+                                      augment_wrapper_args={
+                                          "reward_scale": 1.0
+                                          },
+                                      # runner_args={"render_env": True,
+                                      #              "frame_time": 0.05}
+                                      )
+
+Experiment.register(BootstrappedDQNIceHockey, "Bootstrapped DQN for the IceHockey")
+
+
+class BootstrappedDQNKangaroo(BootstrappedDQNAtari):
+    def __init__(self):
+        BootstrappedDQNAtari.__init__(self,
+                                      env=gym.make('Kangaroo-v0'),
+                                      augment_wrapper_args={
+                                          "reward_scale": 1.0
+                                          },
+                                      # runner_args={"render_env": True,
+                                      #              "frame_time": 0.05}
+                                      )
+
+Experiment.register(BootstrappedDQNKangaroo, "Bootstrapped DQN for the Kangaroo")
+
+
 class RandomizedBootstrappedDQNBreakOut(BootstrappedDQNAtari):
     def __init__(self):
         import math
