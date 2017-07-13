@@ -858,7 +858,7 @@ class BootstrappedDQNSnakeGame(Experiment):
         """
         Calculate the loss.
         """
-        return tf.reduce_sum(tf.sqrt(tf.squared_difference(output, target)+1), axis=-1)
+        return tf.reduce_sum(tf.sqrt(tf.squared_difference(output, target)+1)-1, axis=-1)
 
     @staticmethod
     def nn_constructor(observation_space, action_space, n_heads, **kwargs):
@@ -1165,7 +1165,7 @@ class BootstrappedDQNAtari(Experiment):
         """
         Calculate the loss.
         """
-        return tf.reduce_sum(tf.sqrt(tf.squared_difference(output, target)+1)-1, -1)
+        return tf.reduce_sum(tf.sqrt(tf.squared_difference(output, output)+1)-1, -1)
 
     @staticmethod
     def nn_constructor(observation_space, action_space, n_heads, **kwargs):
