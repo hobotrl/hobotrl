@@ -247,8 +247,8 @@ class EnvRunner2(object):
             loss = float("nan")
 
         # Print reward if needed
-        if self.render_env:
-            print reward
+        if self.render_env and abs(reward) > 1e-6:
+            print "%.1f" % reward
 
         # Record reward and loss
         self.reward_history[-1] += reward
@@ -465,7 +465,7 @@ class StateHistoryStackEnvWrapper(object):
         self.stack_n = stack_n
         self.stack_axis = stack_axis
 
-        self.state_history = self.reward_history = None
+        self.state_history = None
 
         # Update observation space
         observation_space_shape = list(self.env.observation_space.shape)
@@ -482,32 +482,25 @@ class StateHistoryStackEnvWrapper(object):
         return getattr(self.env, item)
 
     def step(self, action):
-        if not self.state_history or not self.reward_history:
+        if not self.state_history:
             self.reset()
 
         state, reward, done, info = self.env.step(action)
 
         # Add to history
         self.state_history.append(state)
-        self.reward_history.append(reward)
         del self.state_history[0]
-        del self.reward_history[0]
 
         # Stack history
         state = np.concatenate(self.state_history, axis=self.stack_axis)
 
         # Stack reward
-        new_reward = 0
-        for reward in reversed(self.reward_history):
-            new_reward = new_reward*self.reward_decay + reward
 
-        return state, new_reward, done, info
+        return state, reward, done, info
 
     def reset(self):
         state = self.env.reset()
-
         self.state_history = [state]*self.stack_n
-        self.reward_history = [0.]*self.stack_n
 
         return np.concatenate(self.state_history, axis=self.stack_axis)
 
