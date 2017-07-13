@@ -1020,7 +1020,9 @@ from hobotrl.algorithms.bootstrapped_DQN import BootstrappedDQN
 
 
 class BootstrappedDQNAtari(Experiment):
-    def __init__(self, env, augment_wrapper_args={}, agent_args={}, runner_args={}, agent_type=BootstrappedDQN):
+    def __init__(self, env, augment_wrapper_args={}, agent_args={}, runner_args={},
+                 stack_n=4, frame_skip_n=1, reward_decay=0.99,
+                 agent_type=BootstrappedDQN):
         """
         Base class Experiments in Atari games.
 
@@ -1030,6 +1032,13 @@ class BootstrappedDQNAtari(Experiment):
         :param runner_args(dict): arguments for the environment runner.
         :param agent_type(class): class name of the agent.
         """
+        assert stack_n >= 1
+        assert 1 <= frame_skip_n <= stack_n
+        assert stack_n % frame_skip_n == 0
+        assert 0. <= reward_decay <= 1.
+
+        import math
+
         Experiment.__init__(self)
 
         n_head = 10  # Number of heads
@@ -1039,13 +1048,17 @@ class BootstrappedDQNAtari(Experiment):
         self.runner_args = runner_args
 
         # Wrap the environment
-        augment_wrapper_args = {"reward_decay": .999,
+        history_stack_n = stack_n//frame_skip_n
+        augment_wrapper_args = {"reward_decay": math.pow(reward_decay, 1.0/frame_skip_n),
                                 "reward_scale": 1.,
                                 "state_augment_proc": self.state_trans,
-                                "state_stack_n": 4,
+                                "state_stack_n": 1,
                                 "state_scale": 1.0/255.0}
         augment_wrapper_args.update(self.augment_wrapper_args)
         env = self.env = hrl.envs.AugmentEnvWrapper(env, **augment_wrapper_args)
+        env = self.env = hrl.envs.StateHistoryStackEnvWrapper(env,
+                                                              reward_decay=math.pow(reward_decay, 1.0/history_stack_n),
+                                                              stack_n=history_stack_n)
 
         # Initialize the agent
         agent_args = {"reward_decay": .99,
@@ -1315,7 +1328,7 @@ def demo_experiment_generator(experiment_class, checkpoint_file_name, frame_time
 Experiment.register(demo_experiment_generator(BootstrappedDQNBreakOut, "1800000.ckpt"), "Demo for the Breakout")
 Experiment.register(demo_experiment_generator(BootstrappedDQNPong, "1080000.ckpt"), "Demo for the Pong")
 Experiment.register(demo_experiment_generator(BootstrappedDQNBattleZone, "2232000.ckpt"), "Demo for the Battle Zone")
-Experiment.register(demo_experiment_generator(BootstrappedDQNEnduro, "1100000.ckpt", frame_time=0.1), "Demo for the Enduro")
+Experiment.register(demo_experiment_generator(BootstrappedDQNEnduro, "2900000.ckpt", frame_time=0.01), "Demo for the Enduro")
 
 
 if __name__ == '__main__':
