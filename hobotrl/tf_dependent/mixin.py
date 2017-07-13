@@ -37,8 +37,8 @@ class DeepQFuncMixin(BaseValueMixin):
         #       while this is true for DPG. Does this generally holds
         #       sementically? Or maybe on- and off-policy is more semantically
         #       accurate.
-        self.__GREEDY_POLICY = self.__dqf.greedy_policy
-        self.__BATCH_SIZE = kwargs['batch_size']
+        self._GREEDY_POLICY = self.__dqf.greedy_policy
+        self._BATCH_SIZE = kwargs['batch_size']
 
     def get_value(self, state, action=None, **kwargs):
         """Fetch action value(s)
@@ -62,8 +62,8 @@ class DeepQFuncMixin(BaseValueMixin):
 
         # if replay buffer has more samples than the batch_size.
         # TODO: the following is actually not necessary for sampling with replaycement.
-        if replay_buffer.get_count() >= self.__BATCH_SIZE:
-            batch = replay_buffer.sample_batch(self.__BATCH_SIZE)
+        if replay_buffer.get_count() >= self._BATCH_SIZE:
+            batch = replay_buffer.sample_batch(self._BATCH_SIZE)
             batch = {k: np.array(v) for k, v in batch.iteritems()}  # force convert
 
             # check mandatory keys
@@ -76,7 +76,7 @@ class DeepQFuncMixin(BaseValueMixin):
             # does not store `next_action` explicitly
             next_state = batch['next_state']
             if 'next_action' not in batch:
-                if not self.__GREEDY_POLICY:  # policy + exploration
+                if not self._GREEDY_POLICY:  # policy + exploration
                     next_action = self.act(
                         next_state, exploration_off=False, use_target=True,
                         batch=True, **kwargs

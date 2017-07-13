@@ -12,7 +12,7 @@ from tensorflow import layers
 from tensorflow.contrib.layers import l2_regularizer
 
 import hobotrl as hrl
-# from hobotrl.utils import LinearSequence  # BUG: LinearSequence not found
+from hobotrl.utils import CappedLinear
 from hobotrl.experiment import Experiment
 import hobotrl.algorithms.ac as ac
 import hobotrl.algorithms.dqn as dqn
@@ -132,9 +132,8 @@ class ACDiscretePendulum(Experiment):
         )
         with sv.managed_session(config=config) as sess:
             agent.set_session(sess)
-            runner = hrl.envs.EnvRunner(
-                env, agent, evaluate_interval=100, render_interval=50, logdir=args.logdir
-            )
+            runner = hrl.envs.EnvRunner(env, agent, evaluate_interval=sys.maxint,
+                                        render_interval=sys.maxint, logdir=args.logdir)
             runner.episode(1000)
 
 
@@ -544,7 +543,7 @@ class DQNCarRacing(Experiment):
 
         optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
         target_sync_rate = 0.01
-        training_params = (optimizer_td, target_sync_rate)
+        training_params = (optimizer_td, target_sync_rate, 10.0)
 
         def f_net(inputs, num_action, is_training):
             input_var = inputs
@@ -620,7 +619,7 @@ class PERDQNPendulum(Experiment):
 
         optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
         target_sync_rate = 0.01
-        training_params = (optimizer_td, target_sync_rate)
+        training_params = (optimizer_td, target_sync_rate, 10.0)
         n_episodes = 500
 
         def f_net(inputs, num_action, is_training):
@@ -639,10 +638,17 @@ class PERDQNPendulum(Experiment):
             actions=range(env.action_space.n),
             epsilon=0.2,
             # DeepQFuncMixin params
-            gamma=0.9,
-            f_net_dqn=f_net, state_shape=state_shape, num_actions=env.action_space.n,
-            training_params=training_params, schedule=(1, 10),
-            greedy_policy=True,
+            dqn_param_dict={
+                'gamma': 0.9,
+                'f_net': f_net,
+                'state_shape': state_shape,
+                'num_actions': env.action_space.n,
+                'training_params': training_params,
+                'schedule': (1, 10),
+                'greedy_policy': True,
+                'ddqn': False,
+            },
+
             # ReplayMixin params
             buffer_class=hrl.playback.NearPrioritizedPlayback,
             buffer_param_dict={
@@ -655,7 +661,7 @@ class PERDQNPendulum(Experiment):
                     'episode_done': ()
                 },
                 "priority_bias": 0.5,  # todo search what combination of exponent/importance_correction works better
-                "importance_weight": LinearSequence(n_episodes * 200, 0.5, 1.0),
+                "importance_weight": CappedLinear(n_episodes * 200, 0.5, 1.0),
 
         },
             batch_size=8,
@@ -695,7 +701,7 @@ class OTDQNPendulum(Experiment):
         optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
 
         target_sync_rate = 0.01
-        training_params = (optimizer_td, target_sync_rate)
+        training_params = (optimizer_td, target_sync_rate, 10.0)
 
         def f_net(inputs, num_action):
             input_var = inputs
@@ -753,7 +759,7 @@ class AOTDQNPendulum(Experiment):
         weight_lower = 1.0
         weight_upper = 1.0
         replay_size = 1000
-
+        training_params = (tf.train.AdamOptimizer(learning_rate=0.001), 0.01, 10.0)
         env = gym.make("Pendulum-v0")
         env = hrl.envs.C2DEnvWrapper(env, [5])
         env = hrl.envs.AugmentEnvWrapper(env, reward_decay=reward_decay, reward_scale=0.1)
@@ -782,7 +788,7 @@ class AOTDQNPendulum(Experiment):
             K=K,
             weight_lower_bound=weight_lower,
             weight_upper_bound=weight_upper,
-            training_params=(tf.train.AdamOptimizer(learning_rate=0.001), 0.01),
+            training_params=training_params,
             schedule=(1, 10),
             replay_capacity=replay_size,
             # BaseDeepAgent
@@ -814,6 +820,8 @@ class AOTDQNBreakout(Experiment):
         weight_lower = 1.0
         weight_upper = 1.0
         replay_size = 1000
+
+        training_params = (tf.train.AdamOptimizer(learning_rate=1e-4), 0.01, 10.0)
 
         env = gym.make("Breakout-v0")
         # env = hrl.envs.C2DEnvWrapper(env, [5])
@@ -866,7 +874,7 @@ class AOTDQNBreakout(Experiment):
             K=K,
             weight_lower_bound=weight_lower,
             weight_upper_bound=weight_upper,
-            training_params=(tf.train.AdamOptimizer(learning_rate=0.001), 0.01),
+            training_params=training_params,
             schedule=(1, 10),
             replay_capacity=replay_size,
             state_offset_scale=(-128, 1.0 / 128),
