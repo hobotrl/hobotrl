@@ -140,8 +140,8 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         masks = tf.concat(self.masks, 0)
 
         loss_list = loss_function(output=nn_output, target=nn_target)
-        loss = tf.reduce_sum(tf.multiply(loss_list, masks))  # Apply bootstrap mask
-        self.op_train = trainer(loss)
+        self.loss = tf.reduce_sum(tf.multiply(loss_list, masks))  # Apply bootstrap mask
+        self.op_train = trainer(self.loss)
 
         # Initialize the neural network
         self.get_session().run(tf.global_variables_initializer())
@@ -168,13 +168,14 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
                    episode_done=None, **kwargs):
         """
         Saves training data and train the neural network.
-        Asserts that "state" and "next_state" are already arrays.
+        Asserts that "state" and "next_state" are already numpy arrays.
 
         :param state:
         :param action:
         :param reward:
         :param next_state:
         :param episode_done:
+        :return: loss.
         """
         # TODO: don't give the default value for "episode_done" in the base class
         assert episode_done is not None
@@ -195,7 +196,9 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         if self.step_count > self.min_buffer_size:
             batch = self.reply_buffer.sample_batch(self.batch_size)
             feed_dict = self.generate_feed_dict(batch)
-            self.train(feed_dict)
+            loss = self.train(feed_dict)
+        else:
+            loss = 0.
 
         # Synchronize target network
         self.step_count += 1
@@ -203,11 +206,20 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         if self.step_count % self.target_sync_interval == 0:
             self.sync_target()
 
+        return loss
+
     def train(self, feed_dict):
+        """
+        Train the neural network with data in feed_dict.
+
+        :param feed_dict: data to be passed to tensorflow.
+        :return: loss.
+        """
         try:
-            self.get_session().run(self.op_train, feed_dict=feed_dict)
+            _, loss = self.get_session().run([self.op_train, self.loss], feed_dict=feed_dict)
+            return loss
         except ValueError:  # If all masks happens to be zero, i.e. there's no sample
-            pass
+            return 0.0
 
     def generate_feed_dict(self, batch):
         """

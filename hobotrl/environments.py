@@ -137,8 +137,10 @@ class EnvRunner2(object):
 
         self.episode_count = 0  # Count episodes
         self.step_count = 0  # Count number of total steps
-        self.reward_history = [0]  # Record the total reward of last a few episodes
+        self.reward_history = [0.]  # Record the total reward of last a few episodes
         self.last_reward_step = 0  # The step when the agent gets last reward
+        self.current_episode_step_count = 0  # The step count of current episode
+        self.loss_sum = 0.  # Sum of loss in current episode
 
         # Open log file
         if log_file_name:
@@ -195,6 +197,7 @@ class EnvRunner2(object):
                     summary.value.add(tag="step count", simple_value=self.step_count)
                     summary.value.add(tag="reward", simple_value=self.reward_history[-2])
                     summary.value.add(tag="average reward", simple_value=self.reward_summary)
+                    summary.value.add(tag="loss", simple_value=self.loss_summary)
 
                     self.summary_writer.add_summary(summary, self.episode_count)
 
@@ -206,6 +209,11 @@ class EnvRunner2(object):
 
             # Count steps
             self.step_count += 1
+            if done:
+                self.current_episode_step_count = 0
+                self.loss_sum = 0.
+            else:
+                self.current_episode_step_count += 1
 
             # Calculate frame rate if needed
             if self.show_frame_rate and self.step_count % self.show_frame_rate_interval == 0:
@@ -223,12 +231,24 @@ class EnvRunner2(object):
         action = self.agent.act(state, show_action_values=self.render_env)
         next_state, reward, done, info = self.env.step(action)
 
+        # Train the agent
+        loss = self.agent.reinforce_(state=state,
+                                     action=action,
+                                     reward=reward,
+                                     next_state=next_state,
+                                     episode_done=done)
+
+        # Some agents may not return a loss, so loss might be None
+        if not loss:
+            loss = 0.
+
         # Print reward if needed
         if self.render_env:
             print reward
 
-        # Record reward
+        # Record reward and loss
         self.reward_history[-1] += reward
+        self.loss_sum += loss
 
         # Reset if no reward is seen for last a few steps
         if reward > 1e-6:
@@ -238,18 +258,13 @@ class EnvRunner2(object):
             print "Reset for no reward"
             done = True
 
-        # Train the agent
-        self.agent.reinforce_(state=state,
-                              action=action,
-                              reward=reward,
-                              next_state=next_state,
-                              episode_done=done)
-
         # Episode done
         if done:
             next_state = self.env.reset()
+
             self.add_reward()
             self.last_reward_step = self.step_count
+
             self.episode_count += 1
 
         return next_state, done
@@ -258,7 +273,7 @@ class EnvRunner2(object):
         """
         Add a new record.
         """
-        self.reward_history.append(0)
+        self.reward_history.append(0.)
 
         # Trim the history record if it's length is longer than moving_average_window_size
         if len(self.reward_history) > self.moving_average_window_size:
@@ -270,6 +285,13 @@ class EnvRunner2(object):
         Get the average reward of last few episodes.
         """
         return float(sum(self.reward_history[:-1]))/(len(self.reward_history)-1)
+
+    @ property
+    def loss_summary(self):
+        try:
+            return self.loss_sum/self.current_episode_step_count
+        except ZeroDivisionError:
+            return None
 
     def load_checkpoint(self, file_path, step_count=None):
         """
