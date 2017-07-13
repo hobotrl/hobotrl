@@ -358,7 +358,8 @@ class AugmentEnvWrapper(object):
                  state_offset=0, state_scale=1,
                  state_stack_n=None, state_stack_axis=-1,
                  state_augment_proc=None,
-                 action_limit=None):
+                 action_limit=None,
+                 amend_reward_decay=True):
         """
 
         :param env:
@@ -371,8 +372,14 @@ class AugmentEnvWrapper(object):
         :param state_stack_axis:
         :param action_limit: lower and upper limit of action for continuous action
         :type action_limit: list
+        :param amend_reward_decay: whether to amend reward decay when state_stack_n is not None.
         """
         self.env = env
+
+        if amend_reward_decay and state_stack_n:
+            import math
+            reward_decay = math.pow(reward_decay, 1.0/state_stack_n)
+
         self.reward_decay, self.reward_offset, self.reward_scale = reward_decay, reward_offset, reward_scale
         self.state_offset, self.state_scale, self.stack_n, self.stack_axis = \
             state_offset, state_scale, state_stack_n, state_stack_axis
@@ -399,8 +406,6 @@ class AugmentEnvWrapper(object):
             self.last_stacked_states = []  # lazy init
 
     def __getattr__(self, name):
-        if self.stack_n is not None and name == "observation_space":
-            return self.observation_space
         return getattr(self.env, name)
 
     def augment_action(self, action):
