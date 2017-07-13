@@ -1021,7 +1021,7 @@ from hobotrl.algorithms.bootstrapped_DQN import BootstrappedDQN
 
 class BootstrappedDQNAtari(Experiment):
     def __init__(self, env, augment_wrapper_args={}, agent_args={}, runner_args={},
-                 stack_n=4, frame_skip_n=1, reward_decay=0.99,
+                 stack_n=4, frame_skip_n=4, reward_decay=0.99,
                  agent_type=BootstrappedDQN):
         """
         Base class Experiments in Atari games.
@@ -1049,10 +1049,10 @@ class BootstrappedDQNAtari(Experiment):
 
         # Wrap the environment
         history_stack_n = stack_n//frame_skip_n
-        augment_wrapper_args = {"reward_decay": math.pow(reward_decay, 1.0/frame_skip_n),
+        augment_wrapper_args = {"reward_decay": math.pow(reward_decay, 1.0/history_stack_n),
                                 "reward_scale": 1.,
                                 "state_augment_proc": self.state_trans,
-                                "state_stack_n": 1,
+                                "state_stack_n": frame_skip_n,
                                 "state_scale": 1.0/255.0}
         augment_wrapper_args.update(self.augment_wrapper_args)
         env = self.env = hrl.envs.AugmentEnvWrapper(env, **augment_wrapper_args)
@@ -1165,7 +1165,7 @@ class BootstrappedDQNAtari(Experiment):
         """
         Calculate the loss.
         """
-        return tf.reduce_sum(tf.sqrt(tf.squared_difference(output, target)+1), -1)
+        return tf.reduce_sum(tf.sqrt(tf.squared_difference(output, target)+1)-1, -1)
 
     @staticmethod
     def nn_constructor(observation_space, action_space, n_heads, **kwargs):
