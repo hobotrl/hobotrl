@@ -97,8 +97,9 @@ class ACDiscretePendulum(Experiment):
                 'entropy': 0.01
             },
             backup_method='multistep',
-            update_interval=1,
+            update_interval=3,
             gamma=gamma,
+            backup_depth=3,
             # ReplayMixin params
             buffer_class=hrl.playback.MapPlayback,
             buffer_param_dict={
