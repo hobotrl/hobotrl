@@ -1289,68 +1289,33 @@ class RandomizedBootstrappedDQNBreakOut(BootstrappedDQNAtari):
 Experiment.register(RandomizedBootstrappedDQNBreakOut, "Randomized Bootstrapped DQN for the Breakout")
 
 
-class BootstrappedDQNBreakOutDemo(BootstrappedDQNBreakOut):
-    def run(self, args, **kwargs):
-        """
-        Run the experiment.
-        """
-        from hobotrl.environments import EnvRunner2
+def demo_experiment_generator(experiment_class, checkpoint_file_name, frame_time=0.05):
+    """
+    Generate a demo experiment using "EnvRunner2".
 
-        env_runner = EnvRunner2(env=self.env,
-                                agent=self.agent,
-                                log_dir=args.logdir,
-                                frame_time=0.05)
-        env_runner.run_demo("1800000.ckpt")
+    :param experiment_class: class of the experiment.
+    :param checkpoint_file_name: file name of the checkpoint that should be loaded.
+    :param frame_time: will be passed to the environment runner.
+    :return: an experiment.
+    """
+    class BootstrappedDQNDemo(Experiment):
+        def run(self, args):
+            from hobotrl.environments import EnvRunner2
 
-Experiment.register(BootstrappedDQNBreakOutDemo, "Demo for the Breakout")
+            experiment = experiment_class()
+            env_runner = EnvRunner2(env=experiment.env,
+                                    agent=experiment.agent,
+                                    log_dir=args.logdir,
+                                    frame_time=frame_time)
+            env_runner.run_demo(checkpoint_file_name)
 
+    BootstrappedDQNDemo.__name__ = experiment_class.__name__ + "Demo"
+    return BootstrappedDQNDemo
 
-class BootstrappedDQNPongDemo(BootstrappedDQNPong):
-    def run(self, args, **kwargs):
-        """
-        Run the experiment.
-        """
-        from hobotrl.environments import EnvRunner2
-
-        env_runner = EnvRunner2(env=self.env,
-                                agent=self.agent,
-                                log_dir=args.logdir,
-                                frame_time=0.05)
-        env_runner.run_demo("1080000.ckpt")
-
-Experiment.register(BootstrappedDQNPongDemo, "Demo for the Breakout")
-
-
-class BootstrappedDQNBattleZoneDemo(BootstrappedDQNBattleZone):
-    def run(self, args, **kwargs):
-        """
-        Run the experiment.
-        """
-        from hobotrl.environments import EnvRunner2
-
-        env_runner = EnvRunner2(env=self.env,
-                                agent=self.agent,
-                                log_dir=args.logdir,
-                                frame_time=0.05)
-        env_runner.run_demo("2232000.ckpt")
-
-Experiment.register(BootstrappedDQNBattleZoneDemo, "Demo for the Battle Zone")
-
-
-class BootstrappedDQNEnduroDemo(BootstrappedDQNEnduro):
-    def run(self, args, **kwargs):
-        """
-        Run the experiment.
-        """
-        from hobotrl.environments import EnvRunner2
-
-        env_runner = EnvRunner2(env=self.env,
-                                agent=self.agent,
-                                log_dir=args.logdir,
-                                frame_time=0.1)
-        env_runner.run_demo("1100000.ckpt")
-
-Experiment.register(BootstrappedDQNEnduroDemo, "Demo for the Enduro")
+Experiment.register(demo_experiment_generator(BootstrappedDQNBreakOut, "1800000.ckpt"), "Demo for the Breakout")
+Experiment.register(demo_experiment_generator(BootstrappedDQNPong, "1080000.ckpt"), "Demo for the Pong")
+Experiment.register(demo_experiment_generator(BootstrappedDQNBattleZone, "2232000.ckpt"), "Demo for the Battle Zone")
+Experiment.register(demo_experiment_generator(BootstrappedDQNEnduro, "1100000.ckpt", frame_time=0.1), "Demo for the Enduro")
 
 
 if __name__ == '__main__':
