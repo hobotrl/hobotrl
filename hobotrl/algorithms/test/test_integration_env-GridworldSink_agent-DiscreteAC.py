@@ -91,8 +91,9 @@ agent = ActorCritic(
         'entropy': 0.001
     },
     backup_method='multistep',
-    update_interval=3,
+    update_interval=1,
     gamma=gamma,
+    backup_depth=2,
     # ReplayMixin params
     buffer_class=MapPlayback,
     buffer_param_dict={

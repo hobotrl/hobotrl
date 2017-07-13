@@ -147,6 +147,7 @@ class MapPlayback(Playback):
         :param pop_policy:
         :param dtype:
         """
+        # BUG: self.push index doesn't grow
         super(MapPlayback, self).__init__(capacity, [1], push_policy, pop_policy, dtype)
         self.data = dict([(i, Playback(capacity, sample_shapes[i], push_policy, pop_policy,
                                        augment_offset=augment_offset.get(i), augment_scale=augment_scale.get(i),
@@ -161,6 +162,7 @@ class MapPlayback(Playback):
             self.data[i].add_sample(sample[i], index, sample_score)
 
     def get_count(self):
+        # BUG: return self.data[0].get_count() is enough?
         for i in self.data:
             return self.data[i].get_count()
 
