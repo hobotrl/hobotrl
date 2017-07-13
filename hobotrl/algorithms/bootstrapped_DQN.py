@@ -180,6 +180,8 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         # TODO: don't give the default value for "episode_done" in the base class
         assert episode_done is not None
 
+        info = {}
+
         # Add to buffer
         self.reply_buffer.push_sample({"state": state,
                                        "next_state": next_state,
@@ -198,7 +200,7 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
             feed_dict = self.generate_feed_dict(batch)
             loss = self.train(feed_dict)
         else:
-            loss = 0.
+            loss = float("nan")
 
         # Synchronize target network
         self.step_count += 1
@@ -206,7 +208,8 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         if self.step_count % self.target_sync_interval == 0:
             self.sync_target()
 
-        return loss
+        info["loss"] = loss
+        return info
 
     def train(self, feed_dict):
         """

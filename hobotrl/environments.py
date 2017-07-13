@@ -197,7 +197,10 @@ class EnvRunner2(object):
                     summary.value.add(tag="step count", simple_value=self.step_count)
                     summary.value.add(tag="reward", simple_value=self.reward_history[-2])
                     summary.value.add(tag="average reward", simple_value=self.reward_summary)
-                    summary.value.add(tag="loss", simple_value=self.loss_summary)
+                    if str(self.loss_summary) != 'nan':
+                        summary.value.add(tag="loss", simple_value=self.loss_summary)
+                    else:
+                        summary.value.add(tag="loss", simple_value=0)
 
                     self.summary_writer.add_summary(summary, self.episode_count)
 
@@ -232,15 +235,16 @@ class EnvRunner2(object):
         next_state, reward, done, info = self.env.step(action)
 
         # Train the agent
-        loss = self.agent.reinforce_(state=state,
+        info = self.agent.reinforce_(state=state,
                                      action=action,
                                      reward=reward,
                                      next_state=next_state,
                                      episode_done=done)
 
-        # Some agents may not return a loss, so loss might be None
-        if not loss:
-            loss = 0.
+        try:
+            loss = info["loss"]
+        except KeyError:
+            loss = float("nan")
 
         # Print reward if needed
         if self.render_env:
