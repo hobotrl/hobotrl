@@ -6,7 +6,7 @@ import gym
 import argparse
 
 
-class Experiment:
+class Experiment(object):
     """
     """
     experiments = {}
