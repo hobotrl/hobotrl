@@ -151,13 +151,15 @@ class DeepQFuncMixin(BaseValueMixin):
 
 class DeepStochasticPolicyMixin(BasePolicyMixin):
     """Wrapper mixin for a DSP."""
-    def  __init__(self, dsp_param_dict, backup_method, update_interval, gamma, **kwargs):
+    def  __init__(self, dsp_param_dict, backup_method, update_interval, gamma,
+                  backup_depth=None, **kwargs):
         """Initialization
 
         :param dsp_param_dict: kwarg dict for dsp Initialization.
         :param backup_method: backup method for calculating eligibility.
         :param update_interval: periodicity of SPG update.
         :param gamma: reward discount factor.
+        :param backup_depth: length of path used for back up eligibility values.
         """
         super(DeepStochasticPolicyMixin, self).__init__(**kwargs)
         self.__dsp = DeepStochasticPolicy(**dsp_param_dict)
@@ -173,16 +175,17 @@ class DeepStochasticPolicyMixin(BasePolicyMixin):
         self.__fun_backup = dict_backup_method[backup_method]
         self.__countdown_update = update_interval
         self.__UPDATE_INTERVAL = update_interval
+        self.__BACKUP_DEPTH = backup_depth if backup_depth is not None \
+            else update_interval
         # initialize a buffer to store episodic experiences
         if backup_method=='multistep':
             self.episode_buffer = MapPlayback(
-                update_interval,
+                self.__BACKUP_DEPTH,
                 {"state": state_shape,
                  "action": action_shape,
                  "reward": (),
                  "episode_done": (),
-                 "next_state": state_shape,
-                 "state_value": (),},
+                 "next_state": state_shape},
                 pop_policy="sequence"
             )
 
@@ -265,9 +268,6 @@ class DeepStochasticPolicyMixin(BasePolicyMixin):
                            episode_done=False, **kwargs):
         """Update policy using return calculated from path rewards."""
         # record new sample in path
-        state_value = self.get_state_value_(
-            state=np.array(state)[np.newaxis, :], **kwargs
-        )[0]
         self.episode_buffer.push_sample(
             sample={
                 'state': np.array(state),
@@ -275,7 +275,6 @@ class DeepStochasticPolicyMixin(BasePolicyMixin):
                 'next_state': np.array(next_state),
                 'reward': np.asarray(reward, dtype=float),
                 'episode_done': np.asarray(episode_done, dtype=float),
-                'state_value': np.asarray(state_value, dtype=float)
             }
         )
         self.__countdown_update -= 1
@@ -285,7 +284,13 @@ class DeepStochasticPolicyMixin(BasePolicyMixin):
             # pop out path up to now
             len_path = self.episode_buffer.get_count()
             path = self.episode_buffer.sample_batch(len_path)
-            self.episode_buffer.reset()
+            # index of the last sample in path
+            tail_index = (self.episode_buffer.data['state'].push_index - 1) % \
+                self.episode_buffer.capacity
+            # only reset buffer when episode ends, otherwise
+            # use as a circular buffer
+            if episode_done:
+                self.episode_buffer.reset()
             # unpack
             state = np.asarray(path['state'])
             action = path['action']
@@ -294,9 +299,11 @@ class DeepStochasticPolicyMixin(BasePolicyMixin):
             episode_done = path['episode_done']
             # calculate return
             gamma = self.reward_decay
-            tail_return = self.get_value(state=next_state[-1], **kwargs)[0]
-            total_return = self.__path_return(reward, gamma, tail_return)
-            state_value = path['state_value']
+            tail_return = self.get_value(state=next_state[tail_index], **kwargs)[0]
+            total_return = self.__path_return(
+                reward, gamma, tail_return, tail_index
+            )
+            state_value = self.get_state_value_(state=state, **kwargs)
             advantage = total_return - state_value
             return self.__dsp.improve_policy_(
                 state=state, action=action, advantage=advantage, **kwargs
@@ -308,12 +315,13 @@ class DeepStochasticPolicyMixin(BasePolicyMixin):
                          episode_done=False, **kwargs):
         raise NotImplementedError()
 
-    def __path_return(self, reward, gamma, tail=0.0):
+    def __path_return(self, reward, gamma, tail_return=0.0, tail_index=-1):
         len_path = len(reward)
         G = np.zeros(len_path)
-        for i in range(len_path-1, -1, -1):
-            tail = reward[i] + gamma*tail
-            G[i] = tail
+        for i in range(len_path):
+            idx = (tail_index - i) % len_path
+            tail_return = reward[idx] + gamma*tail_return
+            G[idx] = tail_return
         return G
 
 

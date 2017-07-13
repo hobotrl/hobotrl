@@ -76,7 +76,7 @@ class ACDiscretePendulum(Experiment):
             return action_dist
 
         gamma = 0.9
-        optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
+        optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.01)
         optimizer_pg = tf.train.GradientDescentOptimizer(learning_rate=0.005)
         target_sync_rate = 0.01
         training_params_td = (optimizer_td, target_sync_rate, 10.0)
@@ -97,8 +97,9 @@ class ACDiscretePendulum(Experiment):
                 'entropy': 0.01
             },
             backup_method='multistep',
-            update_interval=8,
+            update_interval=3,
             gamma=gamma,
+            backup_depth=3,
             # ReplayMixin params
             buffer_class=hrl.playback.MapPlayback,
             buffer_param_dict={
@@ -535,10 +536,11 @@ class DQNCarRacing(Experiment):
 
         env = gym.make("CarRacing-v0")
         env = CarEnvWrapper(env, 3, 3)
-        env = hrl.envs.AugmentEnvWrapper(env,
-                                         reward_decay=reward_decay,
-                                         # reward_scale=0.1,
-                                         state_stack_n=4)
+        env = hrl.envs.AugmentEnvWrapper(
+            env, reward_decay=reward_decay,
+            # reward_scale=0.1,
+            state_stack_n=4
+        )
 
         optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
         target_sync_rate = 0.01
@@ -564,41 +566,38 @@ class DQNCarRacing(Experiment):
             # return q
 
         state_shape = list(env.observation_space.shape)
-        global_step = tf.get_variable('global_step', [],
-                                      dtype=tf.int32,
-                                      initializer=tf.constant_initializer(0),
-                                      trainable=False)
+        global_step = tf.get_variable(
+            'global_step', [], dtype=tf.int32,
+            initializer=tf.constant_initializer(0),
+            trainable=False
+        )
         agent = dqn.DQN(
             # EpsilonGreedyPolicyMixin params
             actions=range(env.action_space.n),
             epsilon=0.2,
             # DeepQFuncMixin params
-            gamma=reward_decay,
-            f_net_dqn=f_net, state_shape=state_shape, num_actions=env.action_space.n,
-            training_params=training_params, schedule=(1, 10),
-            greedy_policy=True,
-            ddqn=True,
+            dqn_param_dict={
+                'gamma': 0.9,
+                'f_net': f_net,
+                'state_shape': state_shape,
+                'num_actions': env.action_space.n,
+                'training_params': training_params,
+                'schedule': (1, 10),
+                'greedy_policy':True,
+                'ddqn': True,
+            },
             # ReplayMixin params
             buffer_class=hrl.playback.MapPlayback,
             buffer_param_dict={
-                "capacity": 10000,
+                "capacity": 1000,
                 "sample_shapes": {
                     'state': state_shape,
-                    'action': [],
-                    'reward': [],
+                    'action': (),
+                    'reward': (),
                     'next_state': state_shape,
-                    'episode_done': []
-                },
-                "augment_offset": {
-                    'state': -128,
-                    'next_state': -128,
-                },
-                "augment_scale": {
-                    'state': 1.0/128,
-                    'next_state': 1.0/128,
-                }
-            },
-            batch_size=32,
+                    'episode_done': ()
+                }},
+            batch_size=8,
             global_step=global_step
         )
         config = tf.ConfigProto()
