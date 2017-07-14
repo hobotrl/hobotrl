@@ -1061,7 +1061,7 @@ class BootstrappedDQNAtari(Experiment):
                                                               stack_n=history_stack_n)
 
         # Initialize the agent
-        agent_args = {"reward_decay": reward_decay,
+        agent_args = {"reward_decay": math.pow(reward_decay, 1.0/history_stack_n),
                       "td_learning_rate": 1.,
                       "target_sync_interval": 1000,
                       "nn_constructor": self.nn_constructor,
@@ -1302,9 +1302,12 @@ class RandomizedBootstrappedDQNBreakOut(BootstrappedDQNAtari):
                                                    # "render_env": True,
                                                    # "frame_time": 0.05
                                                    },
-                                      agent_args={"eps_function": eps_function},  # LinearSequence(1e6, 0.2, 0.0)},
+                                      agent_args={"eps_function": LinearSequence(1e6, 0.2, 0.0)}, # {"eps_function": eps_function},
                                       agent_type=RandomizedBootstrappedDQN
                                       )
+
+    def run(self, args, **kwargs):
+        BootstrappedDQNAtari.run(self, args, checkpoint_number=2000000)
 
 Experiment.register(RandomizedBootstrappedDQNBreakOut, "Randomized Bootstrapped DQN for the Breakout")
 
@@ -1332,7 +1335,7 @@ def demo_experiment_generator(experiment_class, checkpoint_file_name, frame_time
     BootstrappedDQNDemo.__name__ = experiment_class.__name__ + "Demo"
     return BootstrappedDQNDemo
 
-Experiment.register(demo_experiment_generator(RandomizedBootstrappedDQNBreakOut, "3300000.ckpt"), "Demo for the Breakout")
+Experiment.register(demo_experiment_generator(RandomizedBootstrappedDQNBreakOut, "2000000.ckpt"), "Demo for the Breakout")
 Experiment.register(demo_experiment_generator(BootstrappedDQNPong, "1080000.ckpt"), "Demo for the Pong")
 Experiment.register(demo_experiment_generator(BootstrappedDQNBattleZone, "2232000.ckpt"), "Demo for the Battle Zone")
 Experiment.register(demo_experiment_generator(BootstrappedDQNEnduro, "1300000.ckpt", frame_time=0.0), "Demo for the Enduro")
