@@ -823,7 +823,6 @@ class AOTDQNBreakout(Experiment):
         replay_size = 1000
 
         training_params = (tf.train.AdamOptimizer(learning_rate=1e-4), 0.01, 10.0)
-
         env = gym.make("Breakout-v0")
         # env = hrl.envs.C2DEnvWrapper(env, [5])
 

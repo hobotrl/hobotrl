@@ -1,6 +1,7 @@
 #
 # -*- coding: utf-8 -*-
 
+import sys
 import logging
 from collections import deque
 import tensorflow as tf
@@ -13,7 +14,9 @@ class EnvRunner(object):
     """
     interaction between agent and environment.
     """
-    def __init__(self, env, agent, reward_decay=0.99, max_episode_len=5000, evaluate_interval=20, render_interval=1,
+    def __init__(self, env, agent, reward_decay=0.99, max_episode_len=5000,
+                 evaluate_interval=sys.maxint, render_interval=sys.maxint,
+                 render_once=False,
                  logdir=None):
         """
 
@@ -36,6 +39,7 @@ class EnvRunner(object):
         self.summary_writer = None
         if logdir is not None:
             self.summary_writer = tf.summary.FileWriter(logdir, graph=tf.get_default_graph())
+        self.render_once = True if render_once else False
 
     def step(self, evaluate=False):
         """
@@ -58,6 +62,9 @@ class EnvRunner(object):
         )
         self.record(info)
         self.state = next_state
+        if self.render_once:
+            self.env.render()
+            self.render_once = False
         return done
 
     def record(self, info):
@@ -586,6 +593,17 @@ class ClippedRewardsWrapper(gym.RewardWrapper):
     def _reward(self, reward):
         """Change all the positive rewards to 1, negative to -1 and keep zero."""
         return np.sign(reward)
+
+
+class ScaledRewards(gym.RewardWrapper):
+
+    def __init__(self, env=None, scale=1.0):
+        self.reward_scale = scale
+        super(ScaledRewards, self).__init__(env)
+
+    def _reward(self, reward):
+        """Change all the positive rewards to 1, negative to -1 and keep zero."""
+        return self.reward_scale * reward
 
 
 class LazyFrames(object):

@@ -21,6 +21,7 @@ import hobotrl.algorithms.per as per
 import playground.optimal_tighten as play_ot
 import hobotrl.algorithms.ot as ot
 import playground.a3c_onoff as a3coo
+from exp_algorithms import *
 
 
 def state_trans_atari(state):
@@ -42,7 +43,7 @@ def state_trans_atari3(state):
     return resized_screen.reshape(resized_screen.shape + (1,)) / 255.0
 
 
-def f_net_atari(inputs, num_action, is_training):
+def f_dqn_atari(inputs, num_action, is_training):
     input_var = inputs
     print "input size:", input_var
     out = hrl.utils.Network.conv2ds(input_var, shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)], out_flatten=True,
@@ -55,295 +56,157 @@ def f_net_atari(inputs, num_action, is_training):
     return out
 
 
-class DQNPong(Experiment):
+class DQNAtari(DQNExperiment):
+    def __init__(self, env, f_create_net=None,
+                 episode_n=10000,
+                 optimizer_ctor=lambda: tf.train.AdamOptimizer(learning_rate=1e-4),
+                 target_sync_rate=1.0,
+                 update_interval=4,
+                 target_sync_interval=1000,
+                 max_gradient=10.0,
+                 epsilon=hrl.utils.CappedLinear(step=4e5, start=1.0, end=0.01),
+                 gamma=0.99,
+                 greedy_policy=True,
+                 ddqn=False,
+                 batch_size=32,
+                 replay_capacity=10000):
+
+        if f_create_net is None:
+            f_create_net = f_dqn_atari
+        super(DQNAtari, self).__init__(env, f_create_net, episode_n, optimizer_ctor, target_sync_rate, update_interval,
+                               target_sync_interval, max_gradient, epsilon, gamma, greedy_policy, ddqn, batch_size,
+                               replay_capacity)
+
+
+class PERAtari(PERDQNExperiment):
+    def __init__(self, env, f_create_net=None,
+                 episode_n=1000,
+                 priority_bias=0.5,
+                 importance_weight=hrl.utils.CappedLinear(1e6, 0.5, 1.0),
+                 optimizer_ctor=lambda: tf.train.AdamOptimizer(learning_rate=1e-4),
+                 target_sync_rate=1.0,
+                 update_interval=4,
+                 target_sync_interval=1000,
+                 max_gradient=10.0,
+                 epsilon=hrl.utils.CappedLinear(step=4e5, start=1.0, end=0.01),
+                 gamma=0.99,
+                 greedy_policy=True,
+                 ddqn=False,
+                 batch_size=32,
+                 replay_capacity=10000):
+        if f_create_net is None:
+            f_create_net = f_dqn_atari
+        super(PERAtari, self).__init__(env, f_create_net, episode_n, priority_bias, importance_weight, optimizer_ctor,
+                                       target_sync_rate, update_interval, target_sync_interval, max_gradient, epsilon,
+                                       gamma, greedy_policy, ddqn, batch_size, replay_capacity)
+
+
+class DQNPong(DQNAtari):
     """
     converges on Pendulum. OT implementation from hobotrl.algorithms package.
     However, in Pendulum, weight_upper > 0 hurts performance.
     """
-    def run(self, args):
-        reward_decay = 0.99
-        batch_size = 32
-        replay_size = 10000
-        epsilon = hrl.utils.CappedLinear(step=4e5, start=1.0, end=0.01)
-        # epsilon = hrl.utils.CosSequence(step=4e5, start=1.0, end=0.05)
+
+    def __init__(self):
         env = gym.make("PongNoFrameskip-v4")
-
-        # env = ScaledFloatFrame(ProcessFrame84(env))
-        # env = ProcessFrame84(env)
-        # env = hrl.envs.AugmentEnvWrapper(env, reward_decay=reward_decay, reward_scale=1.0,
-        #                                  reward_shaping_proc=hrl.envs.InfoChange(decrement_weight={"ale.lives": -1}),
-        #                                  state_augment_proc=state_trans_atari3, state_stack_n=4, state_skip=4)
-        # env = ScaledFloatFrame(env)
-
         env = ScaledFloatFrame(wrap_dqn(env))
-
-        state_shape = [84, 84, 4]  # list(env.observation_space.shape)
-        global_step = tf.get_variable('global_step', [],
-                                      dtype=tf.int32,
-                                      initializer=tf.constant_initializer(0),
-                                      trainable=False)
-        agent = dqn.DQN(
-            # EpsilonGreedyPolicyMixin params
-            actions=range(env.action_space.n),
-            epsilon=epsilon,
-            # DeepQFuncMixin params
-            gamma=reward_decay,
-            f_net_dqn=f_net_atari, state_shape=state_shape, num_actions=env.action_space.n,
-            training_params=(tf.train.AdamOptimizer(learning_rate=0.0001), 1.0),
-            schedule=(4, 1000),
-            greedy_policy=True,
-            ddqn=True,
-            # ReplayMixin params
-            buffer_class=hrl.playback.MapPlayback,
-            buffer_param_dict={
-                "capacity": replay_size,
-                "sample_shapes": {
-                    'state': state_shape,
-                    'action': (),
-                    'reward': (),
-                    'next_state': state_shape,
-                    'episode_done': ()
-                },
-                # "augment_offset": {
-                #     "state": 0,
-                #     "next_state": 0,
-                # },
-                # "augment_scale": {
-                #     "state": 1/255.0,
-                #     "next_state": 1/255.0,
-                # }
-            },
-            batch_size=batch_size,
-            global_step=global_step
-        )
-
-        config = tf.ConfigProto()
-        config.gpu_options.allow_growth = True
-        sv = agent.init_supervisor(graph=tf.get_default_graph(), worker_index=0,
-                                   init_op=tf.global_variables_initializer(), save_dir=args.logdir)
-        with sv.managed_session(config=config) as sess:
-            agent.set_session(sess)
-            runner = hrl.envs.EnvRunner(env, agent, reward_decay=reward_decay,
-                                        evaluate_interval=sys.maxint, render_interval=sys.maxint, logdir=args.logdir)
-            runner.episode(100000)
+        super(DQNPong, self).__init__(env)
 
 Experiment.register(DQNPong, "DQN for Pong")
 
 
-class PERPong(Experiment):
+class PERPong(PERAtari):
     """
     converges on Pendulum. OT implementation from hobotrl.algorithms package.
     However, in Pendulum, weight_upper > 0 hurts performance.
     """
-    def run(self, args):
-        reward_decay = 0.99
-        batch_size = 32
-        replay_size = 10000
-        epsilon = hrl.utils.CappedLinearSequence(step=3e5, start=1.0, end=0.05)
-        # epsilon = hrl.utils.CosSequence(step=3e5, start=0.95, end=0.05)
-
+    def __init__(self):
         env = gym.make("PongNoFrameskip-v4")
-        # env = hrl.envs.C2DEnvWrapper(env, [5])
-
-        env = hrl.envs.AugmentEnvWrapper(env, reward_decay=reward_decay, reward_scale=0.5,
-                                         reward_shaping_proc=hrl.envs.InfoChange(decrement_weight={"ale.lives": -2}),
-                                         state_augment_proc=state_trans_atari, state_stack_n=4)
-
-        state_shape = [84, 84, 4]  # list(env.observation_space.shape)
-        global_step = tf.get_variable('global_step', [],
-                                      dtype=tf.int32,
-                                      initializer=tf.constant_initializer(0),
-                                      trainable=False)
-        agent = per.PrioritizedDQN(
-            # EpsilonGreedyPolicyMixin params
-            actions=range(env.action_space.n),
-            epsilon=epsilon,
-            # DeepQFuncMixin params
-            gamma=reward_decay,
-            f_net_dqn=f_net_atari, state_shape=state_shape, num_actions=env.action_space.n,
-            training_params=(tf.train.AdamOptimizer(learning_rate=0.0001), 1.0),
-            schedule=(4, 1000),
-            greedy_policy=True,
-            ddqn=True,
-            # ReplayMixin params
-            buffer_class=hrl.playback.NearPrioritizedPlayback,
-            buffer_param_dict={
-                "capacity": replay_size,
-                "sample_shapes": {
-                    'state': state_shape,
-                    'action': (),
-                    'reward': (),
-                    'next_state': state_shape,
-                    'episode_done': ()
-                },
-                "priority_bias": 0.5,
-                "importance_weight": hrl.utils.CappedLinearSequence(1e6, 0.4, 1.0),
-                "augment_offset": {
-                    "state": -0,
-                    "next_state": -0,
-                },
-                "augment_scale": {
-                    "state": 1 / 255.0,
-                    "next_state": 1 / 255.0,
-                }
-            },
-            batch_size=batch_size,
-            global_step=global_step,
-        )
-
-        config = tf.ConfigProto()
-        config.gpu_options.allow_growth = True
-        sv = agent.init_supervisor(graph=tf.get_default_graph(), worker_index=0,
-                                   init_op=tf.global_variables_initializer(), save_dir=args.logdir)
-        with sv.managed_session(config=config) as sess:
-            agent.set_session(sess)
-            runner = hrl.envs.EnvRunner(env, agent, reward_decay=reward_decay,
-                                        evaluate_interval=sys.maxint, render_interval=sys.maxint, logdir=args.logdir)
-            runner.episode(100000)
+        env = ScaledFloatFrame(wrap_dqn(env))
+        super(PERPong, self).__init__(env)
 
 Experiment.register(PERPong, "PERDQN for Pong")
 
 
-class ACOOAtari(Experiment):
-    def __init__(self, env):
-        self.env = env
-        Experiment.__init__(self)
+class ACOOAtari(ACOOExperiment):
 
-    def run(self, args):
-        cluster = eval(args.cluster)
-        cluster_spec = tf.train.ClusterSpec(cluster)
-        config = tf.ConfigProto()
-        config.gpu_options.allow_growth = True
-        server = tf.train.Server(cluster_spec,
-                                 job_name=args.job,
-                                 task_index=args.index,
-                                 config=config)
-        worker_n = len(cluster["worker"])
-        if args.job == "ps":
-            logging.warning("starting ps server")
-            server.join()
-        else:
-            reward_decay = 0.99
-            on_batch_size = 32
-            off_batch_size = 32
-            off_interval = 9
-            sync_interval = 1000
-            replay_size = 10000
-            prob_min = 5e-3
-            # entropy = 1e-3
-            # entropy = hrl.utils.CosSequence(1e6 / on_batch_size, 1e-5, 1e-7)
-            # entropy = 1e-2
-            entropy = hrl.utils.CappedLinear(4e5, 1e-2, 1e-4)
-            l2 = 1e-8
-            optimizer = lambda: tf.train.AdamOptimizer(1e-4)  # called later on correct device context
-            kwargs = {"ddqn": False, "aux_r": False, "aux_d": False, "reward_decay": reward_decay}
-            env = self.env
+    def __init__(self, env, f_create_net=None, episode_n=10000, reward_decay=0.99, on_batch_size=32, off_batch_size=32,
+                 off_interval=8, sync_interval=1000, replay_size=10000, prob_min=5e-3,
+                 entropy=hrl.utils.CappedLinear(4e5, 1e-2, 1e-3), l2=1e-8,
+                 optimizer_ctor=lambda: tf.train.AdamOptimizer(1e-4), ddqn=False, aux_r=False, aux_d=False):
 
-            def create_ac_atari(input_state, num_action, **kwargs):
+        def create_ac_atari(input_state, num_action, **kwargs):
+            se = hrl.utils.Network.conv2ds(input_state,
+                                           shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
+                                           out_flatten=True,
+                                           activation=tf.nn.relu,
+                                           l2=l2,
+                                           var_scope="se")
+
+            q = hrl.utils.Network.layer_fcs(se, [256], num_action,
+                                            activation_hidden=tf.nn.relu,
+                                            l2=l2,
+                                            var_scope="q")
+            pi = hrl.utils.Network.layer_fcs(se, [256], num_action,
+                                             activation_hidden=tf.nn.relu,
+                                             # activation_out=tf.nn.softplus,
+                                             l2=l2,
+                                             var_scope="pi")
+
+            pi = tf.nn.softmax(pi)
+            # pi = pi + prob_min
+            # pi = pi / tf.reduce_sum(pi, axis=-1, keep_dims=True)
+            r = hrl.utils.Network.layer_fcs(se, [256], 1,
+                                            activation_hidden=tf.nn.relu,
+                                            l2=l2,
+                                            var_scope="r")
+
+            return {"pi": pi, "q": q, "se": se, "r": r}
+
+        def create_duel_ac_atari(input_state, num_action, **kwargs):
+            with tf.variable_scope("se"):
                 se = hrl.utils.Network.conv2ds(input_state,
                                                shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
                                                out_flatten=True,
                                                activation=tf.nn.relu,
                                                l2=l2,
-                                               var_scope="se")
+                                               var_scope="convolution")
+                se = hrl.utils.Network.layer_fcs(se, [], 256, activation_hidden=None,
+                                                 activation_out=tf.nn.relu, l2=l2, var_scope="fc")
 
-                q = hrl.utils.Network.layer_fcs(se, [256], num_action,
+                a = hrl.utils.Network.layer_fcs(se, [], num_action, activation_hidden=None,
+                                                activation_out=None, l2=l2, var_scope="a")
+                a = a - tf.reduce_mean(a, axis=-1, keep_dims=True)
+
+            with tf.variable_scope("q"):
+                v = hrl.utils.Network.layer_fcs(se, [], 1,
                                                 activation_hidden=tf.nn.relu,
                                                 l2=l2,
-                                                var_scope="q")
-                pi = hrl.utils.Network.layer_fcs(se, [256], num_action,
-                                                 activation_hidden=tf.nn.relu,
-                                                 # activation_out=tf.nn.softplus,
-                                                 l2=l2,
-                                                 var_scope="pi")
+                                                var_scope="v")
+                q = v + a
 
-                pi = tf.nn.softmax(pi)
-                # pi = pi + prob_min
-                # pi = pi / tf.reduce_sum(pi, axis=-1, keep_dims=True)
-                r = hrl.utils.Network.layer_fcs(se, [256], 1,
-                                                activation_hidden=tf.nn.relu,
-                                                l2=l2,
-                                                var_scope="r")
+            pi = hrl.utils.Network.layer_fcs(a, [], num_action,
+                                             activation_hidden=tf.nn.relu,
+                                             # activation_out=tf.nn.softplus,
+                                             l2=l2,
+                                             var_scope="pi")
 
-                return {"pi": pi, "q": q, "se": se, "r": r}
+            pi = tf.nn.softmax(pi)
+            # pi = pi + prob_min
+            # pi = pi / tf.reduce_sum(pi, axis=-1, keep_dims=True)
+            r = hrl.utils.Network.layer_fcs(se, [256], 1,
+                                            activation_hidden=tf.nn.relu,
+                                            l2=l2,
+                                            var_scope="r")
 
-            def create_duel_ac_atari(input_state, num_action, **kwargs):
-                with tf.variable_scope("se"):
-                    se = hrl.utils.Network.conv2ds(input_state,
-                                                   shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
-                                                   out_flatten=True,
-                                                   activation=tf.nn.relu,
-                                                   l2=l2,
-                                                   var_scope="convolution")
-                    se = hrl.utils.Network.layer_fcs(se, [], 256, activation_hidden=None,
-                                                     activation_out=tf.nn.relu, l2=l2, var_scope="fc")
+            return {"pi": pi, "q": q, "se": se, "r": r}
 
-                    a = hrl.utils.Network.layer_fcs(se, [], num_action, activation_hidden=None,
-                                                    activation_out=None, l2=l2, var_scope="a")
-                    a = a - tf.reduce_mean(a, axis=-1, keep_dims=True)
+        if f_create_net is None:
+            f_create_net = create_ac_atari
 
-                with tf.variable_scope("q"):
-                    v = hrl.utils.Network.layer_fcs(se, [], 1,
-                                                    activation_hidden=tf.nn.relu,
-                                                    l2=l2,
-                                                    var_scope="v")
-                    q = v + a
-
-                pi = hrl.utils.Network.layer_fcs(a, [], num_action,
-                                                 activation_hidden=tf.nn.relu,
-                                                 # activation_out=tf.nn.softplus,
-                                                 l2=l2,
-                                                 var_scope="pi")
-
-                pi = tf.nn.softmax(pi)
-                # pi = pi + prob_min
-                # pi = pi / tf.reduce_sum(pi, axis=-1, keep_dims=True)
-                r = hrl.utils.Network.layer_fcs(se, [256], 1,
-                                                activation_hidden=tf.nn.relu,
-                                                l2=l2,
-                                                var_scope="r")
-
-                return {"pi": pi, "q": q, "se": se, "r": r}
-
-            state_shape = [84, 84, 4]  # list(env.observation_space.shape)
-            with tf.device("/job:worker/task:0"):
-                global_step = tf.get_variable('global_step', [],
-                                              initializer=tf.constant_initializer(0),
-                                              trainable=False)
-                global_net = a3coo.ActorCritic(0, "global_net", state_shape, env.action_space.n,
-                                               create_ac_atari, optimizer=optimizer(),
-                                               global_step=global_step, **kwargs)
-
-            for i in range(worker_n):
-                with tf.device("/job:worker/task:%d" % i):
-                    worker = a3coo.A3CAgent(
-                        index=i,
-                        parent_net=global_net,
-                        create_net=create_ac_atari,
-                        state_shape=state_shape,
-                        num_actions=env.action_space.n,
-                        replay_capacity=replay_size,
-                        train_on_interval=on_batch_size,
-                        train_off_interval=off_interval,
-                        target_follow_interval=sync_interval,
-                        off_batch_size=off_batch_size,
-                        entropy=entropy,
-                        global_step=global_step,
-                        optimizer=optimizer(),
-                        **kwargs
-                    )
-                    if i == args.index:
-                        agent = worker
-
-            sv = agent.init_supervisor(graph=tf.get_default_graph(), worker_index=args.index,
-                                       init_op=tf.global_variables_initializer(), save_dir=args.logdir)
-
-            with sv.prepare_or_wait_for_session(server.target) as sess:
-                agent.set_session(sess)
-                runner = hrl.envs.EnvRunner(env, agent, reward_decay=reward_decay,
-                                            evaluate_interval=sys.maxint, render_interval=sys.maxint,
-                                            logdir=args.logdir if args.index == 0 else None)
-                runner.episode(100000)
+        super(ACOOAtari, self).__init__(env, f_create_net, episode_n, reward_decay, on_batch_size, off_batch_size,
+                                        off_interval, sync_interval, replay_size, prob_min, entropy, l2, optimizer_ctor,
+                                        ddqn, aux_r, aux_d)
 
 
 class ACOOPong(ACOOAtari):
@@ -359,146 +222,20 @@ class ACOOPong(ACOOAtari):
 Experiment.register(ACOOPong, "Actor Critic for Pong")
 
 
-class DQNBattleZone(Experiment):
-    """
-    do not converge on BattleZone.
-    """
-    def run(self, args):
-        reward_decay = 0.99
-        batch_size = 32
-        replay_size = 10000
-        epsilon = hrl.utils.CappedLinearSequence(step=4e5, start=1.0, end=0.01)
-        # epsilon = hrl.utils.CosSequence(step=4e5, start=1.0, end=0.05)
+class DQNBattleZone(DQNAtari):
+    def __init__(self):
         env = gym.make("BattleZoneNoFrameskip-v4")
-
-        # env = hrl.envs.AugmentEnvWrapper(env, reward_decay=reward_decay, reward_scale=0.5,
-        #                                  reward_shaping_proc=hrl.envs.InfoChange(decrement_weight={"ale.lives": -2}),
-        #                                  state_augment_proc=state_trans_atari, state_stack_n=4, state_skip=4)
-
         env = ScaledFloatFrame(wrap_dqn(env))
-
-        state_shape = [84, 84, 4]  # list(env.observation_space.shape)
-        global_step = tf.get_variable('global_step', [],
-                                      dtype=tf.int32,
-                                      initializer=tf.constant_initializer(0),
-                                      trainable=False)
-        agent = dqn.DQN(
-            # EpsilonGreedyPolicyMixin params
-            actions=range(env.action_space.n),
-            epsilon=epsilon,
-            # DeepQFuncMixin params
-            gamma=reward_decay,
-            f_net_dqn=f_net_atari, state_shape=state_shape, num_actions=env.action_space.n,
-            training_params=(tf.train.AdamOptimizer(learning_rate=0.0001), 1.0),
-            schedule=(4, 1000),
-            greedy_policy=True,
-            ddqn=True,
-            # ReplayMixin params
-            buffer_class=hrl.playback.MapPlayback,
-            buffer_param_dict={
-                "capacity": replay_size,
-                "sample_shapes": {
-                    'state': state_shape,
-                    'action': (),
-                    'reward': (),
-                    'next_state': state_shape,
-                    'episode_done': ()
-                },
-                # "augment_offset": {
-                #     "state": -0,
-                #     "next_state": -0,
-                # },
-                # "augment_scale": {
-                #     "state": 1/255.0,
-                #     "next_state": 1/255.0,
-                # }
-            },
-            batch_size=batch_size,
-            global_step=global_step
-        )
-
-        config = tf.ConfigProto()
-        config.gpu_options.allow_growth = True
-        sv = agent.init_supervisor(graph=tf.get_default_graph(), worker_index=args.index,
-                                   init_op=tf.global_variables_initializer(), save_dir=args.logdir)
-        with sv.managed_session(config=config) as sess:
-            agent.set_session(sess)
-            runner = hrl.envs.EnvRunner(env, agent, reward_decay=reward_decay,
-                                        evaluate_interval=sys.maxint, render_interval=sys.maxint,
-                                        logdir=args.logdir if args.index == 0 else None)
-            runner.episode(100000)
+        super(DQNBattleZone, self).__init__(env)
 
 Experiment.register(DQNBattleZone, "DQN for BattleZone")
 
 
-class DQNBreakout(Experiment):
-    """
-    converges on Pendulum. OT implementation from hobotrl.algorithms package.
-    However, in Pendulum, weight_upper > 0 hurts performance.
-    """
-    def run(self, args):
-        reward_decay = 0.99
-        batch_size = 32
-        replay_size = 10000
-        epsilon = hrl.utils.CappedLinear(step=4e5, start=1.0, end=0.01)
-        # epsilon = hrl.utils.CosSequence(step=4e5, start=1.0, end=0.05)
+class DQNBreakout(DQNAtari):
+    def __init__(self):
         env = gym.make("BreakoutNoFrameskip-v4")
-
-        # env = hrl.envs.AugmentEnvWrapper(env, reward_decay=reward_decay, reward_scale=1.0,
-        #                                  reward_shaping_proc=hrl.envs.InfoChange(decrement_weight={"ale.lives": -1}),
-        #                                  state_augment_proc=None, state_stack_n=4, state_skip=4)
-
         env = ScaledFloatFrame(wrap_dqn(env))
-
-        state_shape = [84, 84, 4]  # list(env.observation_space.shape)
-        global_step = tf.get_variable('global_step', [],
-                                      dtype=tf.int32,
-                                      initializer=tf.constant_initializer(0),
-                                      trainable=False)
-        agent = dqn.DQN(
-            # EpsilonGreedyPolicyMixin params
-            actions=range(env.action_space.n),
-            epsilon=epsilon,
-            # DeepQFuncMixin params
-            gamma=reward_decay,
-            f_net_dqn=f_net_atari, state_shape=state_shape, num_actions=env.action_space.n,
-            training_params=(tf.train.AdamOptimizer(learning_rate=0.0001), 1.0),
-            schedule=(4, 1000),
-            greedy_policy=True,
-            ddqn=True,
-            # ReplayMixin params
-            buffer_class=hrl.playback.MapPlayback,
-            buffer_param_dict={
-                "capacity": replay_size,
-                "sample_shapes": {
-                    'state': state_shape,
-                    'action': (),
-                    'reward': (),
-                    'next_state': state_shape,
-                    'episode_done': ()
-                },
-                # "augment_offset": {
-                #     "state": -0,
-                #     "next_state": -0,
-                # },
-                # "augment_scale": {
-                #     "state": 1/255.0,
-                #     "next_state": 1/255.0,
-                # }
-            },
-            batch_size=batch_size,
-            global_step=global_step
-        )
-
-        config = tf.ConfigProto()
-        config.gpu_options.allow_growth = True
-        sv = agent.init_supervisor(graph=tf.get_default_graph(), worker_index=0,
-                                   init_op=tf.global_variables_initializer(), save_dir=args.logdir)
-        with sv.managed_session(config=config) as sess:
-            agent.set_session(sess)
-            runner = hrl.envs.EnvRunner(env, agent, reward_decay=reward_decay,
-                                        evaluate_interval=sys.maxint, render_interval=sys.maxint, logdir=args.logdir)
-            runner.episode(100000)
+        super(DQNBreakout, self).__init__(env)
 
 Experiment.register(DQNBreakout, "DQN for Breakout")
 
