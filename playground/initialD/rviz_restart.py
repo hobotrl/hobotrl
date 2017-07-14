@@ -24,7 +24,7 @@ class restart_ros_launch:
         self.last_pos = deque(maxlen=200) # Car status is 50Hz, so when car stops moving 4 secs, treat it as stop.
         self.destination = np.zeros([1,3])
         rospack = rospkg.RosPack()  # get an instance of RosPack with the default search paths 
-        self.launch_file = rospack.get_path('planning')+"/launch/honda_J2-4.launch"
+        self.launch_file = rospack.get_path('planning')+"/launch/honda_J2-1.launch"
         
     def restart(self):
         # restart launch file
