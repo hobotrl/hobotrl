@@ -1298,7 +1298,7 @@ class RandomizedBootstrappedDQNBreakOut(BootstrappedDQNAtari):
         from hobotrl.algorithms.bootstrapped_DQN import RandomizedBootstrappedDQN
 
         def eps_function(step):
-            return 0.1*(math.cos(step/4.0e5*math.pi) + 1)
+            return 0.025*(math.cos(step/4.0e5*math.pi) + 1)
 
         BootstrappedDQNAtari.__init__(self,
                                       env=gym.make('Breakout-v0'),
@@ -1306,7 +1306,7 @@ class RandomizedBootstrappedDQNBreakOut(BootstrappedDQNAtari):
                                                    # "render_env": True,
                                                    # "frame_time": 0.05
                                                    },
-                                      agent_args={"eps_function": LinearSequence(1e6, 0.2, 0.0)}, # {"eps_function": eps_function},
+                                      agent_args={"eps_function": eps_function},  # {"eps_function": LinearSequence(1e6, 0.2, 0.0)},
                                       agent_type=RandomizedBootstrappedDQN
                                       )
 
