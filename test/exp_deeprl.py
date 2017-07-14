@@ -1265,7 +1265,7 @@ class BootstrappedDQNIceHockey(BootstrappedDQNAtari):
                                           "reward_scale": 1.0
                                           },
                                       agent_args={
-                                          "batch_size": 3,
+                                          "batch_size": 8,
                                       },
                                       # runner_args={"render_env": True,
                                       #              "frame_time": 0.05}
