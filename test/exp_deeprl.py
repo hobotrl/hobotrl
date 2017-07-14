@@ -1269,7 +1269,7 @@ class BootstrappedDQNIceHockey(BootstrappedDQNAtari):
                                       },
                                       # runner_args={"render_env": True,
                                       #              "frame_time": 0.05}
-                                      frame_skip_n=1
+                                      frame_skip_n=4
                                       )
 
     def run(self, args, **kwargs):
