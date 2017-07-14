@@ -157,5 +157,61 @@ class A3CCarDiscrete(A3CCarExp):
 Experiment.register(A3CCarDiscrete, "discrete A3C for CarRacing")
 
 
+class DDPGCar(DPGExperiment):
+    def __init__(self, env=None, f_net_ddp=None, f_net_dqn=None, episode_n=10000,
+                 optimizer_ddp_ctor=lambda: tf.train.AdamOptimizer(learning_rate=1e-4),
+                 optimizer_dqn_ctor=lambda: tf.train.AdamOptimizer(learning_rate=1e-3), target_sync_rate=0.001,
+                 ddp_update_interval=1, ddp_sync_interval=1, dqn_update_interval=1, dqn_sync_interval=1,
+                 max_gradient=10.0, ou_params=(0.0, 0.15, 0.2), gamma=0.99, batch_size=32, replay_capacity=10000):
+
+        l2 = 1e-8
+
+        def f_actor(input_state, action_shape, is_training):
+            se = hrl.utils.Network.conv2ds(input_state,
+                                           shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
+                                           out_flatten=True,
+                                           activation=tf.nn.relu,
+                                           l2=l2,
+                                           var_scope="se")
+
+            action = hrl.utils.Network.layer_fcs(se, [256], action_shape[0],
+                                                 activation_hidden=tf.nn.relu,
+                                                 activation_out=tf.nn.tanh,
+                                                 l2=l2,
+                                                 var_scope="action")
+            logging.warning("action:%s", action)
+            return action
+
+        def f_critic(input_state, input_action, is_training):
+            se = hrl.utils.Network.conv2ds(input_state,
+                                           shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
+                                           out_flatten=True,
+                                           activation=tf.nn.relu,
+                                           l2=l2,
+                                           var_scope="se")
+            se = tf.concat([se, input_action], axis=1)
+            q = hrl.utils.Network.layer_fcs(se, [256], 1,
+                                            activation_hidden=tf.nn.relu,
+                                            activation_out=None,
+                                            l2=l2,
+                                            var_scope="q")
+            q = tf.squeeze(q, axis=1)
+            return q
+        f_net_dqn = f_critic if f_net_dqn is None else f_net_dqn
+        f_net_ddp = f_actor if f_net_ddp is None else f_net_ddp
+        if env is None:
+            env = gym.make("CarRacing-v0")
+            env = envs.MaxAndSkipEnv(env, skip=2, max_len=1)
+            env = envs.FrameStack(env, 4)
+            env = envs.ScaledRewards(env, 0.1)
+            env = envs.ScaledFloatFrame(env)
+
+        super(DDPGCar, self).__init__(env, f_net_ddp, f_net_dqn, episode_n, optimizer_ddp_ctor, optimizer_dqn_ctor,
+                                      target_sync_rate, ddp_update_interval, ddp_sync_interval, dqn_update_interval,
+                                      dqn_sync_interval, max_gradient, ou_params, gamma, batch_size, replay_capacity)
+
+Experiment.register(DDPGCar, "DDPG for CarRacing")
+
+
 if __name__ == '__main__':
     Experiment.main()
