@@ -19,6 +19,7 @@ from hobotrl.environments import *
 import hobotrl.algorithms.ac as ac
 import hobotrl.algorithms.dqn as dqn
 import hobotrl.algorithms.per as per
+import hobotrl.algorithms.dpg as dpg
 import playground.optimal_tighten as play_ot
 import hobotrl.algorithms.ot as ot
 import playground.a3c_onoff as a3coo
@@ -82,7 +83,7 @@ class DQNExperiment(Experiment):
                     'reward': (),
                     'next_state': state_shape,
                     'episode_done': ()
-                }},
+                 }},
             batch_size=self.batch_size,
             global_step=global_step
         )
@@ -178,6 +179,104 @@ class PERDQNExperiment(Experiment):
             agent.set_session(sess)
             runner = hrl.envs.EnvRunner(self.env, agent, evaluate_interval=sys.maxint, render_interval=sys.maxint,
                                         logdir=args.logdir)
+            runner.episode(self.episode_n)
+
+
+class DPGExperiment(Experiment):
+
+    def __init__(self, env,
+                 f_net_ddp,
+                 f_net_dqn,
+                 episode_n=1000,
+                 optimizer_ddp_ctor=lambda: tf.train.AdamOptimizer(learning_rate=1e-3),
+                 optimizer_dqn_ctor=lambda: tf.train.AdamOptimizer(learning_rate=1e-3),
+                 target_sync_rate=0.001,
+                 ddp_update_interval=1,
+                 ddp_sync_interval=1,
+                 dqn_update_interval=1,
+                 dqn_sync_interval=1,
+                 max_gradient=10.0,
+                 ou_params=(0.0, 0.15, 0.2),
+                 gamma=0.99,
+                 batch_size=8,
+                 replay_capacity=1000):
+        self.env, self.f_net_ddp, self.f_net_dqn, self.episode_n, \
+            self.optimizer_ddp_ctor, self.optimizer_dqn_ctor, self.target_sync_rate, \
+            self.ddp_update_interval, self.ddp_sync_interval, \
+            self.dqn_update_interval, self.dqn_sync_interval, \
+            self.max_gradient, \
+            self.gamma, self.ou_params, \
+            self.batch_size, self.replay_capacity = env, f_net_ddp, f_net_dqn, episode_n, \
+                                                    optimizer_ddp_ctor, optimizer_dqn_ctor, target_sync_rate, \
+                                                    ddp_update_interval, ddp_sync_interval, \
+                                                    dqn_update_interval, dqn_sync_interval, \
+                                                    max_gradient, \
+                                                    gamma, ou_params, \
+                                                    batch_size, replay_capacity
+        super(DPGExperiment, self).__init__()
+
+    def run(self, args):
+        training_params_ddp = (self.optimizer_ddp_ctor(), self.target_sync_rate, self.max_gradient)
+        training_params_dqn = (self.optimizer_dqn_ctor(), self.target_sync_rate, self.max_gradient)
+        schedule_ddp = (self.ddp_update_interval, self.ddp_sync_interval)
+        schedule_dqn = (self.dqn_update_interval, self.dqn_sync_interval)
+
+        state_shape = list(self.env.observation_space.shape)
+        action_shape = list(self.env.action_space.shape)
+        global_step = tf.get_variable(
+            'global_step', [], dtype=tf.int32,
+             initializer=tf.constant_initializer(0), trainable=False
+        )
+        agent = dpg.DPG(
+            # === ReplayMixin params ===
+            buffer_class=hrl.playback.MapPlayback,
+            buffer_param_dict={
+                "capacity": self.replay_capacity,
+                "sample_shapes": {
+                    'state': state_shape,
+                    'action': action_shape,
+                    'reward': (),
+                    'next_state': state_shape,
+                    'episode_done': ()
+                 }},
+            batch_size=self.batch_size,
+            # === OUExplorationMixin ===
+            ou_params=self.ou_params,
+            action_shape=action_shape,
+            # === DeepDeterministicPolicyMixin ===
+            ddp_param_dict={
+                'f_net': self.f_net_ddp,
+                'state_shape': state_shape,
+                'action_shape': action_shape,
+                'training_params': training_params_ddp,
+                'schedule': schedule_ddp,
+                'graph': tf.get_default_graph()
+            },
+            # === DeepQFuncMixin params ===
+            dqn_param_dict={
+                'gamma': self.gamma,
+                'f_net': self.f_net_dqn,
+                'state_shape': state_shape,
+                'action_shape': action_shape,
+                'training_params': training_params_dqn,
+                'schedule': schedule_dqn,
+                'greedy_policy': True,
+                'graph': tf.get_default_graph()
+            },
+            is_action_in=True
+        )
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        sv = agent.init_supervisor(
+            graph=tf.get_default_graph(), worker_index=0,
+            init_op=tf.global_variables_initializer(), save_dir=args.logdir
+        )
+        with sv.managed_session(config=config) as sess:
+            agent.set_session(sess)
+            runner = hrl.envs.EnvRunner(
+                self.env, agent, evaluate_interval=sys.maxint,
+                render_interval=1, logdir=args.logdir
+            )
             runner.episode(self.episode_n)
 
 
