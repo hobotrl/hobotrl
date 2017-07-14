@@ -1245,7 +1245,11 @@ class BootstrappedDQNEnduro(BootstrappedDQNAtari):
                                       env=gym.make('Enduro-v0'),
                                       augment_wrapper_args={
                                           "reward_scale": 0.3
-                                          })
+                                          },
+                                      agent_args={
+                                          "batch_size": 3
+                                      },
+                                      frame_skip_n=1)
 
     def run(self, args, **kwargs):
         BootstrappedDQNAtari.run(self, args, checkpoint_number=1300000)
