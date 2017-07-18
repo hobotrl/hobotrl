@@ -13,9 +13,10 @@ import rospy
 import rospkg
 import numpy as np
 from numpy import linalg as LA
-from std_msgs.msg import Int16
+from std_msgs.msg import Int16, Bool
 from autodrive_msgs.msg import CarStatus
 from collections import deque
+
 
 class restart_ros_launch:
     def __init__(self):
@@ -25,14 +26,34 @@ class restart_ros_launch:
         self.destination = np.zeros([1,3])
         rospack = rospkg.RosPack()  # get an instance of RosPack with the default search paths 
         self.launch_file = rospack.get_path('planning')+"/launch/honda_J2-1.launch"
-        
+        self.is_running = False
+
+        rospy.init_node('restart_launch_fle')
+        self.heart_beat = rospy.Publisher("/rl/is_running", Bool, latch=True)
+
     def restart(self):
         # restart launch file
+        print "========================"
+        print "========================"
+        print "Publish heart beat False!"
+        print "========================"
+        print "========================"
+        self.heart_beat.publish(False)
+
         rospy.loginfo("now start launch file again")
         uuid = roslaunch.rlutil.get_or_generate_uuid(None, False)
         roslaunch.configure_logging(uuid)
         launch = roslaunch.parent.ROSLaunchParent(uuid, [self.launch_file])
         launch.start()
+
+        time.sleep(2.0)
+        print "========================"
+        print "========================"
+        print "Publish heart beat True!"
+        print "========================"
+        print "========================"
+        self.heart_beat.publish(True)
+
         self.launch_list[0] = launch
 
     def car_out_of_lane_callback(self, data):
@@ -62,15 +83,20 @@ class restart_ros_launch:
             self.restart()
 
     def sender(self):
-        rospy.init_node('restart_launch_fle')
         uuid = roslaunch.rlutil.get_or_generate_uuid(None, False)
         roslaunch.configure_logging(uuid)
         launch = roslaunch.parent.ROSLaunchParent(uuid, [self.launch_file])
         self.launch_list.append(launch)
-               
+         
         rospy.Subscriber('/error/type', Int16, self.car_out_of_lane_callback)
         rospy.Subscriber('/car/status', CarStatus, self.car_not_move_callback)
         launch.start()
+        
+        time.sleep(2.0)
+        print "========================"
+        print "Publish heart beat True!"
+        print "========================"
+        self.heart_beat.publish(True)
 
         rospy.spin()
 
