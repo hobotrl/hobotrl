@@ -11,13 +11,13 @@ import rospkg
 from autodrive_msgs.msg import Control
 from autodrive_msgs.msg import Obstacles
 from autodrive_msgs.msg import CarStatus
-from std_msgs.msg import Bool
-from std_msgs.msg import Float32
+from std_msgs.msg import Bool, Float32
 from nav_msgs.msg import Path
 import numpy as np
 from numpy import linalg as LA
 
 class MyClass:
+    
     def __init__(self):
         rospy.init_node('gta5_rl_sender')
         self.car_pos_x = 0.0
@@ -25,9 +25,10 @@ class MyClass:
         self.min_path_dis = 0.0
         self.detect_obstacle_range = 10
         self.closest_distance = 10000.0 # initializer
-
-        self.pub_nearest_obs = rospy.Publisher('/rl/has_obstacle_nearby', Bool, queue_size=1000)
-        self.pub_closest_distance = rospy.Publisher('/rl/distance_to_longestpath', Float32, queue_size=1000)
+        
+        self.pub_nearest_obs = rospy.Publisher('rl_has_obstacle_nearby', Bool, queue_size=1000)
+        self.pub_closest_distance = rospy.Publisher('rl_closest_distance_to_longestpath', Float32, queue_size=1000)
+        self.pub_car_velocity = rospy.Publisher('rl_car_velocity', Float32, queue_size=1000)
         rospy.Subscriber('/path/longest', Path, self.calc_nearest_distance_callback)
         rospy.Subscriber('/obstacles', Obstacles, self.calc_nearest_obs_callback)
         rospy.Subscriber('/car/status', CarStatus, self.get_status_callback)
@@ -47,10 +48,11 @@ class MyClass:
     def get_status_callback(self, data):
         self.car_pos_x = data.position.x
         self.car_pos_y = data.position.y
+        self.pub_car_velocity.publish(data.speed)
 
     def calc_nearest_distance_callback(self, data):
+        
         aaa = list()
-        # print "------------------------------------------------------------"
         min_idx = self.find_minimum_distance(data.poses)
         if min_idx is 0:
             return
@@ -71,6 +73,7 @@ class MyClass:
         self.pub_nearest_obs.publish(near_obs)
 
     def sender(self):
+        
         rospy.spin()
 
 if __name__ == '__main__':

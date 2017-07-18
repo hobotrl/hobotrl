@@ -3,12 +3,12 @@
 # Functionality: restart roslaunch file. Can be used to open & close launch file repeatedly.
 # When the car stops, it will relaunch everything.
 # Usage: 
-# 1. set your launch file to restart_ros_launch.launch_file variable
+# 1. set your launch file's name to 'self.process_name' variable
 # 2. start roscore in a terminal
 # 3. in shell: python rviz_restart.py
 
 import time
-import roslaunch
+import subprocess
 import rospy
 import rospkg
 import numpy as np
@@ -25,14 +25,13 @@ class restart_ros_launch:
         self.last_pos = deque(maxlen=200) # Car status is 50Hz, so when car stops moving 4 secs, treat it as stop.
         self.destination = np.zeros([1,3])
         rospack = rospkg.RosPack()  # get an instance of RosPack with the default search paths 
-        self.launch_file = rospack.get_path('planning')+"/launch/honda_J2-1.launch"
         self.is_running = False
+        self.process_name = ['roslaunch', 'planning', 'honda_S5-1.launch']
 
         rospy.init_node('restart_launch_fle')
         self.heart_beat = rospy.Publisher("/rl/is_running", Bool, latch=True)
 
-    def restart(self):
-        # restart launch file
+    def terminate(self):
         print "========================"
         print "========================"
         print "Publish heart beat False!"
@@ -40,13 +39,21 @@ class restart_ros_launch:
         print "========================"
         self.heart_beat.publish(False)
 
-        rospy.loginfo("now start launch file again")
-        uuid = roslaunch.rlutil.get_or_generate_uuid(None, False)
-        roslaunch.configure_logging(uuid)
-        launch = roslaunch.parent.ROSLaunchParent(uuid, [self.launch_file])
-        launch.start()
+        if len(self.launch_list) is 0:
+            print("no process to terminate")
+        else:
+            rospy.loginfo("now shut down launch file")
+            self.launch_list[0].terminate()
+            self.launch_list[0].wait()
+            self.launch_list = []
+            print("Shutdown!")
 
-        time.sleep(2.0)
+    def restart_callback(self):
+        # restart launch file
+        rosrun = subprocess.Popen(self.process_name)
+        self.launch_list.append(rosrun)
+        print("restart launch file finished!")
+
         print "========================"
         print "========================"
         print "Publish heart beat True!"
@@ -54,17 +61,12 @@ class restart_ros_launch:
         print "========================"
         self.heart_beat.publish(True)
 
-        self.launch_list[0] = launch
-
     def car_out_of_lane_callback(self, data):
         if data.data is 1:
             rospy.logwarn("Car out of Lane!(From error msg)")
-            rospy.loginfo("now shut down launch file in 2 seconds")
-            self.launch_list[0].shutdown()
-            time.sleep(2)
-                        
-            self.restart()
-        
+              
+            self.terminate()
+                               
     def car_not_move_callback(self, data):
         # NEED TO BE DONE
         # The car stops or go with a very slow speed, 
@@ -74,25 +76,18 @@ class restart_ros_launch:
         # rospy.loginfo("-1 is "+str(self.last_pos[-1]))
         self.last_pos.append(np.array([data.position.x, data.position.y, data.position.z]))
         if len(self.last_pos) is 200 and LA.norm(self.last_pos[0] - self.last_pos[-1])<0.1:
-            self.last_pos.clear()
             rospy.logwarn("The car stops moving!")
-            rospy.loginfo("now shut down launch file in 2 seconds")
-            self.launch_list[0].shutdown()
-            time.sleep(2)
-            
-            self.restart()
+            self.last_pos.clear() 
+            self.terminate()
 
     def sender(self):
-        uuid = roslaunch.rlutil.get_or_generate_uuid(None, False)
-        roslaunch.configure_logging(uuid)
-        launch = roslaunch.parent.ROSLaunchParent(uuid, [self.launch_file])
-        self.launch_list.append(launch)
-         
         rospy.Subscriber('/error/type', Int16, self.car_out_of_lane_callback)
         rospy.Subscriber('/car/status', CarStatus, self.car_not_move_callback)
-        launch.start()
-        
-        time.sleep(2.0)
+        rospy.Subscriber('rl/simulator_restart', Bool, self.restart_callback)
+
+        rosrun = subprocess.Popen(self.process_name)
+        self.launch_list.append(rosrun)
+         
         print "========================"
         print "Publish heart beat True!"
         print "========================"
@@ -100,7 +95,7 @@ class restart_ros_launch:
 
         rospy.spin()
 
-        self.launch_list[0].shutdown()
+        self.terminate()
 
 
 if __name__ == '__main__':
