@@ -48,7 +48,7 @@ class restart_ros_launch:
             self.launch_list = []
             print("Shutdown!")
 
-    def restart_callback(self):
+    def restart_callback(self, data):
         # restart launch file
         rosrun = subprocess.Popen(self.process_name)
         self.launch_list.append(rosrun)
@@ -83,15 +83,15 @@ class restart_ros_launch:
     def sender(self):
         rospy.Subscriber('/error/type', Int16, self.car_out_of_lane_callback)
         rospy.Subscriber('/car/status', CarStatus, self.car_not_move_callback)
-        rospy.Subscriber('rl/simulator_restart', Bool, self.restart_callback)
+        rospy.Subscriber('/rl/simulator_restart', Bool, self.restart_callback)
 
-        rosrun = subprocess.Popen(self.process_name)
-        self.launch_list.append(rosrun)
+        # rosrun = subprocess.Popen(self.process_name)
+        # self.launch_list.append(rosrun)
          
-        print "========================"
-        print "Publish heart beat True!"
-        print "========================"
-        self.heart_beat.publish(True)
+        # print "========================"
+        # print "Publish heart beat True!"
+        # print "========================"
+        # self.heart_beat.publish(True)
 
         rospy.spin()
 

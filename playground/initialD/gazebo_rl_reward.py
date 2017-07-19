@@ -26,9 +26,9 @@ class MyClass:
         self.detect_obstacle_range = 10
         self.closest_distance = 10000.0 # initializer
         
-        self.pub_nearest_obs = rospy.Publisher('rl_has_obstacle_nearby', Bool, queue_size=1000)
-        self.pub_closest_distance = rospy.Publisher('rl_closest_distance_to_longestpath', Float32, queue_size=1000)
-        self.pub_car_velocity = rospy.Publisher('rl_car_velocity', Float32, queue_size=1000)
+        self.pub_nearest_obs = rospy.Publisher('/rl/has_obstacle_nearby', Bool, queue_size=1000)
+        self.pub_closest_distance = rospy.Publisher('/rl/distance_to_longestpath', Float32, queue_size=1000)
+        self.pub_car_velocity = rospy.Publisher('/rl/car_velocity', Float32, queue_size=1000)
         rospy.Subscriber('/path/longest', Path, self.calc_nearest_distance_callback)
         rospy.Subscriber('/obstacles', Obstacles, self.calc_nearest_obs_callback)
         rospy.Subscriber('/car/status', CarStatus, self.get_status_callback)

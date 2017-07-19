@@ -154,7 +154,10 @@ try:
                 break
             state, action = next_state, next_action
             next_state, reward, done, info = env.step(ACTIONS[action])
-except rospy.ROSInterruptException:
+# except rospy.ROSInterruptException:
+except:
     pass
 finally:
+    print "!!!!!!! Finally"
+    pass
     sess.close()

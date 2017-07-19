@@ -1,23 +1,20 @@
 # -*- coding: utf-8 -*-
+# Basic python
 import time
+# Multi-process
 import multiprocessing
-# from multiprocessing import Queue
 from multiprocessing import JoinableQueue as Queue
 from multiprocessing import Pipe
-import logging
-# from Queue import Queue
-
+# Image
 from scipy.misc import imresize
-
 import cv2
 from cv_bridge import CvBridge, CvBridgeError
-
+# ROS
 import rospy
+from rospy.timer import Timer
 import message_filters
 from std_msgs.msg import Char, Bool, Float32
 from sensor_msgs.msg import Image
-
-from timer import Timer
 
 
 class DrivingSimulatorEnv(object):
@@ -52,12 +49,16 @@ class DrivingSimulatorEnv(object):
         self.defs_reward = defs_reward
         self.defs_action = defs_action
         self.rate_action = rate_action
-
         self.parent_conn, self.child_conn = Pipe()
 
         self.daemon = multiprocessing.Process(target=self.node_daemon,
                                               args=(self.parent_conn,))
         self.daemon.start()
+
+    def shutdown(self):
+        print "Shutting down env."
+        self.daemon.terminate()
+        self.daemon.join()
 
     def node_daemon(self, conn):
         """Reverse poison pill."""
@@ -69,11 +70,11 @@ class DrivingSimulatorEnv(object):
                 if_terminate = conn.recv()
                 print "Daemon received signal {}".format(if_terminate)
                 if if_terminate:
-                    print "Terminating node process: {}".format(self.node.name),
+                    print "Terminating node process: {}. PID: {}".format(
+                        self.node.name, self.node.pid),
                     self.node.terminate()
                     self.node.join()
                     print "Done!"
-                    print "PID is {}".format(self.node.pid)
                     continue
                 else:
                     raise ValueError('Unrecognized signal!')
@@ -84,11 +85,10 @@ class DrivingSimulatorEnv(object):
         self.node = DrivingSimulatorNode(
             self.queue_observation, self.queue_reward, self.queue_action,
             self.defs_observation, self.defs_reward, self.defs_action,
-            self.rate_action,
-            self.child_conn
+            self.rate_action, self.child_conn
         )
+        self.node.daemon = True
         self.node.start()
-
 
     def step(self, action):
         # put action to action queue
@@ -138,7 +138,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
 
         self.conn = conn
 
-        self.terminatable = False
+        self.first_time = True 
 
     def run(self):
         print "Started process: {}".format(self.name)
@@ -147,6 +147,10 @@ class DrivingSimulatorNode(multiprocessing.Process):
         self.heart_beat_listener = rospy.Subscriber(
             '/rl/is_running', Bool,
             callback=self.__daemon_conn
+        )
+
+        self.restart_pub = rospy.Publisher(
+            '/rl/simulator_restart', Bool, queue_size=10, latch=True
         )
 
         self.brg = CvBridge()
@@ -169,6 +173,9 @@ class DrivingSimulatorNode(multiprocessing.Process):
         self.actor_loop = Timer(
             rospy.Duration(1.0/self.rate_action), self.__take_action
         )
+        time.sleep(1.0)
+        print "Signaling simulator restart!"
+        self.restart_pub.publish(True)
         rospy.spin()
         print "Returning from run in process: {}".format(self.name)
 
@@ -196,23 +203,28 @@ class DrivingSimulatorNode(multiprocessing.Process):
         print "__enque_exp: {}".format(args[num_obs:])
 
     def __take_action(self, data):
+       # actions = self.queue_action[-1]
        actions = self.queue_action.get()
        self.queue_action.put(actions)
        self.queue_action.task_done()
-       print "__take_action: {}, q len {}".format(actions,
-                                                  self.queue_action.qsize())
+       print "__take_action: {}, q len {}".format(
+           actions, self.queue_action.qsize()
+       )
 
-       map(lambda args: args[0].publish(args[1]),
-           zip(self.action_pubs, actions))
-
+       map(
+           lambda args: args[0].publish(args[1]),
+           zip(self.action_pubs, actions)
+       )
 
     def __daemon_conn(self, data):
-        print "Heart beat signal: {}".format(data)
-        if not data.data:
-            self.terminatable = True
-        elif self.terminatable:
+        print "Heartbeat signal: {}, First time: {}".format(
+            data, self.first_time
+        )
+        if not data.data and not self.first_time:
+            # rospy.signal_shutdown("Heart beat = False")
             self.conn.send(True)
         else:
-            pass
+             pass
+        self.first_time = False
 
 
