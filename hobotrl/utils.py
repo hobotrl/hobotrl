@@ -543,24 +543,29 @@ class ScheduledParamCollector(object):
     def __init__(self, *args, **kwargs):
         super(ScheduledParamCollector, self).__init__()
         self._params = []
-        self.schedule_params(*args, **kwargs)
+        self.max_depth = 10
+        self.max_param_num = 128  # no algorithm should expose more than 128 hyperparameters!
 
-    def schedule_params(self, *args, **kwargs):
+        self.schedule_params(0, *args, **kwargs)
+
+    def schedule_params(self, _spc_depth, *args, **kwargs):
+        if _spc_depth >= self.max_depth or len(self._params) >= self.max_param_num:
+            return
         for p in args:
             if isinstance(p, ScheduledParam):
                 self.schedule_param(p)
-            elif type(p) == list:
-                self.schedule_params(*p)
+            elif type(p) == list or type(p) == tuple:
+                self.schedule_params(_spc_depth+1, *p)
             elif type(p) == dict:
-                self.schedule_params(**p)
+                self.schedule_params(_spc_depth+1, **p)
         for key in kwargs:
             p = kwargs[key]
             if isinstance(p, ScheduledParam):
                 self.schedule_param(p)
-            elif type(p) == list:
-                self.schedule_params(*p)
+            elif type(p) == list or type(p) == tuple:
+                self.schedule_params(_spc_depth+1, *p)
             elif type(p) == dict:
-                self.schedule_params(**p)
+                self.schedule_params(_spc_depth+1, **p)
 
     def schedule_param(self, param):
         """
