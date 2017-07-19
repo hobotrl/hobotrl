@@ -11,7 +11,7 @@ from tensorflow.contrib.layers import l2_regularizer
 from hobotrl.playback import MapPlayback
 from hobotrl.algorithms.dqn import DQN
 
-from ros_environments_mp import DrivingSimulatorEnv
+from ros_environments import DrivingSimulatorEnv
 
 import rospy
 import message_filters

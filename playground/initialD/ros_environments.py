@@ -1,7 +1,11 @@
 # -*- coding: utf-8 -*-
+import time
 import multiprocessing
+# from multiprocessing import Queue
+from multiprocessing import JoinableQueue as Queue
+from multiprocessing import Pipe
 import logging
-from Queue import Queue
+# from Queue import Queue
 
 from scipy.misc import imresize
 
@@ -49,37 +53,42 @@ class DrivingSimulatorEnv(object):
         self.defs_action = defs_action
         self.rate_action = rate_action
 
-        # self.node_process = multiprocessing.Process(target=self.__new_node)
-        # self.node_process.start()
+        self.parent_conn, self.child_conn = Pipe()
 
-        self.__new_node()
+        self.daemon = multiprocessing.Process(target=self.node_daemon,
+                                              args=(self.parent_conn,))
+        self.daemon.start()
 
-        self.heart_beat_listener = rospy.Subscriber(
-            '/rl/is_running', Bool,
-            callback=self.__monitor_node
-        )
+    def node_daemon(self, conn):
+        """Reverse poison pill."""
+        while True:
+            print "Daemon starting new node"
+            self.__new_node()
+            try:
+                print "Daemon waiting for poison pill"
+                if_terminate = conn.recv()
+                print "Daemon received signal {}".format(if_terminate)
+                if if_terminate:
+                    print "Terminating node process: {}".format(self.node.name),
+                    self.node.terminate()
+                    self.node.join()
+                    print "Done!"
+                    print "PID is {}".format(self.node.pid)
+                    continue
+                else:
+                    raise ValueError('Unrecognized signal!')
+            except EOFError:
+                raise ValueError('Other end terminated!')
 
     def __new_node(self):
-        # ROS node
-        rospy.init_node('DrivingSimulatorEnv')
         self.node = DrivingSimulatorNode(
             self.queue_observation, self.queue_reward, self.queue_action,
             self.defs_observation, self.defs_reward, self.defs_action,
-            self.rate_action
+            self.rate_action,
+            self.child_conn
         )
+        self.node.start()
 
-    def __monitor_node(self, data):
-        is_running = data.data
-        if not is_running:
-            print "Shutdown node!"
-            # self.node.shutdown()
-            # self.node_process.terminate()
-        else:
-            print "Opening node!"
-            pass
-            # self.__new_node()
-            # self.node_process = multiprocessing.Process(target=self.__new_node)
-            # self.node_process.start()
 
     def step(self, action):
         # put action to action queue
@@ -110,14 +119,13 @@ class DrivingSimulatorEnv(object):
         return state
 
 
-class DrivingSimulatorNode(
-    object
-    # multiprocessing.Process
-):
-    def __init__(self, queue_observation, queue_reward, queue_action,
+class DrivingSimulatorNode(multiprocessing.Process):
+    def __init__(self,
+                 queue_observation, queue_reward, queue_action,
                  defs_observation, defs_reward, defs_action,
-                 rate_action):
-        #super(DrivingSimulatorNode, self).__init__()
+                 rate_action, conn):
+        super(DrivingSimulatorNode, self).__init__()
+
         self.queue_observation = queue_observation
         self.queue_reward = queue_reward
         self.queue_action = queue_action
@@ -126,13 +134,27 @@ class DrivingSimulatorNode(
         self.defs_reward = defs_reward
         self.defs_action = defs_action
 
-    # def run(self):
+        self.rate_action = rate_action
+
+        self.conn = conn
+
+        self.terminatable = False
+
+    def run(self):
+        print "Started process: {}".format(self.name)
+        rospy.init_node('Node_DrivingSimulatorEnv_Simulator')
+
+        self.heart_beat_listener = rospy.Subscriber(
+            '/rl/is_running', Bool,
+            callback=self.__daemon_conn
+        )
+
         self.brg = CvBridge()
 
         # subscribers
         f_subs = lambda defs: message_filters.Subscriber(defs[0], defs[1])
-        self.ob_subs = map(f_subs, defs_observation)
-        self.reward_subs = map(f_subs, defs_reward)
+        self.ob_subs = map(f_subs, self.defs_observation)
+        self.reward_subs = map(f_subs, self.defs_reward)
         # sync obs and reward subscribers
         self.ts = message_filters.ApproximateTimeSynchronizer(
             self.ob_subs + self.reward_subs, 10, 0.1, allow_headerless=True
@@ -143,10 +165,12 @@ class DrivingSimulatorNode(
         f_pubs = lambda defs: rospy.Publisher(
             defs[0], defs[1], queue_size=10, latch=True
         )
-        self.action_pubs = map(f_pubs, defs_action)
+        self.action_pubs = map(f_pubs, self.defs_action)
         self.actor_loop = Timer(
-            rospy.Duration(1.0/rate_action), self.__take_action
+            rospy.Duration(1.0/self.rate_action), self.__take_action
         )
+        rospy.spin()
+        print "Returning from run in process: {}".format(self.name)
 
     def __enque_exp(self, *args):
         if self.queue_observation.full():
@@ -180,5 +204,15 @@ class DrivingSimulatorNode(
 
        map(lambda args: args[0].publish(args[1]),
            zip(self.action_pubs, actions))
+
+
+    def __daemon_conn(self, data):
+        print "Heart beat signal: {}".format(data)
+        if not data.data:
+            self.terminatable = True
+        elif self.terminatable:
+            self.conn.send(True)
+        else:
+            pass
 
 
