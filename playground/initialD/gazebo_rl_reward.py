@@ -18,7 +18,6 @@ import numpy as np
 from numpy import linalg as LA
 
 class MyClass:
-    
     def __init__(self):
         rospy.init_node('gta5_rl_sender')
         self.car_pos_x = 0.0
@@ -26,9 +25,9 @@ class MyClass:
         self.min_path_dis = 0.0
         self.detect_obstacle_range = 10
         self.closest_distance = 10000.0 # initializer
-        
-        self.pub_nearest_obs = rospy.Publisher('rl_has_obstacle_nearby', Bool, queue_size=1000)
-        self.pub_closest_distance = rospy.Publisher('rl_closest_distance_to_longestpath', Float32, queue_size=1000)
+
+        self.pub_nearest_obs = rospy.Publisher('/rl/has_obstacle_nearby', Bool, queue_size=1000)
+        self.pub_closest_distance = rospy.Publisher('/rl/distance_to_longestpath', Float32, queue_size=1000)
         rospy.Subscriber('/path/longest', Path, self.calc_nearest_distance_callback)
         rospy.Subscriber('/obstacles', Obstacles, self.calc_nearest_obs_callback)
         rospy.Subscriber('/car/status', CarStatus, self.get_status_callback)
@@ -50,7 +49,6 @@ class MyClass:
         self.car_pos_y = data.position.y
 
     def calc_nearest_distance_callback(self, data):
-        
         aaa = list()
         # print "------------------------------------------------------------"
         min_idx = self.find_minimum_distance(data.poses)
@@ -73,7 +71,6 @@ class MyClass:
         self.pub_nearest_obs.publish(near_obs)
 
     def sender(self):
-        
         rospy.spin()
 
 if __name__ == '__main__':

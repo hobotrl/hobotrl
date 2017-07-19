@@ -83,7 +83,8 @@ class ProcessFrame96H(gym.ObservationWrapper):
         else:
             assert False, "Unknown resolution."
         img = frame
-        img = colors.rgb_to_hsv(img / 255.0)[0]
+        img = colors.rgb_to_hsv(img / 255.0)
+        img = np.transpose(img, axes=[2, 0, 1])[0]
         img = (img * 255).astype(np.uint8).reshape((96, 96, 1))
         return img
 
@@ -92,7 +93,7 @@ def wrap_car(env, steer_n, speed_n):
     """Apply a common set of wrappers for Atari games."""
     env = CarEnvWrapper(env, steer_n, speed_n)
     env = envs.MaxAndSkipEnv(env, skip=2, max_len=1)
-    env = ProcessFrame96H(env)
+    # env = ProcessFrame96H(env)
     env = envs.FrameStack(env, 4)
     env = envs.ScaledRewards(env, 0.1)
     env = envs.ScaledFloatFrame(env)
@@ -107,9 +108,9 @@ class A3CCarExp(ACOOExperiment):
                  off_batch_size=32,
                  off_interval=0,
                  sync_interval=1000,
-                 replay_size=1,
+                 replay_size=128,
                  prob_min=5e-3,
-                 entropy=hrl.utils.CappedLinear(4e5, 1e-2, 1e-3),
+                 entropy=hrl.utils.CappedLinear(1e6, 1e-2, 1e-3),
                  l2=1e-8,
                  optimizer_ctor=lambda: tf.train.AdamOptimizer(1e-4), ddqn=False, aux_r=False, aux_d=False):
 
