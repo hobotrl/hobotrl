@@ -277,6 +277,7 @@ class GaussianExplorationMixin(BasePolicyMixin):
 
 class OUExplorationMixin(BasePolicyMixin):
     def __init__(self, ou_params, **kwargs):
+        kwargs['ou_params'] = ou_params
         super(OUExplorationMixin, self).__init__(**kwargs)
         self.__mu, self.__theta, self.__sigma = \
                 ou_params

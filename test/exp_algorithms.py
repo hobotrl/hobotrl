@@ -368,7 +368,7 @@ class ACOOExperiment(Experiment):
             with sv.prepare_or_wait_for_session(server.target) as sess:
                 agent.set_session(sess)
                 runner = hrl.envs.EnvRunner(env, agent, reward_decay=self.reward_decay,
-                                            evaluate_interval=sys.maxint, render_interval=sys.100,
+                                            evaluate_interval=sys.maxint, render_interval=sys.maxint,
                                             render_once=True,
                                             logdir=args.logdir if args.index == 0 else None)
                 runner.episode(self.episode_n)

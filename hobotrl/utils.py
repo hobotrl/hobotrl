@@ -542,42 +542,49 @@ class ScheduledParam(FloatParam):
 class ScheduledParamCollector(object):
     def __init__(self, *args, **kwargs):
         super(ScheduledParamCollector, self).__init__()
-        self._params = []
+        self._params = {}
         self.max_depth = 10
         self.max_param_num = 128  # no algorithm should expose more than 128 hyperparameters!
 
-        self.schedule_params(0, *args, **kwargs)
+        self.schedule_params("hyperparams", 0, *args, **kwargs)
 
-    def schedule_params(self, _spc_depth, *args, **kwargs):
+    def schedule_params(self, prefix,  _spc_depth, *args, **kwargs):
         if _spc_depth >= self.max_depth or len(self._params) >= self.max_param_num:
             return
-        for p in args:
+        for i in range(len(args)):
+            p = args[i]
+            sub_prefix = "%s/%d" % (prefix, i)
             if isinstance(p, ScheduledParam):
-                self.schedule_param(p)
+                self.schedule_param(sub_prefix, p)
             elif type(p) == list or type(p) == tuple:
-                self.schedule_params(_spc_depth+1, *p)
+                self.schedule_params(sub_prefix, _spc_depth+1, *p)
             elif type(p) == dict:
-                self.schedule_params(_spc_depth+1, **p)
+                self.schedule_params(sub_prefix, _spc_depth+1, **p)
         for key in kwargs:
             p = kwargs[key]
+            sub_prefix = "%s/%s" % (prefix, key)
             if isinstance(p, ScheduledParam):
-                self.schedule_param(p)
+                self.schedule_param(sub_prefix, p)
             elif type(p) == list or type(p) == tuple:
-                self.schedule_params(_spc_depth+1, *p)
+                self.schedule_params(sub_prefix, _spc_depth+1, *p)
             elif type(p) == dict:
-                self.schedule_params(_spc_depth+1, **p)
+                self.schedule_params(sub_prefix, _spc_depth+1, **p)
 
-    def schedule_param(self, param):
+    def schedule_param(self, prefix, param):
         """
         :param param:
         :type param: ScheduledParam
         :return:
         """
-        self._params.append(param)
+        self._params[prefix] = param
 
     def set_int_handle(self, int_handle):
-        for param in self._params:
+        for k in self._params:
+            param = self._params[k]
             param.set_int_handle(int_handle)
+
+    def get_params(self):
+        return self._params
 
 
 class CappedLinear(ScheduledParam):

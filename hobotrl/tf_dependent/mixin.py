@@ -23,6 +23,7 @@ class DeepQFuncMixin(BaseValueMixin):
           method.
     """
     def __init__(self, dqn_param_dict, is_action_in=False, **kwargs):
+        kwargs["dqn_param_dict"] = dqn_param_dict
         super(DeepQFuncMixin, self).__init__(**kwargs)
 
         self.__IS_ACTION_IN = is_action_in
@@ -332,6 +333,7 @@ class DeepDeterministicPolicyMixin(BasePolicyMixin):
 
         :param ddp_param_dict: kwarg dict for ddp init.
         """
+        kwargs['ddp_param_dict'] = ddp_param_dict
         super(DeepDeterministicPolicyMixin, self).__init__(**kwargs)
         self.__ddp = DeepDeterministicPolicy(**ddp_param_dict)
         self.__BATCH_SIZE = kwargs['batch_size']  # for sampling replay buffer

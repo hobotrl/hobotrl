@@ -65,7 +65,7 @@ class BaseAgent(object):
 
         # Agent take action in reaction to current state
         next_action = self.act(next_state, **kwargs)
-
+        info.update(self._params.get_params())
         return next_action, info
 
     def new_episode(self, state):

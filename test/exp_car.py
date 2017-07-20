@@ -163,7 +163,7 @@ class DDPGCar(DPGExperiment):
                  optimizer_ddp_ctor=lambda: tf.train.AdamOptimizer(learning_rate=1e-4),
                  optimizer_dqn_ctor=lambda: tf.train.AdamOptimizer(learning_rate=1e-3), target_sync_rate=0.001,
                  ddp_update_interval=1, ddp_sync_interval=1, dqn_update_interval=1, dqn_sync_interval=1,
-                 max_gradient=10.0, ou_params=(0.0, 0.15, 0.2), gamma=0.99, batch_size=32, replay_capacity=10000):
+                 max_gradient=10.0, ou_params=(0.0, 0.15, hrl.utils.CappedLinear(1e6, 1.0, 0.1)), gamma=0.99, batch_size=32, replay_capacity=10000):
 
         l2 = 1e-8
 
