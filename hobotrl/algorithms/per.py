@@ -5,6 +5,7 @@
 #
 
 import numpy as np
+import hobotrl.utils as utils
 from hobotrl.tf_dependent.mixin import DeepQFuncMixin
 from hobotrl.tf_dependent.base import BaseDeepAgent
 from hobotrl.mixin import ReplayMixin, EpsilonGreedyPolicyMixin
@@ -56,6 +57,7 @@ class PrioritizedExpReplayValue(DeepQFuncMixin):
             info = self.get_qfunction().improve_value_(**kwargs)
             if "td_losses" in info:
                 td_losses = info["td_losses"]
+                td_losses = np.minimum(np.maximum(td_losses, -5.0), 5.0)
                 replay_buffer.update_score(sample_index, td_losses)
             return info
 

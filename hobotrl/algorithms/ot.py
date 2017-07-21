@@ -20,27 +20,32 @@ class FitQFunction(vf.DeepQFuncActionOut):
 
         self.sym_input_target_q = tf.placeholder(dtype=tf.float32, shape=[None], name="input_target_q")
 
+        # for computing td loss
+        self.sym_input_td_target_q = tf.placeholder(dtype=tf.float32, shape=[None], name="input_td_target_q")
+
         with tf.name_scope("fit_target"):
             sym_fit_losses = Network.clipped_square(self.sym_input_target_q - self.sym_q_sel)
+            sym_td_losses = Network.clipped_square(self.sym_input_td_target_q - self.sym_q_sel)
             # self.sym_fit_loss = self.sym_regularization_loss + \
             self.sym_fit_loss = tf.reduce_mean(self.sym_importance * sym_fit_losses)
-
             optimizer = training_params[0]
             self.op_fit_target = optimizer.minimize(self.sym_fit_loss)
+            self.sym_td_losses = sym_td_losses
 
-    def fit_target_value(self, state, action, target_value, importance=None, sess=None, **kwargs):
+    def fit_target_value(self, state, action, target_value, td_target_value, importance=None, sess=None, **kwargs):
         feed_dict = {
             self.sym_state: state,
             self.sym_action: action,
             self.sym_input_target_q: target_value,
+            self.sym_input_td_target_q: td_target_value
         }
         if importance is not None:
             feed_dict[self.sym_importance] = importance
 
-        return sess.run([self.op_fit_target, self.sym_fit_loss], feed_dict)
+        return sess.run([self.op_fit_target, self.sym_fit_loss, self.sym_td_losses], feed_dict)
 
     def improve_value_(self,
-                       state, action, target_value,
+                       state, action, target_value, td_target_value,
                        importance=None,
                        sess=None,
                        **kwargs):
@@ -54,6 +59,7 @@ class FitQFunction(vf.DeepQFuncActionOut):
         :param state: a batch of state
         :param action: a batch of action
         :param target_value: target value to fit
+        :param td_target_value: target value to compute td loss only; does not contribute to training loss
         :param importance: a batch of importance, or scalar importance value
         :param sess: tf session
         :param kwargs:
@@ -64,11 +70,13 @@ class FitQFunction(vf.DeepQFuncActionOut):
         info = {}
         td_loss = 0
         if self.countdown_td_ == 0:
-            _, loss = self.fit_target_value(state=state, action=action,
-                                            target_value=target_value, importance=importance,
-                                            sess=sess, **kwargs)
+            _, loss, td_losses = self.fit_target_value(state=state, action=action,
+                                                       target_value=target_value,
+                                                       td_target_value=td_target_value,
+                                                       importance=importance,
+                                                       sess=sess, **kwargs)
             self.countdown_td_ = self._N_STEP_TD
-            info = {"fit_loss": loss, "target_value": target_value}
+            info = {"fit_loss": loss, "target_value": target_value, "td_losses": td_losses}
 
         if self.countdown_sync_ == 0:
             self.apply_op_sync_target_(sess=sess)
@@ -83,7 +91,10 @@ class OTValueUpdateMixin(hrl.mixin.BaseValueMixin):
 
     """
     def __init__(self, state_shape, num_actions, batch_size, reward_decay, K, weight_upper_bound, weight_lower_bound,
-                 replay_capacity=1000, replay_class=hrl.playback.MapPlayback,
+                 replay_capacity=1000,
+                 replay_class=hrl.playback.MapPlayback,
+                 priority_bias=1.0,
+                 importance_weight=1.0,
                  state_offset_scale=(0, 1),
                  **kwargs):
         kwargs.update({
@@ -108,15 +119,28 @@ class OTValueUpdateMixin(hrl.mixin.BaseValueMixin):
             augment_offset['state'], augment_scale['state'] = state_offset_scale[0], state_offset_scale[1]
             augment_offset['next_state'], augment_scale['next_state'] = state_offset_scale[0], state_offset_scale[1]
 
-        self.replay = replay_class(capacity=replay_capacity, sample_shapes={
-            "state": state_shape,
-            "action": [],
-            "reward": [],
-            "next_state": state_shape,
-            "episode_done": [],
-            "future_reward": [],
-            "episode_n": [],
-        }, augment_scale=augment_scale, augment_offset=augment_offset)
+        if replay_class == hrl.playback.MapPlayback:
+            self.replay = replay_class(capacity=replay_capacity, sample_shapes={
+                "state": state_shape,
+                "action": [],
+                "reward": [],
+                "next_state": state_shape,
+                "episode_done": [],
+                "future_reward": [],
+                "episode_n": [],
+            }, augment_scale=augment_scale, augment_offset=augment_offset)
+        elif replay_class == hrl.playback.NearPrioritizedPlayback:
+            self.replay = replay_class(capacity=replay_capacity, sample_shapes={
+                "state": state_shape,
+                "action": [],
+                "reward": [],
+                "next_state": state_shape,
+                "episode_done": [],
+                "future_reward": [],
+                "episode_n": [],
+            }, augment_scale=augment_scale, augment_offset=augment_offset,
+                                       priority_bias=priority_bias,
+                                       importance_weight=importance_weight)
 
     def improve_value_(self, state, action, reward, next_state, episode_done, **kwargs):
         self.step_n += 1
@@ -231,11 +255,19 @@ class OTValueUpdateMixin(hrl.mixin.BaseValueMixin):
             # print "target_values:", target_values
             # print "upper_bounds:", upper_bounds
             # print "lower_bounds:", lower_bounds
-
+            importance = None
+            if type(self.replay) == hrl.playback.NearPrioritizedPlayback:
+                importance = batch["_weight"]
             info = self.q_function.improve_value_(state=batch["state"], action=batch["action"],
                                                   target_value=np.asarray(target_values),
+                                                  td_target_value=np.asarray(targets0),
+                                                  importance=importance,
                                                   sess=self.get_session())
 
+            if type(self.replay) == hrl.playback.NearPrioritizedPlayback:
+                if "td_losses" in info:
+                    self.replay.update_score(index=index, score=info["td_losses"])
+                    
             info.update({
                 "bounds/lower_bound": np.asarray(lower_bounds),
                 "bounds/upper_bound": np.asarray(upper_bounds),
@@ -277,9 +309,11 @@ class OTDQN(
                  weight_lower_bound,
                  replay_capacity=1000,
                  replay_class=hrl.playback.MapPlayback,
+                 priority_bias=0.0,
+                 importance_weight=0.0,
                  state_offset_scale=(0, 1),
                  schedule=(1, 10),
-                 training_params=tf.train.AdamOptimizer(0.001),
+                 training_params=(tf.train.AdamOptimizer(0.001), 0.01, 10.0),
                  f_net_dqn=None,
                  **kwargs):
         super(OTDQN, self).__init__(state_shape=state_shape,

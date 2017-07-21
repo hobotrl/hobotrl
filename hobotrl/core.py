@@ -7,6 +7,8 @@ and leave features unique to individual algorithms as abstract methods.
 Date   : 2017-06-02
 """
 
+from utils import Stepper, ScheduledParam, ScheduledParamCollector
+
 
 class BaseAgent(object):
     """Base class for reinforcement learning agents.
@@ -30,7 +32,10 @@ class BaseAgent(object):
     Note: the act() methods is abstract and need to be implemented.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, *args, **kwargs):
+        self._stepper = Stepper(0)
+        self._params = ScheduledParamCollector(*args, **kwargs)
+        self._params.set_int_handle(self._stepper)
         pass
 
     def step(self, state, action, reward, next_state,
@@ -53,14 +58,14 @@ class BaseAgent(object):
         episode_done : true if episode ends in this step.
         kwargs : other params
         """
-
+        self._stepper.step()
         # Agent improve itself with new experience
         info = self.reinforce_(state, action, reward, next_state,
                                episode_done=episode_done, **kwargs)
 
         # Agent take action in reaction to current state
         next_action = self.act(next_state, **kwargs)
-
+        info.update(self._params.get_params())
         return next_action, info
 
     def new_episode(self, state):

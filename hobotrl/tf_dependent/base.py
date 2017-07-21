@@ -54,6 +54,12 @@ class BaseDeepAgent(BaseAgent):
 
     def step(self, state, action, reward, next_state, episode_done=False, **kwargs):
         self.__step_n += 1
+        # increment global_step variable by 1
         if self.__global_step is not None:
             self.sess.run(self.__op_update_step, feed_dict={self.__step_input: self.__step_n})
+        # set session for super calls
+        if 'sess' not in kwargs:
+            kwargs['sess'] = self.sess
         return super(BaseDeepAgent, self).step(state, action, reward, next_state, episode_done, **kwargs)
+
+

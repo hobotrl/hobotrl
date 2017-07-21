@@ -38,7 +38,7 @@ def f_net(inputs_state, inputs_action, is_training):
 
 optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
 target_sync_rate = 0.01
-training_params = (optimizer_td, target_sync_rate)
+training_params = (optimizer_td, target_sync_rate, 10.0)
 state_shape = (99, 99, 3)
 action_shape = (3, 2)
 batch_size = 10
@@ -48,9 +48,8 @@ print "=============="
 print "Test initialize QFunc : ",
 dqn = DeepQFuncActionIn(
     gamma=0.99,
-    f_net_dqn=f_net, state_shape=state_shape, action_shape=action_shape,
+    f_net=f_net, state_shape=state_shape, action_shape=action_shape,
     training_params=training_params, schedule=(2,5),
-    batch_size=batch_size,
     graph=None
 )
 print 'pass!\n'
@@ -159,13 +158,13 @@ finally:
 
 print "=================="
 print "Test get grad(q, action) by value:"
-grad, = dqn.get_grad_q_action(state, action, sess=sess)
+grad = dqn.get_grad_q_action(state, action, sess=sess)
 print "Shape: {}".format(grad.shape)
 print grad
 print "pass!\n"
 
 print "Test get grad(q_target, action) by value:"
-grad, = dqn.get_grad_q_action(state, action, sess=sess, use_target=True)
+grad = dqn.get_grad_q_action(state, action, sess=sess, use_target=True)
 print "Shape: {}".format(grad.shape)
 print grad
 print "pass!\n"
