@@ -455,6 +455,7 @@ class AugmentEnvWrapper(object):
 
 
 class StateHistoryStackEnvWrapper(object):
+    # TODO: reward_decay is redundant
     def __init__(self, env,
                  reward_decay, stack_n, stack_axis=-1):
         assert 0. <= reward_decay <= 1.

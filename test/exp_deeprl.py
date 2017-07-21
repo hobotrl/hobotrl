@@ -1306,12 +1306,13 @@ class RandomizedBootstrappedDQNBreakOut(BootstrappedDQNAtari):
                                                    # "render_env": True,
                                                    # "frame_time": 0.05
                                                    },
-                                      agent_args={"eps_function": eps_function},  # {"eps_function": LinearSequence(1e6, 0.2, 0.0)},
-                                      agent_type=RandomizedBootstrappedDQN
+                                      agent_args={"eps_function": (lambda x: 0)},  # {"eps_function": LinearSequence(1e6, 0.2, 0.0)},
+                                      agent_type=RandomizedBootstrappedDQN,
+                                      frame_skip_n=1
                                       )
 
     def run(self, args, **kwargs):
-        BootstrappedDQNAtari.run(self, args, checkpoint_number=2000000)
+        BootstrappedDQNAtari.run(self, args, checkpoint_number=14200000)
 
 Experiment.register(RandomizedBootstrappedDQNBreakOut, "Randomized Bootstrapped DQN for the Breakout")
 
