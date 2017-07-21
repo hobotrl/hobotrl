@@ -359,7 +359,7 @@ class AugmentEnvWrapper(object):
                  state_stack_n=None, state_stack_axis=-1,
                  state_augment_proc=None,
                  action_limit=None,
-                 amend_reward_decay=True):
+                 amend_reward_decay=False):
         """
 
         :param env:
