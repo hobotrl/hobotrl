@@ -16,7 +16,7 @@ from numpy import linalg as LA
 from std_msgs.msg import Char, Int16, Bool
 from autodrive_msgs.msg import CarStatus
 from collections import deque
-from timer import Timer
+
 
 class restart_ros_launch:
     def __init__(self):
@@ -25,29 +25,24 @@ class restart_ros_launch:
         self.last_pos = deque(maxlen=500) # Car status is 50Hz, so when car stops moving 10 secs, treat it as stop.
         self.destination = np.zeros([1,3])
         rospack = rospkg.RosPack()  # get an instance of RosPack with the default search paths 
-        self.process_name = ['roslaunch', 'planning', 'honda_J1-1.launch']
         self.is_running = False
+        self.process_name = ['roslaunch', 'planning', 'honda_J1-1.launch']
 
-        rospy.init_node('restart_launch_file')
-        self.is_running_pub = rospy.Publisher("/rl/is_running", Bool, queue_size=10, latch=True)
-        self.heartbeat_pub = rospy.Publisher(
-            "/rl/simulator_heartbeat", Bool, queue_size=10, latch=True
-        )
-        Timer(rospy.Duration(1/20.0),
-             lambda *args: self.heartbeat_pub.publish(self.is_running))
-        rospy.Subscriber('/error/type', Int16, self.car_out_of_lane_callback)
-        rospy.Subscriber('/car/status', CarStatus, self.car_not_move_callback)
-        rospy.Subscriber('/rl/simulator_restart', Bool, self.restart_callback)
+        rospy.init_node('restart_launch_fle')
+        self.heart_beat = rospy.Publisher("/rl/is_running", Bool, queue_size=10, latch=True)
+        self.starter = rospy.Publisher('/autoDrive_KeyboardMode', Char,
+                                       queue_size=10, latch=True)
 
     def terminate(self):
-        self.is_running = False
-        time.sleep(3.0)
         print "========================"
         print "========================"
         print "Publish heart beat False!"
         print "========================"
         print "========================"
-        self.is_running_pub.publish(False)
+        self.heart_beat.publish(False)
+
+        print "waiting..."
+        time.sleep(5.0)  # wait for done signal to go into exp
 
         if len(self.launch_list) is 0:
             print("no process to terminate")
@@ -57,21 +52,25 @@ class restart_ros_launch:
             self.launch_list[0].wait()
             self.launch_list = []
             print("Shutdown!")
+        self.is_running = False
 
     def restart_callback(self, data):
+        if self.is_running:
+            self.terminate()
+
         # restart launch file
         rosrun = subprocess.Popen(self.process_name)
         self.launch_list.append(rosrun)
         print("restart launch file finished!")
 
-        self.is_running = True
 
         print "========================"
         print "========================"
         print "Publish heart beat True!"
         print "========================"
         print "========================"
-        self.is_running_pub.publish(True)
+        self.heart_beat.publish(True)
+        self.is_running = True
 
     def car_out_of_lane_callback(self, data):
         if data.data is 1:
@@ -92,6 +91,10 @@ class restart_ros_launch:
             self.terminate()
 
     def sender(self):
+        rospy.Subscriber('/error/type', Int16, self.car_out_of_lane_callback)
+        rospy.Subscriber('/car/status', CarStatus, self.car_not_move_callback)
+        rospy.Subscriber('/rl/simulator_restart', Bool, self.restart_callback)
+
         rospy.spin()
         self.terminate()
 

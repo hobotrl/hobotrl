@@ -40,10 +40,16 @@ class DrivingSimulatorEnv(object):
         :param rate_action:
         :param buffer_sizes:
         """
-        self.q_obs = Queue(buffer_sizes['obs'])
-        self.q_reward = Queue(buffer_sizes['reward'])
-        self.q_action = Queue(buffer_sizes['action'])
-        self.q_done = Queue(1)
+        # first-level queues
+        self.q0_obs = Queue(1)
+        self.q0_reward = Queue(1)
+        self.q0_action = Queue(1)
+        self.q0_done = Queue(1)
+        # second-level queues
+        self.q1_obs = Queue(buffer_sizes['obs'])
+        self.q1_reward = Queue(buffer_sizes['reward'])
+        self.q1_action = Queue(buffer_sizes['action'])
+        self.q1_done = Queue(1)
         # pub and sub definitions
         self.defs_obs = defs_obs
         self.defs_reward = defs_reward
@@ -52,6 +58,8 @@ class DrivingSimulatorEnv(object):
         # daemon processes
         self.proc_monitor = multiprocessing.Process(target=self.monitor)
         self.proc_monitor.start()
+        self.proc_mover = multiprocessing.Process(target=self.mover)
+        self.proc_mover.start()
 
     def monitor(self):
         while True:
@@ -61,28 +69,75 @@ class DrivingSimulatorEnv(object):
 
     def __run_node(self):
         node = DrivingSimulatorNode(
-            self.q_obs, self.q_reward, self.q_action, self.q_done,
+            self.q0_obs, self.q0_reward, self.q0_action, self.q0_done,
             self.defs_obs, self.defs_reward, self.defs_action,
             self.rate_action
         )
         node.start()
         node.join()
 
+    def mover(self):
+        while True:
+            # observation
+            try:
+                ob = self.q0_obs.get(timeout=1.0)
+                self.q0_obs.task_done()
+                if self.q1_obs.full():
+                    self.q1_obs.get()
+                    self.q1_obs.task_done()
+                self.q1_obs.put(ob)
+            except:
+                print "mover: q0_obs empty."
+                pass
+            # reward
+            try:
+                reward = self.q0_reward.get(timeout=1.0)
+                self.q0_reward.task_done()
+                if self.q1_reward.full():
+                    self.q1_reward.get()
+                    self.q1_reward.task_done()
+                self.q1_reward.put(reward)
+            except:
+                print "mover: q0_reward empty."
+                pass
+            # action
+            try:
+                action = self.q1_action.get(timeout=1.0)
+                self.q1_action.task_done()
+                if self.q0_action.full():
+                    self.q0_action.get()
+                    self.q0_action.task_done()
+                self.q0_action.put(action)
+            except:
+                print "mover: q1_action empty."
+                pass
+            # done
+            try:
+                done = self.q0_done.get(timeout=1.0)
+                self.q0_done.task_done()
+                if self.q1_done.full():
+                    self.q1_done.get()
+                    self.q1_done.task_done()
+                self.q1_done.put(done)
+            except:
+                print "mover: q0_done empty."
+            time.sleep(0.2)
+
     def step(self, action):
         # enqueue action
-        if self.q_action.full():
-            self.q_action.get()
-            self.q_action.task_done()
-        self.q_action.put(action)
+        if self.q1_action.full():
+            self.q1_action.get()
+            self.q1_action.task_done()
+        self.q1_action.put(action)
         print "step: action: {}, queue size: {}".format(
-            action, self.q_action.qsize()
+            action, self.q1_action.qsize()
         )
         # compile observation
-        next_state = self.q_obs.get()[0]
-        self.q_obs.task_done()
+        next_state = self.q1_obs.get()[0]
+        self.q1_obs.task_done()
         # calculate reward
-        rewards = self.q_reward.get()
-        self.q_reward.task_done()
+        rewards = self.q1_reward.get()
+        self.q1_reward.task_done()
         print "step(): rewards {}".format(rewards)
         reward = -100.0 * float(rewards[0]) + \
                  -10.0 * float(rewards[1]) + \
@@ -90,8 +145,8 @@ class DrivingSimulatorEnv(object):
                  -100.0 * (1 - float(rewards[3]))
         # decide if episode is done
         try:
-            done = self.q_done.get(False)
-            self.q_done.task_done()
+            done = self.q1_done.get(False)
+            self.q1_done.task_done()
         except:
             print "step(): queue_done empty."
             done = True  # assume episode done if queue_done is emptied
@@ -102,8 +157,8 @@ class DrivingSimulatorEnv(object):
         return next_state, reward, done, info
 
     def reset(self):
-        state = self.q_obs.get()[0]
-        self.q_obs.task_done()
+        state = self.q1_obs.get()[0]
+        self.q1_obs.task_done()
         return state
 
 

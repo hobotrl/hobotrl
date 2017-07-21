@@ -29,7 +29,7 @@ env = DrivingSimulatorEnv(
      ('/rl/on_opposite_path', Int16)],
     [('/autoDrive_KeyboardMode', Char)],
     rate_action=1.0,
-    buffer_sizes={'obs': 2, 'reward': 2, 'action': 1}
+    buffer_sizes={'observation': 10, 'reward': 10, 'action': 1}
 )
 ACTIONS = [(Char(ord(mode)),) for mode in ['s', 'd', 'a']]
 
@@ -159,4 +159,4 @@ except Exception as e:
 finally:
     sess.close()
     # kill orphaned monitor daemon process
-    os.killpg(os.getpgid(env.proc_monitor.pid), 9)
+    os.killpg(os.getpgid(env.daemon.pid), 9)

@@ -31,101 +31,112 @@ class DrivingSimulatorEnv(object):
 
     Play action in queue with a fixed frequency to the backend.
     """
-    def __init__(self, defs_obs, defs_reward, defs_action,
+    def __init__(self,
+                 defs_observation, defs_reward, defs_action,
                  rate_action, buffer_sizes):
         """Initialization.
-        :param topics_obs:
+        :param topics_observation:
         :param topics_reward:
         :param topics_action:
         :param rate_action:
         :param buffer_sizes:
         """
-        self.q_obs = Queue(buffer_sizes['obs'])
-        self.q_reward = Queue(buffer_sizes['reward'])
-        self.q_action = Queue(buffer_sizes['action'])
-        self.q_done = Queue(1)
-        # pub and sub definitions
-        self.defs_obs = defs_obs
+        # CDC queues for obs, reward, and action
+        self.queue_observation = Queue(buffer_sizes['observation'])
+        self.queue_reward = Queue(buffer_sizes['reward'])
+        self.queue_action = Queue(buffer_sizes['action'])
+        self.queue_done = Queue(1)
+        self.defs_observation = defs_observation
         self.defs_reward = defs_reward
         self.defs_action = defs_action
         self.rate_action = rate_action
-        # daemon processes
-        self.proc_monitor = multiprocessing.Process(target=self.monitor)
-        self.proc_monitor.start()
+        self.parent_conn, self.child_conn = Pipe(duplex=True)
 
-    def monitor(self):
-        while True:
-            print "Monitor: running new node."
-            self.__run_node()
-            print "Monitor: finished running node."
 
-    def __run_node(self):
-        node = DrivingSimulatorNode(
-            self.q_obs, self.q_reward, self.q_action, self.q_done,
-            self.defs_obs, self.defs_reward, self.defs_action,
-            self.rate_action
+        self.daemon = multiprocessing.Process(
+            target=self.node_daemon,
+            args=(self.parent_conn,)
         )
-        node.start()
-        node.join()
+        self.daemon.start()
+
+    def shutdown(self):
+        print "Shutting down env."
+        self.daemon.join()
+
+    def node_daemon(self, conn):
+        while True:
+            print "Daemon starting new node"
+            self.__new_node()
+
+    def __new_node(self):
+        self.node = DrivingSimulatorNode(
+            self.queue_observation, self.queue_reward, self.queue_action,
+            self.queue_done,
+            self.defs_observation, self.defs_reward, self.defs_action,
+            self.rate_action, self.child_conn
+        )
+        self.node.start()
+        self.node.join()
 
     def step(self, action):
-        # enqueue action
-        if self.q_action.full():
-            self.q_action.get()
-            self.q_action.task_done()
-        self.q_action.put(action)
+        if self.queue_action.full():
+            self.queue_action.get()
+            self.queue_action.task_done()
+        self.queue_action.put(action)
         print "step: action: {}, queue size: {}".format(
-            action, self.q_action.qsize()
+            action, self.queue_action.qsize()
         )
-        # compile observation
-        next_state = self.q_obs.get()[0]
-        self.q_obs.task_done()
-        # calculate reward
-        rewards = self.q_reward.get()
-        self.q_reward.task_done()
+        # decide if episode is done
+        # compile observation and reward from queued experiences
+        next_state = self.queue_observation.get()[0]
+        rewards = self.queue_reward.get()
         print "step(): rewards {}".format(rewards)
         reward = -100.0 * float(rewards[0]) + \
                  -10.0 * float(rewards[1]) + \
                  1.0 * float(rewards[2]) + \
                  -100.0 * (1 - float(rewards[3]))
-        # decide if episode is done
-        try:
-            done = self.q_done.get(False)
-            self.q_done.task_done()
-        except:
-            print "step(): queue_done empty."
-            done = True  # assume episode done if queue_done is emptied
-        # info
+        #done = False 
+        done = self.queue_done.get()
+        self.queue_done.put(done)
         info = None
-
-        print "step(): reward {}, done {}".format(reward, done)
+        self.queue_observation.task_done()
+        self.queue_reward.task_done()
+        self.queue_done.task_done()
+        print "step(): reward {}".format(reward)
         return next_state, reward, done, info
 
     def reset(self):
-        state = self.q_obs.get()[0]
-        self.q_obs.task_done()
+        state = self.queue_observation.get()[0]
+        self.queue_observation.task_done()
         return state
 
 
 class DrivingSimulatorNode(multiprocessing.Process):
-    def __init__(self, q_obs, q_reward, q_action, q_done,
-                 defs_obs, defs_reward, defs_action,
-                 rate_action):
+    def __init__(self,
+                 queue_observation, queue_reward, queue_action,
+                 queue_done,
+                 defs_observation, defs_reward, defs_action,
+                 rate_action, conn):
         super(DrivingSimulatorNode, self).__init__()
 
-        self.q_obs = q_obs
-        self.q_reward = q_reward
-        self.q_action = q_action
-        self.q_done = q_done
+        self.queue_observation = queue_observation
+        self.queue_reward = queue_reward
+        self.queue_action = queue_action
+        self.queue_done = queue_done
 
-        self.defs_obs = defs_obs
+        self.defs_observation = defs_observation
         self.defs_reward = defs_reward
         self.defs_action = defs_action
 
         self.rate_action = rate_action
 
+        self.conn = conn
         self.first_time = True
         self.terminatable = False
+        if self.queue_done.full():
+            self.queue_done.get()
+            self.queue_done.task_done()
+        self.queue_done.put(False)
 
     def run(self):
         print "Started process: {}".format(self.name)
@@ -144,14 +155,13 @@ class DrivingSimulatorNode(multiprocessing.Process):
 
         # subscribers
         f_subs = lambda defs: message_filters.Subscriber(defs[0], defs[1])
-        self.ob_subs = map(f_subs, self.defs_obs)
+        self.ob_subs = map(f_subs, self.defs_observation)
         self.reward_subs = map(f_subs, self.defs_reward)
         # sync obs and reward subscribers
         self.ts = message_filters.ApproximateTimeSynchronizer(
             self.ob_subs + self.reward_subs, 10, 0.1, allow_headerless=True
         )
         self.ts.registerCallback(self.__enque_exp)
-        rospy.Subscriber('/rl/simulator_heartbeat', Bool, self.__enque_done)
 
         # publishers
         f_pubs = lambda defs: rospy.Publisher(
@@ -175,23 +185,18 @@ class DrivingSimulatorNode(multiprocessing.Process):
 
         while not self.terminatable:
             time.sleep(1.0)
-
-        self.q_obs.close()
-        self.q_reward.close()
-        self.q_action.close()
-        self.q_done.close()
-
+        #rospy.spin()
         rospy.signal_shutdown('Simulator down')
         print "Returning from run in process: {}, PID: {}".format(
             self.name, self.pid)
 
     def __enque_exp(self, *args):
-        if self.q_obs.full():
-            self.q_obs.get()
-            self.q_obs.task_done()
-        if self.q_reward.full():
-            self.q_reward.get()
-            self.q_reward.task_done()
+        if self.queue_observation.full():
+            self.queue_observation.get()
+            self.queue_observation.task_done()
+        if self.queue_reward.full():
+            self.queue_reward.get()
+            self.queue_reward.task_done()
         num_obs = len(self.ob_subs)
         num_reward = len(self.reward_subs)
         args = list(args)
@@ -199,37 +204,37 @@ class DrivingSimulatorNode(multiprocessing.Process):
             self.brg.imgmsg_to_cv2(args[0], 'rgb8'),
             (640, 640)
         )
-        self.q_obs.put((args[:num_obs]))
-        self.q_reward.put(
+        self.queue_observation.put((args[:num_obs]))
+        self.queue_reward.put(
             (map(lambda data: data.data, args[num_obs:]))
         )
-        print "__enque_exp: {}".format(args[num_obs:])
+        print "__enque_exp: rewards: {}, done {}".format(
+            args[num_obs:], self.terminatable
+        )
 
     def __take_action(self, data):
-       actions = self.q_action.get()
-       self.q_action.put(actions)
-       self.q_action.task_done()
+       actions = self.queue_action.get()
+       self.queue_action.put(actions)
+       self.queue_action.task_done()
        print "__take_action: {}, q len {}".format(
-           actions, self.q_action.qsize()
+           actions, self.queue_action.qsize()
        )
        map(
            lambda args: args[0].publish(args[1]),
            zip(self.action_pubs, actions)
        )
 
-    def __enque_done(self, data):
-        done = not data.data
-        if self.q_done.full():
-            self.q_done.get()
-            self.q_done.task_done()
-        self.q_done.put(done)
-        # print "__eqnue_done: {}".format(done)
-
     def __daemon_conn(self, data):
         print "Heartbeat signal: {}, First time: {}".format(
             data, self.first_time
         )
+        time.sleep(1.0)
         if not data.data and not self.first_time:
+            if self.queue_done.full():
+                self.queue_done.get()
+                self.queue_done.task_done()
+            self.queue_done.put(True)
+            time.sleep(1.0)
             self.terminatable = True
         else:
              pass
