@@ -1068,8 +1068,8 @@ class BootstrappedDQNAtari(Experiment):
                       "loss_function": self.loss_function,
                       "trainer": tf.train.GradientDescentOptimizer(learning_rate=0.001).minimize,
                       "replay_buffer_class": hrl.playback.MapPlayback,
-                      "replay_buffer_args": {"capacity": 25000},
-                      "min_buffer_size": 10000,
+                      "replay_buffer_args": {"capacity": 10000},
+                      "min_buffer_size": 5000,
                       "batch_size": 8,
                       "n_heads": n_head}
         agent_args.update(self.agent_args)
@@ -1265,15 +1265,15 @@ class BootstrappedDQNIceHockey(BootstrappedDQNAtari):
                                           "reward_scale": 1.0
                                           },
                                       agent_args={
-                                          "batch_size": 8,
+                                          "batch_size": 3,
                                       },
                                       # runner_args={"render_env": True,
                                       #              "frame_time": 0.05}
-                                      frame_skip_n=4
+                                      frame_skip_n=1
                                       )
 
     def run(self, args, **kwargs):
-        BootstrappedDQNAtari.run(self, args, checkpoint_number=2000000)
+        BootstrappedDQNAtari.run(self, args, checkpoint_number=23800000)
 
 Experiment.register(BootstrappedDQNIceHockey, "Bootstrapped DQN for the IceHockey")
 
@@ -1339,11 +1339,11 @@ def demo_experiment_generator(experiment_class, checkpoint_file_name, frame_time
     BootstrappedDQNDemo.__name__ = experiment_class.__name__ + "Demo"
     return BootstrappedDQNDemo
 
-Experiment.register(demo_experiment_generator(RandomizedBootstrappedDQNBreakOut, "2000000.ckpt"), "Demo for the Breakout")
+Experiment.register(demo_experiment_generator(RandomizedBootstrappedDQNBreakOut, "14200000.ckpt", frame_time=0.1), "Demo for the Breakout")
 Experiment.register(demo_experiment_generator(BootstrappedDQNPong, "1080000.ckpt"), "Demo for the Pong")
 Experiment.register(demo_experiment_generator(BootstrappedDQNBattleZone, "2232000.ckpt"), "Demo for the Battle Zone")
-Experiment.register(demo_experiment_generator(BootstrappedDQNEnduro, "1300000.ckpt", frame_time=0.0), "Demo for the Enduro")
-Experiment.register(demo_experiment_generator(BootstrappedDQNIceHockey, "1900000.ckpt", frame_time=0.01), "Demo for the Ice Hockey")
+Experiment.register(demo_experiment_generator(BootstrappedDQNEnduro, "17000000.ckpt", frame_time=0.0), "Demo for the Enduro")
+Experiment.register(demo_experiment_generator(BootstrappedDQNIceHockey, "23400000.ckpt", frame_time=0.02), "Demo for the Ice Hockey")
 
 
 if __name__ == '__main__':
