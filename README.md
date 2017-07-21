@@ -13,12 +13,15 @@ Common RL framework and utilities.
 ## Initial algorithm set
 
 * [v] DQN
-* DDPG
+* [v] DDPG
 * [v] Replay Buffer
-* Prioritized Exp Replay
+* [v] Prioritized Exp Replay
 * [v] Double DQN
 * [v] Duel DQN
 * [v] Actor Critic
+* [v] Optimality Tightening
+* [v] A3C
+* Bootstrap DQN
 
 
 ## Getting started
@@ -35,6 +38,11 @@ python test/exp_tabular.py list
 python test/exp_deeprl.py list
 ```
 to get a list of experiments in each file.
+
+```
+. scripts/a3c_pong.sh
+```
+to start processes to run a3c algorithm.
 
 
 ## Developers Guide

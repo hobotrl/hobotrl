@@ -1,19 +1,24 @@
 #
 # -*- coding: utf-8 -*-
 
+import sys
 import os
 import time
 import logging
 import gym
 import numpy as np
 import tensorflow as tf
+import cv2
+from collections import deque
 
 
 class EnvRunner(object):
     """
     interaction between agent and environment.
     """
-    def __init__(self, env, agent, reward_decay=0.99, max_episode_len=5000, evaluate_interval=20, render_interval=1,
+    def __init__(self, env, agent, reward_decay=0.99, max_episode_len=5000,
+                 evaluate_interval=sys.maxint, render_interval=sys.maxint,
+                 render_once=False,
                  logdir=None):
         """
 
@@ -36,6 +41,7 @@ class EnvRunner(object):
         self.summary_writer = None
         if logdir is not None:
             self.summary_writer = tf.summary.FileWriter(logdir, graph=tf.get_default_graph())
+        self.render_once = True if render_once else False
 
     def step(self, evaluate=False):
         """
@@ -44,13 +50,23 @@ class EnvRunner(object):
         :return:
         """
         self.step_n += 1
-        action = self.agent.act(self.state, evaluate=evaluate)
-        observation, reward, done, info = self.env.step(action)
+        # TODO: directly calling agent.act will by-pass BaseDeepAgent, which
+        # checks and assigns 'sess' arugment. So we manually set sess here. But
+        # is there a better way to do this?
+        self.action = self.agent.act(
+            state=self.state, evaluate=evaluate, sess=self.agent.sess
+        )
+        next_state, reward, done, info = self.env.step(self.action)
         self.total_reward = reward + self.reward_decay * self.total_reward
-        _, info = self.agent.step(state=self.state, action=action, reward=reward, next_state=observation,
-                                  episode_done=done)
+        _, info = self.agent.step(
+            state=self.state, action=self.action, reward=reward,
+            next_state=next_state, episode_done=done
+        )
         self.record(info)
-        self.state = observation
+        self.state = next_state
+        if self.render_once:
+            self.env.render()
+            self.render_once = False
         return done
 
     def record(self, info):
@@ -347,16 +363,17 @@ class EnvRunner2(object):
                 if pause_before_start:
                     raw_input("Press Enter to start demonstration")
 
-
-class AugmentEnvWrapper(object):
+class AugmentEnvWrapper(gym.Wrapper):
     """
     wraps an environment, adding augmentation for reward/state/action.
     """
 
     def __init__(self, env,
                  reward_decay=0.99, reward_offset=0.0, reward_scale=1.0,
+                 reward_shaping_proc=None,
                  state_offset=0, state_scale=1,
                  state_stack_n=None, state_stack_axis=-1,
+                 state_skip=None,
                  state_augment_proc=None,
                  action_limit=None,
                  amend_reward_decay=False):
@@ -364,16 +381,27 @@ class AugmentEnvWrapper(object):
 
         :param env:
         :param reward_decay:
+
         :param reward_offset:
-        :param reward_scale:
+        :param reward_scale: augmentation: reward = (reward + reward_offset) * reward_scale
+        :param reward_shaping_proc: function processing rewards
+
         :param state_offset:
-        :param state_scale:
+        :param state_scale: augmentation : state = (state + state_offset) * state_scale
+
         :param state_stack_n:
-        :param state_stack_axis:
-        :param action_limit: lower and upper limit of action for continuous action
+        :param state_stack_axis: if state_stack_n is not None, then multiple frames of state are stacked into
+                    one state variable along state_stack_axis before returned by step().
+                    The same action is repeated between these frames.
+
+        :param action_limit: lower and upper limit of action for continuous action.
+                    Assumes action accepted by step() would always range in [-1.0, 1.0],
+                    and transformed into range [lower_limit, upper_limit] before applied to underlying env.
+
         :type action_limit: list
         :param amend_reward_decay: whether to amend reward decay when state_stack_n is not None.
         """
+        super(AugmentEnvWrapper, self).__init__(env)
         self.env = env
 
         if amend_reward_decay and state_stack_n:
@@ -381,9 +409,9 @@ class AugmentEnvWrapper(object):
             reward_decay = math.pow(reward_decay, 1.0/state_stack_n)
 
         self.reward_decay, self.reward_offset, self.reward_scale = reward_decay, reward_offset, reward_scale
-        self.state_offset, self.state_scale, self.stack_n, self.stack_axis = \
-            state_offset, state_scale, state_stack_n, state_stack_axis
-        self.state_augment_proc = state_augment_proc
+        self.state_offset, self.state_scale, self.stack_n, self.stack_axis, self.state_skip = \
+            state_offset, state_scale, state_stack_n, state_stack_axis, state_skip
+        self.state_augment_proc, self.reward_shaping_proc = state_augment_proc, reward_shaping_proc
         self.is_continuous_action = env.action_space.__class__.__name__ == "Box"
         if self.is_continuous_action:
             self.action_limit = action_limit
@@ -403,7 +431,8 @@ class AugmentEnvWrapper(object):
 
             self.observation_space = gym.spaces.box.Box(np.min(state_low), np.max(state_high), state_shape)
             self.state_shape = state_shape
-            self.last_stacked_states = []  # lazy init
+            self.last_stacked_states = deque(maxlen=state_stack_n)  # lazy init
+            pass
 
     def __getattr__(self, name):
         return getattr(self.env, name)
@@ -418,38 +447,41 @@ class AugmentEnvWrapper(object):
             state = self.state_augment_proc(state)
         return (state + self.state_offset) * self.state_scale
 
-    def augment_reward(self, reward):
+    def augment_reward(self, reward, observation=None, done=None, info=None):
+        if self.reward_shaping_proc is not None:
+            reward = self.reward_shaping_proc(reward, observation, done, info)
         return (reward + self.reward_offset) * self.reward_scale
 
-    def step(self, action):
+    def pick_step(self, action):
+        if self.state_skip is None or self.state_skip <= 0:
+            observation, reward, done, info = self.env.step(action)
+            reward = self.augment_reward(reward, observation, done, info)
+            observation = self.augment_state(observation)
+            return observation, reward, done, info
+        total_reward = 0.0
+        for i in range(self.state_skip):
+            observation, reward, done, info = self.env.step(action)
+            reward = self.augment_reward(reward, observation=observation, done=done, info=info)
+            total_reward += reward
+            if done:
+                break
+        return self.augment_state(observation), total_reward, done, info
+
+    def _step(self, action):
         # augment action before apply
         action = self.augment_action(action)
+        observation, reward, done, info = self.pick_step(action)
         if self.stack_n is not None:
-            stacked_reward = 0.0
-            new_states = []
-            for i in range(self.stack_n):
-                observation, reward, done, info = self.env.step(action)
-                stacked_reward = self.augment_reward(reward) + self.reward_decay * stacked_reward
-                new_states.append(self.augment_state(observation))
-                if done:
-                    break
-            if len(new_states) < self.stack_n:  # episode ends before stack_n
-                new_states = self.last_stacked_states[-(self.stack_n - len(new_states)):] + new_states
-            stacked_state = np.concatenate(new_states, self.stack_axis)
-            observation, reward = stacked_state, stacked_reward
-            self.last_stacked_states = new_states
-        else:
-            observation, reward, done, info = self.env.step(action)
-            observation = self.augment_state(observation)
-            reward = self.augment_reward(reward)
-        # augment state/reward before return
+            self.last_stacked_states.append(observation)
+            observation = np.concatenate(self.last_stacked_states, self.stack_axis)
         return observation, reward, done, info
 
-    def reset(self):
+    def _reset(self):
         state = self.env.reset()
         state = self.augment_state(state)
         if self.stack_n is not None:
-            self.last_stacked_states = [state for i in range(self.stack_n)]
+            for i in range(self.stack_n):
+                self.last_stacked_states.append(state)
             state = np.concatenate(self.last_stacked_states, self.stack_axis)
         return state
 
@@ -504,6 +536,47 @@ class StateHistoryStackEnvWrapper(object):
         self.state_history = [state]*self.stack_n
 
         return np.concatenate(self.state_history, axis=self.stack_axis)
+
+
+class RewardShaping(object):
+    def __init__(self):
+        super(RewardShaping, self).__init__()
+        pass
+
+    def __call__(self, *args, **kwargs):
+        pass
+
+
+class InfoChange(RewardShaping):
+    def __init__(self, increment_weight={}, decrement_weight={}):
+        """
+        reward shaping procedure for AugmentEnvWrapper:
+            add additional reward according to changes in environments' info fields.
+        :param increment_weight: map, weights of additional reward if fields in info increases.
+        :param decrement_weight: map. weights of additional reward if fields in info decreases.
+            a typical example for ALE env: {'ale.lives': -10} gives -10 when each life is lost.
+        """
+        self.increment_weight, self.decrement_weight = increment_weight, decrement_weight
+        self.last_values = {}
+        for k in increment_weight:
+            self.last_values[k] = None
+        for k in decrement_weight:
+            self.last_values[k] = None
+        super(InfoChange, self).__init__()
+
+    def __call__(self, *args, **kwargs):
+        reward = args[0]
+        info = args[3]
+        for k in self.last_values:
+            if k in info:
+                v = info.get(k)
+                old_v = self.last_values[k]
+                if k in self.increment_weight and old_v < v:
+                    reward += (v - old_v) * self.increment_weight[k]
+                elif k in self.decrement_weight and old_v > v:
+                    reward += (old_v - v) * self.decrement_weight[k]
+                self.last_values[k] = v
+        return reward
 
 
 class C2DEnvWrapper(object):
@@ -697,3 +770,228 @@ class GridworldSink:
         # I can't render
         pass
 
+
+class NoopResetEnv(gym.Wrapper):
+    def __init__(self, env=None, noop_max=30):
+        """Sample initial states by taking random number of no-ops on reset.
+        No-op is assumed to be action 0.
+        """
+        super(NoopResetEnv, self).__init__(env)
+        self.noop_max = noop_max
+        self.override_num_noops = None
+        assert env.unwrapped.get_action_meanings()[0] == 'NOOP'
+
+    def _reset(self):
+        """ Do no-op action for a number of steps in [1, noop_max]."""
+        self.env.reset()
+        if self.override_num_noops is not None:
+            noops = self.override_num_noops
+        else:
+            noops = np.random.randint(1, self.noop_max + 1)
+        assert noops > 0
+        obs = None
+        for _ in range(noops):
+            obs, _, done, _ = self.env.step(0)
+            if done:
+                obs = self.env.reset()
+        return obs
+
+
+class FireResetEnv(gym.Wrapper):
+    def __init__(self, env=None):
+        """For environments where the user need to press FIRE for the game to start."""
+        super(FireResetEnv, self).__init__(env)
+        assert env.unwrapped.get_action_meanings()[1] == 'FIRE'
+        assert len(env.unwrapped.get_action_meanings()) >= 3
+
+    def _reset(self):
+        self.env.reset()
+        obs, _, done, _ = self.env.step(1)
+        if done:
+            self.env.reset()
+        obs, _, done, _ = self.env.step(2)
+        if done:
+            self.env.reset()
+        return obs
+
+
+class EpisodicLifeEnv(gym.Wrapper):
+    def __init__(self, env=None):
+        """Make end-of-life == end-of-episode, but only reset on true game over.
+        Done by DeepMind for the DQN and co. since it helps value estimation.
+        """
+        super(EpisodicLifeEnv, self).__init__(env)
+        self.lives = 0
+        self.was_real_done = True
+        self.was_real_reset = False
+
+    def _step(self, action):
+        obs, reward, done, info = self.env.step(action)
+        self.was_real_done = done
+        # check current lives, make loss of life terminal,
+        # then update lives to handle bonus lives
+        lives = self.env.unwrapped.ale.lives()
+        if lives < self.lives and lives > 0:
+            # for Qbert somtimes we stay in lives == 0 condtion for a few frames
+            # so its important to keep lives > 0, so that we only reset once
+            # the environment advertises done.
+            done = True
+        self.lives = lives
+        return obs, reward, done, info
+
+    def _reset(self):
+        """Reset only when lives are exhausted.
+        This way all states are still reachable even though lives are episodic,
+        and the learner need not know about any of this behind-the-scenes.
+        """
+        if self.was_real_done:
+            obs = self.env.reset()
+            self.was_real_reset = True
+        else:
+            # no-op step to advance from terminal/lost life state
+            obs, _, _, _ = self.env.step(0)
+            self.was_real_reset = False
+        self.lives = self.env.unwrapped.ale.lives()
+        return obs
+
+
+class MaxAndSkipEnv(gym.Wrapper):
+    def __init__(self, env=None, max_len=2, skip=4):
+        """Return only every `skip`-th frame"""
+        super(MaxAndSkipEnv, self).__init__(env)
+        # most recent raw observations (for max pooling across time steps)
+        self._obs_buffer = deque(maxlen=max_len)
+        self._skip = skip
+
+    def _step(self, action):
+        total_reward = 0.0
+        done = None
+        for _ in range(self._skip):
+            obs, reward, done, info = self.env.step(action)
+            self._obs_buffer.append(obs)
+            total_reward += reward
+            if done:
+                break
+
+        max_frame = np.max(np.stack(self._obs_buffer), axis=0)
+
+        return max_frame, total_reward, done, info
+
+    def _reset(self):
+        """Clear past frame buffer and init. to first obs. from inner env."""
+        self._obs_buffer.clear()
+        obs = self.env.reset()
+        self._obs_buffer.append(obs)
+        return obs
+
+
+class ProcessFrame84(gym.ObservationWrapper):
+    def __init__(self, env=None):
+        super(ProcessFrame84, self).__init__(env)
+        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(84, 84, 1))
+
+    def _observation(self, obs):
+        return ProcessFrame84.process(obs)
+
+    @staticmethod
+    def process(frame):
+        if frame.size == 210 * 160 * 3:
+            img = np.reshape(frame, [210, 160, 3]).astype(np.float32)
+        elif frame.size == 250 * 160 * 3:
+            img = np.reshape(frame, [250, 160, 3]).astype(np.float32)
+        else:
+            assert False, "Unknown resolution."
+        img = img[:, :, 0] * 0.299 + img[:, :, 1] * 0.587 + img[:, :, 2] * 0.114
+        resized_screen = cv2.resize(img, (84, 110), interpolation=cv2.INTER_AREA)
+        x_t = resized_screen[18:102, :]
+        x_t = np.reshape(x_t, [84, 84, 1])
+        return x_t.astype(np.uint8)
+
+
+class ClippedRewardsWrapper(gym.RewardWrapper):
+    def _reward(self, reward):
+        """Change all the positive rewards to 1, negative to -1 and keep zero."""
+        return np.sign(reward)
+
+
+class ScaledRewards(gym.RewardWrapper):
+
+    def __init__(self, env=None, scale=1.0):
+        self.reward_scale = scale
+        super(ScaledRewards, self).__init__(env)
+
+    def _reward(self, reward):
+        """Change all the positive rewards to 1, negative to -1 and keep zero."""
+        return self.reward_scale * reward
+
+
+class LazyFrames(object):
+    def __init__(self, frames):
+        """This object ensures that common frames between the observations are only stored once.
+        It exists purely to optimize memory usage which can be huge for DQN's 1M frames replay
+        buffers.
+
+        This object should only be converted to numpy array before being passed to the model.
+
+        You'd not belive how complex the previous solution was."""
+        self._frames = frames
+
+    def __array__(self, dtype=None):
+        out = np.concatenate(self._frames, axis=2)
+        if dtype is not None:
+            out = out.astype(dtype)
+        return out
+
+
+class FrameStack(gym.Wrapper):
+    def __init__(self, env, k):
+        """Stack k last frames.
+
+        Returns lazy array, which is much more memory efficient.
+
+        See Also
+        --------
+        baselines.common.atari_wrappers.LazyFrames
+        """
+        gym.Wrapper.__init__(self, env)
+        self.k = k
+        self.frames = deque([], maxlen=k)
+        shp = env.observation_space.shape
+        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(shp[0], shp[1], shp[2] * k))
+
+    def _reset(self):
+        ob = self.env.reset()
+        for _ in range(self.k):
+            self.frames.append(ob)
+        return self._get_ob()
+
+    def _step(self, action):
+        ob, reward, done, info = self.env.step(action)
+        self.frames.append(ob)
+        return self._get_ob(), reward, done, info
+
+    def _get_ob(self):
+        assert len(self.frames) == self.k
+        return LazyFrames(list(self.frames))
+
+
+class ScaledFloatFrame(gym.ObservationWrapper):
+    def _observation(self, obs):
+        # careful! This undoes the memory optimization, use
+        # with smaller replay buffers only.
+        return (np.asarray(obs) + 0) * (1 / 255.0)
+        # return np.array(obs).astype(np.float32) / 255.0
+
+
+def wrap_dqn(env):
+    """Apply a common set of wrappers for Atari games."""
+    assert 'NoFrameskip' in env.spec.id
+    env = EpisodicLifeEnv(env)
+    env = NoopResetEnv(env, noop_max=30)
+    env = MaxAndSkipEnv(env, skip=4, max_len=1)
+    if 'FIRE' in env.unwrapped.get_action_meanings():
+        env = FireResetEnv(env)
+    env = ProcessFrame84(env)
+    env = FrameStack(env, 4)
+    # env = ClippedRewardsWrapper(env)
+    return env
