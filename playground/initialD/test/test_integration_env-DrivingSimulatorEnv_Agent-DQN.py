@@ -18,7 +18,7 @@ from ros_environments import DrivingSimulatorEnv
 import rospy
 import message_filters
 from std_msgs.msg import Char, Bool, Int16, Float32
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image 
 
 # Environment
 env = DrivingSimulatorEnv(
@@ -29,7 +29,7 @@ env = DrivingSimulatorEnv(
      ('/rl/on_opposite_path', Int16)],
     [('/autoDrive_KeyboardMode', Char)],
     rate_action=1.0,
-    buffer_sizes={'obs': 2, 'reward': 2, 'action': 1}
+    buffer_sizes={'obs': 1, 'reward': 1, 'action': 1}
 )
 ACTIONS = [(Char(ord(mode)),) for mode in ['s', 'd', 'a']]
 

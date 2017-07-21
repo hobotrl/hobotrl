@@ -186,12 +186,6 @@ class DrivingSimulatorNode(multiprocessing.Process):
             self.name, self.pid)
 
     def __enque_exp(self, *args):
-        if self.q_obs.full():
-            self.q_obs.get()
-            self.q_obs.task_done()
-        if self.q_reward.full():
-            self.q_reward.get()
-            self.q_reward.task_done()
         num_obs = len(self.ob_subs)
         num_reward = len(self.reward_subs)
         args = list(args)
@@ -199,10 +193,19 @@ class DrivingSimulatorNode(multiprocessing.Process):
             self.brg.imgmsg_to_cv2(args[0], 'rgb8'),
             (640, 640)
         )
-        self.q_obs.put((args[:num_obs]))
-        self.q_reward.put(
-            (map(lambda data: data.data, args[num_obs:]))
-        )
+        try:
+            self.q_obs.put((args[:num_obs]), timeout=0.1)
+        except:
+            # print "__enque_exp: q_obs full!"
+            pass
+        try:
+            self.q_reward.put(
+                (map(lambda data: data.data, args[num_obs:])),
+                timeout=0.1
+            )
+        except:
+            # print "__enque_exp: q_reward full!"
+            pass
         print "__enque_exp: {}".format(args[num_obs:])
 
     def __take_action(self, data):
