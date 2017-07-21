@@ -220,7 +220,6 @@ class DPGExperiment(Experiment):
         training_params_dqn = (self.optimizer_dqn_ctor(), self.target_sync_rate, self.max_gradient)
         schedule_ddp = (self.ddp_update_interval, self.ddp_sync_interval)
         schedule_dqn = (self.dqn_update_interval, self.dqn_sync_interval)
-
         state_shape = list(self.env.observation_space.shape)
         action_shape = list(self.env.action_space.shape)
         global_step = tf.get_variable(
