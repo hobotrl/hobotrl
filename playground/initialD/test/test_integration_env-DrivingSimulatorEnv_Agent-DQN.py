@@ -159,4 +159,4 @@ except Exception as e:
 finally:
     sess.close()
     # kill orphaned monitor daemon process
-    os.killpg(os.getpgid(env.proc_mover.pid), 9)
+    os.killpg(os.getpgid(env.proc_monitor.pid), 9)
