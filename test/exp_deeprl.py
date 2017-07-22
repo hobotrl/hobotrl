@@ -1294,15 +1294,15 @@ class BootstrappedDQNAtari(Experiment):
 
         print "input size:", x
         out = hrl.utils.Network.conv2d(input_var=x, h=8, w=8, out_channel=32,
-                                       strides=[4, 4], activation=leakyRelu, var_scope="conv1")
+                                       strides=[4, 4], activation=leakyRelu, padding="VALID", var_scope="conv1")
         # 20 * 20 * 32
         print "out size:", out
         out = hrl.utils.Network.conv2d(input_var=out, h=4, w=4, out_channel=64,
-                                       strides=[2, 2], activation=leakyRelu, var_scope="conv2")
+                                       strides=[2, 2], activation=leakyRelu, padding="VALID", var_scope="conv2")
         # 9 * 9 * 64
         print "out size:", out
         out = hrl.utils.Network.conv2d(input_var=out, h=3, w=3, out_channel=64,
-                                       strides=[1, 1], activation=leakyRelu, var_scope="conv3")
+                                       strides=[1, 1], activation=leakyRelu, padding="VALID", var_scope="conv3")
 
         # 7 * 7 * 64
         out = tf.reshape(out, [-1, int(np.product(out.shape[1:]))])
