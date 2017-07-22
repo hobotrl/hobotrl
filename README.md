@@ -44,6 +44,14 @@ to get a list of experiments in each file.
 ```
 to start processes to run a3c algorithm.
 
+### Driving Simulator Environment
+The steps for starting the driving simulator environment:
+1. Open up a new shell, exececute `roscore` to launch ROS master.
+2. Fire up another shell, run `python gazebo_rl_reward.py` to setup the reward function node.
+3. Open up yet another shell, first `source [catkin_ws_dir]/devel/setup.bash` to register simulator ROS packages, then run `python rviz_restart.py` to fire up the simulator launcher.
+4. The last shell if for running the actual main script, where a `DrivingSimulatorEnv` is instanced to commnunicate with the previously opened nodes as well as the agent.
+
+Note these steps are tentitive and subject to change.
 
 ## Developers Guide
 ### Sharing network parameters across modules

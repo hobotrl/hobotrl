@@ -13,13 +13,13 @@ from exp_algorithms import *
 import hobotrl.environments as envs
 
 
-class CarEnvWrapper(gym.Wrapper):
+class CarDiscreteWrapper(gym.Wrapper):
     """
     Wraps car env into discrete action control problem
     """
 
     def __init__(self, env, steer_n, speed_n):
-        super(CarEnvWrapper, self).__init__(env)
+        super(CarDiscreteWrapper, self).__init__(env)
         self.steer_n, self.speed_n = steer_n, speed_n
         self.env = env
         self.action_n = steer_n * speed_n
@@ -91,7 +91,7 @@ class ProcessFrame96H(gym.ObservationWrapper):
 
 def wrap_car(env, steer_n, speed_n):
     """Apply a common set of wrappers for Atari games."""
-    env = CarEnvWrapper(env, steer_n, speed_n)
+    env = CarDiscreteWrapper(env, steer_n, speed_n)
     env = envs.MaxAndSkipEnv(env, skip=2, max_len=1)
     # env = ProcessFrame96H(env)
     env = envs.FrameStack(env, 4)
@@ -158,6 +158,42 @@ class A3CCarDiscrete(A3CCarExp):
 Experiment.register(A3CCarDiscrete, "discrete A3C for CarRacing")
 
 
+class CarContinuousWrapper(gym.Wrapper):
+
+    def __init__(self, env):
+        super(CarContinuousWrapper, self).__init__(env)
+        self.action_space = gym.spaces.Box(-1.0, 1.0, [2])
+
+    def _step(self, action):
+        env_action = np.zeros(3)
+        env_action[0] = action[0]
+        if action[1] > 0:
+            env_action[1], env_action[2] = action[1], 0
+        else:
+            env_action[1], env_action[2] = 0, -action[1]
+        return self.env.step(env_action)
+
+
+class CarGrassWrapper(gym.Wrapper):
+
+    def __init__(self, env, grass_penalty=0.5):
+        super(CarGrassWrapper, self).__init__(env)
+        self.grass_penalty = grass_penalty
+
+    def _step(self, action):
+
+        ob, reward, done, info = self.env.step(action)
+        if (ob[71:76, 47:49, 0] > 200).all():  # red car visible
+            front = (ob[70, 47:49, 1] > 200).all()
+            back = (ob[76, 47:49, 1] > 200).all()
+            left = (ob[71:74, 46, 1] > 200).all()
+            right = (ob[71:74, 49, 1] > 200).all()
+            if front and back and left and right:
+                reward -= self.grass_penalty
+                logging.warning("on grass! %s", reward)
+        return ob, reward, done, info
+
+
 class DDPGCar(DPGExperiment):
     def __init__(self, env=None, f_net_ddp=None, f_net_dqn=None, episode_n=10000,
                  optimizer_ddp_ctor=lambda: tf.train.AdamOptimizer(learning_rate=1e-4),
@@ -202,10 +238,13 @@ class DDPGCar(DPGExperiment):
         f_net_ddp = f_actor if f_net_ddp is None else f_net_ddp
         if env is None:
             env = gym.make("CarRacing-v0")
+            env = CarGrassWrapper(env, grass_penalty=0.5)
+            env = CarContinuousWrapper(env)
             env = envs.MaxAndSkipEnv(env, skip=2, max_len=1)
             env = envs.FrameStack(env, 4)
             env = envs.ScaledRewards(env, 0.1)
             env = envs.ScaledFloatFrame(env)
+            env = envs.AugmentEnvWrapper(env)
 
         super(DDPGCar, self).__init__(env, f_net_ddp, f_net_dqn, episode_n, optimizer_ddp_ctor, optimizer_dqn_ctor,
                                       target_sync_rate, ddp_update_interval, ddp_sync_interval, dqn_update_interval,
