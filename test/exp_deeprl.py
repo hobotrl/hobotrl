@@ -829,7 +829,7 @@ class AOTDQNBreakout(Experiment):
         def state_trans(state):
             gray = np.asarray(np.dot(state, [0.299, 0.587, 0.114]))
             gray = cv2.resize(gray, (84, 84))
-            return np.asarray(gray.reshape(gray.shape + (1,)), dtype=np.int8)
+            return np.asarray(gray.reshape(gray.shape + (1,)), dtype=np.uint8)
 
         env = hrl.envs.AugmentEnvWrapper(env, reward_decay=reward_decay, reward_scale=0.1,
                                          state_augment_proc=state_trans, state_stack_n=4)
@@ -915,6 +915,7 @@ class BootstrappedDQNSnakeGame(Experiment):
 
         from environments.snake import SnakeGame
         from hobotrl.algorithms.bootstrapped_DQN import BootstrappedDQN
+        from hobotrl.environments import EnvRunner2
 
         import time
         import os
@@ -923,86 +924,53 @@ class BootstrappedDQNSnakeGame(Experiment):
         # Parameters
         random.seed(1105)  # Seed
 
-        n_head = 1  # Number of heads
+        for n_head in [15, 20]:
 
-        display = False  # Whether to display the game
-        frame_time = 0.05  # Interval between each frame
+            log_dir = os.path.join(args.logdir, "head%d" % n_head)
+            if not os.path.exists(log_dir):
+                os.makedirs(log_dir)
+            log_file_name = "booststrapped_DQN_Snake.csv"
 
-        log_dir = os.path.join(args.logdir, "head%d" % n_head)
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-        log_file = open(os.path.join(log_dir, "booststrapped_DQN_Snake.csv"), "w") # Log file
+            # Initialize the environment and the agent
+            env = SnakeGame(3, 3, 1, 1, max_episode_length=30)
+            agent = BootstrappedDQN(observation_space=env.observation_space,
+                                    action_space=env.action_space,
+                                    reward_decay=1.,
+                                    td_learning_rate=0.5,
+                                    target_sync_interval=2000,
+                                    nn_constructor=self.nn_constructor,
+                                    loss_function=self.loss_function,
+                                    trainer=tf.train.GradientDescentOptimizer(learning_rate=0.01).minimize,
+                                    replay_buffer_class=hrl.playback.MapPlayback,
+                                    replay_buffer_args={"capacity": 20000},
+                                    min_buffer_size=100,
+                                    batch_size=20,
+                                    n_heads=n_head)
 
-        save_checkpoint = True  # Whether to save checkpoint
-        save_interval = 100  # Save after this number of episodes
-
-        stop_at_episode = 1800
-
-        # Reward recorder
-        reward_counter = [0.]
-        counter_window = 100
-
-        # Initialize the environment and the agent
-        env = SnakeGame(3, 3, 1, 1, max_episode_length=30)
-        agent = BootstrappedDQN(observation_space=env.observation_space,
-                                action_space=env.action_space,
-                                reward_decay=1.,
-                                td_learning_rate=0.5,
-                                target_sync_interval=200,
-                                nn_constructor=self.nn_constructor,
-                                loss_function=self.loss_function,
-                                trainer=tf.train.GradientDescentOptimizer(learning_rate=0.01).minimize,
-                                replay_buffer_class=hrl.playback.MapPlayback,
-                                replay_buffer_args={"capacity": 20000},
-                                min_buffer_size=100,
-                                batch_size=20,
-                                n_heads=n_head)
-
-        # Start training
-        next_state = np.array(env.state)
-        episode_counter = 0
-        while True:
-            state = next_state
-            action = agent.act(state)
-            next_state, reward, done, info = env.step(action)
-            render()
-
-            agent.reinforce_(state=state,
-                             action=action,
-                             reward=reward,
-                             next_state=next_state,
-                             episode_done=done)
-
-            if done:
-                next_state = np.array(env.reset())
-                render()
-                episode_counter += 1
-
-            if log_file:
-                reward_counter[-1] += reward
-                if done:
-                    average = sum(reward_counter)/len(reward_counter)
-                    print "Average reward: %.2f" % average
-                    log_file.write("%d,%.2f\n" % (int(reward_counter[-1] + 0.01), average))
-
-                    reward_counter.append(0.)
-                    if len(reward_counter) > counter_window:
-                        del reward_counter[0]
-
-                    if save_checkpoint and episode_counter % save_interval == 0:
-                        print "%d Checkpoint saved" % episode_counter
-                        saver = tf.train.Saver()
-                        saver.save(agent.get_session(), os.path.join(log_dir, '%d.ckpt' % episode_counter))
-
-                    if episode_counter > stop_at_episode:
-                        exit()
+            # Start training
+            env_runner = EnvRunner2(env=env,
+                                    agent=agent,
+                                    n_episodes=3000,
+                                    moving_average_window_size=100,
+                                    no_reward_reset_interval=-1,
+                                    checkpoint_save_interval=1000,
+                                    log_dir=log_dir,
+                                    log_file_name=log_file_name,
+                                    render_env=False,
+                                    render_interval=1000,
+                                    render_length=200,
+                                    frame_time=0.1,
+                                    render_options={"mode": "ansi"}
+                                    )
+            env_runner.run()
+            # env_runner.run_demo("17000.ckpt")
 
     @staticmethod
     def loss_function(output, target):
         """
         Calculate the loss.
         """
-        return tf.reduce_sum(tf.squared_difference(output, target))
+        return tf.reduce_sum(tf.sqrt(tf.squared_difference(output, target)+1)-1, axis=-1)
 
     @staticmethod
     def nn_constructor(observation_space, action_space, n_heads, **kwargs):
@@ -1021,8 +989,9 @@ class BootstrappedDQNSnakeGame(Experiment):
         def bias(shape):
             return tf.Variable(tf.constant(0.1, shape=shape))
 
+        x = tf.placeholder(tf.float32, (None,) + observation_space.shape)
+
         eshape = observation_space.shape
-        nn_inputs = []
         nn_outputs = []
 
         # Layer 1 parameters
@@ -1035,27 +1004,24 @@ class BootstrappedDQNSnakeGame(Experiment):
         w2 = weight([n_channel1*eshape[0]*eshape[1], n_channel2])
         b2 = bias([n_channel2])
 
-        for i in range(n_heads):
-            x = tf.placeholder(tf.float32, (None,) + observation_space.shape)
+        # Layer 1
+        layer1 = leakyRelu(conv2d(x, w1) + b1)
+        layer1_flatten = tf.reshape(layer1, [-1, n_channel1*eshape[0]*eshape[1]])
 
+        # Layer 2
+        layer2 = leakyRelu(tf.matmul(layer1_flatten, w2) + b2)
+
+        for i in range(n_heads):
             # Layer 3 parameters
             w3 = weight([n_channel2, 4])
             b3 = bias([4])
 
-            # Layer 1
-            layer1 = leakyRelu(conv2d(x, w1) + b1)
-            layer1_flatten = tf.reshape(layer1, [-1, n_channel1*eshape[0]*eshape[1]])
-
-            # Layer 2
-            layer2 = leakyRelu(tf.matmul(layer1_flatten, w2) + b2)
-
             # Layer 3
             layer3 = tf.matmul(layer2, w3) + b3
 
-            nn_inputs.append(x)
             nn_outputs.append(layer3)
 
-        return {"input": nn_inputs, "head": nn_outputs}
+        return {"input": x, "head": nn_outputs}
 
 Experiment.register(BootstrappedDQNSnakeGame, "Bootstrapped DQN for the Snake game")
 
@@ -1065,110 +1031,252 @@ class BootstrappedDQNCartPole(Experiment):
         """
         Run the experiment.
         """
-        def render():
-            """
-            Render the environment and related information to the console.
-            """
-            if not display:
-                return
-
-            print env.render()
-            print "Reward:", reward
-            print "Head:", agent.current_head
-            print "Done:", done
-            print ""
-            time.sleep(frame_time)
-
-        from environments.snake import SnakeGame
         from hobotrl.algorithms.bootstrapped_DQN import BootstrappedDQN
+        from hobotrl.environments import EnvRunner2
 
-        import time
         import os
-        import random
 
-        # Parameters
-        random.seed(1105)  # Seed
+        n_head = 10  # Number of heads
 
-        n_head = 20  # Number of heads
-
-        display = True  # Whether to display the game
-        frame_time = 0.05  # Interval between each frame
-
-        log_dir = os.path.join(args.logdir, "head%d" % n_head)
+        log_dir = args.logdir
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
-        log_file = open(os.path.join(log_dir, "booststrapped_DQN_Snake.csv"), "w") # Log file
-
-        save_checkpoint = True  # Whether to save checkpoint
-        save_interval = 100  # Save after this number of episodes
-
-        stop_at_episode = 1800
-
-        # Reward recorder
-        reward_counter = [0.]
-        counter_window = 100
+        log_file_name = "bootstrapped_DQN_Pendulum.csv"
 
         # Initialize the environment and the agent
         env = gym.make('CartPole-v0')
+        # env = hrl.envs.C2DEnvWrapper(env, [5])
         agent = BootstrappedDQN(observation_space=env.observation_space,
                                 action_space=env.action_space,
                                 reward_decay=1.,
                                 td_learning_rate=0.5,
-                                target_sync_interval=200,
+                                target_sync_interval=2000,
                                 nn_constructor=self.nn_constructor,
                                 loss_function=self.loss_function,
                                 trainer=tf.train.GradientDescentOptimizer(learning_rate=0.01).minimize,
                                 replay_buffer_class=hrl.playback.MapPlayback,
-                                replay_buffer_args={"capacity": 20000},
-                                min_buffer_size=100,
-                                batch_size=20,
+                                replay_buffer_args={"capacity": 10000},
+                                min_buffer_size=1000,
+                                batch_size=10,
                                 n_heads=n_head)
 
-        # Start training
-        next_state = env.reset()
-        episode_counter = 0
-        while True:
-            state = next_state
-            action = agent.act(state)
-            next_state, reward, done, info = env.step(action)
-            render()
-
-            agent.reinforce_(state=state,
-                             action=action,
-                             reward=reward,
-                             next_state=next_state,
-                             episode_done=done)
-
-            if done:
-                next_state = env.reset()
-                render()
-                episode_counter += 1
-
-            if log_file:
-                reward_counter[-1] += reward
-                if done:
-                    average = sum(reward_counter)/len(reward_counter)
-                    print "Average reward: %.2f" % average
-                    log_file.write("%d,%.2f\n" % (int(reward_counter[-1] + 0.01), average))
-
-                    reward_counter.append(0.)
-                    if len(reward_counter) > counter_window:
-                        del reward_counter[0]
-
-                    if save_checkpoint and episode_counter % save_interval == 0:
-                        print "%d Checkpoint saved" % episode_counter
-                        saver = tf.train.Saver()
-                        saver.save(agent.get_session(), os.path.join(log_dir, '%d.ckpt' % episode_counter))
-
-                    if episode_counter > stop_at_episode:
-                        exit()
+        env_runner = EnvRunner2(env=env,
+                                agent=agent,
+                                n_episodes=-1,
+                                moving_average_window_size=50,
+                                no_reward_reset_interval=-1,
+                                checkpoint_save_interval=2000,
+                                log_dir=log_dir,
+                                log_file_name=log_file_name,
+                                render_env=True,
+                                render_interval=4000,
+                                render_length=200,
+                                frame_time=0.1
+                                )
+        env_runner.run()
 
     @staticmethod
     def loss_function(output, target):
         """
         Calculate the loss.
         """
-        return tf.reduce_sum(tf.squared_difference(output, target))
+        return tf.reduce_sum(tf.squared_difference(output, target), axis=-1)
+
+    @staticmethod
+    def nn_constructor(observation_space, action_space, n_heads, **kwargs):
+        """
+        Construct the neural network.
+        """
+        def weight(shape):
+            return tf.Variable(tf.truncated_normal(shape, stddev=0.1))
+
+        def bias(shape):
+            return tf.Variable(tf.constant(0.1, shape=shape))
+
+        eshape = observation_space.shape[0]
+        nn_outputs = []
+
+        x = tf.placeholder(tf.float32, (None,) + observation_space.shape)
+
+        # Layer 1 parameters
+        n_channel1 = 16
+        w1 = weight([eshape, n_channel1])
+        b1 = bias([n_channel1])
+
+        # Layer 2 parameters
+        n_channel2 = 8
+        w2 = weight([n_channel1, n_channel2])
+        b2 = bias([n_channel2])
+
+        # Layer 1
+        layer1 = tf.sigmoid(tf.matmul(x, w1) + b1)
+
+        # Layer 2
+        layer2 = tf.sigmoid(tf.matmul(layer1, w2) + b2)
+
+        for i in range(n_heads):
+            # Layer 3 parameters
+            w3 = weight([n_channel2, action_space.n])
+            b3 = bias([action_space.n])
+
+            # Layer 3
+            layer3 = tf.matmul(layer2, w3) + b3
+
+            nn_outputs.append(layer3)
+
+        return {"input": x, "head": nn_outputs}
+
+Experiment.register(BootstrappedDQNCartPole, "Bootstrapped DQN for the CartPole")
+
+from hobotrl.algorithms.bootstrapped_DQN import BootstrappedDQN
+
+
+class BootstrappedDQNAtari(Experiment):
+    def __init__(self, env, augment_wrapper_args={}, agent_args={}, runner_args={},
+                 stack_n=4, frame_skip_n=4, reward_decay=0.99,
+                 agent_type=BootstrappedDQN):
+        """
+        Base class Experiments in Atari games.
+
+        :param env: environment.
+        :param augment_wrapper_args(dict): arguments for "AugmentEnvWrapper".
+        :param agent_args(dict): arguments for the agent.
+        :param runner_args(dict): arguments for the environment runner.
+        :param agent_type(class): class name of the agent.
+        """
+        assert stack_n >= 1
+        assert 1 <= frame_skip_n <= stack_n
+        assert stack_n % frame_skip_n == 0
+        assert 0. <= reward_decay <= 1.
+
+        import math
+
+        Experiment.__init__(self)
+
+        n_head = 10  # Number of heads
+
+        self.augment_wrapper_args = augment_wrapper_args
+        self.agent_args = agent_args
+        self.runner_args = runner_args
+
+        # Wrap the environment
+        history_stack_n = stack_n//frame_skip_n
+        augment_wrapper_args = {"reward_decay": math.pow(reward_decay, 1.0/history_stack_n),
+                                "reward_scale": 1.,
+                                "state_augment_proc": self.state_trans,
+                                "state_stack_n": frame_skip_n,
+                                "state_scale": 1.0/255.0}
+        augment_wrapper_args.update(self.augment_wrapper_args)
+        env = self.env = hrl.envs.AugmentEnvWrapper(env, **augment_wrapper_args)
+        env = self.env = hrl.envs.StateHistoryStackEnvWrapper(env,
+                                                              stack_n=history_stack_n)
+
+        # Initialize the agent
+        agent_args = {"reward_decay": math.pow(reward_decay, 1.0/history_stack_n),
+                      "td_learning_rate": 1.,
+                      "target_sync_interval": 1000,
+                      "nn_constructor": self.nn_constructor,
+                      "loss_function": self.loss_function,
+                      "trainer": tf.train.GradientDescentOptimizer(learning_rate=0.001).minimize,
+                      "replay_buffer_class": hrl.playback.MapPlayback,
+                      "replay_buffer_args": {"capacity": 10000},
+                      "min_buffer_size": 5000,
+                      "batch_size": 8,
+                      "n_heads": n_head}
+        agent_args.update(self.agent_args)
+        self.agent = agent_type(observation_space=env.observation_space,
+                                action_space=env.action_space,
+                                **agent_args)
+
+    @staticmethod
+    def state_trans(state):
+        """
+        Transform the state to 84*84 grayscale image.
+
+        :param state: state.
+        :return: transformed image.
+        """
+        gray = np.asarray(np.dot(state, [0.299, 0.587, 0.114]))
+        gray = cv2.resize(gray, (84, 84))
+
+        return np.asarray(gray.reshape(gray.shape + (1,)), dtype=np.int8)
+
+    @staticmethod
+    def show_state_trans_result_wrapper(state):
+        """
+        Transform the state with "state_trans" and show the result in the image viewer.
+
+        :param state: state.
+        :return: transformed image
+        """
+        global image_viewer
+        import gym.envs.classic_control.rendering as rendering
+
+        # Initialize image viewer if needed
+        try:
+            image_viewer
+        except NameError:
+            image_viewer = rendering.SimpleImageViewer()
+
+        # Transform with state_trans
+        image = BootstrappedDQNAtari.state_trans(state)
+
+        # Resize the image to see it clearly
+        im_view = image.reshape((84, 84))
+        im_view = np.array(im_view, dtype=np.float32)
+        im_view = cv2.resize(im_view, (336, 336), interpolation=cv2.INTER_NEAREST)
+        im_view = np.array(im_view, dtype=np.int8)
+        im_view = np.stack([im_view]*3, axis=-1)
+
+        # Show image
+        image_viewer.imshow(im_view)
+        return image
+
+    def run(self, args, checkpoint_number=None):
+        """
+        Run the experiment.
+
+        :param args: arguments.
+        :param checkpoint_number: if not None, checkpoint will be loaded before training.
+        """
+        from hobotrl.environments import EnvRunner2
+        import os
+
+        # Create logging folder if needed
+        log_dir = args.logdir
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        log_file_name = "booststrapped_DQN.csv"
+
+        # Initialize the environment runner
+        runner_args = {"n_episodes": -1,
+                       "moving_average_window_size": 100,
+                       "no_reward_reset_interval": -1,
+                       "checkpoint_save_interval": 100000,
+                       "render_env": False,
+                       "show_frame_rate": True,
+                       "show_frame_rate_interval": 2000}
+        runner_args.update(self.runner_args)
+        env_runner = EnvRunner2(env=self.env,
+                                agent=self.agent,
+                                log_dir=log_dir,
+                                log_file_name=log_file_name,
+                                **runner_args)
+
+        # Load checkpoint if needed
+        if checkpoint_number:
+            checkpoint_file_name = '%d.ckpt' % checkpoint_number
+            env_runner.load_checkpoint(checkpoint_file_name, checkpoint_number)
+
+        # Start training
+        env_runner.run()
+
+    @staticmethod
+    def loss_function(output, target):
+        """
+        Calculate the loss.
+        """
+        return tf.reduce_sum(tf.sqrt(tf.squared_difference(output, target)+1)-1, -1)
 
     @staticmethod
     def nn_constructor(observation_space, action_space, n_heads, **kwargs):
@@ -1178,51 +1286,177 @@ class BootstrappedDQNCartPole(Experiment):
         def leakyRelu(x):
             return tf.maximum(0.01*x, x)
 
-        def conv2d(x, w):
-            return tf.nn.conv2d(x, w, strides=[1, 1, 1, 1], padding="SAME")
-
-        def weight(shape):
-            return tf.Variable(tf.truncated_normal(shape, stddev=0.1))
-
-        def bias(shape):
-            return tf.Variable(tf.constant(0.1, shape=shape))
-
-        eshape = observation_space.shape[0]
-        nn_inputs = []
+        import tensorflow.contrib.layers as layers
         nn_outputs = []
 
-        # Layer 1 parameters
-        n_channel1 = 8
-        w1 = weight([eshape, 8])
-        b1 = bias([n_channel1])
+        x = tf.placeholder(tf.float32, (None,) + observation_space.shape)
 
-        # Layer 2 parameters
-        n_channel2 = 4
-        w2 = weight([n_channel1, n_channel2])
-        b2 = bias([n_channel2])
+        print "input size:", x
+        out = hrl.utils.Network.conv2d(input_var=x, h=8, w=8, out_channel=32,
+                                       strides=[4, 4], activation=leakyRelu, padding="VALID", var_scope="conv1")
+        # 20 * 20 * 32
+        print "out size:", out
+        out = hrl.utils.Network.conv2d(input_var=out, h=4, w=4, out_channel=64,
+                                       strides=[2, 2], activation=leakyRelu, padding="VALID", var_scope="conv2")
+        # 9 * 9 * 64
+        print "out size:", out
+        out = hrl.utils.Network.conv2d(input_var=out, h=3, w=3, out_channel=64,
+                                       strides=[1, 1], activation=leakyRelu, padding="VALID", var_scope="conv3")
 
-        for i in range(n_heads):
-            x = tf.placeholder(tf.float32, (None,) + observation_space.shape)
+        # 7 * 7 * 64
+        out = tf.reshape(out, [-1, int(np.product(out.shape[1:]))])
+        out = layers.fully_connected(out, 512, activation_fn=leakyRelu)
+        print "out size:", out
 
-            # Layer 3 parameters
-            w3 = weight([n_channel2, action_space.n])
-            b3 = bias([action_space.n])
+        for _ in range(n_heads):
+            head = layers.fully_connected(out, action_space.n, activation_fn=None)
 
-            # Layer 1
-            layer1 = leakyRelu(tf.matmul(x, w1) + b1)
+            nn_outputs.append(head)
 
-            # Layer 2
-            layer2 = leakyRelu(tf.matmul(layer1, w2) + b2)
+        return {"input": x, "head": nn_outputs}
 
-            # Layer 3
-            layer3 = tf.matmul(layer2, w3) + b3
 
-            nn_inputs.append(x)
-            nn_outputs.append(layer3)
+class BootstrappedDQNBattleZone(BootstrappedDQNAtari):
+    def __init__(self):
+        BootstrappedDQNAtari.__init__(self,
+                                      env=gym.make('BattleZone-v0'),
+                                      augment_wrapper_args={"reward_scale": 0.001},
+                                      agent_args={"replay_buffer_args": {"capacity": 10000},
+                                                  "min_buffer_size": 10000})
 
-        return {"input": nn_inputs, "head": nn_outputs}
+    def run(self, args, **kwargs):
+        BootstrappedDQNAtari.run(self, args, **kwargs)
 
-Experiment.register(BootstrappedDQNCartPole, "Bootstrapped DQN for the Cart Pole")
+Experiment.register(BootstrappedDQNBattleZone, "Bootstrapped DQN for the BattleZone")
+
+
+class BootstrappedDQNBreakOut(BootstrappedDQNAtari):
+    def __init__(self):
+        from hobotrl.algorithms.bootstrapped_DQN import bernoulli_mask
+        BootstrappedDQNAtari.__init__(self,
+                                      env=gym.make('Breakout-v0'),
+                                      runner_args={"no_reward_reset_interval": 2000},
+                                      agent_args={"n_heads": 30,
+                                                  "bootstrap_mask": bernoulli_mask(0.2)}
+                                      )
+
+Experiment.register(BootstrappedDQNBreakOut, "Bootstrapped DQN for the BreakOut")
+
+
+class BootstrappedDQNPong(BootstrappedDQNAtari):
+    def __init__(self):
+        BootstrappedDQNAtari.__init__(self, gym.make('PongNoFrameskip-v4'))
+
+Experiment.register(BootstrappedDQNPong, "Bootstrapped DQN for the Pong")
+
+
+class BootstrappedDQNEnduro(BootstrappedDQNAtari):
+    def __init__(self):
+        BootstrappedDQNAtari.__init__(self,
+                                      env=gym.make('Enduro-v0'),
+                                      augment_wrapper_args={
+                                          "reward_scale": 0.3
+                                          },
+                                      agent_args={
+                                          "batch_size": 3
+                                      },
+                                      frame_skip_n=1)
+
+    def run(self, args, **kwargs):
+        BootstrappedDQNAtari.run(self, args, checkpoint_number=1300000)
+
+Experiment.register(BootstrappedDQNEnduro, "Bootstrapped DQN for the Enduro")
+
+
+class BootstrappedDQNIceHockey(BootstrappedDQNAtari):
+    def __init__(self):
+        BootstrappedDQNAtari.__init__(self,
+                                      env=gym.make('IceHockey-v0'),
+                                      augment_wrapper_args={
+                                          "reward_scale": 1.0
+                                          },
+                                      agent_args={
+                                          "batch_size": 3,
+                                      },
+                                      # runner_args={"render_env": True,
+                                      #              "frame_time": 0.05}
+                                      frame_skip_n=1
+                                      )
+
+    def run(self, args, **kwargs):
+        BootstrappedDQNAtari.run(self, args, checkpoint_number=23800000)
+
+Experiment.register(BootstrappedDQNIceHockey, "Bootstrapped DQN for the IceHockey")
+
+
+class BootstrappedDQNKangaroo(BootstrappedDQNAtari):
+    def __init__(self):
+        BootstrappedDQNAtari.__init__(self,
+                                      env=gym.make('Kangaroo-v0'),
+                                      augment_wrapper_args={
+                                          "reward_scale": 1.0
+                                          },
+                                      runner_args={"render_env": True,
+                                                   "frame_time": 0.05}
+                                      )
+
+Experiment.register(BootstrappedDQNKangaroo, "Bootstrapped DQN for the Kangaroo")
+
+
+class RandomizedBootstrappedDQNBreakOut(BootstrappedDQNAtari):
+    def __init__(self):
+        import math
+        from hobotrl.algorithms.bootstrapped_DQN import RandomizedBootstrappedDQN
+
+        def eps_function(step):
+            return 0.025*(math.cos(step/4.0e5*math.pi) + 1)
+
+        BootstrappedDQNAtari.__init__(self,
+                                      env=gym.make('Breakout-v0'),
+                                      runner_args={"no_reward_reset_interval": 2000,
+                                                   # "render_env": True,
+                                                   # "frame_time": 0.05
+                                                   },
+                                      agent_args={"eps_function": (lambda x: 0)},  # {"eps_function": LinearSequence(1e6, 0.2, 0.0)},
+                                      agent_type=RandomizedBootstrappedDQN,
+                                      frame_skip_n=1
+                                      )
+
+    def run(self, args, **kwargs):
+        BootstrappedDQNAtari.run(self, args, checkpoint_number=14200000)
+
+Experiment.register(RandomizedBootstrappedDQNBreakOut, "Randomized Bootstrapped DQN for the Breakout")
+
+
+def demo_experiment_generator(experiment_class, checkpoint_file_name, frame_time=0.05):
+    """
+    Generate a demo experiment using "EnvRunner2".
+
+    :param experiment_class: class of the experiment.
+    :param checkpoint_file_name: file name of the checkpoint that should be loaded.
+    :param frame_time: will be passed to the environment runner.
+    :return: an experiment.
+    """
+    class BootstrappedDQNDemo(Experiment):
+        def run(self, args):
+            from hobotrl.environments import EnvRunner2
+
+            experiment = experiment_class()
+            env_runner = EnvRunner2(env=experiment.env,
+                                    agent=experiment.agent,
+                                    log_dir=args.logdir,
+                                    frame_time=frame_time)
+            env_runner.run_demo(checkpoint_file_name)
+
+    BootstrappedDQNDemo.__name__ = experiment_class.__name__ + "Demo"
+    return BootstrappedDQNDemo
+
+Experiment.register(demo_experiment_generator(RandomizedBootstrappedDQNBreakOut, "14200000.ckpt", frame_time=0.1), "Demo for the Breakout")
+Experiment.register(demo_experiment_generator(BootstrappedDQNPong, "1080000.ckpt"), "Demo for the Pong")
+Experiment.register(demo_experiment_generator(BootstrappedDQNBattleZone, "2232000.ckpt"), "Demo for the Battle Zone")
+Experiment.register(demo_experiment_generator(BootstrappedDQNEnduro, "17000000.ckpt", frame_time=0.0), "Demo for the Enduro")
+Experiment.register(demo_experiment_generator(BootstrappedDQNIceHockey, "23400000.ckpt", frame_time=0.02), "Demo for the Ice Hockey")
+
 
 if __name__ == '__main__':
     Experiment.main()

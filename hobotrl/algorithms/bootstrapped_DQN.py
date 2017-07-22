@@ -2,6 +2,7 @@ import hobotrl as hrl
 import tensorflow as tf
 import numpy as np
 import random
+import time
 
 
 def bernoulli_mask(p):
@@ -35,7 +36,7 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         :param loss_function(callable): represents the loss function.
             param output: node for the neural network's output .
             param target: node for the training target.
-            return: a node that represents the training loss.
+            return: a tensorflow node that represents a list of training loss for each sample.
         :param trainer(callable): a trainer.
             param loss: the training loss.
             return: a tensorflow operation that can train the neural network.
@@ -60,11 +61,22 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         assert n_heads > 0
         assert callable(bootstrap_mask)
 
-        super(BootstrappedDQN, self).__init__(sess=tf.Session())
+        # Create tensorflow session
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        session = tf.Session(config=config)
+
+        super(BootstrappedDQN, self).__init__(sess=session)
 
         # Initialize parameters
         self.observation_space = observation_space
+
         self.action_space = action_space
+        try:
+            self.action_space_shape = (action_space.n,)
+        except AttributeError:
+            self.action_space_shape = action_space.shape
+
         self.reward_decay = reward_decay
         self.td_learning_rate = td_learning_rate
         self.target_sync_interval = target_sync_interval
@@ -73,16 +85,19 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         self.n_heads = n_heads
         self.mask_generator = bootstrap_mask
 
-        self.current_head = 0
-        self.step_count = 0
+        self.masks = [tf.placeholder(tf.float32, shape=(None,)) for head in range(self.n_heads)] \
+            # Placeholder for bootstrap masks
+        self.current_head = 0  # The head for current episode
+        self.step_count = 0  # Total number of steps for all episodes
 
         # Initialize the replay buffer
         self.reply_buffer = replay_buffer_class(sample_shapes={
                                                     "state": observation_space.shape,
+                                                    "mask": (self.n_heads,),
                                                     "next_state": observation_space.shape,
                                                     "action": [],
                                                     "reward": [],
-                                                    "episode_done": []
+                                                    "episode_done": [],
                                                 },
                                                 **replay_buffer_args)
 
@@ -92,21 +107,19 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
             nn = nn_constructor(observation_space=observation_space,
                                 action_space=action_space,
                                 n_heads=n_heads)
-            assert len(nn["input"]) == self.n_heads
             assert len(nn["head"]) == self.n_heads
 
-            self.nn_inputs = nn["input"]
+            self.nn_input = nn["input"]
             self.nn_heads = nn["head"]
 
         # Target network
-        with tf.variable_scope('non-target') as scope_target:
+        with tf.variable_scope('target') as scope_target:
             nn = nn_constructor(observation_space=observation_space,
                                 action_space=action_space,
                                 n_heads=n_heads)
-            assert len(nn["input"]) == self.n_heads
             assert len(nn["head"]) == self.n_heads
 
-            self.target_nn_inputs = nn["input"]
+            self.target_nn_input = nn["input"]
             self.target_nn_heads = nn["head"]
 
         # Construct synchronize operation
@@ -117,59 +130,77 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         self.op_sync_target = [tf.assign(target_var, non_target_var)
                                for target_var, non_target_var
                                in zip(target_vars, non_target_vars)]
+        self.non_target_vars = non_target_vars
 
         # Construct training operation
         self.nn_outputs = [tf.placeholder(tf.float32, (None, action_space.n))
                            for _ in range(self.n_heads)]
         nn_output = tf.concat(self.nn_heads, 0)
         nn_target = tf.concat(self.nn_outputs, 0)
+        masks = tf.concat(self.masks, 0)
 
-        loss = loss_function(output=nn_output, target=nn_target)
-        self.op_train = trainer(loss)
+        loss_list = loss_function(output=nn_output, target=nn_target)
+        self.loss = tf.reduce_sum(tf.multiply(loss_list, masks))  # Apply bootstrap mask
+        self.op_train = trainer(self.loss)
 
         # Initialize the neural network
         self.get_session().run(tf.global_variables_initializer())
         self.get_session().run(self.op_sync_target)
 
-    def act(self, state, **kwargs):
+    def act(self, state, show_action_values=False, **kwargs):
         """
         Choose an action to take.
 
         :param state: current state.
+        :param show_action_values: whether to print action values
         :return: an action.
         """
         action_values = self.get_session().run(self.nn_heads[self.current_head],
-                                               {self.nn_inputs[self.current_head]: [state]})[0]
+                                               {self.nn_input: [state]})[0]
+
+        # Print action values if needed
+        if show_action_values:
+            print action_values
+
         return np.argmax(action_values)
 
     def reinforce_(self, state, action, reward, next_state,
                    episode_done=None, **kwargs):
         """
         Saves training data and train the neural network.
-        Asserts that "state" and "next_state" are already arrays.
+        Asserts that "state" and "next_state" are already numpy arrays.
 
         :param state:
         :param action:
         :param reward:
         :param next_state:
         :param episode_done:
+        :return: loss.
         """
         # TODO: don't give the default value for "episode_done" in the base class
         assert episode_done is not None
 
+        info = {}
+
+        # Add to buffer
         self.reply_buffer.push_sample({"state": state,
                                        "next_state": next_state,
                                        "action": np.asarray(action),
                                        "reward": np.asarray(reward),
-                                       "episode_done": np.asarray(episode_done)})
+                                       "episode_done": np.asarray(episode_done),
+                                       "mask": np.array(self.mask_generator(self.n_heads))})
 
         # Randomly choose next head if this episode ends
         if episode_done:
             self.current_head = random.randrange(self.n_heads)
 
         # Training
-        if self.reply_buffer.get_count() > self.min_buffer_size:
-            self.get_session().run(self.op_train, feed_dict=self.generate_feed_dict())
+        if self.step_count > self.min_buffer_size:
+            batch = self.reply_buffer.sample_batch(self.batch_size)
+            feed_dict = self.generate_feed_dict(batch)
+            loss = self.train(feed_dict)
+        else:
+            loss = float("nan")
 
         # Synchronize target network
         self.step_count += 1
@@ -177,7 +208,23 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         if self.step_count % self.target_sync_interval == 0:
             self.sync_target()
 
-    def generate_feed_dict(self):
+        info["loss"] = loss
+        return info
+
+    def train(self, feed_dict):
+        """
+        Train the neural network with data in feed_dict.
+
+        :param feed_dict: data to be passed to tensorflow.
+        :return: loss.
+        """
+        try:
+            _, loss = self.get_session().run([self.op_train, self.loss], feed_dict=feed_dict)
+            return loss
+        except ValueError:  # If all masks happens to be zero, i.e. there's no sample
+            return 0.0
+
+    def generate_feed_dict(self, batch):
         """
         Generate "feed_dict" for tf.Session().run() using next batch's data.
 
@@ -192,11 +239,9 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
             :param state: game state.
             :return(numpy.ndarray): action values.
             """
-            return self.get_session().run(output_node, feed_dict={input_node: [state]})[0]
+            return self.get_session().run(output_node, feed_dict={input_node: [state]})
 
-        feed_dict = {node: [] for node in self.nn_inputs + self.nn_outputs}
-
-        batch = self.reply_buffer.sample_batch(self.batch_size)
+        feed_dict = {node: [] for node in [self.nn_input] + self.nn_outputs + self.masks}
         for i in range(self.batch_size):
             # Unpack data
             state = batch["state"][i]
@@ -204,33 +249,42 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
             action = batch["action"][i]
             reward = batch["reward"][i]
             done = batch["episode_done"][i]
+            bootstrap_mask = batch["mask"][i]
 
-            bootstrap_mask = self.mask_generator(self.n_heads)
+            # Calculate old action values for all heads
+            next_state_action_values = \
+                get_action_values(self.target_nn_input, self.target_nn_heads, next_state)
+
+            current_state_action_values = \
+                get_action_values(self.nn_input, self.nn_heads, state)
+
+            # Add current state to training data
+            feed_dict[self.nn_input].append(state)
+
             for head in range(self.n_heads):
+                # Get old action values for current head
+                target_action_values = next_state_action_values[head][0]
+                updated_action_values = list(current_state_action_values[head][0])
+
+                # Add bootstrap mask to training data
+                feed_dict[self.masks[head]].append(bootstrap_mask[head])
+
                 # Mask out some heads
                 if not bootstrap_mask[head]:
+                    feed_dict[self.nn_outputs[head]].append(updated_action_values)
                     continue
 
-                # Update action value
-                target_action_values = get_action_values(self.target_nn_inputs[head],
-                                                         self.target_nn_heads[head],
-                                                         next_state)
-                updated_action_value = get_action_values(self.nn_inputs[head],
-                                                         self.nn_heads[head],
-                                                         state)
-                updated_action_value = list(updated_action_value)
-
+                # Calculate new action values
                 if done:
                     learning_target = reward
                 else:
-                    learning_target = reward + self.reward_decay*np.max(target_action_values)
+                    learning_target = reward + self.reward_decay * np.max(target_action_values)
 
-                updated_action_value[action] += \
-                    self.td_learning_rate*(learning_target - updated_action_value[action])
+                updated_action_values[action] += \
+                    self.td_learning_rate * (learning_target - updated_action_values[action])
 
-                # Add to feed_dict
-                feed_dict[self.nn_inputs[head]].append(state)
-                feed_dict[self.nn_outputs[head]].append(updated_action_value)
+                # Add new action values to training data
+                feed_dict[self.nn_outputs[head]].append(updated_action_values)
 
         return feed_dict
 
@@ -239,3 +293,19 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         Update the target network.
         """
         self.get_session().run(self.op_sync_target)
+
+
+class RandomizedBootstrappedDQN(BootstrappedDQN):
+    def __init__(self, eps_function, **args):
+        """
+        :param eps_function(callable): maps step count to epsilon.
+        :param args: other arguments that will be passed to "BootstrappedDQN".
+        """
+        super(RandomizedBootstrappedDQN, self).__init__(**args)
+        self.eps_function = eps_function
+
+    def act(self, state, **kwargs):
+        if random.random() < self.eps_function(self.step_count):
+            return self.action_space.sample()
+        else:
+            return super(RandomizedBootstrappedDQN, self).act(state, **kwargs)
