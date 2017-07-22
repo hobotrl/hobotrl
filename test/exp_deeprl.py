@@ -1169,7 +1169,6 @@ class BootstrappedDQNAtari(Experiment):
         augment_wrapper_args.update(self.augment_wrapper_args)
         env = self.env = hrl.envs.AugmentEnvWrapper(env, **augment_wrapper_args)
         env = self.env = hrl.envs.StateHistoryStackEnvWrapper(env,
-                                                              reward_decay=math.pow(reward_decay, 1.0/history_stack_n),
                                                               stack_n=history_stack_n)
 
         # Initialize the agent
