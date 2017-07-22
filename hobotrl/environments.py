@@ -145,6 +145,8 @@ class AugmentEnvWrapper(gym.Wrapper):
         self.state_augment_proc, self.reward_shaping_proc = state_augment_proc, reward_shaping_proc
         self.is_continuous_action = env.action_space.__class__.__name__ == "Box"
         if self.is_continuous_action:
+            if action_limit is None:
+                action_limit = [env.action_space.low, env.action_space.high]
             self.action_limit = action_limit
             self.action_scale = (action_limit[1] - action_limit[0])/2.0
             self.action_offset = (action_limit[1] + action_limit[0])/2.0
@@ -165,10 +167,10 @@ class AugmentEnvWrapper(gym.Wrapper):
             self.last_stacked_states = deque(maxlen=state_stack_n)  # lazy init
             pass
 
-    def __getattr__(self, name):
-        if self.stack_n is not None and name == "observation_space":
-            return self.observation_space
-        return getattr(self.env, name)
+#    def __getattr__(self, name):
+#        if self.stack_n is not None and name == "observation_space":
+#            return self.observation_space
+#        return getattr(self.env, name)
 
     def augment_action(self, action):
         if self.is_continuous_action and self.action_limit is not None:
