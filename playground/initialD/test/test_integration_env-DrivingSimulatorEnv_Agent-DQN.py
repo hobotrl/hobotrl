@@ -28,7 +28,7 @@ env = DrivingSimulatorEnv(
      ('/rl/car_velocity', Float32),
      ('/rl/on_opposite_path', Int16)],
     [('/autoDrive_KeyboardMode', Char)],
-    rate_action=1.0,
+    rate_action=10.0,
     buffer_sizes={'obs': 1, 'reward': 1, 'action': 1}
 )
 ACTIONS = [(Char(ord(mode)),) for mode in ['s', 'd', 'a']]

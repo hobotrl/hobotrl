@@ -166,7 +166,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
         self.restart_pub.publish(True)
 
         print "Let's roll!"
-        time.sleep(6.0)
+        time.sleep(4.0)
         self.action_pubs[0].publish(ord('1'))
         time.sleep(0.5)
         self.action_pubs[0].publish(ord(' '))
@@ -194,9 +194,11 @@ class DrivingSimulatorNode(multiprocessing.Process):
             (640, 640)
         )
         try:
-            self.q_obs.put((args[:num_obs]), timeout=0.1)
+            self.q_obs.put(
+                (args[:num_obs]), timeout=0.1
+            )
         except:
-            # print "__enque_exp: q_obs full!"
+            print "__enque_exp: q_obs full!"
             pass
         try:
             self.q_reward.put(
@@ -204,21 +206,21 @@ class DrivingSimulatorNode(multiprocessing.Process):
                 timeout=0.1
             )
         except:
-            # print "__enque_exp: q_reward full!"
+            print "__enque_exp: q_reward full!"
             pass
         print "__enque_exp: {}".format(args[num_obs:])
 
     def __take_action(self, data):
-       actions = self.q_action.get()
-       self.q_action.put(actions)
-       self.q_action.task_done()
-       print "__take_action: {}, q len {}".format(
-           actions, self.q_action.qsize()
-       )
-       map(
-           lambda args: args[0].publish(args[1]),
-           zip(self.action_pubs, actions)
-       )
+        actions = self.q_action.get()
+        self.q_action.put(actions)
+        self.q_action.task_done()
+        print "__take_action: {}, q len {}".format(
+            actions, self.q_action.qsize()
+        )
+        map(
+            lambda args: args[0].publish(args[1]),
+            zip(self.action_pubs, actions)
+        )
 
     def __enque_done(self, data):
         done = not data.data
@@ -226,12 +228,11 @@ class DrivingSimulatorNode(multiprocessing.Process):
             self.q_done.get()
             self.q_done.task_done()
         self.q_done.put(done)
-        # print "__eqnue_done: {}".format(done)
+        print "__eqnue_done: {}".format(done)
 
     def __daemon_conn(self, data):
         print "Heartbeat signal: {}, First time: {}".format(
-            data, self.first_time
-        )
+            data, self.first_time)
         if not data.data and not self.first_time:
             self.terminatable = True
         else:
