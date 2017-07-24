@@ -55,9 +55,15 @@ class DrivingSimulatorEnv(object):
 
     def monitor(self):
         while True:
-            print "Monitor: running new node."
-            self.__run_node()
-            print "Monitor: finished running node."
+            try:
+                print "Monitor: running new node."
+                self.__run_node()
+            except:
+                pass
+                print "Monitor: exception running node."
+                time.sleep(1.0)
+            finally:
+                print "Monitor: finished running node."
 
     def __run_node(self):
         node = DrivingSimulatorNode(
@@ -69,20 +75,38 @@ class DrivingSimulatorEnv(object):
         node.join()
 
     def step(self, action):
-        # enqueue action
-        if self.q_action.full():
-            self.q_action.get()
-            self.q_action.task_done()
-        self.q_action.put(action)
-        print "step: action: {}, queue size: {}".format(
+        # === enqueue action ===
+        try:
+            if self.q_action.full():
+                self.q_action.get(False)
+                self.q_action.task_done()
+        except:
+            print "step(): exception emptying action queue."
+            return None, None, None, None
+        try:
+            self.q_action.put_nowait(action)
+        except:
+            print "step(): exception putting action into queue."
+            return None, None, None, None
+        print "step(): action: {}, queue size: {}".format(
             action, self.q_action.qsize()
         )
-        # compile observation
-        next_state = self.q_obs.get()[0]
-        self.q_obs.task_done()
-        # calculate reward
-        rewards = self.q_reward.get()
-        self.q_reward.task_done()
+
+        # === compile observation ===
+        try:
+            next_state = self.q_obs.get(timeout=1)[0]
+            self.q_obs.task_done()
+        except:
+            print "step(): exception getting observation."
+            return None, None, None, None
+
+        # === calculate reward ===
+        try:
+            rewards = self.q_reward.get(timeout=1)
+            self.q_reward.task_done()
+        except:
+            print "step(): exception getting reward."
+            return next_state, None, None, None
         print "step(): rewards {}".format(rewards)
         reward = -100.0 * float(rewards[0]) + \
                  -10.0 * float(rewards[1]) + \
@@ -90,7 +114,7 @@ class DrivingSimulatorEnv(object):
                  -100.0 * (1 - float(rewards[3]))
         # decide if episode is done
         try:
-            done = self.q_done.get(False)
+            done = self.q_done.get(timeout=1)
             self.q_done.task_done()
         except:
             print "step(): queue_done empty."
@@ -126,66 +150,82 @@ class DrivingSimulatorNode(multiprocessing.Process):
 
         self.first_time = True
         self.terminatable = False
+        self.is_up = False
 
     def run(self):
         print "Started process: {}".format(self.name)
+
+        # Initialize ROS node
         rospy.init_node('Node_DrivingSimulatorEnv_Simulator')
-
-        self.heartbeat_listener = rospy.Subscriber(
-            '/rl/is_running', Bool,
-            callback=self.__daemon_conn
-        )
-
-        self.restart_pub = rospy.Publisher(
-            '/rl/simulator_restart', Bool, queue_size=10, latch=True
-        )
-
         self.brg = CvBridge()
-
-        # subscribers
+        # === Subscribers ===
+        # Obs + Reward: synced
         f_subs = lambda defs: message_filters.Subscriber(defs[0], defs[1])
         self.ob_subs = map(f_subs, self.defs_obs)
         self.reward_subs = map(f_subs, self.defs_reward)
-        # sync obs and reward subscribers
         self.ts = message_filters.ApproximateTimeSynchronizer(
             self.ob_subs + self.reward_subs, 10, 0.1, allow_headerless=True
         )
         self.ts.registerCallback(self.__enque_exp)
+        # Heartbeat
         rospy.Subscriber('/rl/simulator_heartbeat', Bool, self.__enque_done)
-
-        # publishers
+        rospy.Subscriber('/rl/is_running', Bool, self.__heartbeat_checker)
+        # === Publishers ===
         f_pubs = lambda defs: rospy.Publisher(
-            defs[0], defs[1], queue_size=10, latch=True
+            defs[0], defs[1], queue_size=20, latch=True
         )
         self.action_pubs = map(f_pubs, self.defs_action)
         self.actor_loop = Timer(
             rospy.Duration(1.0/self.rate_action), self.__take_action
         )
-        time.sleep(1.0)
-        print "Signaling simulator restart!"
+        self.restart_pub = rospy.Publisher(
+            '/rl/simulator_restart', Bool, queue_size=10, latch=True
+        )
+
+        # Simulator initialization
+        print "Signaling simulator restart",
         self.restart_pub.publish(True)
 
-        print "Let's roll!"
-        time.sleep(4.0)
-        self.action_pubs[0].publish(ord('1'))
-        time.sleep(0.5)
-        self.action_pubs[0].publish(ord(' '))
-        time.sleep(0.5)
-        self.action_pubs[0].publish(ord('g'))
-
-        while not self.terminatable:
+        # send ' ', 'g', '1' until new obs is observed
+        N_wait = 20
+        while not self.is_up:
+            print "Simulator not up, wait..."
             time.sleep(1.0)
+            N_wait -= 1
+            if self.terminatable or N_wait==0:
+                print "Simulation initialization failed."
+                return
+        print "Let's rock!"
+        t = time.time()
+        time.sleep(1.0)
+        self.action_pubs[0].publish(ord(' '))
+        for _ in range(5):
+            time.sleep(1.0)
+            self.action_pubs[0].publish(ord('1'))
+            time.sleep(1.0)
+            self.action_pubs[0].publish(ord('g'))
 
+        # Check if simulation episode is done
+        while not self.terminatable:
+            time.sleep(0.2)
+
+        # Close queues for this process
         self.q_obs.close()
         self.q_reward.close()
         self.q_action.close()
         self.q_done.close()
 
         rospy.signal_shutdown('Simulator down')
-        print "Returning from run in process: {}, PID: {}".format(
-            self.name, self.pid)
+        print "Returning from run in process: {} PID: {}, after {:.2f} secs.".format(
+            self.name, self.pid, time.time()-t)
+        secs = 3
+        while secs != 0:
+            print "..in {} secs".format(secs)
+            secs -= 1
+            time.sleep(1.0)
 
     def __enque_exp(self, *args):
+        # print "__enque_exp: observation received..."
         num_obs = len(self.ob_subs)
         num_reward = len(self.reward_subs)
         args = list(args)
@@ -194,11 +234,9 @@ class DrivingSimulatorNode(multiprocessing.Process):
             (640, 640)
         )
         try:
-            self.q_obs.put(
-                (args[:num_obs]), timeout=0.1
-            )
+            self.q_obs.put((args[:num_obs]), timeout=0.1)
         except:
-            print "__enque_exp: q_obs full!"
+            #print "__enque_exp: q_obs full!"
             pass
         try:
             self.q_reward.put(
@@ -206,21 +244,30 @@ class DrivingSimulatorNode(multiprocessing.Process):
                 timeout=0.1
             )
         except:
-            print "__enque_exp: q_reward full!"
+            # print "__enque_exp: q_reward full!"
             pass
-        print "__enque_exp: {}".format(args[num_obs:])
+        # print "__enque_exp: {}".format(args[num_obs:])
+        self.is_up = True  # assume simulator is up after first obs
 
     def __take_action(self, data):
-        actions = self.q_action.get()
-        self.q_action.put(actions)
-        self.q_action.task_done()
-        print "__take_action: {}, q len {}".format(
-            actions, self.q_action.qsize()
-        )
-        map(
-            lambda args: args[0].publish(args[1]),
-            zip(self.action_pubs, actions)
-        )
+        try:
+            actions = self.q_action.get()
+            self.q_action.put(actions)
+            self.q_action.task_done()
+        except:
+            print "__take_action: get action from queue failed."
+            return
+
+        if self.is_up:
+            # print "__take_action: {}, q len {}".format(
+            #     actions, self.q_action.qsize()
+            # )
+            map(
+                lambda args: args[0].publish(args[1]),
+                zip(self.action_pubs, actions)
+            )
+        else:
+            print "__take_action: simulator not up."
 
     def __enque_done(self, data):
         done = not data.data
@@ -228,11 +275,12 @@ class DrivingSimulatorNode(multiprocessing.Process):
             self.q_done.get()
             self.q_done.task_done()
         self.q_done.put(done)
-        print "__eqnue_done: {}".format(done)
+        # print "__eqnue_done: {}".format(done)
 
-    def __daemon_conn(self, data):
+    def __heartbeat_checker(self, data):
         print "Heartbeat signal: {}, First time: {}".format(
-            data, self.first_time)
+            data, self.first_time
+        )
         if not data.data and not self.first_time:
             self.terminatable = True
         else:

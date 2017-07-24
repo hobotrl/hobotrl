@@ -1,5 +1,6 @@
 import os
 import signal
+import time
 import sys
 sys.path.append('../../..')
 sys.path.append('..')
@@ -151,7 +152,14 @@ try:
                 n_steps = 0
                 cum_reward = 0.0
             state, action = next_state, next_action
-            next_state, reward, done, info = env.step(ACTIONS[action])
+            while True:
+                next_state, reward, done, info = env.step(ACTIONS[action])
+                if next_state is None or reward is None or done is None:
+                    print "__main__: Environment step exception."
+                    time.sleep(0.5)
+                    continue
+                else:
+                    break
 #except rospy.ROSInterruptException:
 except Exception as e:
     print e.message

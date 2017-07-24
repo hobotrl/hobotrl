@@ -22,7 +22,7 @@ class restart_ros_launch:
     def __init__(self):
         self.launch_list = list()
         self.socket2 = ""
-        self.last_pos = deque(maxlen=500) # Car status is 50Hz, so when car stops moving 10 secs, treat it as stop.
+        self.last_pos = deque(maxlen=1000) # Approximately 20 secs @ 50Hz
         self.destination = np.zeros([1,3])
         rospack = rospkg.RosPack()  # get an instance of RosPack with the default search paths 
         self.process_name = ['roslaunch', 'planning', 'honda_S5-1.launch']
@@ -39,10 +39,30 @@ class restart_ros_launch:
         rospy.Subscriber('/car/status', CarStatus, self.car_not_move_callback)
         rospy.Subscriber('/rl/simulator_restart', Bool, self.restart_callback)
         rospy.Subscriber('/rl/on_grass', Int16, self.car_out_of_lane_callback)
- 
+
     def terminate(self):
+        # flush heartbeat = False for 5 secs
         self.is_running = False
-        time.sleep(3.0)
+        secs = 5
+        while secs != 0:
+            print "Shutdown in {} secs".format(secs)
+            secs -= 1
+            time.sleep(1.0)
+
+        # shutdown simulator node
+        if len(self.launch_list) is 0:
+            print("no process to terminate")
+        else:
+            rospy.loginfo("now shut down launch file")
+            for p in self.launch_list:
+                p.terminate()
+                p.wait()
+                print ("Simulator process {} terminated with exit code"
+                " {}").format(p.pid, p.returncode)
+            self.launch_list = []
+            print("Done!")
+
+        # signal env node shutdown
         print "========================"
         print "========================"
         print "Publish heart beat False!"
@@ -50,16 +70,8 @@ class restart_ros_launch:
         print "========================"
         self.is_running_pub.publish(False)
 
-        if len(self.launch_list) is 0:
-            print("no process to terminate")
-        else:
-            rospy.loginfo("now shut down launch file")
-            self.launch_list[0].terminate()
-            self.launch_list[0].wait()
-            self.launch_list = []
-            print("Shutdown!")
-
     def restart_callback(self, data):
+
         # restart launch file
         rosrun = subprocess.Popen(self.process_name)
         self.launch_list.append(rosrun)
