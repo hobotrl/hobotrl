@@ -273,8 +273,9 @@ class DPGExperiment(Experiment):
         with sv.managed_session(config=config) as sess:
             agent.set_session(sess)
             runner = hrl.envs.EnvRunner(
-                self.env, agent, evaluate_interval=sys.maxint,
-                render_interval=1, logdir=args.logdir
+                self.env, agent, evaluate_interval=sys.maxint, render_interval=40, 
+                render_once=True,
+                logdir=args.logdir
             )
             runner.episode(self.episode_n)
 

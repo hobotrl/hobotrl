@@ -190,7 +190,6 @@ class CarGrassWrapper(gym.Wrapper):
             right = (ob[71:74, 49, 1] > 200).all()
             if front and back and left and right:
                 reward -= self.grass_penalty
-                logging.warning("on grass! %s", reward)
         return ob, reward, done, info
 
 
@@ -198,8 +197,8 @@ class DDPGCar(DPGExperiment):
     def __init__(self, env=None, f_net_ddp=None, f_net_dqn=None, episode_n=10000,
                  optimizer_ddp_ctor=lambda: tf.train.AdamOptimizer(learning_rate=1e-4),
                  optimizer_dqn_ctor=lambda: tf.train.AdamOptimizer(learning_rate=1e-3), target_sync_rate=0.001,
-                 ddp_update_interval=1, ddp_sync_interval=1, dqn_update_interval=1, dqn_sync_interval=1,
-                 max_gradient=10.0, ou_params=(0.0, 0.15, hrl.utils.CappedLinear(1e6, 1.0, 0.1)), gamma=0.99, batch_size=32, replay_capacity=10000):
+                 ddp_update_interval=4, ddp_sync_interval=4, dqn_update_interval=4, dqn_sync_interval=4,
+                 max_gradient=10.0, ou_params=(0.0, 0.15, hrl.utils.CappedLinear(2e5, 1.0, 0.05)), gamma=0.99, batch_size=32, replay_capacity=10000):
 
         l2 = 1e-8
 
@@ -244,7 +243,7 @@ class DDPGCar(DPGExperiment):
             env = envs.FrameStack(env, 4)
             env = envs.ScaledRewards(env, 0.1)
             env = envs.ScaledFloatFrame(env)
-            env = envs.AugmentEnvWrapper(env)
+            env = envs.AugmentEnvWrapper(env,reward_decay=gamma)
 
         super(DDPGCar, self).__init__(env, f_net_ddp, f_net_dqn, episode_n, optimizer_ddp_ctor, optimizer_dqn_ctor,
                                       target_sync_rate, ddp_update_interval, ddp_sync_interval, dqn_update_interval,
