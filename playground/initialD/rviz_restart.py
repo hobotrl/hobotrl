@@ -25,7 +25,7 @@ class restart_ros_launch:
         self.last_pos = deque(maxlen=500) # Car status is 50Hz, so when car stops moving 10 secs, treat it as stop.
         self.destination = np.zeros([1,3])
         rospack = rospkg.RosPack()  # get an instance of RosPack with the default search paths 
-        self.process_name = ['roslaunch', 'planning', 'honda_J1-1.launch']
+        self.process_name = ['roslaunch', 'planning', 'honda_S5-1.launch']
         self.is_running = False
 
         rospy.init_node('restart_launch_file')
@@ -38,7 +38,8 @@ class restart_ros_launch:
         rospy.Subscriber('/error/type', Int16, self.car_out_of_lane_callback)
         rospy.Subscriber('/car/status', CarStatus, self.car_not_move_callback)
         rospy.Subscriber('/rl/simulator_restart', Bool, self.restart_callback)
-
+        rospy.Subscriber('/rl/on_grass', Int16, self.car_out_of_lane_callback)
+ 
     def terminate(self):
         self.is_running = False
         time.sleep(3.0)
@@ -74,8 +75,9 @@ class restart_ros_launch:
         self.is_running_pub.publish(True)
 
     def car_out_of_lane_callback(self, data):
-        if data.data is 1:
-            rospy.logwarn("Car out of Lane!(From error msg)")
+        """Various reasons car is out of lane. (On grass for one)"""
+        if abs(int(data.data)-1)<0.001:
+            rospy.logwarn("Car out of Lane! (on grass)")
             self.terminate()
 
     def car_not_move_callback(self, data):

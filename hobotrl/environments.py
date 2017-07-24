@@ -2,12 +2,14 @@
 # -*- coding: utf-8 -*-
 
 import sys
+import os
+import time
 import logging
-from collections import deque
-import tensorflow as tf
 import gym
 import numpy as np
+import tensorflow as tf
 import cv2
+from collections import deque
 
 
 class EnvRunner(object):
@@ -102,6 +104,265 @@ class EnvRunner(object):
             self.record({"episode_total_reward": self.total_reward})
 
 
+class EnvRunner2(object):
+    def __init__(self, env, agent,
+                 n_episodes=-1, moving_average_window_size=50,
+                 no_reward_reset_interval=-1,
+                 checkpoint_save_interval=-1, log_dir=None, log_file_name=None,
+                 render_env=False, render_interval=1, render_length=200, frame_time=0, render_options={},
+                 show_frame_rate=False, show_frame_rate_interval=100):
+        """
+        Trains the agent in the environment.
+
+        :param env: the environment.
+        :param agent: the agent.
+        :param n_episodes: number of episodes before terminating, -1 means run forever.
+        :param moving_average_window_size: window size for calculating moving average of rewards.
+        :param no_reward_reset_interval: reset after this number of steps if no reward is received.
+        :param checkpoint_save_interval: save checkpoint every this number of steps.
+        :param log_dir: path to save log files.
+        :param log_file_name: file name of the csv file.
+        :param render_env: whether to render the environment during the training.
+        :param render_interval: number of steps between each render session.
+        :param render_length: length of render session, counted in steps.
+        :param frame_time: time interval between each frame, in seconds.
+        :param render_options: options that will pass to env.render().
+        """
+        assert n_episodes >= -1
+        assert moving_average_window_size >= 1
+        assert no_reward_reset_interval >= -1
+        assert checkpoint_save_interval >= -1
+        assert render_interval >=1
+        assert render_length > 0
+        assert frame_time >= 0
+
+        self.env = env
+        self.agent = agent
+        self.n_episodes = n_episodes
+        self.moving_average_window_size = moving_average_window_size
+        self.no_reward_reset_interval = no_reward_reset_interval
+        self.checkpoint_save_interval = checkpoint_save_interval
+        self.log_dir = log_dir
+        self.render_env = render_env
+        self.render_interval = render_interval
+        self.render_length = render_length
+        self.frame_time = frame_time
+        self.render_options = render_options
+        self.show_frame_rate = show_frame_rate
+        self.show_frame_rate_interval = show_frame_rate_interval
+
+        self.episode_count = 0  # Count episodes
+        self.step_count = 0  # Count number of total steps
+        self.reward_history = [0.]  # Record the total reward of last a few episodes
+        self.last_reward_step = 0  # The step when the agent gets last reward
+        self.current_episode_step_count = 0  # The step count of current episode
+        self.loss_sum = 0.  # Sum of loss in current episode
+
+        # Open log file
+        if log_file_name:
+            assert log_dir
+            self.log_file = open(os.path.join(log_dir, log_file_name), "w")
+        else:
+            self.log_file = None
+
+        # Open summary writer
+        if log_dir:
+            self.summary_writer = tf.summary.FileWriter(log_dir, graph=tf.get_default_graph())
+        else:
+            self.summary_writer = None
+
+    def run(self):
+        """
+        Start training.
+        """
+        # Initialize environment
+        state = self.env.reset()
+
+        last_frame_rate_check_time = time.time()  # Time when last frame rate check was done
+
+        while self.episode_count != self.n_episodes:
+            # Run a step
+            state, done = self.step(state)
+
+            # Render if needed
+            if self.render_env and self.step_count % self.render_interval <= self.render_length:
+                render_result = self.env.render(**self.render_options)
+
+                # Print to terminal if the render result is a string(e.g. when render mode is "ansi")
+                if render_result:
+                    print render_result
+
+                time.sleep(self.frame_time)
+
+                # Close the window at the last frame
+                if self.step_count % self.render_interval == self.render_length:
+                    self.env.render(close=True)
+
+            # Save data to log files at the end of each episode
+            if done:
+                # Save to csv
+                if self.log_file:
+                    print "Episode %d Step %d:" % (self.episode_count, self.step_count),
+                    print "%7.2f/%.2f" % (self.reward_history[-2], self.reward_summary)
+
+                    self.log_file.write("%d,%d,%f,%f\n" % (self.episode_count, self.step_count, self.reward_history[-2], self.reward_summary))
+
+                # Save to summary writer
+                if self.summary_writer:
+                    summary = tf.Summary()
+                    summary.value.add(tag="step count", simple_value=self.step_count)
+                    summary.value.add(tag="reward", simple_value=self.reward_history[-2])
+                    summary.value.add(tag="average reward", simple_value=self.reward_summary)
+                    if str(self.loss_summary) != 'nan':
+                        summary.value.add(tag="loss", simple_value=self.loss_summary)
+                    else:
+                        summary.value.add(tag="loss", simple_value=0)
+
+                    self.summary_writer.add_summary(summary, self.episode_count)
+
+            # Save checkpoint if needed
+            if self.checkpoint_save_interval != -1 and self.step_count % self.checkpoint_save_interval == 0:
+                saver = tf.train.Saver()
+                saver.save(self.agent.get_session(), os.path.join(self.log_dir, '%d.ckpt' % self.step_count))
+                print "Checkpoint saved at step %d" % self.step_count
+
+            # Count steps
+            self.step_count += 1
+            if done:
+                self.current_episode_step_count = 0
+                self.loss_sum = 0.
+            else:
+                self.current_episode_step_count += 1
+
+            # Calculate frame rate if needed
+            if self.show_frame_rate and self.step_count % self.show_frame_rate_interval == 0:
+                print "Frame rate:", self.show_frame_rate_interval/(time.time() - last_frame_rate_check_time)
+                last_frame_rate_check_time = time.time()
+
+    def step(self, state):
+        """
+        Take a step.
+
+        :param state: current state
+        :return: a tuple: (next state, whether current episode is done)
+        """
+        # Take a step
+        action = self.agent.act(state, show_action_values=self.render_env)
+        next_state, reward, done, info = self.env.step(action)
+
+        # Train the agent
+        info = self.agent.reinforce_(state=state,
+                                     action=action,
+                                     reward=reward,
+                                     next_state=next_state,
+                                     episode_done=done)
+
+        try:
+            loss = info["loss"]
+        except KeyError:
+            loss = float("nan")
+
+        # Print reward if needed
+        if self.render_env and abs(reward) > 1e-6:
+            print "%.1f" % reward
+
+        # Record reward and loss
+        self.reward_history[-1] += reward
+        self.loss_sum += loss
+
+        # Reset if no reward is seen for last a few steps
+        if reward > 1e-6:
+            self.last_reward_step = self.step_count
+
+        if self.step_count - self.last_reward_step == self.no_reward_reset_interval:
+            print "Reset for no reward"
+            done = True
+
+        # Episode done
+        if done:
+            next_state = self.env.reset()
+
+            self.add_reward()
+            self.last_reward_step = self.step_count
+
+            self.episode_count += 1
+
+        return next_state, done
+
+    def add_reward(self):
+        """
+        Add a new record.
+        """
+        self.reward_history.append(0.)
+
+        # Trim the history record if it's length is longer than moving_average_window_size
+        if len(self.reward_history) > self.moving_average_window_size:
+            del self.reward_history[0]
+
+    @property
+    def reward_summary(self):
+        """
+        Get the average reward of last few episodes.
+        """
+        return float(sum(self.reward_history[:-1]))/(len(self.reward_history)-1)
+
+    @ property
+    def loss_summary(self):
+        try:
+            return self.loss_sum/self.current_episode_step_count
+        except ZeroDivisionError:
+            return None
+
+    def load_checkpoint(self, file_path, step_count=None):
+        """
+        Load a checkpoint.
+
+        :param file_path: path to the checkpoint
+        :param step_count: start to count steps with this number
+        :return:
+        """
+        saver = tf.train.Saver()
+        saver.restore(self.agent.get_session(), os.path.join(self.log_dir, file_path))
+
+        if step_count:
+            self.step_count = step_count
+
+    def run_demo(self, file_name, show_action_values=False, pause_before_start=True):
+        """
+        Load a checkpoint and show a demo.
+
+        :param file_name: the checkpoint's file name.
+        :param show_action_values: whether to show action values on terminal.
+        """
+        def render():
+            render_result = self.env.render(**self.render_options)
+            if render_result:
+                print render_result
+            time.sleep(self.frame_time)
+
+        self.load_checkpoint(file_name)
+
+        # Render first frame
+        state = self.env.reset()
+        render()
+        if pause_before_start:
+            raw_input("Press Enter to start demonstration")
+
+        while True:
+            # Act
+            action = self.agent.act(state, show_action_values=show_action_values)
+            state, reward, done, info = self.env.step(action)
+
+            # Render
+            render()
+
+            # Reset if episode ends
+            if done:
+                self.env.reset()
+                render()
+                if pause_before_start:
+                    raw_input("Press Enter to start demonstration")
+
 class AugmentEnvWrapper(gym.Wrapper):
     """
     wraps an environment, adding augmentation for reward/state/action.
@@ -114,7 +375,8 @@ class AugmentEnvWrapper(gym.Wrapper):
                  state_stack_n=None, state_stack_axis=-1,
                  state_skip=None,
                  state_augment_proc=None,
-                 action_limit=None):
+                 action_limit=None,
+                 amend_reward_decay=False):
         """
 
         :param env:
@@ -137,8 +399,15 @@ class AugmentEnvWrapper(gym.Wrapper):
                     and transformed into range [lower_limit, upper_limit] before applied to underlying env.
 
         :type action_limit: list
+        :param amend_reward_decay: whether to amend reward decay when state_stack_n is not None.
         """
         super(AugmentEnvWrapper, self).__init__(env)
+        self.env = env
+
+        if amend_reward_decay and state_stack_n:
+            import math
+            reward_decay = math.pow(reward_decay, 1.0/state_stack_n)
+
         self.reward_decay, self.reward_offset, self.reward_scale = reward_decay, reward_offset, reward_scale
         self.state_offset, self.state_scale, self.stack_n, self.stack_axis, self.state_skip = \
             state_offset, state_scale, state_stack_n, state_stack_axis, state_skip
@@ -155,7 +424,7 @@ class AugmentEnvWrapper(gym.Wrapper):
             self.last_action, self.stack_counter, self.last_reward = None, 0, 0.0
             self.state_shape = None  # state dimension of 1 frame
             space = env.observation_space
-            state_low, state_high, state_shape = space.low, space.high, list(space.shape)
+            state_low, state_high, state_shape = space.low, space.high, list(self.state_augment_proc(self.env.reset()).shape)
             state_shape[self.stack_axis] *= self.stack_n
             # if type(state_low) == type(state_shape):
             #     # ndarray low and high
@@ -167,10 +436,8 @@ class AugmentEnvWrapper(gym.Wrapper):
             self.last_stacked_states = deque(maxlen=state_stack_n)  # lazy init
             pass
 
-#    def __getattr__(self, name):
-#        if self.stack_n is not None and name == "observation_space":
-#            return self.observation_space
-#        return getattr(self.env, name)
+    def __getattr__(self, name):
+        return getattr(self.env, name)
 
     def augment_action(self, action):
         if self.is_continuous_action and self.action_limit is not None:
@@ -219,6 +486,55 @@ class AugmentEnvWrapper(gym.Wrapper):
                 self.last_stacked_states.append(state)
             state = np.concatenate(self.last_stacked_states, self.stack_axis)
         return state
+
+
+class StateHistoryStackEnvWrapper(object):
+    def __init__(self, env,
+                 stack_n, stack_axis=-1):
+        assert stack_n > 0
+
+        self.env = env
+        self.stack_n = stack_n
+        self.stack_axis = stack_axis
+
+        self.state_history = None
+
+        # Update observation space
+        observation_space_shape = list(self.env.observation_space.shape)
+        observation_space_shape[stack_axis] *= stack_n
+
+        observation_space_low = self.env.observation_space.low
+        observation_space_high = self.env.observation_space.high
+
+        self.observation_space = gym.spaces.box.Box(np.min(observation_space_low),
+                                                    np.max(observation_space_high),
+                                                    observation_space_shape)
+
+    def __getattr__(self, item):
+        return getattr(self.env, item)
+
+    def step(self, action):
+        if not self.state_history:
+            self.reset()
+
+        state, reward, done, info = self.env.step(action)
+
+        # Add to history
+        self.state_history.append(state)
+        del self.state_history[0]
+
+        # Stack history
+        state = np.concatenate(self.state_history, axis=self.stack_axis)
+
+        # Stack reward
+
+        return state, reward, done, info
+
+    def reset(self):
+        state = self.env.reset()
+        self.state_history = [state]*self.stack_n
+
+        return np.concatenate(self.state_history, axis=self.stack_axis)
 
 
 class RewardShaping(object):
