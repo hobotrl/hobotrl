@@ -4,6 +4,15 @@ import math
 
 class CrossEntropyMethodParameterGenerator(object):
     def __init__(self, parameter_shapes, n, proportion, initial_variance, noise=0.):
+        """
+        Generate and update parameters using cross entropy method.
+
+        :param parameter_shapes(list of tuple): a list of shapes for each parameter matrix in a group.
+        :param n(int): how many groups.
+        :param proportion(float): select this proportion of groups in each update.
+        :param initial_variance(float): initial variance for parameters.
+        :param noise(float): minimum variance.
+        """
         assert n >= 1
         assert 0. < proportion < 1.
         assert math.floor(n*proportion) >= 1
@@ -20,15 +29,31 @@ class CrossEntropyMethodParameterGenerator(object):
                           for shape in parameter_shapes]
 
     def generate_parameter_list(self):
+        """
+        Generate a group of parameters.
+
+        :return: a group of parameters.
+        """
         return [np.random.normal(loc=self.means[i],
                                  scale=self.variances[i],
                                  size=self.para_shapes[i])
                 for i in range(len(self.para_shapes))]
 
     def generate_parameter_lists(self):
+        """
+        Generate groups of parameters.
+
+        :return: n groups of parameters.
+        """
         return [self.generate_parameter_list() for _ in range(self.n)]
 
     def update_parameter_lists(self, parameter_lists, scores):
+        """
+        Update groups of parameters(in-place) by discarding the groups with low score.
+
+        :param parameter_lists: groups of parameters.
+        :param scores: score for each group.
+        """
         assert len(parameter_lists) == self.n
         assert len(scores) == self.n
 
@@ -36,7 +61,8 @@ class CrossEntropyMethodParameterGenerator(object):
         n_selected = int(math.floor(self.n*self.proportion))
         selected = sorted(range(len(parameter_lists)),
                           key=lambda x: scores[x],
-                          reverse=True)[:n_selected]
+                          reverse=True)
+        selected = selected[:n_selected]
 
         # Update mean value
         para_sum = [np.zeros(shape) for shape in self.para_shapes]
@@ -61,6 +87,10 @@ class CrossEntropyMethodParameterGenerator(object):
 
 
 def test():
+    """
+    Using cross entropy method to find argmax{f(x)}.
+    The answer is 2.
+    """
     def f(x):
         return math.exp(-(x-2)**2) + 0.8*math.exp(-(x+2)**2)
 
@@ -68,9 +98,10 @@ def test():
                                                n=10,
                                                proportion=0.5,
                                                initial_variance=50,
-                                               noise=0.2)
+                                               noise=0.5)
     parameter_lists = cem.generate_parameter_lists()
-    for i in range(1000):
+
+    for i in range(10000):
         scores = [f(x[0]) for x in parameter_lists]
         cem.update_parameter_lists(parameter_lists, scores)
 
@@ -80,7 +111,8 @@ def test():
     print "variance:"
     print float(cem.variances[0])
     print "score:"
-    print scores
+    print np.mean(scores)
     print ""
 
-test()
+while True:
+    test()
