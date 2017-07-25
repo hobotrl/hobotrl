@@ -377,7 +377,7 @@ class AugmentEnvWrapper(gym.Wrapper):
                  state_augment_proc=None,
                  action_limit=None,
                  amend_reward_decay=False,
-                 # random_start=False,
+                 random_start=False,
                  discard_skipped_frames=True
                  ):
         """
@@ -429,6 +429,7 @@ class AugmentEnvWrapper(gym.Wrapper):
             state_offset, state_scale, state_stack_n, state_stack_axis, state_skip
         self.state_augment_proc, self.reward_shaping_proc = state_augment_proc, reward_shaping_proc
         self.discard_skipped_frames = discard_skipped_frames
+        self.random_start = random_start
 
         # Continues action
         self.is_continuous_action = env.action_space.__class__.__name__ == "Box"
@@ -511,11 +512,25 @@ class AugmentEnvWrapper(gym.Wrapper):
         state = self.env.reset()
         state = self.augment_state(state)
 
-        for i in range(self.last_stacked_states.maxlen):
-            self.last_stacked_states.append(state)
-        state = np.concatenate(self.last_stacked_states, self.stack_axis)
+        # No stack
+        if self.state_skip == 1:
+            return state
 
-        return state
+        # Use random action to fill the stack queue
+        elif self.random_start:
+            self.last_stacked_states.append(state)
+            for i in range(self.last_stacked_states.maxlen-1):
+                action = self.action_space.sample()
+                observation, reward, done, info = self.env.step(action)
+                observation = self.augment_state(observation)
+                self.last_stacked_states.append(observation)
+
+        # Use the first frame to fill the stack queue
+        else:
+            for i in range(self.last_stacked_states.maxlen):
+                self.last_stacked_states.append(state)
+
+        return np.concatenate(self.last_stacked_states, self.stack_axis)
 
 
 # TODO: StateHistoryStackEnvWrapper is redundant
