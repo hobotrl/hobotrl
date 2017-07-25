@@ -1164,8 +1164,10 @@ class BootstrappedDQNAtari(Experiment):
         augment_wrapper_args = {"reward_decay": math.pow(reward_decay, 1.0/history_stack_n),
                                 "reward_scale": 1.,
                                 "state_augment_proc": self.state_trans,
-                                "state_stack_n": frame_skip_n,
-                                "state_scale": 1.0/255.0}
+                                "state_skip": frame_skip_n,
+                                "state_scale": 1.0/255.0,
+                                "discard_skipped_frames": False,
+                                "random_start": True}
         augment_wrapper_args.update(self.augment_wrapper_args)
         env = self.env = hrl.envs.AugmentEnvWrapper(env, **augment_wrapper_args)
         env = self.env = hrl.envs.StateHistoryStackEnvWrapper(env,
@@ -1380,7 +1382,7 @@ class BootstrappedDQNIceHockey(BootstrappedDQNAtari):
                                       },
                                       # runner_args={"render_env": True,
                                       #              "frame_time": 0.05}
-                                      frame_skip_n=1
+                                      frame_skip_n=4
                                       )
 
     def run(self, args, **kwargs):
@@ -1419,7 +1421,7 @@ class RandomizedBootstrappedDQNBreakOut(BootstrappedDQNAtari):
                                                    },
                                       agent_args={"eps_function": (lambda x: 0)},  # {"eps_function": LinearSequence(1e6, 0.2, 0.0)},
                                       agent_type=RandomizedBootstrappedDQN,
-                                      frame_skip_n=1
+                                      frame_skip_n=4
                                       )
 
     def run(self, args, **kwargs):
@@ -1451,11 +1453,11 @@ def demo_experiment_generator(experiment_class, checkpoint_file_name, frame_time
     BootstrappedDQNDemo.__name__ = experiment_class.__name__ + "Demo"
     return BootstrappedDQNDemo
 
-Experiment.register(demo_experiment_generator(RandomizedBootstrappedDQNBreakOut, "14200000.ckpt", frame_time=0.1), "Demo for the Breakout")
+Experiment.register(demo_experiment_generator(RandomizedBootstrappedDQNBreakOut, "16200000.ckpt", frame_time=0.1), "Demo for the Breakout")
 Experiment.register(demo_experiment_generator(BootstrappedDQNPong, "1080000.ckpt"), "Demo for the Pong")
 Experiment.register(demo_experiment_generator(BootstrappedDQNBattleZone, "2232000.ckpt"), "Demo for the Battle Zone")
 Experiment.register(demo_experiment_generator(BootstrappedDQNEnduro, "17000000.ckpt", frame_time=0.0), "Demo for the Enduro")
-Experiment.register(demo_experiment_generator(BootstrappedDQNIceHockey, "23400000.ckpt", frame_time=0.02), "Demo for the Ice Hockey")
+Experiment.register(demo_experiment_generator(BootstrappedDQNIceHockey, "27200000.ckpt", frame_time=0.02), "Demo for the Ice Hockey")
 
 
 if __name__ == '__main__':
