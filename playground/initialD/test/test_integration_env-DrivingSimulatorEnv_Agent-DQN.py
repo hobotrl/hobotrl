@@ -27,7 +27,7 @@ env = DrivingSimulatorEnv(
     [('/rl/has_obstacle_nearby', Bool),
      ('/rl/distance_to_longestpath', Float32),
      ('/rl/car_velocity', Float32),
-     ('/rl/on_opposite_path', Int16)],
+     ('/rl/last_on_opposite_path', Int16)],
     [('/autoDrive_KeyboardMode', Char)],
     rate_action=10.0,
     buffer_sizes={'obs': 1, 'reward': 1, 'action': 1}
@@ -152,19 +152,23 @@ try:
                 n_steps = 0
                 cum_reward = 0.0
             state, action = next_state, next_action
-            while True:
-                next_state, reward, done, info = env.step(ACTIONS[action])
-                if next_state is None or reward is None or done is None:
-                    print "__main__: Environment step exception."
-                    time.sleep(0.5)
-                    continue
-                else:
-                    break
+            try:
+                while True:
+                    next_state, reward, done, info = env.step(ACTIONS[action])
+                    if next_state is None or reward is None or done is None:
+                        time.sleep(0.5)
+                        continue
+                    else:
+                        break
+            except Exception as e:
+                print e.message
+                print "__main__: env step exception."
 #except rospy.ROSInterruptException:
 except Exception as e:
     print e.message
     pass
 finally:
+    print "Tidying up..."
     sess.close()
     # kill orphaned monitor daemon process
     os.killpg(os.getpgid(env.proc_monitor.pid), 9)

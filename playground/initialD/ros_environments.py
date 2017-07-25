@@ -73,6 +73,7 @@ class DrivingSimulatorEnv(object):
         )
         node.start()
         node.join()
+        del node
 
     def step(self, action):
         # === enqueue action ===

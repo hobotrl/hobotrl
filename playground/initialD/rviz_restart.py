@@ -33,12 +33,31 @@ class restart_ros_launch:
         self.heartbeat_pub = rospy.Publisher(
             "/rl/simulator_heartbeat", Bool, queue_size=10, latch=True
         )
-        Timer(rospy.Duration(1/20.0),
-             lambda *args: self.heartbeat_pub.publish(self.is_running))
+        self.opposite_path_pub = rospy.Publisher("/rl/last_on_opposite_path",
+                                                 Int16, queue_size=10,
+                                                 latch=True)
+        Timer(
+            rospy.Duration(1/20.0),
+            lambda *args: self.heartbeat_pub.publish(self.is_running)
+        )
         rospy.Subscriber('/error/type', Int16, self.car_out_of_lane_callback)
         rospy.Subscriber('/car/status', CarStatus, self.car_not_move_callback)
         rospy.Subscriber('/rl/simulator_restart', Bool, self.restart_callback)
         rospy.Subscriber('/rl/on_grass', Int16, self.car_out_of_lane_callback)
+
+        self.last_on_opposite_path = 1
+
+        rospy.Subscriber(
+            '/rl/on_opposite_path',
+            Int16, self.assign_last_op 
+        )
+        Timer(
+            rospy.Duration(1/20.0),
+            lambda *args: self.opposite_path_pub.publish(self.last_on_opposite_path)
+        )
+
+    def assign_last_op(self, data):
+        self.last_on_opposite_path = data.data
 
     def terminate(self):
         # flush heartbeat = False for 5 secs
