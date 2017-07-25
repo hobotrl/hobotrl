@@ -57,23 +57,29 @@ class DrivingSimulatorEnv(object):
         while True:
             try:
                 print "Monitor: running new node."
-                self.__run_node()
+                node = DrivingSimulatorNode(
+                    self.q_obs, self.q_reward, self.q_action, self.q_done,
+                    self.defs_obs, self.defs_reward, self.defs_action,
+                    self.rate_action
+                )
+                node.start()
+                node.join()
             except:
                 pass
                 print "Monitor: exception running node."
                 time.sleep(1.0)
             finally:
                 print "Monitor: finished running node."
-
-    def __run_node(self):
-        node = DrivingSimulatorNode(
-            self.q_obs, self.q_reward, self.q_action, self.q_done,
-            self.defs_obs, self.defs_reward, self.defs_action,
-            self.rate_action
-        )
-        node.start()
-        node.join()
-        del node
+                while True:
+                    node.terminate()
+                    time.sleep(1.0)
+                    if node.is_alive():
+                        print ("Monitor: process {} termination in"
+                        "progress..").format(node.pid)
+                        continue
+                    else:
+                        break
+                print "Monitor: terminiated process {}.".format(node.pid)
 
     def step(self, action):
         # === enqueue action ===
