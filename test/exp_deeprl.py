@@ -1460,5 +1460,147 @@ Experiment.register(demo_experiment_generator(BootstrappedDQNEnduro, "17000000.c
 Experiment.register(demo_experiment_generator(BootstrappedDQNIceHockey, "27200000.ckpt", frame_time=0.02), "Demo for the Ice Hockey")
 
 
+class CEMBootstrappedDQNSnakeGame(Experiment):
+    def run(self, args):
+        """
+        Run the experiment.
+        """
+        def render():
+            """
+            Render the environment and related information to the console.
+            """
+            if not display:
+                return
+
+            print env.render(mode='ansi')
+            print "Reward:", reward
+            print "Head:", agent.current_head
+            print "Done:", done
+            print ""
+            time.sleep(frame_time)
+
+        from environments.snake import SnakeGame
+        from hobotrl.algorithms.bootstrapped_DQN import CEMBootstrappedDQN
+        from hobotrl.environments import EnvRunner2
+
+        import time
+        import os
+        import random
+
+        # Parameters
+        random.seed(1105)  # Seed
+
+        for n_head in [10]:
+
+            log_dir = os.path.join(args.logdir, "head%d" % n_head)
+            if not os.path.exists(log_dir):
+                os.makedirs(log_dir)
+            log_file_name = "booststrapped_DQN_Snake.csv"
+
+            # Initialize the environment and the agent
+            env = SnakeGame(3, 3, 1, 1, max_episode_length=30)
+            agent = CEMBootstrappedDQN(observation_space=env.observation_space,
+                                       action_space=env.action_space,
+                                       reward_decay=1.,
+                                       td_learning_rate=0.5,
+                                       target_sync_interval=2000,
+                                       nn_constructor=self.nn_constructor,
+                                       loss_function=self.loss_function,
+                                       trainer=tf.train.GradientDescentOptimizer(learning_rate=0.01).minimize,
+                                       replay_buffer_class=hrl.playback.MapPlayback,
+                                       replay_buffer_args={"capacity": 20000},
+                                       min_buffer_size=100,
+                                       batch_size=20,
+                                       n_heads=n_head,
+                                       cem_noise=0.2,
+                                       cem_portion=0.5,
+                                       cem_update_interval=50)
+
+            # Start training
+            env_runner = EnvRunner2(env=env,
+                                    agent=agent,
+                                    n_episodes=-1,
+                                    moving_average_window_size=100,
+                                    no_reward_reset_interval=-1,
+                                    checkpoint_save_interval=1000,
+                                    log_dir=log_dir,
+                                    log_file_name=log_file_name,
+                                    render_env=False,
+                                    render_interval=1000,
+                                    render_length=200,
+                                    frame_time=0.1,
+                                    render_options={"mode": "ansi"}
+                                    )
+            env_runner.run()
+            # env_runner.run_demo("17000.ckpt")
+
+    @staticmethod
+    def loss_function(output, target):
+        """
+        Calculate the loss.
+        """
+        return tf.reduce_sum(tf.sqrt(tf.squared_difference(output, target)+1)-1, axis=-1)
+
+    @staticmethod
+    def nn_constructor(observation_space, action_space, n_heads, **kwargs):
+        """
+        Construct the neural network.
+        """
+        def leakyRelu(x):
+            return tf.maximum(0.01*x, x)
+
+        def conv2d(x, w):
+            return tf.nn.conv2d(x, w, strides=[1, 1, 1, 1], padding="SAME")
+
+        def weight(shape):
+            return tf.Variable(tf.truncated_normal(shape, stddev=0.1))
+
+        def bias(shape):
+            return tf.Variable(tf.constant(0.1, shape=shape))
+
+        x = tf.placeholder(tf.float32, (None,) + observation_space.shape)
+
+        eshape = observation_space.shape
+        nn_outputs = []
+
+        # Layer 1 parameters
+        n_channel1 = 8
+        w1 = weight([3, 3, eshape[-1], n_channel1])
+        b1 = bias([n_channel1])
+
+        # Layer 2 parameters
+        n_channel2 = 16
+        w2 = weight([n_channel1*eshape[0]*eshape[1], n_channel2])
+        b2 = bias([n_channel2])
+
+        # Layer 1
+        layer1 = leakyRelu(conv2d(x, w1) + b1)
+        layer1_flatten = tf.reshape(layer1, [-1, n_channel1*eshape[0]*eshape[1]])
+
+        # Layer 2
+        layer2 = leakyRelu(tf.matmul(layer1_flatten, w2) + b2)
+
+        nn_head_para = []
+
+        for head in range(n_heads):
+            with tf.variable_scope("head%d" % head) as scope_head:
+                # Layer 3 parameters
+                w3 = weight([n_channel2, 4])
+                b3 = bias([4])
+
+                # Layer 3
+                layer3 = tf.matmul(layer2, w3) + b3
+
+            nn_outputs.append(layer3)
+            nn_head_para.append(tf.get_collection(key=tf.GraphKeys.TRAINABLE_VARIABLES,
+                                                  scope=scope_head.name))
+
+        return {"input": x,
+                "head": nn_outputs,
+                "head_para": nn_head_para}
+
+Experiment.register(CEMBootstrappedDQNSnakeGame, "CEM Bootstrapped DQN for the Snake game")
+
+
 if __name__ == '__main__':
     Experiment.main()

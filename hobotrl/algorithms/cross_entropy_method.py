@@ -3,7 +3,7 @@ import math
 
 
 class CrossEntropyMethodParameterGenerator(object):
-    def __init__(self, parameter_shapes, n, proportion, initial_variance, noise=0.):
+    def __init__(self, parameter_shapes, n, proportion, initial_variance, noise=0., max_variance=5):
         """
         Generate and update parameters using cross entropy method.
 
@@ -12,6 +12,7 @@ class CrossEntropyMethodParameterGenerator(object):
         :param proportion(float): select this proportion of groups in each update.
         :param initial_variance(float): initial variance for parameters.
         :param noise(float): minimum variance.
+        :param max_variance(float): maximum variance. Used to prevent divergence.
         """
         assert n >= 1
         assert 0. < proportion < 1.
@@ -23,6 +24,7 @@ class CrossEntropyMethodParameterGenerator(object):
         self.n = n
         self.proportion = proportion
         self.noise = noise
+        self.max_variance = max_variance
 
         self.means = [np.zeros(shape) for shape in parameter_shapes]
         self.variances = [np.zeros(shape) + initial_variance
@@ -80,6 +82,9 @@ class CrossEntropyMethodParameterGenerator(object):
                 squared_errors[i] += (parameters[i] - self.means[i])**2
         self.variances = [squared_error/n_selected + self.noise for squared_error in squared_errors]
 
+        # Constrain variance
+        self.variances = [np.minimum(variance, self.max_variance) for variance in self.variances]
+
         # Generate new parameters
         for para_id in range(len(parameter_lists)):
             if para_id not in selected:
@@ -114,5 +119,5 @@ def test():
     print np.mean(scores)
     print ""
 
-while True:
-    test()
+# while True:
+#     test()

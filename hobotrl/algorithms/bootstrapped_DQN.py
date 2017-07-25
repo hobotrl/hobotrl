@@ -77,6 +77,7 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
         except AttributeError:
             self.action_space_shape = action_space.shape
 
+        self.nn_constructor = nn_constructor
         self.reward_decay = reward_decay
         self.td_learning_rate = td_learning_rate
         self.target_sync_interval = target_sync_interval
@@ -111,6 +112,7 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
 
             self.nn_input = nn["input"]
             self.nn_heads = nn["head"]
+            self.nn = nn
 
         # Target network
         with tf.variable_scope('target') as scope_target:
@@ -309,3 +311,72 @@ class RandomizedBootstrappedDQN(BootstrappedDQN):
             return self.action_space.sample()
         else:
             return super(RandomizedBootstrappedDQN, self).act(state, **kwargs)
+
+
+class CEMBootstrappedDQN(BootstrappedDQN):
+    def __init__(self, cem_update_interval, cem_portion, cem_noise, cem_max_variance=5, **kwargs):
+        """
+        Bootstrapped DQN combined with cross-entropy method.
+
+        :param cem_update_interval: update parameters every this number of episodes.
+        :param cem_portion: pass to CrossEntropyMethodParameterGenerator.
+        :param cem_noise: pass to CrossEntropyMethodParameterGenerator.
+        :param cem_max_variance: pass to CrossEntropyMethodParameterGenerator.
+        :param kwargs: pass to super.
+        """
+        from hobotrl.algorithms.cross_entropy_method import CrossEntropyMethodParameterGenerator
+        super(CEMBootstrappedDQN, self).__init__(**kwargs)
+
+        self.nn_head_para = self.nn["head_para"]  # parameter list for each head
+        self.cem_update_interval = cem_update_interval
+
+        self.episode_count = 0  # Episode counter
+        self.reward_records = [[0.] for _ in range(self.n_heads)]  # Record reward for each head
+
+        # Prepare for cross-entropy method
+        para_shapes = [para.shape for para in self.nn_head_para[0]]
+        self.cem = CrossEntropyMethodParameterGenerator(parameter_shapes=para_shapes,
+                                                        n=self.n_heads,
+                                                        proportion=cem_portion,
+                                                        initial_variance=0,
+                                                        noise=cem_noise,
+                                                        max_variance=cem_max_variance)
+
+    def reinforce_(self, state, action, reward, next_state,
+                   episode_done=None, **kwargs):
+
+        # Count rewards
+        self.reward_records[self.current_head][-1] += reward
+
+        if episode_done:
+            # Count episode
+            self.episode_count += 1
+
+            # Update parameters
+            if self.episode_count % self.cem_update_interval == 0:
+                self.update_parameters()
+                self.reward_records = [[0.] for _ in range(self.n_heads)]
+            else:
+                self.reward_records[self.current_head].append(0)
+
+        return super(CEMBootstrappedDQN, self).reinforce_(state, action, reward, next_state,
+                                                          episode_done, **kwargs)
+
+    def update_parameters(self):
+        print "CEM update"
+
+        # Retrieve parameters and summarize scores
+        para_lists = [self.get_session().run(para_list) for para_list in self.nn_head_para]
+        scores = [np.mean(reward_list) if len(reward_list) > 0
+                  else float("-inf")
+                  for reward_list in self.reward_records]
+
+        # Update parameters
+        self.cem.update_parameter_lists(parameter_lists=para_lists, scores=scores)
+
+        # Assign parameters
+        op_update = []
+        for (list_id, para_list) in enumerate(para_lists):
+            for (para_id, para) in enumerate(para_list):
+                op_update.append(self.nn_head_para[list_id][para_id].assign(para))
+        self.get_session().run(op_update)
