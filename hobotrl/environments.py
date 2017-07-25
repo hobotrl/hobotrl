@@ -407,6 +407,8 @@ class AugmentEnvWrapper(gym.Wrapper):
 
         :type action_limit: list
         :param amend_reward_decay: whether to amend reward decay when state_stack_n is not None.
+        :param random_start: take random actions at the beginning of each episode to fill the stack queue
+        :param discard_skipped_frames: if set to True, frames that are skipped won't be stacked.
         """
         assert 0. <= reward_decay <= 1.
         assert state_stack_n >= 1
