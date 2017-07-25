@@ -415,12 +415,8 @@ class AugmentEnvWrapper(gym.Wrapper):
         super(AugmentEnvWrapper, self).__init__(env)
         self.env = env
 
-        # Set default value for state_skip
-        if state_stack_n is not None and state_skip is None:
-            state_skip = state_stack_n
-
         # Amend reward decay if needed
-        if amend_reward_decay and state_stack_n:
+        if amend_reward_decay and state_stack_n != 1:
             import math
             reward_decay = math.pow(reward_decay, 1.0/state_stack_n)
 
@@ -441,25 +437,20 @@ class AugmentEnvWrapper(gym.Wrapper):
             self.action_offset = (action_limit[1] + action_limit[0])/2.0
             logging.warning("limit:%s, scale:%s, offset:%s", action_limit, self.action_scale, self.action_offset)
 
-        # State stack
-        if state_stack_n is not None:
-            self.last_action = None
-            self.last_reward = 0.0
+        # Initialize state stack queue
+        if discard_skipped_frames:
+            stack_size = state_stack_n
+        else:
+            stack_size = state_stack_n*state_skip
+        self.last_stacked_states = deque(maxlen=stack_size)  # lazy init
 
-            # Initialize state stack queue
-            if discard_skipped_frames:
-                stack_size = state_stack_n
-            else:
-                stack_size = state_stack_n*state_skip
-            self.last_stacked_states = deque(maxlen=stack_size)  # lazy init
-
-            # Amend observation space
-            space = env.observation_space
-            state_low, state_high = space.low, space.high
-            state_shape = list(self.augment_state(self.env.reset()).shape)  # Process the first frame to get observation shape
-            state_shape[self.stack_axis] *= stack_size  # Deal with stack axis
-            self.observation_space = gym.spaces.box.Box(np.min(state_low), np.max(state_high), state_shape)
-            self.state_shape = state_shape
+        # Amend observation space
+        space = env.observation_space
+        state_low, state_high = space.low, space.high
+        state_shape = list(self.augment_state(self.env.reset()).shape)  # Process the first frame to get observation shape
+        state_shape[self.stack_axis] *= stack_size  # Deal with stack axis
+        self.observation_space = gym.spaces.box.Box(np.min(state_low), np.max(state_high), state_shape)
+        self.state_shape = state_shape
 
     def __getattr__(self, name):
         return getattr(self.env, name)
@@ -481,7 +472,6 @@ class AugmentEnvWrapper(gym.Wrapper):
 
     def do_frame_skip(self, action):
         total_reward = 0.0
-
         for i in range(self.state_skip):
             observation, reward, done, info = self.env.step(action)
             reward = self.augment_reward(reward, observation=observation, done=done, info=info)
@@ -496,12 +486,11 @@ class AugmentEnvWrapper(gym.Wrapper):
         return self.augment_state(observation), total_reward, done, info
 
     def _step(self, action):
-        # augment action before apply
-        action = self.augment_action(action)
+        action = self.augment_action(action)  # augment action before apply
         observation, reward, done, info = self.do_frame_skip(action)
 
         # Stack state
-        if self.state_stack_n is not None:
+        if self.state_stack_n != 1 or self.state_skip != 1:
             if self.discard_skipped_frames:
                 self.last_stacked_states.append(observation)
             observation = np.concatenate(self.last_stacked_states, self.stack_axis)
@@ -521,6 +510,7 @@ class AugmentEnvWrapper(gym.Wrapper):
             self.last_stacked_states.append(state)
             for i in range(self.last_stacked_states.maxlen-1):
                 action = self.action_space.sample()
+                action = self.augment_action(action)
                 observation, reward, done, info = self.env.step(action)
                 observation = self.augment_state(observation)
                 self.last_stacked_states.append(observation)
