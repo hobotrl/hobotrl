@@ -1491,8 +1491,8 @@ class CEMBootstrappedDQNSnakeGame(Experiment):
         random.seed(1105)  # Seed
         n_head = 10
 
-        noise_candidates = [0.05, 0.1, 0.15, 0.2]
-        portion_candidates = [0.8, 0.5, 0.3]
+        noise_candidates = [0.05, 0.10, 0.15, 0.20]
+        portion_candidates = [1.]
         grid = [(n, p) for n in noise_candidates for p in portion_candidates]
 
         for noise, portion in grid:
@@ -1605,6 +1605,61 @@ class CEMBootstrappedDQNSnakeGame(Experiment):
                 "head_para": nn_head_para}
 
 Experiment.register(CEMBootstrappedDQNSnakeGame, "CEM Bootstrapped DQN for the Snake game")
+
+
+class CEMBootstrappedDQNBreakout(BootstrappedDQNAtari):
+    def __init__(self):
+        from hobotrl.algorithms.bootstrapped_DQN import CEMBootstrappedDQN
+        super(CEMBootstrappedDQNBreakout, self).__init__(env=gym.make('Breakout-v0'),
+                                                         agent_type=CEMBootstrappedDQN,
+                                                         agent_args={"cem_noise": 0.05,
+                                                                     "cem_portion": 0.8,
+                                                                     "cem_update_interval": 50})
+
+    @staticmethod
+    def nn_constructor(observation_space, action_space, n_heads, **kwargs):
+        """
+        Construct the neural network.
+        """
+        def leakyRelu(x):
+            return tf.maximum(0.01*x, x)
+
+        import tensorflow.contrib.layers as layers
+        nn_outputs = []
+
+        x = tf.placeholder(tf.float32, (None,) + observation_space.shape)
+
+        print "input size:", x
+        out = hrl.utils.Network.conv2d(input_var=x, h=8, w=8, out_channel=32,
+                                       strides=[4, 4], activation=leakyRelu, padding="VALID", var_scope="conv1")
+        # 20 * 20 * 32
+        print "out size:", out
+        out = hrl.utils.Network.conv2d(input_var=out, h=4, w=4, out_channel=64,
+                                       strides=[2, 2], activation=leakyRelu, padding="VALID", var_scope="conv2")
+        # 9 * 9 * 64
+        print "out size:", out
+        out = hrl.utils.Network.conv2d(input_var=out, h=3, w=3, out_channel=64,
+                                       strides=[1, 1], activation=leakyRelu, padding="VALID", var_scope="conv3")
+
+        # 7 * 7 * 64
+        out = tf.reshape(out, [-1, int(np.product(out.shape[1:]))])
+        out = layers.fully_connected(out, 512, activation_fn=leakyRelu)
+        print "out size:", out
+
+        nn_head_para = []
+        for head in range(n_heads):
+            with tf.variable_scope("head%d" % head) as scope_head:
+                head = layers.fully_connected(out, action_space.n, activation_fn=None)
+
+            nn_outputs.append(head)
+            nn_head_para.append(tf.get_collection(key=tf.GraphKeys.TRAINABLE_VARIABLES,
+                                                  scope=scope_head.name))
+
+        return {"input": x,
+                "head": nn_outputs,
+                "head_para": nn_head_para}
+
+Experiment.register(CEMBootstrappedDQNBreakout, "CEM Bootstrapped DQN for the Snake game")
 
 
 if __name__ == '__main__':
