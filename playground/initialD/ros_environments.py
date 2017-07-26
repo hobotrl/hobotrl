@@ -101,31 +101,34 @@ class DrivingSimulatorEnv(object):
 
         # === compile observation ===
         try:
-            next_state = self.q_obs.get(timeout=1)[0]
+            next_state = self.q_obs.get_nowait()[0]
             self.q_obs.task_done()
         except:
             print "step(): exception getting observation."
+            time.sleep(1.0)
             return None, None, None, None
 
         # === calculate reward ===
         try:
-            rewards = self.q_reward.get(timeout=1)
+            rewards = self.q_reward.get_nowait()
             self.q_reward.task_done()
         except:
             print "step(): exception getting reward."
+            time.sleep(1.0)
             return next_state, None, None, None
         print "step(): rewards {}".format(rewards)
         reward = -100.0 * float(rewards[0]) + \
                  -10.0 * float(rewards[1]) + \
-                 1.0 * float(rewards[2]) + \
+                10.0 * float(rewards[2]) + \
                  -100.0 * (1 - float(rewards[3]))
         # decide if episode is done
         try:
-            done = self.q_done.get(timeout=1)
+            done = self.q_done.get_nowait()
             self.q_done.task_done()
         except:
-            print "step(): queue_done empty."
-            done = True  # assume episode done if queue_done is emptied
+            print "step(): exception getting done"
+            time.sleep(1.0)
+            return next_state, reward, None, None
         # info
         info = None
 
@@ -148,6 +151,10 @@ class DrivingSimulatorNode(multiprocessing.Process):
         self.q_reward = q_reward
         self.q_action = q_action
         self.q_done = q_done
+        self.q = {'obs': self.q_obs,
+                  'reward': self.q_reward,
+                  'action': self.q_action,
+                  'done': self.q_done}
 
         self.defs_obs = defs_obs
         self.defs_reward = defs_reward
@@ -157,13 +164,24 @@ class DrivingSimulatorNode(multiprocessing.Process):
 
         self.first_time = True
         self.terminatable = False
-        self.is_up = False
+        self.is_simulator_up = False
+        self.car_started = False
 
     def run(self):
-        print "Started process: {}".format(self.name)
+        print "[DrivingSimulatorEnv]: started process: {}".format(self.name)
+
+        # # clearning queue
+        # print "[DrivingSimulatorEnv]: clearing queue."
+        # for name in self.q:
+        #     q = self.q[name]
+        #     while not q.empty():
+        #         print "[init]: Queue {} @ {} not empty.".format(name, q)
+        #         q.get()
+        #         q.task_done()
 
         # Initialize ROS node
-        rospy.init_node('Node_DrivingSimulatorEnv_Simulator')
+        print "[DrivingSimulatorEnv]: initialiting node."
+        rospy.init_node('DrivingSimulatorEnv')
         self.brg = CvBridge()
         # === Subscribers ===
         # Obs + Reward: synced
@@ -179,7 +197,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
         rospy.Subscriber('/rl/is_running', Bool, self.__heartbeat_checker)
         # === Publishers ===
         f_pubs = lambda defs: rospy.Publisher(
-            defs[0], defs[1], queue_size=20, latch=True
+            defs[0], defs[1], queue_size=100, latch=True
         )
         self.action_pubs = map(f_pubs, self.defs_action)
         self.actor_loop = Timer(
@@ -190,31 +208,46 @@ class DrivingSimulatorNode(multiprocessing.Process):
         )
 
         # Simulator initialization
-        print "Signaling simulator restart",
+        print "[DrivingSimulatorEnv]: signaling simulator restart"
         self.restart_pub.publish(True)
 
+        # Wait new_obs for N_wait seconds  
         # send ' ', 'g', '1' until new obs is observed
-        N_wait = 20
-        while not self.is_up:
-            print "Simulator not up, wait..."
+        N_wait = 10
+        flag_term = False
+        while not self.is_simulator_up and not flag_term:
+            print "Simulator not up, wait {}...".format(N_wait)
             time.sleep(1.0)
             N_wait -= 1
-            if self.terminatable or N_wait==0:
-                print "Simulation initialization failed."
-                return
-        print "Let's rock!"
-        t = time.time()
-        time.sleep(1.0)
-        self.action_pubs[0].publish(ord(' '))
-        for _ in range(5):
-            time.sleep(1.0)
-            self.action_pubs[0].publish(ord('1'))
-            time.sleep(1.0)
-            self.action_pubs[0].publish(ord('g'))
+            if N_wait==0:
+                self.restart_pub.publish(False)
+                print "Simulation initialization failed, "
+                flag_term = True
 
-        # Check if simulation episode is done
-        while not self.terminatable:
-            time.sleep(0.2)
+        t = time.time()
+
+        if not flag_term:
+            time.sleep(2.0)
+            self.action_pubs[0].publish(ord(' '))
+            for _ in range(5):
+                time.sleep(0.5)
+                self.action_pubs[0].publish(ord('1'))
+                time.sleep(0.5)
+                self.action_pubs[0].publish(ord('g'))
+            self.car_started = True
+            # Loop check if simulation episode is done
+            while not self.terminatable:
+                time.sleep(0.2)
+        else:
+            pass
+
+        # print "[run]: emptying and closing queues."
+        # for name in self.q:
+        #     q = self.q[name]
+        #     while not q.empty():
+        #         print "[init]: Queue {} @ {} not empty.".format(name, q)
+        #         q.get()
+        #         q.task_done()
 
         # Close queues for this process
         self.q_obs.close()
@@ -222,14 +255,15 @@ class DrivingSimulatorNode(multiprocessing.Process):
         self.q_action.close()
         self.q_done.close()
 
-        rospy.signal_shutdown('Simulator down')
-        print "Returning from run in process: {} PID: {}, after {:.2f} secs.".format(
+        rospy.signal_shutdown('[DrivingSimulatorEnv]: simulator terminated.')
+        print "Returning from run in process: {} PID: {}, after {:.2f} secs...".format(
             self.name, self.pid, time.time()-t)
         secs = 3
         while secs != 0:
             print "..in {} secs".format(secs)
             secs -= 1
             time.sleep(1.0)
+        return
 
     def __enque_exp(self, *args):
         # print "__enque_exp: observation received..."
@@ -243,7 +277,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
         try:
             self.q_obs.put((args[:num_obs]), timeout=0.1)
         except:
-            #print "__enque_exp: q_obs full!"
+            print "__enque_exp: q_obs full!"
             pass
         try:
             self.q_reward.put(
@@ -251,21 +285,21 @@ class DrivingSimulatorNode(multiprocessing.Process):
                 timeout=0.1
             )
         except:
-            # print "__enque_exp: q_reward full!"
+            print "__enque_exp: q_reward full!"
             pass
-        # print "__enque_exp: {}".format(args[num_obs:])
-        self.is_up = True  # assume simulator is up after first obs
+        print "__enque_exp: {}".format(args[num_obs:])
+        self.is_simulator_up = True  # assume simulator is up after first obs
 
     def __take_action(self, data):
         try:
-            actions = self.q_action.get()
+            actions = self.q_action.get_nowait()
             self.q_action.put(actions)
             self.q_action.task_done()
         except:
             print "__take_action: get action from queue failed."
             return
 
-        if self.is_up:
+        if self.is_simulator_up and self.car_started:
             # print "__take_action: {}, q len {}".format(
             #     actions, self.q_action.qsize()
             # )
@@ -274,15 +308,16 @@ class DrivingSimulatorNode(multiprocessing.Process):
                 zip(self.action_pubs, actions)
             )
         else:
-            print "__take_action: simulator not up."
+            print "__take_action: simulator up ({}), car started ({})".format(
+                self.is_simulator_up, self.car_started)
 
     def __enque_done(self, data):
         done = not data.data
-        if self.q_done.full():
-            self.q_done.get()
-            self.q_done.task_done()
-        self.q_done.put(done)
-        # print "__eqnue_done: {}".format(done)
+        try:
+            self.q_done.put(done, timeout=0.1)
+        except:
+            print "__enque_done: q_done full."
+        print "__eqnue_done: {}".format(done)
 
     def __heartbeat_checker(self, data):
         print "Heartbeat signal: {}, First time: {}".format(

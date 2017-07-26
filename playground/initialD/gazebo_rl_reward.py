@@ -78,8 +78,10 @@ class MyClass:
         rospy.spin()
 
 if __name__ == '__main__':
+    print "[gazebo_rl_reward]: inside file."
     try:
         myobjectx = MyClass()
         myobjectx.sender()
     except rospy.ROSInterruptException:
         pass
+    print "[gazebo_rl_reward]: out."

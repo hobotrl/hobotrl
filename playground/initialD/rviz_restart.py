@@ -20,89 +20,100 @@ from timer import Timer
 
 class restart_ros_launch:
     def __init__(self):
-        self.launch_list = list()
-        self.socket2 = ""
-        self.last_pos = deque(maxlen=1000) # Approximately 20 secs @ 50Hz
-        self.destination = np.zeros([1,3])
-        rospack = rospkg.RosPack()  # get an instance of RosPack with the default search paths 
-        self.process_name = ['roslaunch', 'planning', 'honda_S5-1.launch']
+        # process related
+        self.process_list = list()
+        self.process_names = [
+            ['roslaunch', 'planning', 'honda_S5-1.launch'],
+            ['python', './gazebo_rl_reward.py']]
+
+        # Simulator states
         self.is_running = False
-
-        rospy.init_node('restart_launch_file')
-        self.is_running_pub = rospy.Publisher("/rl/is_running", Bool, queue_size=10, latch=True)
-        self.heartbeat_pub = rospy.Publisher(
-            "/rl/simulator_heartbeat", Bool, queue_size=10, latch=True
-        )
-        self.opposite_path_pub = rospy.Publisher("/rl/last_on_opposite_path",
-                                                 Int16, queue_size=10,
-                                                 latch=True)
-        Timer(
-            rospy.Duration(1/20.0),
-            lambda *args: self.heartbeat_pub.publish(self.is_running)
-        )
-        rospy.Subscriber('/error/type', Int16, self.car_out_of_lane_callback)
-        rospy.Subscriber('/car/status', CarStatus, self.car_not_move_callback)
-        rospy.Subscriber('/rl/simulator_restart', Bool, self.restart_callback)
-        rospy.Subscriber('/rl/on_grass', Int16, self.car_out_of_lane_callback)
-
+        self.last_pos = deque(maxlen=1000) # Approximately 20 secs @ 50Hz
         self.last_on_opposite_path = 1
 
-        rospy.Subscriber(
-            '/rl/on_opposite_path',
-            Int16, self.assign_last_op 
+        # ROS node
+        rospy.init_node('LaunchFileRestarter')
+
+        # publishers
+        # async signal for simulator state
+        self.is_running_pub = rospy.Publisher(
+            "/rl/is_running", Bool, queue_size=10, latch=True)
+        # periodic heartbeat
+        self.heartbeat_pub = rospy.Publisher(
+            "/rl/simulator_heartbeat", Bool, queue_size=10, latch=True)
+        # opposite path
+        self.opposite_path_pub = rospy.Publisher(
+            "/rl/last_on_opposite_path", Int16, queue_size=10, latch=True
         )
+        # periodic heartbeat
+        Timer(
+            rospy.Duration(1/20.0),
+            lambda *args: self.heartbeat_pub.publish(self.is_running))
+        # periodic opposite path signal
         Timer(
             rospy.Duration(1/20.0),
             lambda *args: self.opposite_path_pub.publish(self.last_on_opposite_path)
         )
 
-    def assign_last_op(self, data):
+        # subscribers
+        rospy.Subscriber('/error/type', Int16, self.car_out_of_lane_callback)
+        rospy.Subscriber('/car/status', CarStatus, self.car_not_move_callback)
+        rospy.Subscriber('/rl/simulator_restart', Bool, self.restart_callback)
+        rospy.Subscriber('/rl/on_grass', Int16, self.car_out_of_lane_callback)
+        rospy.Subscriber('/rl/on_opposite_path', Int16, self.__assign_last_op)
+
+    def __assign_last_op(self, data):
         self.last_on_opposite_path = data.data
 
     def terminate(self):
-        # flush heartbeat = False for 5 secs
+        # flush heartbeat = False for 1 sec
         self.is_running = False
-        secs = 5
+        secs = 1
         while secs != 0:
             print "Shutdown in {} secs".format(secs)
             secs -= 1
             time.sleep(1.0)
 
+        # signal env node shutdown
+        print "rviz_restart: publish heartbeat=False!"
+        self.is_running_pub.publish(False)
+
         # shutdown simulator node
-        if len(self.launch_list) is 0:
+        if len(self.process_list) is 0:
             print("no process to terminate")
         else:
             rospy.loginfo("now shut down launch file")
-            for p in self.launch_list:
+            for p in self.process_list:
                 p.terminate()
-                p.wait()
-                print ("Simulator process {} terminated with exit code"
-                " {}").format(p.pid, p.returncode)
-            self.launch_list = []
+                # p.kill()
+                while p.poll() is None:
+                    print (
+                        "Simulator process {} termination in progress..."
+                    ).format(p.pid)
+                    time.sleep(1.0)
+                print (
+                    "Simulator process {} terminated with exit code {}"
+                ).format(p.pid, p.returncode)
+            self.process_list = []
             print("Done!")
 
-        # signal env node shutdown
-        print "========================"
-        print "========================"
-        print "Publish heart beat False!"
-        print "========================"
-        print "========================"
-        self.is_running_pub.publish(False)
-
     def restart_callback(self, data):
+        print "rviz_restart: restart callback with {}".format(data.data)
+        if data.data==False:
+            print "rviz_restart: mere termination requested."
+            self.terminate()
+            print "rviz_restart: termination finished."
+            return
 
         # restart launch file
-        rosrun = subprocess.Popen(self.process_name)
-        self.launch_list.append(rosrun)
-        print("restart launch file finished!")
+        for name in self.process_names:
+            p = subprocess.Popen(name)
+            self.process_list.append(p)
+        print("rviz_restart: restarted launch file!")
 
         self.is_running = True
 
-        print "========================"
-        print "========================"
-        print "Publish heart beat True!"
-        print "========================"
-        print "========================"
+        print "rviz_restart: publish heartbeat=True!"
         self.is_running_pub.publish(True)
 
     def car_out_of_lane_callback(self, data):
@@ -112,14 +123,13 @@ class restart_ros_launch:
             self.terminate()
 
     def car_not_move_callback(self, data):
-        # NEED TO BE DONE
-        # The car stops or go with a very slow speed, 
-        # doesn't mean the car arrived at the destination.
-        # maybe we can set a circle near destination, when it reaches that range, we can restart the process 
-        # rospy.loginfo("0 is "+ str(self.last_pos[0]))
-        # rospy.loginfo("-1 is "+str(self.last_pos[-1]))
+        # TODO:
+        #  The car stops or go with a very slow speed, doesn't mean the car
+        #  arrived at the destination. maybe we can set a circle near
+        #  destination, when it reaches that range, we can restart the process 
         self.last_pos.append(np.array([data.position.x, data.position.y, data.position.z]))
-        if len(self.last_pos)==self.last_pos.maxlen and LA.norm(self.last_pos[0] - self.last_pos[-1])<0.1:
+        if (len(self.last_pos)==self.last_pos.maxlen and
+            LA.norm(self.last_pos[0] - self.last_pos[-1])<0.1):
             rospy.logwarn("The car stops moving!")
             self.last_pos.clear()
             self.terminate()
