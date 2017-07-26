@@ -1489,10 +1489,15 @@ class CEMBootstrappedDQNSnakeGame(Experiment):
 
         # Parameters
         random.seed(1105)  # Seed
+        n_head = 10
 
-        for n_head in [10]:
+        noise_candidates = [0.05, 0.1, 0.15, 0.2]
+        portion_candidates = [0.8, 0.5, 0.3]
+        grid = [(n, p) for n in noise_candidates for p in portion_candidates]
 
-            log_dir = os.path.join(args.logdir, "head%d" % n_head)
+        for noise, portion in grid:
+
+            log_dir = os.path.join(args.logdir, "%d_%d" % (noise*100, portion*10))
             if not os.path.exists(log_dir):
                 os.makedirs(log_dir)
             log_file_name = "booststrapped_DQN_Snake.csv"
@@ -1512,14 +1517,14 @@ class CEMBootstrappedDQNSnakeGame(Experiment):
                                        min_buffer_size=100,
                                        batch_size=20,
                                        n_heads=n_head,
-                                       cem_noise=0.2,
-                                       cem_portion=0.5,
+                                       cem_noise=noise,
+                                       cem_portion=portion,
                                        cem_update_interval=50)
 
             # Start training
             env_runner = EnvRunner2(env=env,
                                     agent=agent,
-                                    n_episodes=-1,
+                                    n_episodes=1500,
                                     moving_average_window_size=100,
                                     no_reward_reset_interval=-1,
                                     checkpoint_save_interval=1000,
