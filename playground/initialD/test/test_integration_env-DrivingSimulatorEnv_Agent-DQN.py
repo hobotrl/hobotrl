@@ -23,15 +23,29 @@ from std_msgs.msg import Char, Bool, Int16, Float32
 from sensor_msgs.msg import Image
 
 # Environment
+def compile_reward(rewards):
+    reward = -100.0 * float(rewards[0]) + \
+              -10.0 * float(rewards[1]) + \
+               10.0 * float(rewards[2]) + \
+             -100.0 * (1 - float(rewards[3]))
+    return reward
+
+def compile_obs(obss):
+    obs = obss[0]
+    return obs
+
 env = DrivingSimulatorEnv(
-    [('/training/image', Image)],
-    [('/rl/has_obstacle_nearby', Bool),
-     ('/rl/distance_to_longestpath', Float32),
-     ('/rl/car_velocity', Float32),
-     ('/rl/last_on_opposite_path', Int16)],
-    [('/autoDrive_KeyboardMode', Char)],
+    defs_obs=[('/training/image', Image)],
+    func_compile_obs=compile_obs,
+    defs_reward=[
+        ('/rl/has_obstacle_nearby', Bool),
+        ('/rl/distance_to_longestpath', Float32),
+        ('/rl/car_velocity', Float32),
+        ('/rl/last_on_opposite_path', Int16)],
+    func_compile_reward=compile_reward,
+    defs_action=[('/autoDrive_KeyboardMode', Char)],
     rate_action=10.0,
-    buffer_sizes={'obs': 1, 'reward': 1, 'action': 1}
+    buffer_sizes={'obs': 5, 'reward': 5, 'action': 5}
 )
 ACTIONS = [(Char(ord(mode)),) for mode in ['s', 'd', 'a']]
 
