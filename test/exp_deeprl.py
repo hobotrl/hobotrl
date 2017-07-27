@@ -1607,15 +1607,7 @@ class CEMBootstrappedDQNSnakeGame(Experiment):
 Experiment.register(CEMBootstrappedDQNSnakeGame, "CEM Bootstrapped DQN for the Snake game")
 
 
-class CEMBootstrappedDQNBreakout(BootstrappedDQNAtari):
-    def __init__(self):
-        from hobotrl.algorithms.bootstrapped_DQN import CEMBootstrappedDQN
-        super(CEMBootstrappedDQNBreakout, self).__init__(env=gym.make('Breakout-v0'),
-                                                         agent_type=CEMBootstrappedDQN,
-                                                         agent_args={"cem_noise": 0.10,
-                                                                     "cem_portion": 0.3,
-                                                                     "cem_update_interval": 50})
-
+class CEMBootstrappedDQNAtari(BootstrappedDQNAtari):
     @staticmethod
     def nn_constructor(observation_space, action_space, n_heads, **kwargs):
         """
@@ -1659,7 +1651,27 @@ class CEMBootstrappedDQNBreakout(BootstrappedDQNAtari):
                 "head": nn_outputs,
                 "head_para": nn_head_para}
 
-Experiment.register(CEMBootstrappedDQNBreakout, "CEM Bootstrapped DQN for the Snake game")
+
+class CEMBootstrappedDQNBreakout(CEMBootstrappedDQNAtari):
+    def __init__(self):
+        from hobotrl.algorithms.bootstrapped_DQN import CEMBootstrappedDQN
+        super(CEMBootstrappedDQNBreakout, self).__init__(env=gym.make('Breakout-v0'),
+                                                         agent_type=CEMBootstrappedDQN,
+                                                         agent_args={"cem_noise": 0.10,
+                                                                     "cem_portion": 0.3,
+                                                                     "cem_update_interval": 50})
+
+
+class CEMBootstrappedDQNIceHockey(CEMBootstrappedDQNAtari):
+    def __init__(self):
+        from hobotrl.algorithms.bootstrapped_DQN import CEMBootstrappedDQN
+        super(CEMBootstrappedDQNIceHockey, self).__init__(env=gym.make('IceHockey-v0'),
+                                                          agent_type=CEMBootstrappedDQN,
+                                                          agent_args={"cem_noise": 0.05,
+                                                                      "cem_portion": 0.8,
+                                                                      "cem_update_interval": 50})
+
+Experiment.register(CEMBootstrappedDQNIceHockey, "CEM Bootstrapped DQN for the Snake game")
 
 
 if __name__ == '__main__':
