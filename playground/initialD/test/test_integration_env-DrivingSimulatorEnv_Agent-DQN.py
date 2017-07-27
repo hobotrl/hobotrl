@@ -171,10 +171,8 @@ try:
 #except rospy.ROSInterruptException:
 except Exception as e:
     print e.message
-    print "!!!!!"
-    traceback.print_tb()
 finally:
     print "Tidying up..."
     sess.close()
     # kill orphaned monitor daemon process
-    os.killpg(os.getpgid(env.proc_monitor.pid), 9)
+    os.killpg(os.getpgid(os.getpid()), 9)

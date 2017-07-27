@@ -103,6 +103,7 @@ class restart_ros_launch:
             print "rviz_restart: mere termination requested."
             self.terminate()
             print "rviz_restart: termination finished."
+            self.is_running_pub.publish(False)
             return
 
         # restart launch file
