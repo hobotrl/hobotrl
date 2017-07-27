@@ -1661,17 +1661,19 @@ class CEMBootstrappedDQNBreakout(CEMBootstrappedDQNAtari):
                                                                      "cem_portion": 0.3,
                                                                      "cem_update_interval": 50})
 
+Experiment.register(CEMBootstrappedDQNBreakout, "CEM Bootstrapped DQN for the Breakout")
+
 
 class CEMBootstrappedDQNIceHockey(CEMBootstrappedDQNAtari):
     def __init__(self):
         from hobotrl.algorithms.bootstrapped_DQN import CEMBootstrappedDQN
         super(CEMBootstrappedDQNIceHockey, self).__init__(env=gym.make('IceHockey-v0'),
                                                           agent_type=CEMBootstrappedDQN,
-                                                          agent_args={"cem_noise": 0.05,
-                                                                      "cem_portion": 0.8,
+                                                          agent_args={"cem_noise": 0.1,
+                                                                      "cem_portion": 0.3,
                                                                       "cem_update_interval": 50})
 
-Experiment.register(CEMBootstrappedDQNIceHockey, "CEM Bootstrapped DQN for the Snake game")
+Experiment.register(CEMBootstrappedDQNIceHockey, "CEM Bootstrapped DQN for the Ice Hockey")
 
 
 if __name__ == '__main__':
