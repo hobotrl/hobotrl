@@ -295,15 +295,12 @@ class DrivingSimulatorNode(multiprocessing.Process):
         rospy.Subscriber('/rl/is_running', Bool, self.__heartbeat_checker)
         # === Publishers ===
         f_pubs = lambda defs: rospy.Publisher(
-            defs[0], defs[1], queue_size=100, latch=True
-        )
+            defs[0], defs[1], queue_size=100, latch=True)
         self.action_pubs = map(f_pubs, self.defs_action)
         self.actor_loop = Timer(
-            rospy.Duration(1.0/self.rate_action), self.__take_action
-        )
+            rospy.Duration(1.0/self.rate_action), self.__take_action)
         self.restart_pub = rospy.Publisher(
-            '/rl/simulator_restart', Bool, queue_size=10, latch=True
-        )
+            '/rl/simulator_restart', Bool, queue_size=10, latch=True)
         print "[EnvNode]: node initialized."
 
         # Simulator initialization
@@ -326,16 +323,8 @@ class DrivingSimulatorNode(multiprocessing.Process):
         # Simulator run
         t = time.time()
         if not flag_fail:
-            print "[EnvNode]: sending key space.."
-            self.action_pubs[0].publish(ord(' '))
-            time.sleep(0.02)
-            print "[EnvNode]: sending key 1.."
-            self.action_pubs[0].publish(ord('1'))
-            time.sleep(0.02)
-            print "[EnvNode]: sending key g.."
-            self.action_pubs[0].publish(ord('g'))
-            self.car_started.set()
-            self.is_node_up.set()
+            __thread_start_car = threading.Thread(target=self.__start_car)
+            __thread_start_car.start()
             # Loop check if simulation episode is done
             while not self.terminatable.is_set():
                 time.sleep(0.2)
@@ -356,6 +345,20 @@ class DrivingSimulatorNode(multiprocessing.Process):
             secs -= 1
             time.sleep(1.0)
         return
+
+    def __start_car(self):
+        time.sleep(1.0)
+        print "[EnvNode]: sending key 'space' ..."
+        self.action_pubs[0].publish(ord(' '))
+        for _ in range(2):
+            time.sleep(0.5)
+            print "[EnvNode]: sending key '1' ..."
+            self.action_pubs[0].publish(ord('1'))
+            time.sleep(0.5)
+            print "[EnvNode]: sending key 'g' ..."
+            self.action_pubs[0].publish(ord('g'))
+        self.car_started.set()
+        self.is_node_up.set()
 
     def __enque_exp(self, *args):
         # check queue status, return if queue not ready.
@@ -408,7 +411,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
             self.q_action.put_nowait(actions)
             self.q_action.task_done()
         except:
-            print "__take_action: get action from queue failed."
+            # print "__take_action: get action from queue failed."
             return
 
         if self.is_simulator_up.is_set() and self.car_started.is_set():
@@ -420,8 +423,9 @@ class DrivingSimulatorNode(multiprocessing.Process):
                 zip(self.action_pubs, actions)
             )
         else:
-            print "__take_action: simulator up ({}), car started ({})".format(
-                self.is_simulator_up.is_set(), self.car_started.is_set())
+            # print "__take_action: simulator up ({}), car started ({})".format(
+            #     self.is_simulator_up.is_set(), self.car_started.is_set())
+            pass
 
     def __enque_done(self, data):
         if not self.q_ready.is_set():

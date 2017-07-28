@@ -74,10 +74,6 @@ class restart_ros_launch:
             secs -= 1
             time.sleep(1.0)
 
-        # signal env node shutdown
-        print "rviz_restart: publish heartbeat=False!"
-        self.is_running_pub.publish(False)
-
         # shutdown simulator node
         if len(self.process_list) is 0:
             print("no process to terminate")
@@ -96,6 +92,10 @@ class restart_ros_launch:
                 ).format(p.pid, p.returncode)
             self.process_list = []
             print("Done!")
+
+        # signal env node shutdown
+        print "rviz_restart: publish heartbeat=False!"
+        self.is_running_pub.publish(False)
 
     def restart_callback(self, data):
         print "rviz_restart: restart callback with {}".format(data.data)
