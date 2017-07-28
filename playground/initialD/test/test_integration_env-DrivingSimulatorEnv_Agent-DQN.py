@@ -1,6 +1,8 @@
 import os
 import signal
+import time
 import sys
+import traceback
 sys.path.append('../../..')
 sys.path.append('..')
 
@@ -18,18 +20,32 @@ from ros_environments import DrivingSimulatorEnv
 import rospy
 import message_filters
 from std_msgs.msg import Char, Bool, Int16, Float32
-from sensor_msgs.msg import Image 
+from sensor_msgs.msg import Image
 
 # Environment
+def compile_reward(rewards):
+    reward = -100.0 * float(rewards[0]) + \
+              -10.0 * float(rewards[1]) + \
+               10.0 * float(rewards[2]) + \
+             -100.0 * (1 - float(rewards[3]))
+    return reward
+
+def compile_obs(obss):
+    obs = obss[0]
+    return obs
+
 env = DrivingSimulatorEnv(
-    [('/training/image', Image)],
-    [('/rl/has_obstacle_nearby', Bool),
-     ('/rl/distance_to_longestpath', Float32),
-     ('/rl/car_velocity', Float32),
-     ('/rl/on_opposite_path', Int16)],
-    [('/autoDrive_KeyboardMode', Char)],
+    defs_obs=[('/training/image', Image)],
+    func_compile_obs=compile_obs,
+    defs_reward=[
+        ('/rl/has_obstacle_nearby', Bool),
+        ('/rl/distance_to_longestpath', Float32),
+        ('/rl/car_velocity', Float32),
+        ('/rl/last_on_opposite_path', Int16)],
+    func_compile_reward=compile_reward,
+    defs_action=[('/autoDrive_KeyboardMode', Char)],
     rate_action=10.0,
-    buffer_sizes={'obs': 1, 'reward': 1, 'action': 1}
+    buffer_sizes={'obs': 5, 'reward': 5, 'action': 5}
 )
 ACTIONS = [(Char(ord(mode)),) for mode in ['s', 'd', 'a']]
 
@@ -41,31 +57,31 @@ def f_net(inputs, num_outputs, is_training):
         kernel_regularizer=l2_regularizer(scale=1e-2), name='conv1'
     )
     pool1 = layers.max_pooling2d(
-        inputs=conv1, pool_size=3, strides=16, name='pool1'
+        inputs=conv1, pool_size=3, strides=4, name='pool1'
     )
     conv2 = layers.conv2d(
         inputs=pool1, filters=16, kernel_size=(5, 5), strides=1,
         kernel_regularizer=l2_regularizer(scale=1e-2), name='conv2'
     )
     pool2 = layers.max_pooling2d(
-        inputs=conv2, pool_size=3, strides=64, name='pool2'
+        inputs=conv2, pool_size=3, strides=3, name='pool2'
     )
-    # conv3 = layers.conv2d(
-    #     inputs=pool2, filters=64, kernel_size=(3, 3), strides=1,
-    #     kernel_regularizer=l2_regularizer(scale=1e-2), name='conv3'
-    #)
-    #pool3 = layers.max_pooling2d(
-    #    inputs=conv3, pool_size=3, strides=8, name='pool3',
-    #)
-    #conv4 = layers.conv2d(
-    #    inputs=pool3, filters=64, kernel_size=(3, 3), strides=1,
-    #    kernel_regularizer=l2_regularizer(scale=1e-2), name='conv4'
-    #)
-    #pool4 = layers.max_pooling2d(
-    #    inputs=conv3, pool_size=3, strides=8, name='pool4'
-    #)
-    depth = pool2.get_shape()[1:].num_elements()
-    inputs = tf.reshape(pool2, shape=[-1, depth])
+    conv3 = layers.conv2d(
+         inputs=pool2, filters=64, kernel_size=(3, 3), strides=1,
+         kernel_regularizer=l2_regularizer(scale=1e-2), name='conv3'
+    )
+    pool3 = layers.max_pooling2d(
+        inputs=conv3, pool_size=3, strides=8, name='pool3',
+    )
+    conv4 = layers.conv2d(
+        inputs=pool3, filters=64, kernel_size=(3, 3), strides=1,
+        kernel_regularizer=l2_regularizer(scale=1e-2), name='conv4'
+    )
+    pool4 = layers.max_pooling2d(
+        inputs=conv3, pool_size=3, strides=8, name='pool4'
+    )
+    depth = pool4.get_shape()[1:].num_elements()
+    inputs = tf.reshape(pool4, shape=[-1, depth])
     hid1 = layers.dense(
         inputs=inputs, units=256, activation=tf.nn.relu,
         kernel_regularizer=l2_regularizer(scale=1e-2), name='hid1'
@@ -130,7 +146,14 @@ try:
         n_steps = 0
         cum_td_loss = 0.0
         state, action = env.reset(), np.random.randint(0, len(ACTIONS))
-        next_state, reward, done, info = env.step(ACTIONS[action])
+        while True:
+            next_state, reward, done, info = env.step(ACTIONS[action])
+            if next_state is None or reward is None or done is None:
+                time.sleep(0.5)
+                print "__main__: env step exception."
+                continue
+            else:
+                break
         while True:
             n_steps += 1
             cum_reward += reward
@@ -151,12 +174,19 @@ try:
                 n_steps = 0
                 cum_reward = 0.0
             state, action = next_state, next_action
-            next_state, reward, done, info = env.step(ACTIONS[action])
+            while True:
+                next_state, reward, done, info = env.step(ACTIONS[action])
+                if next_state is None or reward is None or done is None:
+                    time.sleep(0.5)
+                    print "__main__: env step exception."
+                    continue
+                else:
+                    break
 #except rospy.ROSInterruptException:
 except Exception as e:
     print e.message
-    pass
 finally:
+    print "Tidying up..."
     sess.close()
     # kill orphaned monitor daemon process
-    os.killpg(os.getpgid(env.proc_monitor.pid), 9)
+    os.killpg(os.getpgid(os.getpid()), 9)
