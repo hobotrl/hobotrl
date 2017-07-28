@@ -10,6 +10,7 @@ Last Modified: July 27, 2017
 import time
 # Threading and Multiprocessing
 import threading
+import subprocess
 import multiprocessing
 from multiprocessing import JoinableQueue as Queue
 from multiprocessing import Value, Event, Pipe
@@ -43,22 +44,37 @@ class DrivingSimulatorEnv(object):
                  defs_obs, func_compile_reward,
                  defs_reward, func_compile_obs,
                  defs_action, rate_action,
-                 buffer_sizes):
+                 window_sizes, buffer_sizes,
+                 step_delay_target=None):
         """Initialization."""
         self.defs_obs = defs_obs
         self.__compile_obs = lambda *args: func_compile_obs(*args)
+        self.len_obs = window_sizes['obs']
         self.defs_reward = defs_reward
         self.__compile_reward = lambda *args: func_compile_reward(*args)
+        self.len_reward = window_sizes['reward']
         self.defs_action = defs_action
         self.rate_action = rate_action
         self.buffer_sizes = buffer_sizes
-        self.MAX_EXCEPTION = 30
+        self.MAX_EXCEPTION = 10
+        self.STEP_DELAY_TARGET = step_delay_target
+        self.step_delay_ema = 0.0
+        self.last_step_t = time.time()
 
         # initialize queue
-        self.q_ready = Event()  # whether queues are ready
+        self.is_backend_up = Event()
+        self.is_q_ready = Event()  # whether queues are ready
         self.is_node_up = Event()  # whether env node is up
         self.is_node_up.clear()    # default to node_down
         self.__init_queue()
+
+        self.backend_cmds = [
+            # reward function
+            ['python', '/home/lewis/Projects/hobotrl/playground/initialD/gazebo_rl_reward.py'],
+            # simulator backend [Recommend start separately]
+            # ['python', '/home/lewis/Projects/hobotrl/playground/initialD/rviz_restart.py']
+        ]
+        self.proc_backend = []
 
         # monitor threads 
         self.thread_node_monitor = threading.Thread(target=self.__node_monitor)
@@ -80,63 +96,91 @@ class DrivingSimulatorEnv(object):
         """
         # wait until backend is up
         while True:
-            if self.is_node_up.is_set() or self.q_ready.is_set():
+            if self.is_node_up.is_set() and \
+               self.is_q_ready.is_set() and \
+               self.is_backend_up.is_set():
                 break
             else:
-                print "[step()]: backend not up, node {}, queue {}.".format(
-                    self.is_node_up.is_set(), self.q_ready.is_set())
+                # print "[step()]: backend {}, node {}, queue {}.".format(
+                #    self.is_backend_up.is_set(),
+                #    self.is_node_up.is_set(),
+                #    self.is_q_ready.is_set())
                 time.sleep(0.1)
 
+        # step delay regularization
+        delay = time.time() - self.last_step_t
+        self.step_delay_ema += 0.4*(delay - self.step_delay_ema)
+        if self.STEP_DELAY_TARGET is not None:
+            if delay < self.STEP_DELAY_TARGET:
+                time.sleep(self.STEP_DELAY_TARGET-delay)
+            else:
+                print ("[step()]: delay {:.3f} >= target (:.3f), if happen "
+                       "regularly please conconsider increasing target.").format(
+                           delay, self.STEP_DELAY_TARGET)
+        self.last_step_t = time.time()
+
         # action
-        try:
-            if self.q_action.full():
-                self.q_action.get(False)
-                self.q_action.task_done()
-            self.q_action.put_nowait(action)
-        except:
-            with self.cnt_q_except.get_lock():
-                self.cnt_q_except.value -= 1
-            print "[step()]: putting action into queue, counter {}.".format(self.cnt_q_except.value)
-            return None, None, None, None
+        while True:
+            try:
+                if self.q_action.full():
+                    self.q_action.get(False)
+                    self.q_action.task_done()
+                self.q_action.put_nowait(action)
+                break
+            except:
+                with self.cnt_q_except.get_lock():
+                    self.cnt_q_except.value -= 1
+                    print "[step()]: putting action into queue, exception counter {}.".format(
+                        self.cnt_q_except.value)
+                    time.sleep(0.1)
 
         # observation
-        try:
-            next_states = self.q_obs.get_nowait()
-            self.q_obs.task_done()
-        except:
-            with self.cnt_q_except.get_lock():
-                self.cnt_q_except.value -= 1
-            print "[step()]: exception getting observation, counter {}.".format(
-                self.cnt_q_except.value)
-            time.sleep(1.0)
-            return None, None, None, None
-        next_state = self.__compile_obs(next_states)
+        obs_list = []
+        for _ in range(self.len_obs):
+            while True:
+                try:
+                    next_states = self.q_obs.get_nowait()
+                    self.q_obs.task_done()
+                    break
+                except:
+                    with self.cnt_q_except.get_lock():
+                        self.cnt_q_except.value -= 1
+                        print "[step()]: exception getting observation, exception counter {}.".format(
+                            self.cnt_q_except.value)
+                    time.sleep(0.1)
+            obs_list.append(next_states)
+        next_state = self.__compile_obs(obs_list)
 
         # reward
-        try:
-            rewards = self.q_reward.get_nowait()
-            self.q_reward.task_done()
-        except:
-            with self.cnt_q_except.get_lock():
-                self.cnt_q_except.value -= 1
-            print "[step()]: exception getting reward, counter {}.".format(
-                self.cnt_q_except.value)
-            time.sleep(1.0)
-            return next_state, None, None, None
-        print "[step()]: reward vector {}".format(rewards)
-        reward = self.__compile_reward(rewards)
+        reward_list = []
+        for _ in range(self.len_reward):
+            while True:
+                try:
+                    rewards = self.q_reward.get_nowait()
+                    self.q_reward.task_done()
+                    break
+                except:
+                    with self.cnt_q_except.get_lock():
+                        self.cnt_q_except.value -= 1
+                        print "[step()]: exception getting reward, exception counter {}.".format(
+                            self.cnt_q_except.value)
+                    time.sleep(0.1)
+            reward_list.append(rewards)
+        print "[step()]: reward vector {}".format(reward_list)
+        reward = self.__compile_reward(reward_list)
 
         # done
-        try:
-            done = self.q_done.get_nowait()
-            self.q_done.task_done()
-        except:
-            with self.cnt_q_except.get_lock():
-                self.cnt_q_except.value -= 1
-            print ("[step()]: exception getting done, "
-                   "counter {}.").format(self.cnt_q_except.value)
-            time.sleep(1.0)
-            return next_state, reward, None, None
+        while True:
+            try:
+                done = self.q_done.get_nowait()
+                self.q_done.task_done()
+                break
+            except:
+                with self.cnt_q_except.get_lock():
+                    self.cnt_q_except.value -= 0
+                print ("[step()]: exception getting done, "
+                       "counter {}.").format(self.cnt_q_except.value)
+                time.sleep(0.1)
 
         # info
         info = None
@@ -153,11 +197,15 @@ class DrivingSimulatorEnv(object):
     def reset(self):
         # wait until backend is up
         while True:
-            if self.is_node_up.is_set() or self.q_ready.is_set():
+            if self.is_node_up.is_set() and \
+               self.is_q_ready.is_set() and \
+               self.is_backend_up.is_set():
                 break
             else:
-                print "[reset()]: backend not up, node {}, queue {}.".format(
-                    self.is_node_up.is_set(), self.q_ready.is_set())
+                print "[reset]: backend {}, node {}, queue {}.".format(
+                    self.is_backend_up.is_set(),
+                    self.is_node_up.is_set(),
+                    self.is_q_ready.is_set())
                 time.sleep(0.1)
         states = self.q_obs.get()[0]
         self.q_obs.task_done()
@@ -165,15 +213,15 @@ class DrivingSimulatorEnv(object):
         return state
 
     def __init_queue(self):
-        """Initialize queues, unsetting q_ready in progress."""
-        self.q_ready.clear()
+        """Initialize queues, unsetting is_q_ready in progress."""
+        self.is_q_ready.clear()
         buffer_sizes = self.buffer_sizes
         self.q_obs = Queue(buffer_sizes['obs'])
         self.q_reward = Queue(buffer_sizes['reward'])
-        self.q_action = Queue(buffer_sizes['action'])
+        self.q_action = Queue(1)
         self.q_done = Queue(1)
         self.cnt_q_except = Value('i', self.MAX_EXCEPTION)
-        self.q_ready.set()
+        self.is_q_ready.set()
 
     def __queue_monitor(self):
         """Periodically check queue status and signal queue down if there are
@@ -183,27 +231,34 @@ class DrivingSimulatorEnv(object):
             with self.cnt_q_except.get_lock():
                 if self.cnt_q_except.value<=0:
                     print "[__queue_monitor]: num of queue exceptions exceeded limit."
-                    self.is_node_up.clear()
-                    print "[__queue_monitor]: putting node down."
-            time.sleep(10.0)
+                    if self.is_q_ready.is_set():
+                        self.is_q_ready.clear()
+                        print "[__queue_monitor]: setting is_q_ready {}".format(
+                            self.is_q_ready.is_set())
+            time.sleep(5.0)
 
     def __node_monitor(self):
         while True:
             try:
+                if not self.is_node_up.is_set():
+                    self.__start_backend()
+                while not self.is_backend_up.is_set():
+                    print "[__node_monitor]: backend not up..."
+                    time.sleep(1.0)
                 print "[__node_monitor]: running new node."
                 self.__init_queue()
                 print "[__node_monitor]: set up new queue."
                 node = DrivingSimulatorNode(
                     self.q_obs, self.q_reward, self.q_action, self.q_done,
-                    self.q_ready, self.is_node_up,
+                    self.is_backend_up, self.is_q_ready, self.is_node_up,
                     self.defs_obs, self.defs_reward, self.defs_action,
                     self.rate_action
                 )
                 node.start()
                 node.join()
-            except:
-                pass
-                print "[__node_monitor]: exception running node."
+            except Exception as e:
+                print "[__node_monitor]: exception running node ({}).".format(
+                    e.message)
                 time.sleep(1.0)
             finally:
                 print "[__node_monitor]: finished running node."
@@ -218,22 +273,40 @@ class DrivingSimulatorEnv(object):
                         break
                 print "[__node_monitor]: terminiated process {}.".format(node.pid)
 
+    def __kill_backend(self):
+        self.is_backend_up.clear()
+        if len(self.proc_backend)!=0:
+            print '[DrSim] terminating backend processes..'
+            for proc in self.proc_backend:
+                if proc.poll() is None:
+                    proc.terminate()
+                while proc.poll() is None:
+                    print ("[DrSim] backend process {} termination "
+                           " in progress...").format(proc.pid)
+                    time.sleep(1.0)
+        self.proc_backend = []
+
+    def __start_backend(self):
+        print '[DrSim]: initializing backend...'
+        self.is_backend_up.clear()
+        self.proc_backend += [subprocess.Popen(cmd) for cmd in self.backend_cmds]
+        self.is_backend_up.set()
+        print '[DrSim]: backend initialized.'
 
 
 class DrivingSimulatorNode(multiprocessing.Process):
     def __init__(self,
-                 q_obs, q_reward, q_action, q_done,
-                 q_ready, is_node_up,
-                 defs_obs, defs_reward, defs_action,
-                 rate_action):
+             q_obs, q_reward, q_action, q_done,
+             is_backend_up, is_q_ready, is_node_up,
+             defs_obs, defs_reward, defs_action,
+             rate_action):
         super(DrivingSimulatorNode, self).__init__()
 
         self.q_obs = q_obs
         self.q_reward = q_reward
         self.q_action = q_action
         self.q_done = q_done
-        self.q_ready = q_ready
-        self.is_node_up = is_node_up
+        self.is_q_ready = is_q_ready
         self.q = {
             'obs': self.q_obs,
             'reward': self.q_reward,
@@ -247,9 +320,11 @@ class DrivingSimulatorNode(multiprocessing.Process):
         self.rate_action = rate_action
         self.Q_TIMEOUT = 1.0
 
+        self.is_backend_up = is_backend_up
+        self.is_node_up = is_node_up
         self.first_time = Event()
         self.terminatable = Event()
-        self.is_simulator_up = Event()
+        self.is_receiving_obs = Event()
         self.car_started = Event()
 
     def run(self):
@@ -275,14 +350,17 @@ class DrivingSimulatorNode(multiprocessing.Process):
         self.is_node_up.clear()
         self.first_time.set()
         self.terminatable.clear()
-        self.is_simulator_up.clear()
+        self.is_receiving_obs.clear()
         self.car_started.clear()
+
+        while not self.is_backend_up.is_set():
+            print "[EnvNode]: waiting for backend..."
+            time.sleep(1.0)
 
         # Initialize ROS node
         print "[EnvNode]: initialiting node..."
         rospy.init_node('DrivingSimulatorEnv')
         self.brg = CvBridge()
-        # === Subscribers ===
         # Obs + Reward: synced
         f_subs = lambda defs: message_filters.Subscriber(defs[0], defs[1])
         self.ob_subs = map(f_subs, self.defs_obs)
@@ -293,7 +371,6 @@ class DrivingSimulatorNode(multiprocessing.Process):
         # Heartbeat
         rospy.Subscriber('/rl/simulator_heartbeat', Bool, self.__enque_done)
         rospy.Subscriber('/rl/is_running', Bool, self.__heartbeat_checker)
-        # === Publishers ===
         f_pubs = lambda defs: rospy.Publisher(
             defs[0], defs[1], queue_size=100, latch=True)
         self.action_pubs = map(f_pubs, self.defs_action)
@@ -311,7 +388,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
         self.restart_pub.publish(True)
         cnt_fail = 15
         flag_fail = False  # initialization failed flag
-        while not self.is_simulator_up.is_set() and not flag_fail:
+        while not self.is_receiving_obs.is_set() and not flag_fail:
             cnt_fail -= 1
             print "[EnvNode]: simulator not up, wait for {} sec(s)...".format(cnt_fail)
             time.sleep(1.0)
@@ -326,12 +403,12 @@ class DrivingSimulatorNode(multiprocessing.Process):
             __thread_start_car = threading.Thread(target=self.__start_car)
             __thread_start_car.start()
             # Loop check if simulation episode is done
-            while not self.terminatable.is_set():
+            while self.is_backend_up.is_set() and not self.terminatable.is_set():
                 time.sleep(0.2)
         else:
             pass
-        # shutdown node
-        rospy.signal_shutdown('[DrivingSimulatorEnv]: simulator terminated.')
+
+        # rospy.signal_shutdown('[DrivingSimulatorEnv]: simulator terminated.')
 
         # Close queues for this process
         for key in self.q:
@@ -361,8 +438,11 @@ class DrivingSimulatorNode(multiprocessing.Process):
         self.is_node_up.set()
 
     def __enque_exp(self, *args):
-        # check queue status, return if queue not ready.
-        if not self.q_ready.is_set():
+        # check backend and queue status, return if not ready.
+        if not self.is_backend_up.is_set():
+            print "[__enque_exp]: backend not up."
+            return
+        if not self.is_q_ready.is_set():
             print "[__enque_exp]: queue not ready."
             return
 
@@ -391,7 +471,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
             print "[__enque_exp]: q_reward update exception!"
             pass
         # print "__enque_exp: {}".format(args[num_obs:])
-        self.is_simulator_up.set()  # assume simulator is up after first obs
+        self.is_receiving_obs.set()  # assume simulator is up after first obs
 
     def __prep_image(self, img):
          return imresize(
@@ -401,35 +481,13 @@ class DrivingSimulatorNode(multiprocessing.Process):
     def __prep_reward(self, reward):
         return reward.data
 
-    def __take_action(self, data):
-        if not self.q_ready.is_set():
-            print "[__enque_exp]: queue not ready."
-            return
-
-        try:
-            actions = self.q_action.get_nowait()
-            self.q_action.put_nowait(actions)
-            self.q_action.task_done()
-        except:
-            # print "__take_action: get action from queue failed."
-            return
-
-        if self.is_simulator_up.is_set() and self.car_started.is_set():
-            # print "__take_action: {}, q len {}".format(
-            #     actions, self.q_action.qsize()
-            # )
-            map(
-                lambda args: args[0].publish(args[1]),
-                zip(self.action_pubs, actions)
-            )
-        else:
-            # print "__take_action: simulator up ({}), car started ({})".format(
-            #     self.is_simulator_up.is_set(), self.car_started.is_set())
-            pass
-
     def __enque_done(self, data):
-        if not self.q_ready.is_set():
-            print "[__enque_exp]: queue not ready."
+        # check backend and queue status, return if not ready.
+        if not self.is_backend_up.is_set():
+            print "[__enque_done]: backend not up."
+            return
+        if not self.is_q_ready.is_set():
+            print "[__enque_done]: queue not ready."
             return
 
         done = not data.data
@@ -442,6 +500,36 @@ class DrivingSimulatorNode(multiprocessing.Process):
             print "__enque_done: q_done full."
             pass
         # print "__eqnue_done: {}".format(done)
+
+    def __take_action(self, data):
+        # check backend and queue status, return if not ready.
+        if not self.is_backend_up.is_set():
+            print "[__take_action]: backend not up."
+            return
+        if not self.is_q_ready.is_set():
+            print "[__take_action]: queue not ready."
+            return
+
+        try:
+            actions = self.q_action.get_nowait()
+            self.q_action.put_nowait(actions)
+            self.q_action.task_done()
+        except:
+            print "[__take_action]: get action from queue failed."
+            return
+
+        if self.is_receiving_obs.is_set() and self.car_started.is_set():
+            # print "__take_action: {}, q len {}".format(
+            #     actions, self.q_action.qsize()
+            # )
+            map(
+                lambda args: args[0].publish(args[1]),
+                zip(self.action_pubs, actions)
+            )
+        else:
+            print "[__take_action]: simulator up ({}), car started ({})".format(
+                 self.is_receiving_obs.is_set(), self.car_started.is_set())
+            pass
 
     def __heartbeat_checker(self, data):
         print "Heartbeat signal: {}, First time: {}".format(

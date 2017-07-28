@@ -24,6 +24,7 @@ from sensor_msgs.msg import Image
 
 # Environment
 def compile_reward(rewards):
+    rewards = rewards[0]
     reward = -100.0 * float(rewards[0]) + \
               -10.0 * float(rewards[1]) + \
                10.0 * float(rewards[2]) + \
@@ -31,7 +32,7 @@ def compile_reward(rewards):
     return reward
 
 def compile_obs(obss):
-    obs = obss[0]
+    obs = obss[0][0]
     return obs
 
 env = DrivingSimulatorEnv(
@@ -45,7 +46,9 @@ env = DrivingSimulatorEnv(
     func_compile_reward=compile_reward,
     defs_action=[('/autoDrive_KeyboardMode', Char)],
     rate_action=10.0,
-    buffer_sizes={'obs': 5, 'reward': 5, 'action': 5}
+    window_sizes={'obs': 2, 'reward': 3},
+    buffer_sizes={'obs': 5, 'reward': 5},
+    step_delay_target=0.5
 )
 ACTIONS = [(Char(ord(mode)),) for mode in ['s', 'd', 'a']]
 
@@ -174,14 +177,7 @@ try:
                 n_steps = 0
                 cum_reward = 0.0
             state, action = next_state, next_action
-            while True:
-                next_state, reward, done, info = env.step(ACTIONS[action])
-                if next_state is None or reward is None or done is None:
-                    time.sleep(0.5)
-                    print "__main__: env step exception."
-                    continue
-                else:
-                    break
+            next_state, reward, done, info = env.step(ACTIONS[action])
 #except rospy.ROSInterruptException:
 except Exception as e:
     print e.message

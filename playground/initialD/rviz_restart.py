@@ -22,10 +22,7 @@ class restart_ros_launch:
     def __init__(self):
         # process related
         self.process_list = list()
-        self.process_names = [
-            ['roslaunch', 'planning', 'honda_S5-1.launch'],
-            ['python', './gazebo_rl_reward.py']]
-
+        self.process_names = [['roslaunch', 'planning', 'honda_S5-1.launch']]
         # Simulator states
         self.is_running = False
         self.last_pos = deque(maxlen=1000) # Approximately 20 secs @ 50Hz
