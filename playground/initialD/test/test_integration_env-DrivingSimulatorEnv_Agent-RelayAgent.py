@@ -15,6 +15,7 @@ from tensorflow.contrib.layers import l2_regularizer
 from hobotrl.playback import MapPlayback
 from hobotrl.algorithms.dqn import DQN
 
+from relay_agent import RelayAgent
 from ros_environments import DrivingSimulatorEnv
 
 import rospy
@@ -45,96 +46,16 @@ env = DrivingSimulatorEnv(
         ('/rl/last_on_opposite_path', Int16)],
     func_compile_reward=compile_reward,
     defs_action=[('/autoDrive_KeyboardMode', Char)],
-    rate_action=10.0,
-    window_sizes={'obs': 2, 'reward': 2},
+    rate_action=1e-10,
+    window_sizes={'obs': 1, 'reward': 1},
     buffer_sizes={'obs': 5, 'reward': 5},
-    step_delay_target=1.0
+    step_delay_target=1.0,
+    is_dummy_action=True
 )
-ACTIONS = [(Char(ord(mode)),) for mode in ['s', 'd', 'a']]
+ACTIONS = [(Char(ord(mode)),) for mode in ['s', 'd', 'a', '!']]
 
 # Agent
-def f_net(inputs, num_outputs, is_training):
-    inputs = inputs/128 - 1.0
-    conv1 = layers.conv2d(
-        inputs=inputs, filters=16, kernel_size=(8, 8), strides=1,
-        kernel_regularizer=l2_regularizer(scale=1e-2), name='conv1'
-    )
-    pool1 = layers.max_pooling2d(
-        inputs=conv1, pool_size=3, strides=4, name='pool1'
-    )
-    conv2 = layers.conv2d(
-        inputs=pool1, filters=16, kernel_size=(5, 5), strides=1,
-        kernel_regularizer=l2_regularizer(scale=1e-2), name='conv2'
-    )
-    pool2 = layers.max_pooling2d(
-        inputs=conv2, pool_size=3, strides=3, name='pool2'
-    )
-    conv3 = layers.conv2d(
-         inputs=pool2, filters=64, kernel_size=(3, 3), strides=1,
-         kernel_regularizer=l2_regularizer(scale=1e-2), name='conv3'
-    )
-    pool3 = layers.max_pooling2d(
-        inputs=conv3, pool_size=3, strides=8, name='pool3',
-    )
-    conv4 = layers.conv2d(
-        inputs=pool3, filters=64, kernel_size=(3, 3), strides=1,
-        kernel_regularizer=l2_regularizer(scale=1e-2), name='conv4'
-    )
-    pool4 = layers.max_pooling2d(
-        inputs=conv3, pool_size=3, strides=8, name='pool4'
-    )
-    depth = pool4.get_shape()[1:].num_elements()
-    inputs = tf.reshape(pool4, shape=[-1, depth])
-    hid1 = layers.dense(
-        inputs=inputs, units=256, activation=tf.nn.relu,
-        kernel_regularizer=l2_regularizer(scale=1e-2), name='hid1'
-    )
-    hid2 = layers.dense(
-        inputs=hid1, units=256, activation=tf.nn.relu,
-        kernel_regularizer=l2_regularizer(scale=1e-2), name='hid2'
-    )
-    q = layers.dense(
-        inputs=hid2, units=num_outputs, activation=None,
-        kernel_regularizer=l2_regularizer(scale=1e-2), name='q'
-    )
-    q = tf.squeeze(q, name='out_sqz')
-    return q
-
-optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
-target_sync_rate = 0.01
-training_params = (optimizer_td, target_sync_rate, 10.0)
-state_shape = (640, 640, 3)
-graph = tf.get_default_graph()
-
-agent = DQN(
-    # EpsilonGreedyPolicyMixin params
-    actions=range(len(ACTIONS)),
-    epsilon=0.2,
-    # DeepQFuncMixin params
-    dqn_param_dict={
-        'gamma': 0.9,
-        'f_net': f_net,
-        'state_shape': state_shape,
-        'num_actions':len(ACTIONS),
-        'training_params':training_params,
-        'schedule':(1, 10),
-        'greedy_policy':True,
-        'ddqn': False,
-        'graph':graph
-    },
-    # ReplayMixin params
-    buffer_class=MapPlayback,
-    buffer_param_dict={
-        "capacity": 1000,
-        "sample_shapes": {
-            'state': state_shape,
-            'action': (),
-            'reward': (),
-            'next_state': state_shape,
-            'episode_done': ()
-         }},
-    batch_size=8
-)
+agent = RelayAgent(queue_len=5)
 
 n_interactive = 0
 
@@ -171,6 +92,7 @@ try:
                 cum_reward = 0.0
             state, action = next_state, next_action
             next_state, reward, done, info = env.step(ACTIONS[action])
+#except rospy.ROSInterruptException:
 except Exception as e:
     print e.message
 finally:
