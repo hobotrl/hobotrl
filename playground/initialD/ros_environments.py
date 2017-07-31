@@ -260,24 +260,37 @@ class DrivingSimulatorEnv(object):
         self.is_q_cleared.clear()
 
     def __queue_monitor(self):
-        """Monitors queue exceptions and shutdown queues if too many.
-        Periodically check the cumulative number of queue exceptions. Shutdown
-        and clear queues if there are too many exceptions.
+        """Monitors queue exceptions and empty queues necessary.
+
+        This method is loaded as a daemon thread to monitor the status of
+        inter-process queues during trainging and empty queues to shutdown the
+        underlying PIPE if there are too many exceptions or the simulator
+        frontend process is ready for termination (but may still waiting for
+        the PIPEs to be emptied).
+
+        For counting exceptions this method periodically check the value of a
+        accumulator shared between this and other threads and processes that
+        may utilize the queues (e.g. the `__step()` method).
         """
         print "[__queue_monitor]: queue monitor started."
+        # checker loop
+        cnt_safty = 3  # num of loop before returning
         while True:
             with self.cnt_q_except.get_lock():
-                if self.cnt_q_except.value<=0 or \
+                # if termination condition is met
+                if self.cnt_q_except.value <= 0 or \
                    self.is_envnode_terminatable.is_set():
                     print ("[__queue_monitor]: num of q exceptions {}, "
                            "term {}.").format(
                                self.cnt_q_except.value,
                                self.is_envnode_terminatable.is_set())
-                    # block further access to queues
+
+                    # block further access to the queues
                     if self.is_q_ready.is_set():
                         self.is_q_ready.clear()
                         print "[__queue_monitor]: setting is_q_ready {}".format(
                             self.is_q_ready.is_set())
+
                     # empty queues
                     for n, q in self.q.iteritems():
                         print "[__queue_monitor]: emptying queue {}".format(n)
@@ -289,14 +302,23 @@ class DrivingSimulatorEnv(object):
                                 break
                         if q.qsize()==0:
                             print "[__queue_monitor]: queue {} emptied.".format(n)
+
+                    # set flag only if all queues are cleared
                     if sum([q.qsize() for _, q in self.q.iteritems()])==0:
                         print "[__queue_monitor]: all queues emptied."
-                        self.is_q_cleared.set()
-            time.sleep(2.0)
-            # return if envnode is down and q_ready is cleared
-            if not self.is_envnode_up.is_set() and \
+                        cnt_safty -= 1
+                        if cnt_safty < 0:
+                            self.is_q_cleared.set()
+
+            # return only if envnode is down and queues are cleared
+            if cnt_safty < 0 and \
+               self.is_q_cleared.is_set() and \
+               not self.is_envnode_up.is_set() and \
                not self.is_q_ready.is_set():
                 break
+            else:
+                time.sleep(2.0)
+
         print "[__queue_monitor]: returning..."
         return
 
@@ -320,6 +342,7 @@ class DrivingSimulatorEnv(object):
                 thread_queue_monitor = threading.Thread(target=self.__queue_monitor)
                 thread_queue_monitor.start()
                 print "[__node_monitor]: set up new queue."
+
                 # run the frontend node
                 print "[__node_monitor]: running new env node."
                 node = DrivingSimulatorNode(
@@ -327,10 +350,10 @@ class DrivingSimulatorEnv(object):
                     self.is_backend_up, self.is_q_ready, self.is_envnode_up,
                     self.is_envnode_terminatable,
                     self.defs_obs, self.defs_reward, self.defs_action,
-                    self.rate_action, self.is_dummy_action
-                )
+                    self.rate_action, self.is_dummy_action)
                 node.start()
                 node.join()
+
                 self.__kill_backend()
                 thread_queue_monitor.join()
             except Exception as e:
