@@ -7,6 +7,7 @@ Last Modified: July 27, 2017
 """
 
 # Basic python
+import signal
 import time
 # Threading and Multiprocessing
 import threading
@@ -68,11 +69,14 @@ class DrivingSimulatorEnv(object):
         self.is_q_ready = Event()  # whether qs are ready
         self.is_q_cleared = Event()  # whether qs from prevoius session is cleared
         self.is_envnode_up = Event()  # whether env node is up
+        self.is_envnode_terminatable = Event()
         self.__init_queue()
 
         self.backend_cmds = [
+            # roscore
+            # ['roscore'],
             # reward function
-            ['python', '/home/lewis/Projects/hobotrl/playground/initialD/gazebo_rl_reward.py'],
+            # ['python', '/home/lewis/Projects/hobotrl/playground/initialD/gazebo_rl_reward.py'],
             # simulator backend [Recommend start separately]
             # ['python', '/home/lewis/Projects/hobotrl/playground/initialD/rviz_restart.py']
         ]
@@ -81,8 +85,6 @@ class DrivingSimulatorEnv(object):
         # monitor threads 
         self.thread_node_monitor = threading.Thread(target=self.__node_monitor)
         self.thread_node_monitor.start()
-        self.thread_queue_monitor = threading.Thread(target=self.__queue_monitor)
-        self.thread_queue_monitor.start()
 
     def step(self, action):
         # step delay regularization
@@ -265,32 +267,38 @@ class DrivingSimulatorEnv(object):
         print "[__queue_monitor]: queue monitor started."
         while True:
             with self.cnt_q_except.get_lock():
-                if self.cnt_q_except.value<=0:
-                    print "[__queue_monitor]: num of queue exceptions exceeded limit."
+                if self.cnt_q_except.value<=0 or \
+                   self.is_envnode_terminatable.is_set():
+                    print ("[__queue_monitor]: num of q exceptions {}, "
+                           "term {}.").format(
+                               self.cnt_q_except.value,
+                               self.is_envnode_terminatable.is_set())
                     # block further access to queues
                     if self.is_q_ready.is_set():
                         self.is_q_ready.clear()
                         print "[__queue_monitor]: setting is_q_ready {}".format(
                             self.is_q_ready.is_set())
                     # empty queues
-                    for name, q in self.q.iteritems():
-                        print "[__queue_monitor]: emptying queue {}".format(
-                            name)
-                        cnt = 10
+                    for n, q in self.q.iteritems():
+                        print "[__queue_monitor]: emptying queue {}".format(n)
                         while True:
                             try:
                                 q.get(timeout=0.1)
                                 q.task_done()
                             except:
-                                if cnt<0:
-                                    break
-                                else:
-                                    cnt -= 1
-                        print "[__queue_monitor]: queue {} emptied".format(
-                            name)
+                                break
+                        if q.qsize()==0:
+                            print "[__queue_monitor]: queue {} emptied.".format(n)
+                    if sum([q.qsize() for _, q in self.q.iteritems()])==0:
+                        print "[__queue_monitor]: all queues emptied."
                         self.is_q_cleared.set()
             time.sleep(2.0)
+            # return if envnode is down and q_ready is cleared
+            if not self.is_envnode_up.is_set() and \
+               not self.is_q_ready.is_set():
+                break
         print "[__queue_monitor]: returning..."
+        return
 
     def __node_monitor(self):
         self.is_q_cleared.set()
@@ -298,52 +306,57 @@ class DrivingSimulatorEnv(object):
         while True:
             try:
                 # start simulation backend
-                if not self.is_envnode_up.is_set():
-                    self.__start_backend()
+                self.__start_backend()
                 while not self.is_backend_up.is_set():
                     print "[__node_monitor]: backend not up..."
                     time.sleep(1.0)
+
                 # set up inter-process queues
                 while not self.is_q_cleared.is_set():
                     print "[__node_monitor]: queues not cleared.."
                     time.sleep(1.0)
+                self.is_envnode_terminatable.clear()  # prevents q monitor from turning down
                 self.__init_queue()
+                thread_queue_monitor = threading.Thread(target=self.__queue_monitor)
+                thread_queue_monitor.start()
                 print "[__node_monitor]: set up new queue."
                 # run the frontend node
                 print "[__node_monitor]: running new env node."
                 node = DrivingSimulatorNode(
                     self.q_obs, self.q_reward, self.q_action, self.q_done,
                     self.is_backend_up, self.is_q_ready, self.is_envnode_up,
+                    self.is_envnode_terminatable,
                     self.defs_obs, self.defs_reward, self.defs_action,
                     self.rate_action, self.is_dummy_action
                 )
                 node.start()
                 node.join()
-                self.is_envnode_up.clear()
+                self.__kill_backend()
+                thread_queue_monitor.join()
             except Exception as e:
                 print "[__node_monitor]: exception running node ({}).".format(
                     e.message)
                 time.sleep(1.0)
             finally:
                 print "[__node_monitor]: finished running node."
-                while True:
-                    node.terminate()
+                while node.is_alive():
+                    print ("[__node_monitor]: process {} termination in"
+                           "progress..").format(node.pid)
+                    # node.terminate()
                     time.sleep(1.0)
-                    if node.is_alive():
-                        print ("[__node_monitor]: process {} termination in"
-                               "progress..").format(node.pid)
-                        continue
-                    else:
-                        break
                 print "[__node_monitor]: terminiated process {}.".format(node.pid)
 
     def __kill_backend(self):
         self.is_backend_up.clear()
         if len(self.proc_backend)!=0:
             print '[DrSim] terminating backend processes..'
-            for proc in self.proc_backend:
+            for proc in self.proc_backend[::-1]:  # killing in reversed order
                 if proc.poll() is None:
-                    proc.terminate()
+                    try:
+                        proc.send_signal(signal.SIGINT)
+                    except Exception as e:
+                        print "[DrSim] process {} shutdown error: {}".format(
+                            proc.pid, e.message)
                 while proc.poll() is None:
                     print ("[DrSim] backend process {} termination "
                            " in progress...").format(proc.pid)
@@ -353,15 +366,22 @@ class DrivingSimulatorEnv(object):
     def __start_backend(self):
         print '[DrSim]: initializing backend...'
         self.is_backend_up.clear()
-        self.proc_backend += [subprocess.Popen(cmd) for cmd in self.backend_cmds]
+        for cmd in self.backend_cmds:
+            proc = subprocess.Popen(cmd)
+            self.proc_backend.append(proc)
+            print '[DrSim]: cmd [{}] running with PID {}'.format(
+                ' '.join(cmd), proc.pid)
+            time.sleep(1.0)
         self.is_backend_up.set()
-        print '[DrSim]: backend initialized.'
+        print '[DrSim]: backend initialized. PID: {}'.format(
+            [p.pid for p in self.proc_backend])
 
 
 class DrivingSimulatorNode(multiprocessing.Process):
     def __init__(self,
              q_obs, q_reward, q_action, q_done,
              is_backend_up, is_q_ready, is_envnode_up,
+             is_envnode_terminatable,
              defs_obs, defs_reward, defs_action,
              rate_action, is_dummy_action):
         super(DrivingSimulatorNode, self).__init__()
@@ -388,7 +408,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
         self.is_backend_up = is_backend_up
         self.is_envnode_up = is_envnode_up
         self.first_time = Event()
-        self.terminatable = Event()
+        self.is_envnode_terminatable = is_envnode_terminatable
         self.is_receiving_obs = Event()
         self.car_started = Event()
 
@@ -407,14 +427,14 @@ class DrivingSimulatorNode(multiprocessing.Process):
             4. Action sender doesn't send keys until simulator is up and car is
                started (to avoid flooding signals in step 3).
             5. Heartbeat checker listen to simulator heartbeat (async) and set
-               terminatable flag to terminate this process (i.e. poison pill).
+               is_envnode_terminatable flag to terminate this process (i.e. poison pill).
         """
         print "[EnvNode]: started frontend process: {}".format(self.name)
         self.list_prep_exp = [self.__prep_image] + \
                 [self.__prep_reward]*len(self.defs_reward)
         self.is_envnode_up.clear()
         self.first_time.set()
-        self.terminatable.clear()
+        self.is_envnode_terminatable.clear()
         self.is_receiving_obs.clear()
         self.car_started.clear()
 
@@ -448,22 +468,26 @@ class DrivingSimulatorNode(multiprocessing.Process):
 
         # Simulator initialization
         #   Wait new_obs for cnt_fail seconds  
-        #   send ' ', 'g', '1' until new obs is observed
         print "[EnvNode]: starting simulator."
         print "[EnvNode]: signal simulator restart"
         self.restart_pub.publish(True)
         cnt_fail = 15
         flag_fail = False  # initialization failed flag
-        while not self.is_receiving_obs.is_set() and not flag_fail:
-            cnt_fail -= 1
+        while not self.is_envnode_terminatable.is_set() and \
+              not self.is_receiving_obs.is_set() and \
+              not flag_fail:
+            cnt_fail -= 1 if cnt_fail>=0 else 0
             print "[EnvNode]: simulator not up, wait for {} sec(s)...".format(cnt_fail)
             time.sleep(1.0)
             if cnt_fail==0:
                 self.restart_pub.publish(False)
                 print "[EnvNode]: simulation initialization failed, "
                 flag_fail = True
+        if not flag_fail:
+            print "[EnvNode]: simulator up and receiving obs."
 
         # Simulator run
+        #   send ' ', 'g', '1' until new obs is observed
         t = time.time()
         if not flag_fail:
             __thread_start_car = threading.Thread(target=self.__start_car)
@@ -471,24 +495,30 @@ class DrivingSimulatorNode(multiprocessing.Process):
             __thread_start_car.join()
             self.is_envnode_up.set()
             # Loop check if simulation episode is done
-            while self.is_backend_up.is_set() and not self.terminatable.is_set():
+            while self.is_backend_up.is_set() and \
+                  not self.is_envnode_terminatable.is_set():
                 time.sleep(0.2)
         else:
             pass
 
-        # rospy.signal_shutdown('[DrivingSimulatorEnv]: simulator terminated.')
+        # rospy is shutdown at Ctrl-C, but will it exit on process/thread end?
+        rospy.signal_shutdown('[DrivingSimulatorEnv]: simulator terminated.')
 
         # Close queues for this process
         for key in self.q:
             self.q[key].close()
 
-        print "Returning from run in process: {} PID: {}, after {:.2f} secs...".format(
-            self.name, self.pid, time.time()-t)
-        secs = 3
+        print ("[EnvNode]: returning from run in process: "
+               "{} PID: {}, after {:.2f} secs...").format(
+                   self.name, self.pid, time.time()-t)
+        secs = 5
         while secs != 0:
             print "..in {} secs".format(secs)
             secs -= 1
             time.sleep(1.0)
+        self.is_envnode_up.clear()
+        print "[EnvNode]: Now!"
+        self.is_envnode_terminatable.set()
 
         return
 
@@ -543,8 +573,10 @@ class DrivingSimulatorNode(multiprocessing.Process):
         except:
             print "[__enque_exp]: q_reward update exception!"
             pass
-        # print "__enque_exp: {}".format(args[num_obs:])
-        self.is_receiving_obs.set()  # assume simulator is up after first obs
+        if not self.is_receiving_obs.is_set():
+            print "[__enque_exp]: first observation received."
+            self.is_receiving_obs.set()  # assume simulator is up after first obs
+        # print "[__enque_exp]: {}".format(args[num_obs:])
 
     def __prep_image(self, img):
          return imresize(
@@ -609,7 +641,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
             data, self.first_time.is_set()
         )
         if not data.data and not self.first_time.is_set():
-            self.terminatable.set()
+            self.is_envnode_terminatable.set()
         self.first_time.clear()
 
 

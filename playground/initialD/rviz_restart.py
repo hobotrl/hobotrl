@@ -8,6 +8,7 @@
 # 3. in shell: python rviz_restart.py
 
 import time
+import signal
 import subprocess
 import rospy
 import rospkg
@@ -22,7 +23,10 @@ class restart_ros_launch:
     def __init__(self):
         # process related
         self.process_list = list()
-        self.process_names = [['roslaunch', 'planning', 'honda_S5-1.launch']]
+        self.process_names = [
+            ['roslaunch', 'planning', 'honda_S5-1.launch'],
+            # ['python', '/home/lewis/Projects/hobotrl/playground/initialD/gazebo_rl_reward.py']
+        ]
         # Simulator states
         self.is_running = False
         self.last_pos = deque(maxlen=1000) # Approximately 20 secs @ 50Hz
@@ -67,39 +71,40 @@ class restart_ros_launch:
         self.is_running = False
         secs = 1
         while secs != 0:
-            print "Shutdown in {} secs".format(secs)
+            print "[rviz_restart.terminate]: Shutdown simulator nodes in {} secs".format(secs)
             secs -= 1
             time.sleep(1.0)
 
         # shutdown simulator node
         if len(self.process_list) is 0:
-            print("no process to terminate")
+            print("[rviz_restart.terminate]: no process to terminate")
         else:
             rospy.loginfo("now shut down launch file")
             for p in self.process_list:
-                p.terminate()
+                # p.terminate()
                 # p.kill()
+                p.send_signal(signal.SIGINT)
                 while p.poll() is None:
                     print (
-                        "Simulator process {} termination in progress..."
+                        "[rviz_restart.terminate]: Simulator proc {} termination in progress..."
                     ).format(p.pid)
                     time.sleep(1.0)
                 print (
-                    "Simulator process {} terminated with exit code {}"
+                    "[rviz_restart.terminate]: Simulator proc {} terminated with exit code {}"
                 ).format(p.pid, p.returncode)
             self.process_list = []
             print("Done!")
 
         # signal env node shutdown
-        print "rviz_restart: publish heartbeat=False!"
+        print "[rviz_restart.terminate]: publish heartbeat=False!"
         self.is_running_pub.publish(False)
 
     def restart_callback(self, data):
-        print "rviz_restart: restart callback with {}".format(data.data)
+        print "[rviz_restart.restart]: restart callback with {}".format(data.data)
         if data.data==False:
-            print "rviz_restart: mere termination requested."
+            print "[rviz_restart.restart]: mere termination requested."
             self.terminate()
-            print "rviz_restart: termination finished."
+            print "[rviz_restart.restart]: termination finished."
             self.is_running_pub.publish(False)
             return
 
@@ -107,11 +112,11 @@ class restart_ros_launch:
         for name in self.process_names:
             p = subprocess.Popen(name)
             self.process_list.append(p)
-        print("rviz_restart: restarted launch file!")
+        print("[rviz_restart.restart]: restarted launch file!")
 
         self.is_running = True
 
-        print "rviz_restart: publish heartbeat=True!"
+        print "[rviz_restart.restart]: publish heartbeat=True!"
         self.is_running_pub.publish(True)
 
     def car_out_of_lane_callback(self, data):

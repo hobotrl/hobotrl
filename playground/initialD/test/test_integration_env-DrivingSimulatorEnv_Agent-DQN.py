@@ -109,7 +109,7 @@ graph = tf.get_default_graph()
 agent = DQN(
     # EpsilonGreedyPolicyMixin params
     actions=range(len(ACTIONS)),
-    epsilon=0.2,
+    epsilon=0.05,
     # DeepQFuncMixin params
     dqn_param_dict={
         'gamma': 0.9,
@@ -177,4 +177,4 @@ finally:
     print "Tidying up..."
     sess.close()
     # kill orphaned monitor daemon process
-    os.killpg(os.getpgid(os.getpid()), 9)
+    os.killpg(os.getpgid(os.getpid()), signal.SIGINT)
