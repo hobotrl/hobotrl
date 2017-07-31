@@ -9,6 +9,7 @@ Last Modified: July 27, 2017
 # Basic python
 import signal
 import time
+import sys
 # Threading and Multiprocessing
 import threading
 import subprocess
@@ -22,7 +23,8 @@ from cv_bridge import CvBridge, CvBridgeError
 # ROS
 import rospy
 from rospy.timer import Timer
-import message_filters
+sys.path.append('.')
+import my_message_filters as message_filters
 from std_msgs.msg import Char, Bool, Float32
 from sensor_msgs.msg import Image
 
@@ -79,11 +81,11 @@ class DrivingSimulatorEnv(object):
         # backend specs
         self.backend_cmds = [
             # roscore
-            # ['roscore'],
+            ['roscore'],
             # reward function
-            # ['python', '/home/lewis/Projects/hobotrl/playground/initialD/gazebo_rl_reward.py'],
+            ['python', '/home/lewis/Projects/hobotrl/playground/initialD/gazebo_rl_reward.py'],
             # simulator backend [Recommend start separately]
-            # ['python', '/home/lewis/Projects/hobotrl/playground/initialD/rviz_restart.py']
+            ['python', '/home/lewis/Projects/hobotrl/playground/initialD/rviz_restart.py']
         ]
         self.proc_backend = []
 
@@ -383,6 +385,7 @@ class DrivingSimulatorEnv(object):
                     print ("[DrSim] backend process {} termination "
                            " in progress...").format(proc.pid)
                     time.sleep(1.0)
+                time.sleep(1.0)
         self.proc_backend = []
 
     def __start_backend(self):
@@ -454,18 +457,15 @@ class DrivingSimulatorNode(multiprocessing.Process):
         print "[EnvNode]: started frontend process: {}".format(self.name)
         self.list_prep_exp = [self.__prep_image] + \
                 [self.__prep_reward]*len(self.defs_reward)
-        # setup flags
+
+        # Setup sync events
         self.is_envnode_up.clear()
         self.is_receiving_obs.clear()
         self.car_started.clear()
         self.first_time.set()
         self.is_envnode_terminatable.clear()
 
-        while not self.is_backend_up.is_set():
-            print "[EnvNode]: waiting for backend..."
-            time.sleep(1.0)
-
-        # Initialize ROS node
+        # Initialize frontend ROS node
         print "[EnvNode]: initialiting node..."
         rospy.init_node('DrivingSimulatorEnv')
         self.brg = CvBridge()
@@ -489,11 +489,11 @@ class DrivingSimulatorNode(multiprocessing.Process):
             '/rl/simulator_restart', Bool, queue_size=10, latch=True)
         print "[EnvNode]: node initialized."
 
-        # Simulator initialization
-        #   1. wait for new observation and count cnt_fail seconds
-        #   2. mark initialization failed and break upon timeout
-        #   3. mark initialization failed and break upon termination flag 
-        print "[EnvNode]: starting simulator."
+        # Simulator initialization:
+        #   1. signal start
+        #   2. wait for new observation and count cnt_fail seconds
+        #   3. mark initialization failed and break upon timeout
+        #   4. mark initialization failed and break upon termination flag 
         print "[EnvNode]: signal simulator restart"
         self.restart_pub.publish(True)
         cnt_fail = 15
@@ -508,11 +508,13 @@ class DrivingSimulatorNode(multiprocessing.Process):
                 flag_fail = True
                 break
 
-        # Simulator run
+        # Simulator run:
+        #   1. send ' ', 'g', '1' until new obs is observed
+        #   2. set `is_envnode_up` Event
+        #   3. Perodically check backend status and termination event
         t = time.time()
         if not flag_fail:
             print "[EnvNode]: simulator up and receiving obs."
-            # send ' ', 'g', '1' until new obs is observed
             __thread_start_car = threading.Thread(target=self.__start_car)
             __thread_start_car.start()
             __thread_start_car.join()
@@ -524,13 +526,14 @@ class DrivingSimulatorNode(multiprocessing.Process):
         else:
             pass
 
-        # rospy is shutdown at Ctrl-C, but will it exit on process/thread end?
+        # shutdown frontend ROS threads
         rospy.signal_shutdown('[DrivingSimulatorEnv]: simulator terminated.')
 
         # Close queues for this process
         for key in self.q:
             self.q[key].close()
 
+        # Return from this process
         print ("[EnvNode]: returning from run in process: "
                "{} PID: {}, after {:.2f} secs...").format(
                    self.name, self.pid, time.time()-t)
@@ -540,7 +543,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
             secs -= 1
             time.sleep(1.0)
         print "[EnvNode]: Now!"
-
+        # manually set this event to notify queue monitor to clear queues
         self.is_envnode_terminatable.set()
 
         return
