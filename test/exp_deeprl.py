@@ -924,7 +924,7 @@ class BootstrappedDQNSnakeGame(Experiment):
         # Parameters
         random.seed(1105)  # Seed
 
-        for n_head in [5, 10, 15, 20, 30]:
+        for n_head in [1, 3]:  # [5, 10, 15, 20, 30]:
 
             log_dir = os.path.join(args.logdir, "head%d" % n_head)
             if not os.path.exists(log_dir):
@@ -1414,7 +1414,7 @@ class RandomizedBootstrappedDQNBreakOut(BootstrappedDQNAtari):
             return 0.025*(math.cos(step/4.0e5*math.pi) + 1)
 
         BootstrappedDQNAtari.__init__(self,
-                                      env=gym.make('Breakout-v0'),
+                                      env=gym.make('BreakoutNoFrameskip-v0'),
                                       runner_args={"no_reward_reset_interval": 2000,
                                                    # "render_env": True,
                                                    # "frame_time": 0.05
@@ -1453,10 +1453,10 @@ def demo_experiment_generator(experiment_class, checkpoint_file_name, frame_time
     BootstrappedDQNDemo.__name__ = experiment_class.__name__ + "Demo"
     return BootstrappedDQNDemo
 
-Experiment.register(demo_experiment_generator(RandomizedBootstrappedDQNBreakOut, "16200000.ckpt", frame_time=0.1), "Demo for the Breakout")
-Experiment.register(demo_experiment_generator(BootstrappedDQNPong, "1080000.ckpt"), "Demo for the Pong")
-Experiment.register(demo_experiment_generator(BootstrappedDQNBattleZone, "1704000.ckpt"), "Demo for the Battle Zone")
-Experiment.register(demo_experiment_generator(BootstrappedDQNEnduro, "17000000.ckpt", frame_time=0.0), "Demo for the Enduro")
+Experiment.register(demo_experiment_generator(RandomizedBootstrappedDQNBreakOut, "60000.ckpt", frame_time=0.1), "Demo for the Breakout")
+Experiment.register(demo_experiment_generator(BootstrappedDQNPong, "4092000.ckpt", frame_time=0.0), "Demo for the Pong")
+Experiment.register(demo_experiment_generator(BootstrappedDQNBattleZone, "2232000.ckpt", frame_time=0.02), "Demo for the Battle Zone")
+Experiment.register(demo_experiment_generator(BootstrappedDQNEnduro, "17000000.ckpt", frame_time=0.02), "Demo for the Enduro")
 Experiment.register(demo_experiment_generator(BootstrappedDQNIceHockey, "27200000.ckpt", frame_time=0.02), "Demo for the Ice Hockey")
 
 
@@ -1655,14 +1655,15 @@ class CEMBootstrappedDQNAtari(BootstrappedDQNAtari):
 class CEMBootstrappedDQNBreakout(CEMBootstrappedDQNAtari):
     def __init__(self):
         from hobotrl.algorithms.bootstrapped_DQN import CEMBootstrappedDQN
-        super(CEMBootstrappedDQNBreakout, self).__init__(env=gym.make('Breakout-v0'),
+        super(CEMBootstrappedDQNBreakout, self).__init__(env=gym.make("BreakoutNoFrameskip-v0"),
                                                          agent_type=CEMBootstrappedDQN,
                                                          agent_args={"cem_noise": 0.05,
                                                                      "cem_portion": 0.8,
-                                                                     "cem_update_interval": 50})
+                                                                     "cem_update_interval": 50},
+                                                         runner_args={"no_reward_reset_interval": 2500})
 
     def run(self, args, checkpoint_number=None):
-        CEMBootstrappedDQNAtari.run(self, args, checkpoint_number=9700000)
+        CEMBootstrappedDQNAtari.run(self, args, checkpoint_number=0)
 
 Experiment.register(CEMBootstrappedDQNBreakout, "CEM Bootstrapped DQN for the Breakout")
 
