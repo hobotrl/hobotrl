@@ -54,4 +54,4 @@ Note these steps are tentitive and subject to change.
 
 ## Developers Guide
 ### Sharing network parameters across modules
-~~See this [wiki entry](https://github.com/zaxliu/hobotrl/wiki#sharing-network-weights-across-modules) for a recommended way via global variable scope reuse.~~ [Setting global scope reference will break the creation of target ntework.]
+~~See this [wiki entry](https://github.com/zaxliu/hobotrl/wiki#sharing-network-weights-across-modules) for a recommended way via global variable scope reuse.~~ [Setting global scope reference will break the creation of target network.]
