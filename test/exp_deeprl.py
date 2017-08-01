@@ -924,7 +924,7 @@ class BootstrappedDQNSnakeGame(Experiment):
         # Parameters
         random.seed(1105)  # Seed
 
-        for n_head in [15, 20]:
+        for n_head in [5, 10, 15, 20, 30]:
 
             log_dir = os.path.join(args.logdir, "head%d" % n_head)
             if not os.path.exists(log_dir):
@@ -932,7 +932,7 @@ class BootstrappedDQNSnakeGame(Experiment):
             log_file_name = "booststrapped_DQN_Snake.csv"
 
             # Initialize the environment and the agent
-            env = SnakeGame(3, 3, 1, 1, max_episode_length=30)
+            env = SnakeGame(3, 3, 1, 1, max_episode_length=50)
             agent = BootstrappedDQN(observation_space=env.observation_space,
                                     action_space=env.action_space,
                                     reward_decay=1.,
@@ -942,9 +942,9 @@ class BootstrappedDQNSnakeGame(Experiment):
                                     loss_function=self.loss_function,
                                     trainer=tf.train.GradientDescentOptimizer(learning_rate=0.01).minimize,
                                     replay_buffer_class=hrl.playback.MapPlayback,
-                                    replay_buffer_args={"capacity": 20000},
+                                    replay_buffer_args={"capacity": 10000},
                                     min_buffer_size=100,
-                                    batch_size=20,
+                                    batch_size=8,
                                     n_heads=n_head)
 
             # Start training
@@ -953,7 +953,7 @@ class BootstrappedDQNSnakeGame(Experiment):
                                     n_episodes=3000,
                                     moving_average_window_size=100,
                                     no_reward_reset_interval=-1,
-                                    checkpoint_save_interval=1000,
+                                    checkpoint_save_interval=100000,
                                     log_dir=log_dir,
                                     log_file_name=log_file_name,
                                     render_env=False,
@@ -1455,7 +1455,7 @@ def demo_experiment_generator(experiment_class, checkpoint_file_name, frame_time
 
 Experiment.register(demo_experiment_generator(RandomizedBootstrappedDQNBreakOut, "16200000.ckpt", frame_time=0.1), "Demo for the Breakout")
 Experiment.register(demo_experiment_generator(BootstrappedDQNPong, "1080000.ckpt"), "Demo for the Pong")
-Experiment.register(demo_experiment_generator(BootstrappedDQNBattleZone, "2232000.ckpt"), "Demo for the Battle Zone")
+Experiment.register(demo_experiment_generator(BootstrappedDQNBattleZone, "1704000.ckpt"), "Demo for the Battle Zone")
 Experiment.register(demo_experiment_generator(BootstrappedDQNEnduro, "17000000.ckpt", frame_time=0.0), "Demo for the Enduro")
 Experiment.register(demo_experiment_generator(BootstrappedDQNIceHockey, "27200000.ckpt", frame_time=0.02), "Demo for the Ice Hockey")
 
@@ -1659,7 +1659,7 @@ class CEMBootstrappedDQNBreakout(CEMBootstrappedDQNAtari):
                                                          agent_type=CEMBootstrappedDQN,
                                                          agent_args={"cem_noise": 0.20,
                                                                      "cem_portion": 0.8,
-                                                                     "cem_update_interval": 50})
+                                                                     "cem_update_interval": 50},)
 
 Experiment.register(CEMBootstrappedDQNBreakout, "CEM Bootstrapped DQN for the Breakout")
 
@@ -1671,10 +1671,13 @@ class CEMBootstrappedDQNIceHockey(CEMBootstrappedDQNAtari):
                                                           agent_type=CEMBootstrappedDQN,
                                                           agent_args={"cem_noise": 0.1,
                                                                       "cem_portion": 0.3,
-                                                                      "cem_update_interval": 50})
+                                                                      "cem_update_interval": 50},
+                                                          frame_skip_n=1)
 
 Experiment.register(CEMBootstrappedDQNIceHockey, "CEM Bootstrapped DQN for the Ice Hockey")
 
+Experiment.register(demo_experiment_generator(CEMBootstrappedDQNBreakout, "8600000.ckpt", frame_time=0.3), "Demo for the Breakout")
+Experiment.register(demo_experiment_generator(CEMBootstrappedDQNIceHockey, "7000000.ckpt", frame_time=0.02), "Demo for the Breakout")
 
 if __name__ == '__main__':
     Experiment.main()
