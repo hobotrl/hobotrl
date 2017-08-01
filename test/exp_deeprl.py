@@ -1657,9 +1657,12 @@ class CEMBootstrappedDQNBreakout(CEMBootstrappedDQNAtari):
         from hobotrl.algorithms.bootstrapped_DQN import CEMBootstrappedDQN
         super(CEMBootstrappedDQNBreakout, self).__init__(env=gym.make('Breakout-v0'),
                                                          agent_type=CEMBootstrappedDQN,
-                                                         agent_args={"cem_noise": 0.20,
+                                                         agent_args={"cem_noise": 0.05,
                                                                      "cem_portion": 0.8,
-                                                                     "cem_update_interval": 50},)
+                                                                     "cem_update_interval": 50})
+
+    def run(self, args, checkpoint_number=None):
+        CEMBootstrappedDQNAtari.run(self, args, checkpoint_number=9700000)
 
 Experiment.register(CEMBootstrappedDQNBreakout, "CEM Bootstrapped DQN for the Breakout")
 
