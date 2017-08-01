@@ -1660,7 +1660,7 @@ class CEMBootstrappedDQNBreakout(CEMBootstrappedDQNAtari):
                                                          agent_args={"cem_noise": 0.05,
                                                                      "cem_portion": 0.8,
                                                                      "cem_update_interval": 50},
-                                                         runner_args={"no_reward_reset_interval": 2500})
+                                                         runner_args={"no_reward_reset_interval": 800})
 
     def run(self, args, checkpoint_number=None):
         CEMBootstrappedDQNAtari.run(self, args, checkpoint_number=0)
