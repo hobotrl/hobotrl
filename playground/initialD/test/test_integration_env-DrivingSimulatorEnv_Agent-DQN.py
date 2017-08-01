@@ -169,6 +169,7 @@ try:
                 )
                 n_steps = 0
                 cum_reward = 0.0
+                break
             state, action = next_state, next_action
             next_state, reward, done, info = env.step(ACTIONS[action])
 except Exception as e:
@@ -178,3 +179,5 @@ finally:
     sess.close()
     # kill orphaned monitor daemon process
     os.killpg(os.getpgid(os.getpid()), signal.SIGINT)
+
+
