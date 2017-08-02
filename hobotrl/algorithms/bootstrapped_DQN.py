@@ -331,7 +331,8 @@ class CEMBootstrappedDQN(BootstrappedDQN):
         self.cem_update_interval = cem_update_interval
 
         self.episode_count = 0  # Episode counter
-        self.reward_records = [[0.] for _ in range(self.n_heads)]  # Record reward for each head
+        self.reward_records = [list() for _ in range(self.n_heads)]  # Record reward for each head
+        self.current_reward_record = 0.
 
         # Prepare for cross-entropy method
         para_shapes = [para.shape for para in self.nn_head_para[0]]
@@ -346,18 +347,20 @@ class CEMBootstrappedDQN(BootstrappedDQN):
                    episode_done=None, **kwargs):
 
         # Count rewards
-        self.reward_records[self.current_head][-1] += reward
+        self.current_reward_record += reward
 
         if episode_done:
             # Count episode
             self.episode_count += 1
 
+            # Update Reward Record
+            self.reward_records[self.current_head].append(self.current_reward_record)
+            self.current_reward_record = 0.
+
             # Update parameters
             if self.episode_count % self.cem_update_interval == 0:
                 self.update_parameters()
-                self.reward_records = [[0.] for _ in range(self.n_heads)]
-            else:
-                self.reward_records[self.current_head].append(0)
+                self.reward_records = [list() for _ in range(self.n_heads)]
 
         return super(CEMBootstrappedDQN, self).reinforce_(state, action, reward, next_state,
                                                           episode_done, **kwargs)

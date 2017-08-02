@@ -1663,8 +1663,8 @@ class CEMBootstrappedDQNBreakout(CEMBootstrappedDQNAtari):
                                                                      "reward_decay": 0.997},
                                                          runner_args={"no_reward_reset_interval": 800})
 
-    # def run(self, args, checkpoint_number=None):
-    #     CEMBootstrappedDQNAtari.run(self, args, checkpoint_number=1600000)
+    def run(self, args, checkpoint_number=None):
+        CEMBootstrappedDQNAtari.run(self, args, checkpoint_number=0)
 
 Experiment.register(CEMBootstrappedDQNBreakout, "CEM Bootstrapped DQN for the Breakout")
 
