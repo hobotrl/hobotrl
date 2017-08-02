@@ -284,7 +284,7 @@ class ActorCritic(object):
         for i in range(len(stddev)):
             mu, sigma = mean[i], stddev[i]
             sample.append(np.random.normal(mu, sigma))
-        sample = np.asarray(sample)
+        sample = (np.asarray(sample))[0]
         return sample
 
     def get_v(self, state):
@@ -526,10 +526,12 @@ class A3CAgent(hrl.tf_dependent.base.BaseDeepAgent):
         if not T[-1]:
             states.append(Sj[-1])  # need last next_state
         state_values = self.net.get_v(np.asarray(states))
+        logging.warning("state value: %s", state_values)
         if T[-1]:
             state_values = np.append(state_values, 0.0)
         delta = state_values[1:] * self.reward_decay + Ri - state_values[:-1]
         factor = (lambda_decay * self.reward_decay) ** np.arange(batch_size)
+        logging.warning("shape of delta: %s, factor: %s", np.shape(delta), np.shape(factor))
         advantage = [np.sum(factor * delta)] \
                     + [np.sum(factor[:-i] * delta[i:]) for i in range(1, batch_size)]
         target_value = np.asarray(advantage) + state_values[:-1]
