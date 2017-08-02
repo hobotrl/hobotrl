@@ -193,7 +193,7 @@ class CarGrassWrapper(gym.Wrapper):
         return ob, reward, done, info
 
 
-class A3CPendulumExp(ACOOExperiment):
+class A3CPendulumExp(ACOOExperimentCon):
     def __init__(self, env, f_create_net=None,
                  episode_n=10000,
                  reward_decay=0.99,
@@ -218,11 +218,11 @@ class A3CPendulumExp(ACOOExperiment):
                                             l2=l2,
                                             var_scope="v")
             pi_mean = hrl.utils.Network.layer_fcs(se, [256], num_action,
-                                             activation_hidden=tf.nn.relu,
+                                             activation_out=tf.nn.tanh,
                                              l2=l2,
                                              var_scope="pi_mean")
             pi_stddev = hrl.utils.Network.layer_fcs(se, [256], num_action,
-                                                  activation_hidden=tf.nn.relu,
+                                                  activation_out=tf.nn.softplus,
                                                   l2=l2,
                                                   var_scope="pi_stddev")
 
@@ -236,7 +236,7 @@ class A3CPendulumExp(ACOOExperiment):
 
         if f_create_net is None:
             f_create_net = create_ac_pendulum
-        logging.warning("before super(A3CPendulum, self).__init__")
+        logging.warning("before super(A3CPendulumExp, self).__init__")
         super(A3CPendulumExp, self).__init__(env, f_create_net, episode_n, reward_decay, on_batch_size, off_batch_size,
                                      off_interval, sync_interval, replay_size, prob_min, entropy, l2, optimizer_ctor,
                                      ddqn, aux_r, aux_d)
