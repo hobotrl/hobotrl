@@ -100,4 +100,5 @@ finally:
     print "Tidying up..."
     sess.close()
     # kill orphaned monitor daemon process
+    env.exit()
     os.killpg(os.getpgid(os.getpid()), 9)

@@ -78,6 +78,7 @@ class DrivingSimulatorEnv(object):
         self.last_step_t = None
 
         # inter-process flags (mp.Event)
+        self.is_exiting = Event()
         self.is_backend_up = Event()    # if backend process is up and running
         self.is_q_ready = Event()       # if qs are ready
         self.is_q_cleared = Event()     # if qs from prevoius session is cleared
@@ -401,7 +402,7 @@ class DrivingSimulatorEnv(object):
         self.is_envnode_up.clear()    # default to node_down
         self.is_envnode_terminatable.clear()  # prevents q monitor from turning down
         self.is_envnode_resetting.set()
-        while True:
+        while not self.is_exiting.is_set():
             try:
                 # start simulation backend
                 #   __start_backend() should set `is_backend_up` if successful
@@ -494,6 +495,14 @@ class DrivingSimulatorEnv(object):
         self.is_backend_up.set()
         print '[DrSim]: backend initialized. PID: {}'.format(
             [p.pid for p in self.proc_backend])
+
+    def exit(self):
+        self.is_exiting.set()
+        self.is_envnode_terminatable.set()
+        while self.is_envnode_up.is_set():
+            print "[exit()]: waiting envnode to finish."
+            time.sleep(1.0)
+        self.__kill_backend()
 
 
 class DrivingSimulatorNode(multiprocessing.Process):
