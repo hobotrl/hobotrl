@@ -250,6 +250,14 @@ class EnvRunner2(object):
         action = self.agent.act(state, show_action_values=self.render_env)
         next_state, reward, done, info = self.env.step(action)
 
+        # Reset if no reward is seen for last a few steps
+        if reward > 1e-6:
+            self.last_reward_step = self.step_count
+
+        if self.step_count - self.last_reward_step == self.no_reward_reset_interval:
+            print "Reset for no reward"
+            done = True
+
         # Train the agent
         info = self.agent.reinforce_(state=state,
                                      action=action,
@@ -269,15 +277,6 @@ class EnvRunner2(object):
         # Record reward and loss
         self.reward_history[-1] += reward
         self.loss_sum += loss
-
-        # Reset if no reward is seen for last a few steps
-        if reward > 1e-6:
-            self.last_reward_step = self.step_count
-
-        if self.step_count - self.last_reward_step == self.no_reward_reset_interval:
-            print "Reset for no reward"
-            done = True
-
         # Episode done
         if done:
             next_state = self.env.reset()
