@@ -241,32 +241,28 @@ class BootstrappedDQN(hrl.tf_dependent.base.BaseDeepAgent):
             :param state: game state.
             :return(numpy.ndarray): action values.
             """
-            return self.get_session().run(output_node, feed_dict={input_node: [state]})
+            return self.get_session().run(output_node, feed_dict={input_node: state})
 
         feed_dict = {node: [] for node in [self.nn_input] + self.nn_outputs + self.masks}
+
+        next_state_action_values = get_action_values(self.target_nn_input, self.target_nn_heads, batch["next_state"])
+        current_state_action_values = get_action_values(self.nn_input, self.nn_heads, batch["state"])
+
         for i in range(self.batch_size):
             # Unpack data
             state = batch["state"][i]
-            next_state = batch["next_state"][i]
             action = batch["action"][i]
             reward = batch["reward"][i]
             done = batch["episode_done"][i]
             bootstrap_mask = batch["mask"][i]
-
-            # Calculate old action values for all heads
-            next_state_action_values = \
-                get_action_values(self.target_nn_input, self.target_nn_heads, next_state)
-
-            current_state_action_values = \
-                get_action_values(self.nn_input, self.nn_heads, state)
 
             # Add current state to training data
             feed_dict[self.nn_input].append(state)
 
             for head in range(self.n_heads):
                 # Get old action values for current head
-                target_action_values = next_state_action_values[head][0]
-                updated_action_values = list(current_state_action_values[head][0])
+                target_action_values = next_state_action_values[head][i]
+                updated_action_values = list(current_state_action_values[head][i])
 
                 # Add bootstrap mask to training data
                 feed_dict[self.masks[head]].append(bootstrap_mask[head])
