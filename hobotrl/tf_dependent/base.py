@@ -3,6 +3,7 @@
 
 import tensorflow as tf
 from hobotrl.core import BaseAgent
+from hobotrl.network import Network
 
 
 class BaseDeepAgent(BaseAgent):
@@ -18,6 +19,22 @@ class BaseDeepAgent(BaseAgent):
                 self.__step_input = tf.placeholder(tf.int32, shape=None, name="input_global_step")
                 self.__op_update_step = tf.assign(self.__global_step, self.__step_input)
         self.__step_n = 0
+        self._network = self.init_network(**kwargs)
+
+    def init_network(self, *args, **kwargs):
+        """
+        should be overwritten by sub-classes.
+        implementation of
+        :param args:
+        :param kwargs:
+        :return: Network
+        :rtype: Network
+        """
+        raise NotImplementedError()
+
+    @property
+    def network(self):
+        return self._network
 
     def init_supervisor(self, graph=None, worker_index=0, init_op=None, save_dir=None):
         if init_op is None:

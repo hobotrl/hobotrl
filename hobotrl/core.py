@@ -7,10 +7,22 @@ and leave features unique to individual algorithms as abstract methods.
 Date   : 2017-06-02
 """
 
-from utils import Stepper, ScheduledParam, ScheduledParamCollector
+from utils import Stepper, ScheduledParamCollector
 
 
-class BaseAgent(object):
+class Agent(object):
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def step(self, state, action, reward, next_state,
+             episode_done=False, **kwargs):
+        pass
+
+    def act(self, state, **kwargs):
+        pass
+
+
+class BaseAgent(Agent):
     """Base class for reinforcement learning agents.
     This is the base class for general RL agents.
 
@@ -33,10 +45,15 @@ class BaseAgent(object):
     """
 
     def __init__(self, *args, **kwargs):
+        super(BaseAgent, self).__init__(*args, **kwargs)
         self._stepper = Stepper(0)
         self._params = ScheduledParamCollector(*args, **kwargs)
         self._params.set_int_handle(self._stepper)
         pass
+
+    @property
+    def step_n(self):
+        return self._stepper.value()
 
     def step(self, state, action, reward, next_state,
              episode_done=False, **kwargs):
@@ -63,10 +80,8 @@ class BaseAgent(object):
         info = self.reinforce_(state, action, reward, next_state,
                                episode_done=episode_done, **kwargs)
 
-        # Agent take action in reaction to current state
-        next_action = self.act(next_state, **kwargs)
         info.update(self._params.get_params())
-        return next_action, info
+        return info
 
     def new_episode(self, state):
         """
@@ -76,11 +91,10 @@ class BaseAgent(object):
         """
         pass
 
-    def act(self, state, evaluate=False, **kwargs):
+    def act(self, state, **kwargs):
         """
         called when an action need to be taken from this agent.
         :param state:
-        :param evaluate:
         :param kwargs:
         :return:
         """
@@ -96,3 +110,14 @@ class BaseAgent(object):
         return {}
         pass
 
+
+class Policy(object):
+    """
+    A Policy acts according to state.
+    """
+    def act(self, state, **kwargs):
+        """
+        :param state:
+        :return: action for current state
+        """
+        raise NotImplementedError()
