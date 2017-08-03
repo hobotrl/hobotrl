@@ -54,8 +54,7 @@ class ActorCritic(object):
             variable_se = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=name+"/learn/se")  # shared state encoder
             target_variable_se = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=name+"/target/se")  # shared state encoder
             variable_r = []
-            logging.warning("variable_pi_mean:%s, variable_pi_stddev:%s, variable_v: %s",
-                            variable_pi_mean, variable_pi_stddev, variable_v)
+
             if self.aux_r:
                 variable_r = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=name + "learn/r")
                 self.r = net["r"]
@@ -95,17 +94,21 @@ class ActorCritic(object):
 
                 # probability of input_action according to the formula of the normal distribution
                 self.probability = 1.0 / tf.sqrt(2 * np.pi * self.pi_stddev) \
-                                   * tf.exp(- tf.square(self.input_action - self.pi_mean)
-                                            / (2.0 * self.pi_stddev))
+                                   * tf.exp(- tf.square(self.input_action - self.pi_mean) / (2.0 * self.pi_stddev))
+                logging.warning("shape of input action: %s", np.shape(self.input_action))
                 self.log_probability = tf.log(self.probability)
 
                 # calculate the loss of pi
                 self.spg_loss = -1.0 * tf.reduce_mean(self.log_probability * self.advantage)
                 self.reg_loss = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES, scope=on_policy) +\
-                                -1.0 * self.input_entropy * self.entropy_mean
+                                  -1.0 * self.input_entropy * self.entropy_mean
 
                 self.pi_loss = self.spg_loss + self.reg_loss
-
+                # self.pi_loss = self.reg_loss
+                logging.warning("--------------------------------------------")
+                logging.warning("shape of pi_loss: %s, spg_loss: %s, reg_loss: %s", np.shape(self.pi_loss),np.shape(self.spg_loss),np.shape(self.reg_loss))
+                logging.warning("shape of prob: %s, advan: %s, pi_mean: %s, pi_stddev: %s",
+                                np.shape(self.probability), np.shape(self.advantage), np.shape(self.pi_mean), np.shape(self.pi_stddev))
                 # train q
                 self.v_loss = tf.reduce_mean(Network.clipped_square(self.td))
                 self.on_loss = self.pi_loss + self.v_loss
@@ -236,6 +239,8 @@ class ActorCritic(object):
                                           self.input_reward: reward,
                                           self.input_value: value,
                                           self.input_entropy: entropy})
+        logging.warning("-----------------------------------------------")
+        logging.warning("pi_loss: %s", result[-4])
         return result[-4:]
 
     def compute_off_gradient(self, state, action, reward, target_value, terminate):
@@ -424,7 +429,7 @@ class A3CAgent(hrl.tf_dependent.base.BaseDeepAgent):
             self.replay_on.push_sample(
                 {
                     'state': state,
-                    'action': np.asarray(action, dtype=np.uint8),
+                    'action': np.asarray(action, dtype=np.float32),
                     'next_state': next_state,
                     'reward': np.asarray(reward, dtype=np.float32),
                     'episode_done': np.asarray(episode_done, dtype=np.float32)
@@ -451,7 +456,7 @@ class A3CAgent(hrl.tf_dependent.base.BaseDeepAgent):
             self.replay_off.push_sample(
                 {
                     'state': state,
-                    'action': np.asarray(action, dtype=np.uint8),
+                    'action': np.asarray(action, dtype=np.float32),
                     'next_state': next_state,
                     'reward': np.asarray(reward, dtype=np.float32),
                     'episode_done': np.asarray(episode_done, dtype=np.float32)
@@ -526,13 +531,12 @@ class A3CAgent(hrl.tf_dependent.base.BaseDeepAgent):
         if not T[-1]:
             states.append(Sj[-1])  # need last next_state
         state_values = self.net.get_v(np.asarray(states))
-        logging.warning("state value: %s", state_values)
         if T[-1]:
             state_values = np.append(state_values, 0.0)
-        delta = state_values[1:] * self.reward_decay + Ri - state_values[:-1]
+        delta = np.reshape(state_values[1:] * self.reward_decay, (batch_size,)) + Ri \
+                - np.reshape(state_values[:-1], (batch_size,))
         factor = (lambda_decay * self.reward_decay) ** np.arange(batch_size)
-        logging.warning("shape of delta: %s, factor: %s", np.shape(delta), np.shape(factor))
         advantage = [np.sum(factor * delta)] \
                     + [np.sum(factor[:-i] * delta[i:]) for i in range(1, batch_size)]
-        target_value = np.asarray(advantage) + state_values[:-1]
+        target_value = np.asarray(advantage) + np.reshape(state_values[:-1], (batch_size,))
         return target_value

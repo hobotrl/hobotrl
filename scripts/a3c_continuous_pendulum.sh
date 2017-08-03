@@ -6,7 +6,7 @@ exp_file=./test/exp_continuousA3C.py
 exp_name=A3CPendulum
 log_dir=./log/$exp_name
 # cluster="{'ps':['localhost:2232'], 'worker':['localhost:2233', 'localhost:2234', 'localhost:2235']}"
-cluster="{'ps':['localhost:2252'], 'worker':['localhost:2253','localhost:2254']}"
+cluster="{'ps':['localhost:2252'], 'worker':['localhost:2253', 'localhost:2254']}"
 worker_n=2
 device_n=2
 mkdir -p $log_dir
