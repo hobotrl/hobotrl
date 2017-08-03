@@ -107,7 +107,7 @@ class EnvRunner(object):
 class EnvRunner2(object):
     def __init__(self, env, agent,
                  n_episodes=-1, moving_average_window_size=50,
-                 no_reward_reset_interval=-1,
+                 no_reward_reset_interval=-1, no_reward_punishment=0,
                  checkpoint_save_interval=-1, log_dir=None, log_file_name=None,
                  render_env=False, render_interval=1, render_length=200, frame_time=0, render_options={},
                  show_frame_rate=False, show_frame_rate_interval=100):
@@ -141,6 +141,7 @@ class EnvRunner2(object):
         self.n_episodes = n_episodes
         self.moving_average_window_size = moving_average_window_size
         self.no_reward_reset_interval = no_reward_reset_interval
+        self.no_reward_punishment = no_reward_punishment
         self.checkpoint_save_interval = checkpoint_save_interval
         self.log_dir = log_dir
         self.render_env = render_env
@@ -257,6 +258,7 @@ class EnvRunner2(object):
         if self.step_count - self.last_reward_step == self.no_reward_reset_interval:
             print "Reset for no reward"
             done = True
+            reward -= self.no_reward_punishment
 
         # Train the agent
         info = self.agent.reinforce_(state=state,
