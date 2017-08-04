@@ -222,7 +222,7 @@ class A3CPendulumExp(ACOOExperimentCon):
                                              l2=l2,
                                              var_scope="pi_mean")
             pi_stddev = hrl.utils.Network.layer_fcs(se, [256], num_action,
-                                                  activation_out=tf.nn.softplus,
+                                                  activation_out=tf.nn.sigmoid,
                                                   l2=l2,
                                                   var_scope="pi_stddev")
 
@@ -246,8 +246,8 @@ class A3CPendulum(A3CPendulumExp):
     def __init__(self):
         env = gym.make("Pendulum-v0")
         env = hrl.envs.AugmentEnvWrapper(
-            env, reward_decay=0.9, reward_scale=0.1,
-            action_limit=np.asarray([env.action_space.low, env.action_space.high])
+            env, reward_decay=0.9, reward_scale=0.001,
+            action_limit=np.asarray([env.action_space.low, env.action_space.high])/2
         )
         super(A3CPendulum, self).__init__(env)
 Experiment.register(A3CPendulum, "continuous A3C for Pendulum")
