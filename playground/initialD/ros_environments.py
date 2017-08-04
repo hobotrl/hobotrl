@@ -95,7 +95,11 @@ class DrivingSimulatorEnv(object):
             # reward function
             ['python', '/home/lewis/Projects/hobotrl/playground/initialD/gazebo_rl_reward.py'],
             # simulator backend [Recommend start separately]
-            ['python', '/home/lewis/Projects/hobotrl/playground/initialD/rviz_restart.py']
+            ['python',
+             '/home/lewis/Projects/hobotrl/playground/initialD/rviz_restart.py'],
+            # video capture
+            ['python',
+             '/home/lewis/Projects/hobotrl/playground/initialD/non_stop_data_capture.py']
         ]
         self.proc_backend = []
 
@@ -318,7 +322,7 @@ class DrivingSimulatorEnv(object):
 
         self.is_env_resetting.clear()
         print "[reset()]: done!"
-        return next_states
+        return next_state
 
     def __init_queue(self):
         """Initialize queues, unsetting is_q_ready in progress."""
@@ -645,7 +649,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
         print ("[EnvNode]: returning from run in process: "
                "{} PID: {}, after {:.2f} secs...").format(
                    self.name, self.pid, time.time()-t)
-        secs = 5
+        secs = 2
         while secs != 0:
             print "..in {} secs".format(secs)
             secs -= 1
