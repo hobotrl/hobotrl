@@ -15,8 +15,9 @@ class BaseDeepAgent(BaseAgent):
         if self.__global_step is not None:
             self.sess = None
             with tf.name_scope("update_global_step"):
-                self.__step_input = tf.placeholder(tf.int32, shape=None, name="input_global_step")
-                self.__op_update_step = tf.assign(self.__global_step, self.__step_input)
+                # self.__step_input = tf.placeholder(tf.int32, shape=None, name="input_global_step")
+                # self.__op_update_step = tf.assign(self.__global_step, self.__step_input)
+                self.__op_update_step = tf.assign_add(self.__global_step, 1)
         self.__step_n = 0
 
     def init_supervisor(self, graph=None, worker_index=0, init_op=None, save_dir=None):
@@ -56,7 +57,8 @@ class BaseDeepAgent(BaseAgent):
         self.__step_n += 1
         # increment global_step variable by 1
         if self.__global_step is not None:
-            self.sess.run(self.__op_update_step, feed_dict={self.__step_input: self.__step_n})
+            # self.sess.run(self.__op_update_step, feed_dict={self.__step_input: self.__step_n})
+            self.sess.run(self.__op_update_step)
         # set session for super calls
         if 'sess' not in kwargs:
             kwargs['sess'] = self.sess

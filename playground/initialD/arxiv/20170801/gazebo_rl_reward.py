@@ -22,7 +22,7 @@ class MyClass:
         self.car_pos_x = 0.0
         self.car_pos_y = 0.0
         self.min_path_dis = 0.0
-        self.detect_obstacle_range = 1
+        self.detect_obstacle_range = 10
         self.closest_distance = 10000.0 # initializer
 
         self.pub_nearest_obs = rospy.Publisher('/rl/has_obstacle_nearby', Bool, queue_size=1000)

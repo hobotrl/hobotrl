@@ -42,13 +42,6 @@ class DrivingSimulatorEnv(object):
     queue and write actions to the queue.
 
     Play action in queue with a fixed frequency to the backend.
-
-    :param window_sizes: number of samples to take for `obs` and `reward` in
-        each `step()` and `reset()`.
-    :param step_delay_target: the desired delay for env steps. Used to ensure
-        we are sampling the backend at a constant pace.
-    :param is_dummy_action: if True use rule-based action and ignore the agent
-        action passed in during `step()`.
     """
     def __init__(self,
                  defs_obs, func_compile_reward,
@@ -72,21 +65,18 @@ class DrivingSimulatorEnv(object):
         self.is_dummy_action = is_dummy_action
 
         self.buffer_sizes = buffer_sizes
-        self.MAX_EXCEPTION = 10  # maximum number of q exceptions per episode.
+        self.MAX_EXCEPTION = 10  # maximum number of q exceptions
 
         self.STEP_DELAY_TARGET = step_delay_target  # target delay for each step()
-        self.last_step_t = None
+        self.last_step_t = time.time()
 
         # inter-process flags (mp.Event)
-        self.is_exiting = Event()
-        self.is_backend_up = Event()    # if backend process is up and running
-        self.is_q_ready = Event()       # if qs are ready
-        self.is_q_cleared = Event()     # if qs from prevoius session is cleared
-        self.is_envnode_up = Event()    # if env node is up
-        self.is_envnode_terminatable = Event()  # if env node should be killed
-        self.is_envnode_resetting = Event()  # if env node is undergoing reset
-        self.is_env_resetting = Event()  # if environment is undergoing reset
-        self.is_env_done = Event()  # if environment is is done for this ep
+        self.is_backend_up = Event()
+        self.is_q_ready = Event()  # whether qs are ready
+        self.is_q_cleared = Event()  # whether qs from prevoius session is cleared
+        self.is_envnode_up = Event()  # whether env node is up
+        self.is_envnode_terminatable = Event()
+        self.is_env_done = Event()
 
         # backend specs
         self.backend_cmds = [
@@ -95,11 +85,7 @@ class DrivingSimulatorEnv(object):
             # reward function
             ['python', '/home/lewis/Projects/hobotrl/playground/initialD/gazebo_rl_reward.py'],
             # simulator backend [Recommend start separately]
-            ['python',
-             '/home/lewis/Projects/hobotrl/playground/initialD/rviz_restart.py'],
-            # video capture
-            ['python',
-             '/home/lewis/Projects/hobotrl/playground/initialD/non_stop_data_capture.py']
+            ['python', '/home/lewis/Projects/hobotrl/playground/initialD/rviz_restart.py']
         ]
         self.proc_backend = []
 
@@ -108,15 +94,6 @@ class DrivingSimulatorEnv(object):
         self.thread_node_monitor.start()
 
     def step(self, action):
-        """Evolve environment forward by one step, wraps around a __step()
-        method."""
-        # check of env is properly reset.
-        if self.is_env_done.is_set():
-            raise Exception('[step()]: Env is done, please reset first!')
-
-        if self.is_env_resetting.is_set():
-            raise Exception('[step()]: reset() is in progress and not returned.')
-
         # step delay regularization
         delay = time.time() - self.last_step_t
         if self.STEP_DELAY_TARGET is not None:
@@ -128,7 +105,7 @@ class DrivingSimulatorEnv(object):
                            delay, self.STEP_DELAY_TARGET)
         self.last_step_t = time.time()
 
-        # do __step
+        # do step
         while True:
             ret = self.__step(action)
             if ret is not None:
@@ -137,10 +114,6 @@ class DrivingSimulatorEnv(object):
         next_state, reward, done, info = ret
         print "[step()]: action {}, reward {}, done {}.".format(
             action, reward, done)
-
-        # set done
-        if done:
-            self.is_env_done.set()
 
         return next_state, reward, done, info
 
@@ -159,9 +132,9 @@ class DrivingSimulatorEnv(object):
         """
         # wait until envnode, q, and backend is up and running
         while True:
-            if self.is_backend_up.is_set() and \
+            if self.is_envnode_up.is_set() and \
                self.is_q_ready.is_set() and \
-               self.is_envnode_up.is_set():
+               self.is_backend_up.is_set():
                 break
             else:
                 print "[__step()]: backend {}, node {}, queue {}.".format(
@@ -201,7 +174,7 @@ class DrivingSimulatorEnv(object):
                         if self.cnt_q_except.value>0:
                             self.cnt_q_except.value -= 1
                         else:
-                            return none
+                            return None
                         print "[__step()]: exception getting observation. {}.".format(
                             self.cnt_q_except.value)
                     time.sleep(0.1)
@@ -258,71 +231,22 @@ class DrivingSimulatorEnv(object):
         return next_state, reward, done, info
 
     def reset(self):
-        """Environment reset."""
-        # Setting sync. events
-        # 1. Setting env_resetting will block further call to step.
-        #    Although in normal process step is only called after a successful
-        #    reset call, we still enforce this as an additional safety.
-        self.is_env_resetting.set()
-        # 2. Setting backend_up and clearing q_ready will immediately block
-        #    subsequent queue access here in reset, until a new envnode
-        #    resetting procedure is complete.
-        #    Setting envnode_terminatable will force frontend process to return
-        #    and Queue monitor to clear q_ready event and empty queues.
-        #    Note the above event manipulation is only performed if the env
-        #    node is not inside a resetting procesure. This is because these
-        #    event will also be set or cleared in such procedures and there may
-        #    be conflict in also doing so here.
-        if not self.is_envnode_resetting.is_set():
-            if self.is_backend_up.is_set():
-                self.is_backend_up.clear()
-            if self.is_q_ready.is_set():
-                self.is_q_ready.clear()
-            if self.is_envnode_up.is_set():
-                self.is_envnode_terminatable.set()
-        # 3. Clearing env_done event means a green light for node_monitor
-        #    process to set up a new front-end node
-        self.is_env_done.clear()
-
         # wait until backend is up
         while True:
-            if self.is_backend_up.is_set() and \
+            if self.is_envnode_up.is_set() and \
                self.is_q_ready.is_set() and \
-               self.is_envnode_up.is_set():
-                   break
+               self.is_backend_up.is_set():
+                break
             else:
-                print "[reset]: backend {}, node {}, queue {}, waiting.".format(
+                print "[reset]: backend {}, node {}, queue {}.".format(
                     self.is_backend_up.is_set(),
                     self.is_envnode_up.is_set(),
                     self.is_q_ready.is_set())
                 time.sleep(0.5)
-
-        # start step delay clock
-        self.last_step_t = time.time()
-
-        # observation
-        obs_list = []
-        for _ in range(self.len_obs):
-            while True:
-                try:
-                    next_states = self.q_obs.get(timeout=0.05)
-                    self.q_obs.task_done()
-                    break
-                except:
-                    with self.cnt_q_except.get_lock():
-                        if self.cnt_q_except.value>0:
-                            self.cnt_q_except.value -= 1
-                        else:
-                            return none
-                        print "[reset()]: exception getting observation. {}.".format(
-                            self.cnt_q_except.value)
-                    time.sleep(0.1)
-            obs_list.append(next_states)
-        next_state = self.__compile_obs(obs_list)
-
-        self.is_env_resetting.clear()
-        print "[reset()]: done!"
-        return next_state
+        states = self.q_obs.get()[0]
+        self.q_obs.task_done()
+        state = self.__compile_obs(states)
+        return state
 
     def __init_queue(self):
         """Initialize queues, unsetting is_q_ready in progress."""
@@ -388,9 +312,7 @@ class DrivingSimulatorEnv(object):
                         print "[__queue_monitor]: all queues emptied."
                         self.is_q_cleared.set()
 
-            # Return only if envnode is down and queues are properly cleared
-            # Note although envnode_up event may be cleared by `reset()`, the
-            # q_cleared event can only be set here in this thread.
+            # return only if envnode is down and queues are cleared
             if self.is_q_cleared.is_set() and \
                not self.is_envnode_up.is_set():
                 break
@@ -401,61 +323,40 @@ class DrivingSimulatorEnv(object):
         return
 
     def __node_monitor(self):
-        self.is_backend_up.clear()
         self.is_q_cleared.set()
         self.is_envnode_up.clear()    # default to node_down
-        self.is_envnode_terminatable.clear()  # prevents q monitor from turning down
-        self.is_envnode_resetting.set()
-        while not self.is_exiting.is_set():
+        while True:
             try:
                 # start simulation backend
-                #   __start_backend() should set `is_backend_up` if successful
                 self.__start_backend()
                 while not self.is_backend_up.is_set():
                     print "[__node_monitor]: backend not up..."
                     time.sleep(1.0)
 
-                # env done check loop
-                #   reset() should clear `is_env_done`  
-                while self.is_env_done.is_set():
-                    print ("[__node_monitor]: env is done, "
-                           "waiting for reset.")
-                    time.sleep(1.0)
-
-                # set up inter-process queues and monitor
+                # set up inter-process queues
                 while not self.is_q_cleared.is_set():
                     print "[__node_monitor]: queues not cleared.."
                     time.sleep(1.0)
-                self.__init_queue() # should clear `is_q_cleared` and set `is_q_ready`
-                self.is_envnode_terminatable.clear()  # prevent queue mon from empty
+                self.is_envnode_terminatable.clear()  # prevents q monitor from turning down
+                self.__init_queue()
                 thread_queue_monitor = threading.Thread(target=self.__queue_monitor)
                 thread_queue_monitor.start()
-                print "[__node_monitor]: queue and monitor up and running."
-
+                print "[__node_monitor]: set up new queue."
 
                 # run the frontend node
                 print "[__node_monitor]: running new env node."
                 node = DrivingSimulatorNode(
                     self.q_obs, self.q_reward, self.q_action, self.q_done,
                     self.is_backend_up, self.is_q_ready, self.is_envnode_up,
-                    self.is_envnode_terminatable, self.is_envnode_resetting,
+                    self.is_envnode_terminatable,
                     self.defs_obs, self.defs_reward, self.defs_action,
                     self.rate_action, self.is_dummy_action)
                 node.start()
                 node.join()
-                # ==== protect from resetting by reset() ===
-                # ==== u ntil inside node.run in the next loop
-                self.is_envnode_resetting.set()
-                # ===========================================
-                self.is_envnode_terminatable.clear()
                 self.is_envnode_up.clear()
 
-                # wait for queue mon to return
-                thread_queue_monitor.join()  # implies queue cleared and not ready
-
-                # wait for backend to end
                 self.__kill_backend()
-                self.is_backend_up.clear()
+                thread_queue_monitor.join()
             except Exception as e:
                 print "[__node_monitor]: exception running node ({}).".format(
                     e.message)
@@ -500,20 +401,12 @@ class DrivingSimulatorEnv(object):
         print '[DrSim]: backend initialized. PID: {}'.format(
             [p.pid for p in self.proc_backend])
 
-    def exit(self):
-        self.is_exiting.set()
-        self.is_envnode_terminatable.set()
-        while self.is_envnode_up.is_set():
-            print "[exit()]: waiting envnode to finish."
-            time.sleep(1.0)
-        self.__kill_backend()
-
 
 class DrivingSimulatorNode(multiprocessing.Process):
     def __init__(self,
              q_obs, q_reward, q_action, q_done,
              is_backend_up, is_q_ready, is_envnode_up,
-             is_envnode_terminatable, is_envnode_resetting,
+             is_envnode_terminatable,
              defs_obs, defs_reward, defs_action,
              rate_action, is_dummy_action):
         super(DrivingSimulatorNode, self).__init__()
@@ -541,7 +434,6 @@ class DrivingSimulatorNode(multiprocessing.Process):
         self.is_envnode_up = is_envnode_up
         self.first_time = Event()
         self.is_envnode_terminatable = is_envnode_terminatable
-        self.is_envnode_resetting = is_envnode_resetting
         self.is_receiving_obs = Event()
         self.car_started = Event()
 
@@ -567,11 +459,11 @@ class DrivingSimulatorNode(multiprocessing.Process):
                 [self.__prep_reward]*len(self.defs_reward)
 
         # Setup sync events
-        # self.is_envnode_up.clear()
+        self.is_envnode_up.clear()
         self.is_receiving_obs.clear()
         self.car_started.clear()
         self.first_time.set()
-        # self.is_envnode_terminatable.clear()
+        self.is_envnode_terminatable.clear()
 
         # Initialize frontend ROS node
         print "[EnvNode]: initialiting node..."
@@ -604,7 +496,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
         #   4. mark initialization failed and break upon termination flag 
         print "[EnvNode]: signal simulator restart"
         self.restart_pub.publish(True)
-        cnt_fail = 10
+        cnt_fail = 15
         flag_fail = False  # initialization failed flag
         while not self.is_receiving_obs.is_set():
             cnt_fail -= 1 if cnt_fail>=0 else 0
@@ -626,17 +518,13 @@ class DrivingSimulatorNode(multiprocessing.Process):
             __thread_start_car = threading.Thread(target=self.__start_car)
             __thread_start_car.start()
             __thread_start_car.join()
-            # === Not protected from resetting from here on ===
-            # === until frontend node is shutdown ===
-            self.is_envnode_resetting.clear()
-            # =================================================
             self.is_envnode_up.set()
             # Loop check if simulation episode is done
             while self.is_backend_up.is_set() and \
                   not self.is_envnode_terminatable.is_set():
                 time.sleep(0.2)
-        else:  # if initialization if failed we should terminiate frontend 
-            self.is_envnode_terminatable.set()
+        else:
+            pass
 
         # shutdown frontend ROS threads
         rospy.signal_shutdown('[DrivingSimulatorEnv]: simulator terminated.')
@@ -649,7 +537,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
         print ("[EnvNode]: returning from run in process: "
                "{} PID: {}, after {:.2f} secs...").format(
                    self.name, self.pid, time.time()-t)
-        secs = 2
+        secs = 5
         while secs != 0:
             print "..in {} secs".format(secs)
             secs -= 1
