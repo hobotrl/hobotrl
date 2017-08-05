@@ -76,7 +76,7 @@ class TransitionSampler(Sampler):
 
 class TrajectoryOnSampler(Sampler):
 
-    def __init__(self, replay_memory, interval=8, sample_maker=None):
+    def __init__(self, replay_memory=None, interval=8, sample_maker=None):
         """
         sample nearest trajectory or segment of trajectory for on-policy updates
         :param replay_memory:
@@ -87,6 +87,8 @@ class TrajectoryOnSampler(Sampler):
         super(TrajectoryOnSampler, self).__init__()
         if sample_maker is None:
             sample_maker = default_make_sample
+        if replay_memory is None:
+            replay_memory = playback.MapPlayback(interval, pop_policy="sequence")
         self._replay, self._sample_maker = replay_memory, sample_maker
         self._interval = interval
         self._step_n = 0
@@ -120,8 +122,16 @@ class SamplerAgentMixin(object):
 
 class TransitionBatchUpdate(SamplerAgentMixin):
 
-    def __init__(self, sampler, *args, **kwargs):
+    def __init__(self, sampler=None, *args, **kwargs):
+        """
+        :param sampler:
+        :type sampler: TransitionSampler
+        :param args:
+        :param kwargs:
+        """
         super(TransitionBatchUpdate, self).__init__(*args, **kwargs)
+        if sampler is None:
+            samper = TransitionSampler(playback.MapPlayack(1000), 32, 4)
         self._sampler = sampler
 
     def reinforce_(self, state, action, reward, next_state, episode_done, **kwargs):
@@ -136,6 +146,29 @@ class TransitionBatchUpdate(SamplerAgentMixin):
     def update_on_transition(self, batch):
         """
         :param batch:
+        :return: (info, sample_info), in which `info` is a dict for invokers, and `sample_info` is a dict for sampler.post_step()
+        """
+        raise NotImplementedError()
+
+
+class TrajectoryBatchUpdate(SamplerAgentMixin):
+
+    def __init__(self, sampler, *args, **kwargs):
+        super(TrajectoryBatchUpdate, self).__init__(*args, **kwargs)
+        self._sampler = sampler
+
+    def reinforce_(self, state, action, reward, next_state, episode_done, **kwargs):
+        super(TrajectoryBatchUpdate, self).reinforce_(state, action, reward, next_state, episode_done, **kwargs)
+        batch = self._sampler.step(state, action, reward, next_state, episode_done, **kwargs)
+        if batch is None:
+            return {}
+        info, sample_info = self.update_on_trajectory(batch)
+        self._sampler.post_step(batch, sample_info)
+        return info
+
+    def update_on_trajectory(self, batch):
+        """
+        :param batch: list of column-wise batches, each batch guaranteed in trajectory order
         :return: (info, sample_info), in which `info` is a dict for invokers, and `sample_info` is a dict for sampler.post_step()
         """
         raise NotImplementedError()

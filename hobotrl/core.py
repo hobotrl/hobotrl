@@ -21,6 +21,14 @@ class Agent(object):
     def act(self, state, **kwargs):
         pass
 
+    def new_episode(self, state):
+        """
+        called when a new episode starts.
+        :param state:
+        :return:
+        """
+        pass
+
 
 class BaseAgent(Agent):
     """Base class for reinforcement learning agents.

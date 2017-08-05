@@ -11,21 +11,8 @@ import hobotrl.network as network
 import hobotrl.sampling as sampling
 from hobotrl.tf_dependent.base import BaseDeepAgent
 from hobotrl.playback import MapPlayback
-
-
-class EpsilonGreedyPolicy(hrl.core.Policy):
-
-    def __init__(self, q_function, epsilon, num_actions):
-        super(EpsilonGreedyPolicy, self).__init__()
-        self.q_function, self._epsilon, self._num_actions = q_function, epsilon, num_actions
-
-    def act(self, state, **kwargs):
-        if np.random.rand() < self._epsilon:
-            # random
-            return np.random.randint(self._num_actions)
-        q_values = self.q_function(np.asarray([state]))
-        action = np.argmax(q_values)
-        return action
+from hobotrl.policy import EpsilonGreedyPolicy
+import hobotrl.target_estimate as target_estimate
 
 
 class ValueBasedAgent(hrl.core.Agent):
@@ -52,63 +39,6 @@ class ValueBasedAgent(hrl.core.Agent):
 
     def act(self, state, **kwargs):
         return self._policy.act(state, **kwargs)
-
-
-class L2(network.NetworkUpdater):
-
-    def __init__(self, net_or_var_scope):
-        super(L2, self).__init__()
-        if isinstance(net_or_var_scope, network.Network):
-            var_scope = net_or_var_scope.relative_var_scope
-        else:
-            var_scope = net_or_var_scope
-        self._var_scope = var_scope
-        l2_loss = network.Utils.scope_vars(var_scope, tf.GraphKeys.REGULARIZATION_LOSSES)
-        var_list = network.Utils.scope_vars(var_scope)
-        self._l2_loss = tf.add_n(l2_loss)
-        self._update_operation = network.MinimizeLoss(self._l2_loss, var_list=var_list)
-
-    def declare_update(self):
-        return self._update_operation
-
-    def update(self, sess, *args, **kwargs):
-        return network.UpdateRun()
-
-
-class OneStepTD(network.NetworkUpdater):
-
-    def __init__(self, learn_q, target_q, num_actions, discount_factor=0.99, ddqn=False):
-        super(OneStepTD, self).__init__()
-        self._f_learn_q, self._f_target_q = learn_q, target_q
-        self._input_target_q = tf.placeholder(dtype=tf.float32, shape=[None], name="input_target_q")
-        self._input_action = tf.placeholder(dtype=tf.uint8, shape=[None], name="input_action")
-        self._discount_factor, self._ddqn, self._num_actions = discount_factor, ddqn, num_actions
-        op_q = learn_q.output().op
-        one_hot = tf.one_hot(self._input_action, num_actions)
-        selected_q = tf.reduce_sum(one_hot * op_q, axis=1)
-        self._sym_loss = tf.reduce_mean(
-            network.Utils.clipped_square(
-                self._input_target_q - selected_q
-            )
-        )
-        print "selected_q:", selected_q, ", sym_loss:", self._sym_loss, "one_hot:", one_hot,", op:", op_q
-        self._update_operation = network.MinimizeLoss(self._sym_loss, var_list=self._f_learn_q.variables)
-
-    def declare_update(self):
-        return self._update_operation
-
-    def update(self, sess, batch, *args, **kwargs):
-        if not self._ddqn:
-            target_q_val = self._f_target_q(batch["next_state"])
-            target_q_val = np.max(target_q_val, axis=1)
-        else:
-            learn_q_val = self._f_learn_q(batch["next_state"])
-            target_action = np.argmax(learn_q_val, axis=1)
-            target_q_val = np.sum(self._f_target_q(batch["next_state"]) * hrl.utils.NP.one_hot(target_action, self._num_actions), axis=1)
-        target_q_val = batch["reward"] + self._discount_factor * target_q_val * (1.0 - batch["episode_done"])
-        feed_dict = {self._input_target_q: target_q_val, self._input_action: batch["action"]}
-        feed_dict.update(self._f_learn_q.input_dict(batch["state"]))
-        return network.UpdateRun(feed_dict=feed_dict, fetch_dict={"target_q": target_q_val, "td_loss": self._sym_loss})
 
 
 class DQN(sampling.TransitionBatchUpdate,
@@ -152,8 +82,12 @@ class DQN(sampling.TransitionBatchUpdate,
         super(DQN, self).__init__(*args, **kwargs)
 
         self.network_optimizer = network_optimizer
-        network_optimizer.add_updater(OneStepTD(self.learn_q, self.target_q, num_actions, discount_factor, ddqn), name="td")
-        network_optimizer.add_updater(L2(self.network), name="l2")
+        if ddqn:
+            estimator = target_estimate.DDQNOneStepTD(self.learn_q, self.target_q, discount_factor)
+        else:
+            estimator = target_estimate.OneStepTD(self.target_q, discount_factor)
+        network_optimizer.add_updater(network.FitTargetQ(self.learn_q, estimator), name="td")
+        network_optimizer.add_updater(network.L2(self.network), name="l2")
         network_optimizer.compile()
         self._target_sync_interval, self._target_sync_rate = target_sync_interval, target_sync_rate
 

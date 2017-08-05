@@ -107,7 +107,7 @@ class PERDQNExperiment(Experiment):
     def __init__(self, env,
                  f_create_net,
                  episode_n=1000,
-                 priority_bias=0.5,  # todo search what combination of exponent/importance_correction works better
+                 priority_bias=0.5,
                  importance_weight=hrl.utils.CappedLinear(1e6, 0.5, 1.0),
                  optimizer_ctor=lambda: tf.train.AdamOptimizer(learning_rate=1e-3),
                  target_sync_rate=0.01,
