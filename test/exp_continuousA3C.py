@@ -205,7 +205,7 @@ class A3CPendulumExp(ACOOExperimentCon):
                  prob_min=5e-3,
                  entropy=hrl.utils.CappedLinear(1e6, 1e-2, 1e-3),
                  l2=1e-8,
-                 optimizer_ctor=lambda: tf.train.AdamOptimizer(1e-4), ddqn=False, aux_r=False, aux_d=False):
+                 optimizer_ctor=lambda: tf.train.AdamOptimizer(1e-5), ddqn=False, aux_r=False, aux_d=False):
 
         def create_ac_pendulum(input_state, num_action, **kwargs):
             se = hrl.utils.Network.layer_fcs(input_state, [256], num_action,
@@ -217,12 +217,13 @@ class A3CPendulumExp(ACOOExperimentCon):
                                             activation_hidden=tf.nn.relu,
                                             l2=l2,
                                             var_scope="v")
+            v = tf.squeeze(v, axis=1)
             pi_mean = hrl.utils.Network.layer_fcs(se, [256], num_action,
                                              activation_out=tf.nn.tanh,
                                              l2=l2,
                                              var_scope="pi_mean")
             pi_stddev = hrl.utils.Network.layer_fcs(se, [256], num_action,
-                                                  activation_out=tf.nn.sigmoid,
+                                                  activation_out=tf.nn.softplus,
                                                   l2=l2,
                                                   var_scope="pi_stddev")
 
@@ -246,8 +247,8 @@ class A3CPendulum(A3CPendulumExp):
     def __init__(self):
         env = gym.make("Pendulum-v0")
         env = hrl.envs.AugmentEnvWrapper(
-            env, reward_decay=0.9, reward_scale=0.001,
-            action_limit=np.asarray([env.action_space.low, env.action_space.high])/2
+            env, reward_decay=0.9, reward_scale=0.01,
+            action_limit=np.asarray([env.action_space.low, env.action_space.high])
         )
         super(A3CPendulum, self).__init__(env)
 Experiment.register(A3CPendulum, "continuous A3C for Pendulum")

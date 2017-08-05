@@ -374,6 +374,7 @@ class ACOOExperiment(Experiment):
                                             logdir=args.logdir if args.index == 0 else None)
                 runner.episode(self.episode_n)
 
+
 class ACOOExperimentCon(Experiment):
     def __init__(self, env,
                  f_create_net,

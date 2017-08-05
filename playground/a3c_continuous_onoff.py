@@ -80,31 +80,30 @@ class ActorCritic(object):
             var_off = variable_se + variable_v + variable_r
 
             # self.v = tf.reduce_max(self.q, axis=1)
-            self.td = tf.reshape(self.input_value, [-1,1]) - self.v
+            self.td = self.input_value - self.v
 
             # input "Advantage" using in original paper
-            self.advantage = tf.reshape(self.input_reward, [-1,1]) - self.v
-            logging.warning("-----------------------------------------------------")
-            logging.warning("shape of td: %s, input value: %s, v: %s, input reward: %s", np.shape(self.td),
-                            np.shape(self.input_value), np.shape(self.v), np.shape(self.input_reward))
+            self.advantage = self.input_value - self.v
+
             with tf.name_scope("on_policy") as on_policy:
                 # train pi
 
                 # H = k/2 + k*log(2pi)/2 + log(abs(sigma))/2
-                # self.entropy = tf.reshape(tf.reduce_sum((1 + tf.log(2 * np.pi * self.pi_stddev)) / 2, axis=1, name="entropy"), [-1,1])
+                # self.entropy = tf.reshape(tf.reduce_sum((1 + tf.log(2 * np.pi * tf.square(self.pi_stddev))) / 2,
+                #                                         axis=1, name="entropy"), [-1,1])
                 normal_dist = tf.contrib.distributions.Normal(self.pi_mean, self.pi_stddev)
                 self.entropy = normal_dist.entropy()
                 self.entropy_mean = tf.reduce_mean(self.entropy, name="entropy_mean")
 
                 # probability of input_action according to the formula of the normal distribution
-                self.probability = 1.0 / tf.sqrt(2 * np.pi * self.pi_stddev) \
-                                   * tf.exp(- tf.square(self.input_action - self.pi_mean) / (2.0 * self.pi_stddev))
-                self.log_probability = tf.log(self.probability)
-
+                # self.probability = 1.0 / tf.sqrt(2 * np.pi * tf.square(self.pi_stddev)) \
+                #                    * tf.exp(- tf.square((self.input_action - self.pi_mean) / self.pi_stddev) / 2)
+                # self.log_probability = tf.log(self.probability)
+                self.log_probability = normal_dist.log_prob(self.input_action)
                 # calculate the loss of pi
                 self.spg_loss = -1.0 * tf.reduce_mean(self.log_probability * self.advantage)
                 self.reg_loss = tf.reduce_sum(tf.square(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES,
-                                                    scope=on_policy))) + -0.01 * self.input_entropy * self.entropy_mean
+                                                    scope=on_policy))) - self.entropy_mean
 
                 self.pi_loss = self.spg_loss + self.reg_loss
 
@@ -240,6 +239,7 @@ class ActorCritic(object):
                                           self.input_entropy: entropy})
         logging.warning("-----------------------------------------------")
         logging.warning("pi_loss: %s", result[-4])
+        logging.warning("-----------------------------------------------")
         return result[-4:]
 
     def compute_off_gradient(self, state, action, reward, target_value, terminate):
@@ -282,13 +282,17 @@ class ActorCritic(object):
     def get_action(self, state):
         # return self.sess.run([self.pi_dist], feed_dict={self.input_state: state})[0]
         mean, stddev = self.sess.run([self.pi_mean, self.pi_stddev], feed_dict={self.input_state: state})
-        stddev = np.sqrt(stddev)
+        stddev = np.sqrt(stddev[0])
         sample = []
 
         for i in range(len(stddev)):
-            mu, sigma = mean[i], stddev[i]*0.2+1e-4
+            mu, sigma = mean[i]*2, stddev[i]+1e-4
             sample.append(np.random.normal(mu, sigma))
         sample = (np.asarray(sample))[0]
+        if sample[0] > 2:
+            sample[0] = 2
+        elif sample[0] < -2:
+            sample[0] = -2
         logging.warning("mu: %s, stddev: %s, sample: %s", mu, stddev, sample)
         return sample
 
@@ -405,7 +409,6 @@ class A3CAgent(hrl.tf_dependent.base.BaseDeepAgent):
     def act(self, state, evaluate=False, **kwargs):
         self.step_n += 1
         action = self.net.get_action(np.asarray([state]))[0]  # batch size 1
-
         # last_action = np.random.choice(np.arange(self.action_n), p=action)
 
         # return last_action
@@ -492,8 +495,8 @@ class A3CAgent(hrl.tf_dependent.base.BaseDeepAgent):
         return None, info
 
     def compute_target(self, Si, Ai, Ri, Sj, T, batch_size):
-        # return self.n_step_trajectory_target(Si, Ai, Ri, Sj, T, batch_size)
-        return self.gae_target(Si, Ai, Ri, Sj, T, batch_size)
+        return self.n_step_trajectory_target(Si, Ai, Ri, Sj, T, batch_size)
+        # return self.gae_target(Si, Ai, Ri, Sj, T, batch_size)
 
     def n_step_trajectory_target(self, Si, Ai, Ri, Sj, T, batch_size):
         next_state, episode_done = Sj[-1], T[-1]
@@ -533,10 +536,9 @@ class A3CAgent(hrl.tf_dependent.base.BaseDeepAgent):
         state_values = self.net.get_v(np.asarray(states))
         if T[-1]:
             state_values = np.append(state_values, 0.0)
-        delta = np.reshape(state_values[1:] * self.reward_decay, (batch_size,)) + Ri \
-                - np.reshape(state_values[:-1], (batch_size,))
+        delta = state_values[1:] * self.reward_decay + Ri - state_values[:-1]
         factor = (lambda_decay * self.reward_decay) ** np.arange(batch_size)
         advantage = [np.sum(factor * delta)] \
                     + [np.sum(factor[:-i] * delta[i:]) for i in range(1, batch_size)]
-        target_value = np.asarray(advantage) + np.reshape(state_values[:-1], (batch_size,))
+        target_value = np.asarray(advantage) + state_values[:-1]
         return target_value
