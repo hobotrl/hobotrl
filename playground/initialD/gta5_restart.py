@@ -20,6 +20,7 @@ from std_msgs.msg import Int16, Bool
 from gta5_interface.msg import gta5_control
 from collections import deque
 from datetime import datetime
+import traceback
 
 # use this to start another node. Take talker.py as an example.
 # def sender():
@@ -79,6 +80,9 @@ class MyClass:
         except zmq.error.ZMQError as e:
             rospy.logfatal("Please Connect Wi-Fi!")
             sys.exit()
+        except Exception as e:
+            print e.message
+            traceback.print_exc()
 
         self.record_log = recordlog
         self.destination = np.zeros([1,3])
@@ -94,10 +98,11 @@ class MyClass:
         # set rosparam
         if self.road_index is 1:
             rospy.set_param('/route', '52,53,37,38,35,36,0,46,44,59,54,69,60,75,74,84,76,79,61')
-            rospy.set_param('/map/filename', os.environ['HOME']+'/gta5_file/gta5backup/test_alwaysupdate2.xodr')
+            rospy.set_param('/map/filename',
+                            '/home/lewis/Projects/gta_maps/gta5backup/test_alwaysupdate2.xodr')
         elif self.road_index is 2:
             rospy.set_param('/route', '3,5,1,15,10,14,12,17,16,28,27,45,39')
-            rospy.set_param('/map/filename', os.environ['HOME']+'/gta5_file/a-lane2/update.xodr')
+            rospy.set_param('/map/filename', '/home/lewis/Projects/gta_maps/a-lane2/update.xodr')
         else:
             rospy.logfatal("You didn't set right lane index! Program stop!")
 

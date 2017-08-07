@@ -163,7 +163,7 @@ if __name__ == '__main__':
         if video_wrt is not None:
             video_wrt.release()
         if video_wrt_latest is not None:
-            video_wrt_latest.release() 
+            video_wrt_latest.release()
         if video_info_file is not None:
             video_info_file.close()
         if dec_file is not None:

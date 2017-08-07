@@ -91,15 +91,16 @@ class DrivingSimulatorEnv(object):
         # backend specs
         self.backend_cmds = [
             # roscore
-            ['roscore'],
+            # ['roscore'],
             # reward function
             ['python', '/home/lewis/Projects/hobotrl/playground/initialD/gazebo_rl_reward.py'],
             # simulator backend [Recommend start separately]
             ['python',
-             '/home/lewis/Projects/hobotrl/playground/initialD/rviz_restart.py'],
+             '/home/lewis/Projects/hobotrl/playground/initialD/gta5_restart.py',
+             '2'],
             # video capture
-            ['python',
-             '/home/lewis/Projects/hobotrl/playground/initialD/non_stop_data_capture.py']
+            # ['python',
+            # '/home/lewis/Projects/hobotrl/playground/initialD/non_stop_data_capture.py']
         ]
         self.proc_backend = []
 
@@ -201,7 +202,7 @@ class DrivingSimulatorEnv(object):
                         if self.cnt_q_except.value>0:
                             self.cnt_q_except.value -= 1
                         else:
-                            return None
+                            return none
                         print "[__step()]: exception getting observation. {}.".format(
                             self.cnt_q_except.value)
                     time.sleep(0.1)
@@ -313,7 +314,7 @@ class DrivingSimulatorEnv(object):
                         if self.cnt_q_except.value>0:
                             self.cnt_q_except.value -= 1
                         else:
-                            return None
+                            return none
                         print "[reset()]: exception getting observation. {}.".format(
                             self.cnt_q_except.value)
                     time.sleep(0.1)

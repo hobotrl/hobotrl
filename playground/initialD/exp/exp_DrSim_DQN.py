@@ -104,7 +104,7 @@ def f_net(inputs, num_outputs, is_training):
     return q
 
 optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
-target_sync_rate = 0.01
+target_sync_rate = 0.001
 training_params = (optimizer_td, target_sync_rate, 10.0)
 state_shape = (640, 640, 3*2)
 graph = tf.get_default_graph()
@@ -158,7 +158,7 @@ try:
 
     with sv.managed_session(config=config) as sess:
         agent.set_session(sess)
-        n_ep = 0
+        n_ep = 0  # last ep in the last run, if restart use 0
         while True:
             n_ep += 1
             cum_reward = 0.0
@@ -170,10 +170,14 @@ try:
             while True:
                 n_steps += 1
                 cum_reward += reward
-                next_action, update_info = agent.step(
-                    sess=sess, state=state, action=action,
-                    reward=reward, next_state=next_state,
-                    episode_done=done, no_exploration=no_exploration)
+                if not no_exploration:
+                    next_action, update_info = agent.step(
+                        sess=sess, state=state, action=action,
+                        reward=reward, next_state=next_state,
+                        episode_done=done, no_exploration=no_exploration)
+                else:
+                    next_action = agent.act(next_state, no_exploration=True)
+                    update_info = {}
                 cum_td_loss += update_info['td_loss'] if 'td_loss' in update_info \
                     and update_info['td_loss'] is not None else 0
                 summary_proto = tf.Summary()
@@ -197,10 +201,17 @@ try:
                            "average td_loss is {}. No exploration {}").format(
                                n_ep, n_steps, cum_reward,
                                cum_td_loss/n_steps, no_exploration)
-                    summary_proto.value.add(
-                        tag='num_episode', simple_value=n_ep)
-                    summary_proto.value.add(
-                        tag='cum_reward', simple_value=cum_reward)
+                    if not no_exploration:
+                        summary_proto.value.add(
+                            tag='num_episode', simple_value=n_ep)
+                        summary_proto.value.add(
+                            tag='cum_reward', simple_value=cum_reward)
+                    else:
+                        summary_proto.value.add(
+                            tag='num_episode_noexpolore', simple_value=n_ep)
+                        summary_proto.value.add(
+                            tag='cum_reward_noexpolore',
+                            simple_value=cum_reward)
                 sv.summary_computed(sess, summary=summary_proto)
                 if done is True:
                     break

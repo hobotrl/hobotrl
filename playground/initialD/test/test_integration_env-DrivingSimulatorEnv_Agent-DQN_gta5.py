@@ -15,7 +15,7 @@ from tensorflow.contrib.layers import l2_regularizer
 from hobotrl.playback import MapPlayback
 from hobotrl.algorithms.dqn import DQN
 
-from ros_environments import DrivingSimulatorEnv
+from ros_environments_gta import DrivingSimulatorEnv
 
 import rospy
 import message_filters
@@ -27,8 +27,8 @@ def compile_reward(rewards):
     rewards = rewards[0]
     reward = -100.0 * float(rewards[0]) + \
               -10.0 * float(rewards[1]) + \
-               10.0 * float(rewards[2]) + \
-             -100.0 * (1 - float(rewards[3]))
+               10.0 * float(rewards[2])# + \
+             #-100.0 * (1 - float(rewards[3]))
     return reward
 
 def compile_obs(obss):
@@ -42,7 +42,8 @@ env = DrivingSimulatorEnv(
         ('/rl/has_obstacle_nearby', Bool),
         ('/rl/distance_to_longestpath', Float32),
         ('/rl/car_velocity', Float32),
-        ('/rl/last_on_opposite_path', Int16)],
+        #('/rl/last_on_opposite_path', Int16)
+    ],
     func_compile_reward=compile_reward,
     defs_action=[('/autoDrive_KeyboardMode', Char)],
     rate_action=10.0,
@@ -155,10 +156,10 @@ try:
             cum_reward += reward
             next_action, update_info = agent.step(
                 sess=sess,
-                state=state,
+                state=map(lambda x: (x-2)/5.0, state),  # scale state to [-1, 1]
                 action=action,
-                reward=reward,
-                next_state=next_state,
+                reward=float(reward>1.0),  # reward clipping
+                next_state=map(lambda x: (x-2)/5.0, next_state), # scle state
                 episode_done=done,
             )
             cum_td_loss += update_info['td_loss'] if 'td_loss' in update_info is not None else 0
