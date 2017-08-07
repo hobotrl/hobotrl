@@ -11,10 +11,11 @@ import gym
 
 import hobotrl as hrl
 from hobotrl.experiment import Experiment
-from hobotrl.cluster import ClusterAgent
+from hobotrl.async import ClusterAgent
 import hobotrl.network as network
 import hobotrl.algorithms.ac_c as ac_c
 import hobotrl.algorithms.dqn_c as dqn_c
+
 
 class ACExperiment(Experiment):
     def run(self, args):

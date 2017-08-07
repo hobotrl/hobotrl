@@ -77,7 +77,7 @@ class DQN(sampling.TransitionBatchUpdate,
             network_optimizer = network.LocalOptimizer(grad_clip=max_gradient)
         if sampler is None:
             sampler = sampling.TransitionSampler(MapPlayback(replay_size), batch_size, update_interval)
-            kwargs.update({"sampler": sampler})
+        kwargs.update({"sampler": sampler})
         # call super.__init__
         super(DQN, self).__init__(*args, **kwargs)
 
@@ -90,6 +90,7 @@ class DQN(sampling.TransitionBatchUpdate,
         network_optimizer.add_updater(network.L2(self.network), name="l2")
         network_optimizer.compile()
         self._target_sync_interval, self._target_sync_rate = target_sync_interval, target_sync_rate
+        self._update_count = 0
 
     def init_network(self, f_create_q, state_shape, *args, **kwargs):
         input_state = tf.placeholder(dtype=tf.float32, shape=[None] + list(state_shape), name="input_state")
@@ -101,10 +102,11 @@ class DQN(sampling.TransitionBatchUpdate,
         return self.learn_q
 
     def update_on_transition(self, batch):
+        self._update_count += 1
         self.network_optimizer.updater("td").update(self.sess, batch)
         self.network_optimizer.updater("l2").update(self.sess)
         info = self.network_optimizer.optimize_step(self.sess)
-        if self.step_n % self._target_sync_interval == 0:
+        if self._update_count % self._target_sync_interval == 0:
             self.network.sync_target(self.sess, self._target_sync_rate)
         return info, {}
 
@@ -142,7 +144,9 @@ if __name__ == '__main__':
         target_sync_interval=100,
         target_sync_rate=1.0,
         # sampler arguments
-        update_interval=4, replay_size=1000, batch_size=32,
+        update_interval=4,
+        replay_size=1000,
+        batch_size=32,
         # epsilon greedy arguments
         greedy_epsilon=hrl.utils.CappedLinear(1e5, 0.5, 0.1),
         global_step=global_step,

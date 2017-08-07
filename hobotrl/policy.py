@@ -44,6 +44,36 @@ class EpsilonGreedyPolicy(Policy):
         return action
 
 
+class OUNoise(object):
+    def __init__(self, shape, mu, theta, sigma):
+        self._shape, self._mu, self._theta, self._sigma = shape, mu, theta, sigma
+        self._x = np.ones(self._shape) * self._mu
+
+    def tick(self):
+        self._x += self._theta * (self._mu - self._x) +\
+                   self._sigma * np.random.randn(*self._shape)
+        return self._x
+
+
+class OUExplorationPolicy(Policy):
+    def __init__(self, action_function, mu, theta, sigma):
+        """
+
+        :param action_function:
+        :type action_function: NetworkFunction
+        :param mu:
+        :param theta:
+        :param sigma:
+        """
+        self._action_function = action_function
+        self._action_shape = [action_function.output().op.shape.as_list()[-1]]
+        self._ou_noise = OUNoise(self._action_shape, mu, theta, sigma)
+
+    def act(self, state, **kwargs):
+        action = self._action_function(np.asarray([state]))[0]
+        return action + self._ou_noise.tick()
+
+
 class StochasticPolicy(Policy):
     """
     returns action according to probability distribution.

@@ -192,6 +192,7 @@ class Network(object):
                 net = network_creator(inputs)
         self._symbols = dict([(k, NetworkSymbol(net[k], k, self)) for k in net])
         self._variables = Utils.scope_vars(self._abs_var_scope)
+        self._sess = None
         logging.warning("Network[vs=%s,abs_vs=%s,var=%s,symbols=%s]",
                         self._var_scope, self.abs_var_scope,self.variables, self._symbols)
 
@@ -246,21 +247,36 @@ class Network(object):
     def inputs(self):
         return self._inputs
 
+    @property
+    def session(self):
+        return self._sess
+
+    def set_session(self, sess):
+        self._sess = sess
+
+
+class NetworkSyncer(object):
+    def __init__(self, src_network, dest_network):
+        super(NetworkSyncer, self).__init__()
+        self._src_network, self._dest_network = src_network, dest_network
+        self._input_rate = tf.placeholder(tf.float32, name="input_sync_rate")
+        self._op_sync = [tf.assign_add(target, (learn - target) * self._input_rate)
+                         for target, learn in zip(self._dest_network.variables, self._src_network.variables)]
+        self._op_sync = tf.group(*self._op_sync, name="sync")
+
+    def sync(self, sess, rate):
+        sess.run([self._op_sync], feed_dict={self._input_rate: rate})
+
 
 class NetworkWithTarget(Network):
     def __init__(self, inputs, network_creator, var_scope, target_var_scope, name_scope=None, reuse=False):
         super(NetworkWithTarget, self).__init__(inputs, network_creator, var_scope, name_scope, reuse)
         self._target = Network(inputs, network_creator, target_var_scope, name_scope, reuse)
         with tf.name_scope("sync_target"):
-            self.init_syncer()
-
-    def init_syncer(self):
-        self._input_rate = tf.placeholder(tf.float32, name="input_sync_rate")
-        self._op_sync = [tf.assign(target, learn) for target, learn in zip(self.target.variables, self.variables)]
-        self._op_sync = tf.group(*self._op_sync, name="sync")
+            self._syncer = NetworkSyncer(self, self._target)
 
     def sync_target(self, sess, rate):
-        sess.run([self._op_sync], feed_dict={self._input_rate: rate})
+        return self._syncer.sync(sess, rate)
 
     def __call__(self, inputs, name_scope="", *args, **kwargs):
         return NetworkWithTarget(inputs, self._f_creator,
@@ -270,6 +286,10 @@ class NetworkWithTarget(Network):
     @property
     def target(self):
         return self._target
+
+    def set_session(self, sess):
+        super(NetworkWithTarget, self).set_session(sess)
+        self._target.set_session(sess)
 
 
 class NetworkFunction(Function):
@@ -345,8 +365,18 @@ class NetworkFunction(Function):
     def variables(self):
         return self._variables
 
+    @property
+    def network(self):
+        return self._network
+
+    @property
+    def session(self):
+
+        sess = self._sess if self._sess is not None else self._network.session
+        return sess
+
     def __call__(self, *args, **kwargs):
-        results = self._sess.run([symbol.op for symbol in self._outputs], feed_dict=self.input_dict(*args, **kwargs))
+        results = self.session.run([symbol.op for symbol in self._outputs], feed_dict=self.input_dict(*args, **kwargs))
         if self._output_type == NetworkSymbol:
             return results[0]
         elif self._output_type == list:
@@ -731,6 +761,17 @@ class OptimizerPlaceHolder(NetworkOptimizer):
     and later applied when actual optimizer is ready.
 
     updater() and optimize_step() are delegated directly to the actual optimizer.
+
+
+    OptimizerPlaceHolder is designed to break dependency loop when creating DistributedOptimizer:
+    DistributedOptimizer needs local_global_var_map,
+    which depends on local network and global network,
+    which depends on creation of local agent object and global agent object,
+    which depends on NetworkOptimizers in their constructor.
+
+    So we first construct local agent/global agent using OptimizerPlaceHolders,
+    retrieve local_global_var_map from local / global networks, construct DistributedOptimizer,
+    and set DistributedOptimizer object into placeholder.
     """
     def __init__(self, optimizer=None):
         """

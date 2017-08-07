@@ -115,3 +115,14 @@ class GAENStep(TargetEstimator):
         target_value = np.asarray(advantage) + state_values[:-1]
         return target_value
 
+
+class ContinuousActionEstimator(TargetEstimator):
+    def __init__(self, actor, critic, discount_factor):
+        super(ContinuousActionEstimator, self).__init__(discount_factor)
+        self._actor, self._critic, = actor, critic
+
+    def estimate(self, state, action, reward, next_state, episode_done):
+        target_action = self._actor(next_state)
+        target_q = self._critic(next_state, target_action)
+        target_q = reward + self._discount_factor * (1.0 - episode_done) * target_q
+        return target_q

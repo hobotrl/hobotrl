@@ -36,8 +36,12 @@ class Playback(object):
         self.augment_offset = 0 if augment_offset is None else augment_offset
         self.augment_scale = 1 if augment_scale is None else augment_scale
         self.count = 0
-        self.push_index = 0
+        self._push_index = 0
         self.pop_index = 0
+
+    @property
+    def push_index(self):
+        return self._push_index
 
     def get_count(self):
         """
@@ -58,7 +62,7 @@ class Playback(object):
         clear all samples
         :return:
         """
-        self.count, self.push_index, self.pop_index = 0, 0, 0
+        self.count, self._push_index, self.pop_index = 0, 0, 0
 
     def add_sample(self, sample, index, sample_score=0):
         """
@@ -98,8 +102,8 @@ class Playback(object):
         :param sample_score:
         :return:
         """
-        self.add_sample(sample, self.push_index, sample_score)
-        self.push_index = (self.push_index + 1) % self.capacity
+        self.add_sample(sample, self._push_index, sample_score)
+        self._push_index = (self._push_index + 1) % self.capacity
 
     def next_batch_index(self, batch_size):
         """
@@ -202,6 +206,14 @@ class MapPlayback(Playback):
 
     def get_capacity(self):
         return self.capacity
+
+    @property
+    def push_index(self):
+
+        if self.data is None:
+            return 0
+        for i in self.data:
+            return self.data[i].push_index
 
     def reset(self):
         if self.data is None:
