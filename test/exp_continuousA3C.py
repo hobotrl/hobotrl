@@ -208,29 +208,33 @@ class A3CPendulumExp(ACOOExperimentCon):
                  optimizer_ctor=lambda: tf.train.AdamOptimizer(1e-5), ddqn=False, aux_r=False, aux_d=False):
 
         def create_ac_pendulum(input_state, num_action, **kwargs):
-            se = hrl.utils.Network.layer_fcs(input_state, [256], num_action,
+            se = hrl.utils.Network.layer_fcs(input_state, [200], 100,
                                             activation_hidden=tf.nn.relu,
+                                            activation_out=tf.nn.relu,
                                             l2=l2,
                                             var_scope="se")
 
-            v = hrl.utils.Network.layer_fcs(se, [256], 1,
+            v = hrl.utils.Network.layer_fcs(se, [50], 1,
                                             activation_hidden=tf.nn.relu,
                                             l2=l2,
                                             var_scope="v")
             v = tf.squeeze(v, axis=1)
-            pi_mean = hrl.utils.Network.layer_fcs(se, [256], num_action,
+
+            pi_mean = hrl.utils.Network.layer_fcs(se, [50], num_action,
                                              activation_out=tf.nn.tanh,
                                              l2=l2,
                                              var_scope="pi_mean")
-            pi_stddev = hrl.utils.Network.layer_fcs(se, [256], num_action,
+
+            pi_stddev = hrl.utils.Network.layer_fcs(se, [50], num_action,
                                                   activation_out=tf.nn.softplus,
                                                   l2=l2,
                                                   var_scope="pi_stddev")
 
-            r = hrl.utils.Network.layer_fcs(se, [256], 1,
+            r = hrl.utils.Network.layer_fcs(se, [50], 1,
                                             activation_hidden=tf.nn.relu,
                                             l2=l2,
                                             var_scope="r")
+            r = tf.squeeze(r, axis=1)
 
             return {"pi_mean": pi_mean, "pi_stddev": pi_stddev, "v": v,
                     "se": se, "r": r}

@@ -80,12 +80,12 @@ class ActorCritic(object):
             var_off = variable_se + variable_v + variable_r
 
             # self.v = tf.reduce_max(self.q, axis=1)
-            self.td = self.input_value - self.v
+            self.td = tf.subtract(self.input_value, self.v, name="TD_Error")
 
             # input "Advantage" using in original paper
-            self.advantage = self.input_value - self.v
+            self.advantage = tf.subtract(self.input_value, self.v, name="Advantage")
 
-            with tf.name_scope("on_policy") as on_policy:
+            with tf.name_scope("on_policy"):
                 # train pi
 
                 # H = k/2 + k*log(2pi)/2 + log(abs(sigma))/2
@@ -102,8 +102,9 @@ class ActorCritic(object):
                 self.log_probability = normal_dist.log_prob(self.input_action)
                 # calculate the loss of pi
                 self.spg_loss = -1.0 * tf.reduce_mean(self.log_probability * self.advantage)
-                self.reg_loss = tf.reduce_sum(tf.square(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES,
-                                                    scope=on_policy))) - self.entropy_mean
+                # self.reg_loss = tf.reduce_sum(tf.square(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES,
+                #                                     scope=name+"/learn"))) - 0.01 * self.entropy_mean
+                self.reg_loss = - 0.01 * self.entropy_mean
 
                 self.pi_loss = self.spg_loss + self.reg_loss
 
@@ -133,7 +134,9 @@ class ActorCritic(object):
             #         max_action = tf.one_hot(max_action, num_actions, dtype=tf.float32)
             #         self.target_v = tf.reduce_sum(target_net["v"] * max_action, axis=1)
             #     else:
-            #         self.target_v = tf.reduce_sum(target_net["v"], axis=1)
+            #         self.target_v = target_net["v"]
+            #
+            #         # self.target_v = tf.reduce_sum(target_net["v"], axis=1)
             #         # self.target_v = tf.reduce_max(target_net["v"], axis=1)
             #     # self.target_v = self.input_reward + (1.0 - self.input_terminate) * self.reward_decay * target_q
             #     self.summary_target_v = tf.summary.merge([
@@ -144,6 +147,9 @@ class ActorCritic(object):
             #     # Q iteration, second sess.run() using target_v as input_value
             #
             #     self.v_losses = tf.square(self.input_value - self.target_v)
+            #     # self.v_losses = tf.reduce_mean(Network.clipped_square(self.input_value - self.target_v))
+            #     logging.warning("-------------------------")
+            #     logging.warning("shape of v_losses: %s, target_v: %s", np.shape(self.v_losses), np.shape(self.target_v))
             #     self.off_losses = self.v_losses
             #     # aux R iteration
             #     self.r_losses = None
@@ -152,14 +158,13 @@ class ActorCritic(object):
             #         self.off_losses = self.off_losses + self.r_losses
             #     self.off_loss = tf.reduce_mean(self.off_losses)
             #     grad_off_local = tf.gradients(self.off_loss, var_off)
-            #     print "----------------------------------------------------------------"
-            #     print "grad_off_local: ", grad_off_local
-            #     print "off_loss: ", self.off_loss
-            #     print "off_losses: ", self.off_losses
-            #     print "v_losses: ", self.v_losses
-            #     print "r_losses: ", self.r_losses
-            #     print "var: ", var_off
-            #     print "----------------------------------------------------------------"
+            #
+            #     grad_off_local = [0 if i == None else i for i in grad_off_local]
+            #
+            #     logging.warning("-------------------------------------")
+            #     logging.warning("var_off: %s, off_losses: %s, off_loss: %s, grad_off: %s", np.shape(var_off),
+            #                     np.shape(self.off_losses), np.shape(self.off_loss), np.shape(grad_off_local))
+            #
             #     with tf.control_dependencies(grad_off_local):
             #         assigns_off = [tf.assign_add(g_grad, l_grad) for g_grad, l_grad in zip(self.acc_off, grad_off_local)]
             #         self.summary_off = [
@@ -289,10 +294,8 @@ class ActorCritic(object):
             mu, sigma = mean[i]*2, stddev[i]+1e-4
             sample.append(np.random.normal(mu, sigma))
         sample = (np.asarray(sample))[0]
-        if sample[0] > 2:
-            sample[0] = 2
-        elif sample[0] < -2:
-            sample[0] = -2
+        sample = [2 if i > 2 else i for i in sample]
+        sample = [-2 if i < -2 else i for i in sample]
         logging.warning("mu: %s, stddev: %s, sample: %s", mu, stddev, sample)
         return sample
 
