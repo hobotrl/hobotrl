@@ -122,6 +122,11 @@ class AsynchronousAgent(Agent):
     def init_supervisor(self, graph=None, worker_index=0, init_op=None, save_dir=None):
         return self._agent.init_supervisor(graph=graph, worker_index=worker_index, init_op=init_op, save_dir=save_dir)
 
+    def stop(self, blocking=True):
+        self._thread.stop()
+        if blocking:
+            self._thread.join()
+
     @property
     def sess(self):
         return self._agent.sess

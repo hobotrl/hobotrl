@@ -44,6 +44,11 @@ to get a list of experiments in each file.
 ```
 to start processes to run a3c algorithm.
 
+```
+python -m unittest discover -s hobotrl -p "test*.py" -v
+```
+to run all unit test cases.
+
 ### Driving Simulator Environment
 The steps for starting the driving simulator environment:
 1. Open up a new shell, exececute `roscore` to launch ROS master.

@@ -74,6 +74,10 @@ class TransitionSampler(Sampler):
         else:
             return None
 
+    def post_step(self, batch, info):
+        if "score" in info:
+            self._replay.update_score(batch["_index"], info["score"])
+
 
 class TrajectoryOnSampler(Sampler):
 

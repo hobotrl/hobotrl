@@ -80,10 +80,7 @@ class NStepTD(TargetEstimator):
             r = np.max(r, axis=-1)
         for i in range(batch_size):
             index = batch_size - i - 1
-            if episode_done[index] != 0:
-                logging.warning("Terminated!, i:%s, reward:%s, Vi:%s", index, reward[index], r)
-                r = 0
-            r = reward[index] + self._discount_factor * r
+            r = reward[index] + self._discount_factor * r * (1.0 - episode_done[index])
             R[index] = r
         return R
 

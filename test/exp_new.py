@@ -13,8 +13,6 @@ import hobotrl as hrl
 from hobotrl.experiment import Experiment
 from hobotrl.async import ClusterAgent
 import hobotrl.network as network
-import hobotrl.algorithms.ac_c as ac_c
-import hobotrl.algorithms.dqn_c as dqn_c
 
 
 class ACExperiment(Experiment):
@@ -38,7 +36,7 @@ class ACExperiment(Experiment):
             return tf.train.AdamOptimizer(1e-3)
 
         def create_agent(n_optimizer, global_step):
-            agent = ac_c.ActorCritic(
+            agent = hrl.ActorCritic(
                 f_create_net=f_net,
                 state_shape=state_shape,
                 # ACUpdate arguments
@@ -87,7 +85,7 @@ class ADQNExperiment(Experiment):
             return tf.train.AdamOptimizer(1e-3)
 
         def create_agent(n_optimizer, global_step):
-            agent = dqn_c.DQN(
+            agent = hrl.DQN(
                 f_create_q=f_q,
                 state_shape=state_shape,
                 # OneStepTD arguments

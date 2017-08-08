@@ -14,11 +14,12 @@ from tensorflow.contrib.layers import l2_regularizer
 import hobotrl as hrl
 from hobotrl.utils import CappedLinear
 from hobotrl.experiment import Experiment
+from exp_algorithms import *
 import hobotrl.algorithms.ac as ac
 import hobotrl.algorithms.dqn as dqn
-import hobotrl.algorithms.per as per
 import playground.optimal_tighten as play_ot
 import hobotrl.algorithms.ot as ot
+import exp_algorithms as alg
 
 
 class ACDiscretePendulum(Experiment):
@@ -252,213 +253,69 @@ class ACContinuousPendulum(Experiment):
 Experiment.register(ACContinuousPendulum, "continuous actor critic for Pendulum")
 
 
-class DQNPendulum(Experiment):
-    def run(self, args):
-        env = gym.make("Pendulum-v0")
-        env = hrl.envs.C2DEnvWrapper(env, [5])
-        env = hrl.envs.AugmentEnvWrapper(env, reward_decay=0.9, reward_scale=0.1)
+class DQNPendulum(DQNExperiment):
 
-        optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
-        target_sync_rate = 0.01
-        training_params = (optimizer_td, target_sync_rate, 10.0)
-
-        def f_net(inputs, num_action, is_training):
-            input_var = inputs
-            fc_out = hrl.utils.Network.layer_fcs(
-                input_var, [200, 200], num_action,
-                activation_hidden=tf.nn.relu, activation_out=None, l2=1e-4
-            )
-            return fc_out
-
-        state_shape = list(env.observation_space.shape)
-        global_step = tf.get_variable(
-            'global_step', [], dtype=tf.int32,
-             initializer=tf.constant_initializer(0), trainable=False
-        )
-        agent = dqn.DQN(
-            # EpsilonGreedyPolicyMixin params
-            actions=range(env.action_space.n),
-            epsilon=0.2,
-            # DeepQFuncMixin params
-            dqn_param_dict={
-                'gamma': 0.9,
-                'f_net': f_net,
-                'state_shape': state_shape,
-                'num_actions': env.action_space.n,
-                'training_params': training_params,
-                'schedule': (1, 10),
-                'greedy_policy':True,
-                'ddqn': False,
-            },
-            # ReplayMixin params
-            buffer_class=hrl.playback.MapPlayback,
-            buffer_param_dict={
-                "capacity": 1000,
-                "sample_shapes": {
-                    'state': state_shape,
-                    'action': (),
-                    'reward': (),
-                    'next_state': state_shape,
-                    'episode_done': ()
-                }},
-            batch_size=8,
-            global_step=global_step
-        )
-        config = tf.ConfigProto()
-        config.gpu_options.allow_growth = True
-        sv = agent.init_supervisor(
-            graph=tf.get_default_graph(), worker_index=0,
-            init_op=tf.global_variables_initializer(), save_dir=args.logdir
-        )
-        with sv.managed_session(config=config) as sess:
-            agent.set_session(sess)
-            runner = hrl.envs.EnvRunner(
-                env, agent, evaluate_interval=sys.maxint,
-                render_interval=sys.maxint, logdir=args.logdir
-            )
-            runner.episode(500)
+    def __init__(self, env=None, f_create_q=None, episode_n=1000, discount_factor=0.99, ddqn=False, target_sync_interval=100,
+                 target_sync_rate=1.0, update_interval=4, replay_size=1000, batch_size=32, greedy_epsilon=0.3,
+                 network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3),
+                                                                           grad_clip=10.0)):
+        if env is None:
+            env = gym.make("Pendulum-v0")
+            env = hrl.envs.C2DEnvWrapper(env, [5])
+            env = hrl.envs.AugmentEnvWrapper(env, reward_decay=0.9, reward_scale=0.1)
+        if f_create_q is None:
+            def f_net(inputs, num_action, is_training):
+                input_var = inputs
+                fc_out = hrl.utils.Network.layer_fcs(
+                    input_var, [200, 200], num_action,
+                    activation_hidden=tf.nn.relu, activation_out=None, l2=1e-4
+                )
+                return {"q": fc_out}
+            f_create_q = f_net
+        super(DQNPendulum, self).__init__(env, f_create_q, episode_n, discount_factor, ddqn, target_sync_interval,
+                                          target_sync_rate, update_interval, replay_size, batch_size, greedy_epsilon,
+                                          network_optimizer_ctor)
 
 Experiment.register(DQNPendulum, "DQN for Pendulum")
 
 
-class DDQNPendulum(Experiment):
-    def run(self, args):
-        env = gym.make("Pendulum-v0")
-        env = hrl.envs.C2DEnvWrapper(env, [5])
-        env = hrl.envs.AugmentEnvWrapper(env, reward_decay=0.9, reward_scale=0.1)
+class DDQNPendulum(DQNPendulum):
 
-        optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
-        target_sync_rate = 0.01
-        training_params = (optimizer_td, target_sync_rate, 10.0)
-
-        def f_net(inputs, num_action, is_training):
-            input_var = inputs
-            fc_out = hrl.utils.Network.layer_fcs(
-                input_var, [200, 200], num_action,
-                activation_hidden=tf.nn.relu, activation_out=None, l2=1e-4
-            )
-            return fc_out
-
-        state_shape = list(env.observation_space.shape)
-        global_step = tf.get_variable(
-            'global_step', [], dtype=tf.int32,
-             initializer=tf.constant_initializer(0), trainable=False
-        )
-        agent = dqn.DQN(
-            # EpsilonGreedyPolicyMixin params
-            actions=range(env.action_space.n),
-            epsilon=0.2,
-            # DeepQFuncMixin params
-            dqn_param_dict={
-                'gamma': 0.9,
-                'f_net': f_net,
-                'state_shape': state_shape,
-                'num_actions': env.action_space.n,
-                'training_params': training_params,
-                'schedule': (1, 10),
-                'greedy_policy':True,
-                'ddqn': True,
-            },
-            # ReplayMixin params
-            buffer_class=hrl.playback.MapPlayback,
-            buffer_param_dict={
-                "capacity": 1000,
-                "sample_shapes": {
-                    'state': state_shape,
-                    'action': (),
-                    'reward': (),
-                    'next_state': state_shape,
-                    'episode_done': ()
-                }},
-            batch_size=8,
-            global_step=global_step
-        )
-        config = tf.ConfigProto()
-        config.gpu_options.allow_growth = True
-        sv = agent.init_supervisor(
-            graph=tf.get_default_graph(), worker_index=0,
-            init_op=tf.global_variables_initializer(), save_dir=args.logdir
-        )
-        with sv.managed_session(config=config) as sess:
-            agent.set_session(sess)
-            runner = hrl.envs.EnvRunner(
-                env, agent, evaluate_interval=sys.maxint,
-                render_interval=sys.maxint, logdir=args.logdir
-            )
-            runner.episode(500)
-
-
+    def __init__(self, env=None, f_create_q=None, episode_n=1000, discount_factor=0.99, ddqn=True,
+                 target_sync_interval=100, target_sync_rate=1.0, update_interval=4, replay_size=1000, batch_size=32,
+                 greedy_epsilon=0.3,
+                 network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3),
+                                                                           grad_clip=10.0)):
+        super(DDQNPendulum, self).__init__(env, f_create_q, episode_n, discount_factor, ddqn, target_sync_interval,
+                                           target_sync_rate, update_interval, replay_size, batch_size, greedy_epsilon,
+                                           network_optimizer_ctor)
 Experiment.register(DDQNPendulum, "Double DQN for Pendulum")
 
 
-class DuelDQNPendulum(Experiment):
-    def run(self, args):
-        env = gym.make("Pendulum-v0")
-        env = hrl.envs.C2DEnvWrapper(env, [5])
-        env = hrl.envs.AugmentEnvWrapper(env, reward_decay=0.9, reward_scale=0.1)
+class DuelDQNPendulum(DQNPendulum):
 
-        optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
-        target_sync_rate = 0.01
-        training_params = (optimizer_td, target_sync_rate, 10.0)
+    def __init__(self, env=None, f_create_q=None, episode_n=1000, discount_factor=0.99, ddqn=False,
+                 target_sync_interval=100, target_sync_rate=1.0, update_interval=4, replay_size=1000, batch_size=32,
+                 greedy_epsilon=0.3,
+                 network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3),
+                                                                           grad_clip=10.0)):
+        if f_create_q is None:
+            def f_net(inputs, num_action, is_training):
+                input_var = inputs
+                se = hrl.utils.Network.layer_fcs(
+                    input_var, [200, 200], num_action,
+                    activation_hidden=tf.nn.relu, activation_out=tf.nn.relu, l2=1e-4
+                )
+                v = hrl.utils.Network.layer_fcs(se, [100], 1, var_scope="v")
+                a = hrl.utils.Network.layer_fcs(se, [100], num_action, var_scope="a")
+                a = a - tf.reduce_mean(a, axis=1, keep_dims=True)
+                q = a + v
+                return {"q": q}
+            f_create_q = f_net
 
-        def f_net(inputs, num_action, is_training):
-            input_var = inputs
-            se = hrl.utils.Network.layer_fcs(
-                input_var, [200, 200], num_action,
-                activation_hidden=tf.nn.relu, activation_out=tf.nn.relu, l2=1e-4
-            )
-            v = hrl.utils.Network.layer_fcs(se, [100], 1, var_scope="v")
-            a = hrl.utils.Network.layer_fcs(se, [100], num_action, var_scope="a")
-            a = a - tf.reduce_mean(a, axis=1, keep_dims=True)
-            q = a + v
-            return q
-
-        state_shape = list(env.observation_space.shape)
-        global_step = tf.get_variable(
-            'global_step', [], dtype=tf.int32,
-            initializer=tf.constant_initializer(0),
-            trainable=False
-        )
-        agent = dqn.DQN(
-            # EpsilonGreedyPolicyMixin params
-            actions=range(env.action_space.n),
-            epsilon=0.2,
-            # DeepQFuncMixin params
-            dqn_param_dict={
-                'gamma': 0.9,
-                'f_net': f_net,
-                'state_shape': state_shape,
-                'num_actions': env.action_space.n,
-                'training_params': training_params,
-                'schedule': (1, 10),
-                'greedy_policy':True,
-                'ddqn': False,
-            },
-            # ReplayMixin params
-            buffer_class=hrl.playback.MapPlayback,
-            buffer_param_dict={
-                "capacity": 1000,
-                "sample_shapes": {
-                    'state': state_shape,
-                    'action': (),
-                    'reward': (),
-                    'next_state': state_shape,
-                    'episode_done': ()
-                }},
-            batch_size=8,
-            global_step=global_step
-        )
-
-        sv = agent.init_supervisor(graph=tf.get_default_graph(), worker_index=0,
-                              init_op=tf.global_variables_initializer(), save_dir=args.logdir)
-
-        config = tf.ConfigProto()
-        config.gpu_options.allow_growth = True
-        with sv.managed_session(config=config) as sess:
-            agent.set_session(sess)
-            runner = hrl.envs.EnvRunner(env, agent, evaluate_interval=100, render_interval=50, logdir=args.logdir)
-            runner.episode(1000)
-
+        super(DuelDQNPendulum, self).__init__(env, f_create_q, episode_n, discount_factor, ddqn, target_sync_interval,
+                                              target_sync_rate, update_interval, replay_size, batch_size,
+                                              greedy_epsilon, network_optimizer_ctor)
 Experiment.register(DuelDQNPendulum, "Duel DQN for Pendulum")
 
 
@@ -612,70 +469,33 @@ class DQNCarRacing(Experiment):
 Experiment.register(DQNCarRacing, "DQN for CarRacing, tuned with ddqn, duel network, etc.")
 
 
-class PERDQNPendulum(Experiment):
-    def run(self, args):
-        env = gym.make("Pendulum-v0")
-        env = hrl.envs.C2DEnvWrapper(env, [5])
-        env = hrl.envs.AugmentEnvWrapper(env, reward_decay=0.9, reward_scale=0.1)
+class PERDQNPendulum(alg.PERDQNExperiment):
 
-        optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
-        target_sync_rate = 0.01
-        training_params = (optimizer_td, target_sync_rate, 10.0)
-        n_episodes = 500
+    def __init__(self, env=None, f_create_q=None, episode_n=1000, discount_factor=0.9, ddqn=False,
+                 target_sync_interval=10,
+                 target_sync_rate=1.0, update_interval=1, replay_size=1000, batch_size=8,
+                 priority_bias=0.5,
+                 importance_weight=CappedLinear(2e5, 0.5, 1.0),
+                 greedy_epsilon=0.2,
+                 network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3),
+                                                                           grad_clip=10.0)):
+        if env is None:
+            env = gym.make("Pendulum-v0")
+            env = hrl.envs.C2DEnvWrapper(env, [5])
+            env = hrl.envs.AugmentEnvWrapper(env, reward_decay=0.9, reward_scale=0.1)
 
-        def f_net(inputs, num_action, is_training):
-            input_var = inputs
-            fc_out = hrl.utils.Network.layer_fcs(input_var, [200, 200], num_action,
-                                                 activation_hidden=tf.nn.relu, activation_out=None, l2=1e-4)
-            return fc_out
+        if f_create_q is None:
+            def f_net(inputs):
+                input_var = inputs[0]
+                fc_out = hrl.utils.Network.layer_fcs(input_var, [200, 200], env.action_space.n,
+                                                     activation_hidden=tf.nn.relu, activation_out=None, l2=1e-4,
+                                                     var_scope="q")
+                return {"q": fc_out}
+            f_create_q = f_net
 
-        state_shape = list(env.observation_space.shape)
-        global_step = tf.get_variable('global_step', [],
-                                      dtype=tf.int32,
-                                      initializer=tf.constant_initializer(0),
-                                      trainable=False)
-        agent = per.PrioritizedDQN(
-            # EpsilonGreedyPolicyMixin params
-            actions=range(env.action_space.n),
-            epsilon=0.2,
-            # DeepQFuncMixin params
-            dqn_param_dict={
-                'gamma': 0.9,
-                'f_net': f_net,
-                'state_shape': state_shape,
-                'num_actions': env.action_space.n,
-                'training_params': training_params,
-                'schedule': (1, 10),
-                'greedy_policy': True,
-                'ddqn': False,
-            },
-
-            # ReplayMixin params
-            buffer_class=hrl.playback.NearPrioritizedPlayback,
-            buffer_param_dict={
-                "capacity": 1000,
-                "sample_shapes": {
-                    'state': state_shape,
-                    'action': (),
-                    'reward': (),
-                    'next_state': state_shape,
-                    'episode_done': ()
-                },
-                "priority_bias": 0.5,  # todo search what combination of exponent/importance_correction works better
-                "importance_weight": CappedLinear(n_episodes * 200, 0.5, 1.0),
-
-        },
-            batch_size=8,
-            global_step=global_step,
-        )
-        config = tf.ConfigProto()
-        config.gpu_options.allow_growth = True
-        sv = agent.init_supervisor(graph=tf.get_default_graph(), worker_index=0,
-                                   init_op=tf.global_variables_initializer(), save_dir=args.logdir)
-        with sv.managed_session(config=config) as sess:
-            agent.set_session(sess)
-            runner = hrl.envs.EnvRunner(env, agent, evaluate_interval=100, render_interval=50, logdir=args.logdir)
-            runner.episode(n_episodes)
+        super(PERDQNPendulum, self).__init__(env, f_create_q, episode_n, discount_factor, ddqn, target_sync_interval,
+                                             target_sync_rate, update_interval, replay_size, batch_size, priority_bias,
+                                             importance_weight, greedy_epsilon, network_optimizer_ctor)
 
 Experiment.register(PERDQNPendulum, "Prioritized Exp Replay with DQN, for Pendulum")
 
