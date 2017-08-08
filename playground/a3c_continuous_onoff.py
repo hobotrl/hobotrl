@@ -101,10 +101,9 @@ class ActorCritic(object):
                 # self.log_probability = tf.log(self.probability)
                 self.log_probability = normal_dist.log_prob(self.input_action)
                 # calculate the loss of pi
-                self.spg_loss = -1.0 * tf.reduce_mean(self.log_probability * self.advantage)
-                # self.reg_loss = tf.reduce_sum(tf.square(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES,
-                #                                     scope=name+"/learn"))) - 0.01 * self.entropy_mean
-                self.reg_loss = - 0.01 * self.entropy_mean
+                self.spg_loss = -1.0 * tf.reduce_mean(self.log_probability * tf.stop_gradient(self.advantage))
+                self.reg_loss = tf.reduce_sum(tf.square(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES,
+                                                    scope=name+"/learn"))) - 0.1 * self.entropy_mean
 
                 self.pi_loss = self.spg_loss + self.reg_loss
 
@@ -291,11 +290,9 @@ class ActorCritic(object):
         sample = []
 
         for i in range(len(stddev)):
-            mu, sigma = mean[i]*2, stddev[i]+1e-4
+            mu, sigma = mean[i], stddev[i]+1e-4
             sample.append(np.random.normal(mu, sigma))
         sample = (np.asarray(sample))[0]
-        sample = [2 if i > 2 else i for i in sample]
-        sample = [-2 if i < -2 else i for i in sample]
         logging.warning("mu: %s, stddev: %s, sample: %s", mu, stddev, sample)
         return sample
 
