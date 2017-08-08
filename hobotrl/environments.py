@@ -119,6 +119,7 @@ class EnvRunner2(object):
         :param n_episodes: number of episodes before terminating, -1 means run forever.
         :param moving_average_window_size: window size for calculating moving average of rewards.
         :param no_reward_reset_interval: reset after this number of steps if no reward is received.
+        :param no_reward_punishment: punishment when being reset for no reward.
         :param checkpoint_save_interval: save checkpoint every this number of steps.
         :param log_dir: path to save log files.
         :param log_file_name: file name of the csv file.
