@@ -924,7 +924,7 @@ class BootstrappedDQNSnakeGame(Experiment):
         # Parameters
         random.seed(1105)  # Seed
 
-        for n_head in [1, 3]:  # [5, 10, 15, 20, 30]:
+        for n_head in [1, 3, 5, 10, 15, 20, 30]:
 
             log_dir = os.path.join(args.logdir, "head%d" % n_head)
             if not os.path.exists(log_dir):
@@ -963,7 +963,6 @@ class BootstrappedDQNSnakeGame(Experiment):
                                     render_options={"mode": "ansi"}
                                     )
             env_runner.run()
-            # env_runner.run_demo("17000.ckpt")
 
     @staticmethod
     def loss_function(output, target):
@@ -1026,108 +1025,6 @@ class BootstrappedDQNSnakeGame(Experiment):
 Experiment.register(BootstrappedDQNSnakeGame, "Bootstrapped DQN for the Snake game")
 
 
-class BootstrappedDQNCartPole(Experiment):
-    def run(self, args):
-        """
-        Run the experiment.
-        """
-        from hobotrl.algorithms.bootstrapped_DQN import BootstrappedDQN
-        from hobotrl.environments import EnvRunner2
-
-        import os
-
-        n_head = 10  # Number of heads
-
-        log_dir = args.logdir
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-        log_file_name = "bootstrapped_DQN_Pendulum.csv"
-
-        # Initialize the environment and the agent
-        env = gym.make('CartPole-v0')
-        # env = hrl.envs.C2DEnvWrapper(env, [5])
-        agent = BootstrappedDQN(observation_space=env.observation_space,
-                                action_space=env.action_space,
-                                reward_decay=1.,
-                                td_learning_rate=0.5,
-                                target_sync_interval=2000,
-                                nn_constructor=self.nn_constructor,
-                                loss_function=self.loss_function,
-                                trainer=tf.train.GradientDescentOptimizer(learning_rate=0.01).minimize,
-                                replay_buffer_class=hrl.playback.MapPlayback,
-                                replay_buffer_args={"capacity": 10000},
-                                min_buffer_size=1000,
-                                batch_size=10,
-                                n_heads=n_head)
-
-        env_runner = EnvRunner2(env=env,
-                                agent=agent,
-                                n_episodes=-1,
-                                moving_average_window_size=50,
-                                no_reward_reset_interval=-1,
-                                checkpoint_save_interval=2000,
-                                log_dir=log_dir,
-                                log_file_name=log_file_name,
-                                render_env=True,
-                                render_interval=4000,
-                                render_length=200,
-                                frame_time=0.1
-                                )
-        env_runner.run()
-
-    @staticmethod
-    def loss_function(output, target):
-        """
-        Calculate the loss.
-        """
-        return tf.reduce_sum(tf.squared_difference(output, target), axis=-1)
-
-    @staticmethod
-    def nn_constructor(observation_space, action_space, n_heads, **kwargs):
-        """
-        Construct the neural network.
-        """
-        def weight(shape):
-            return tf.Variable(tf.truncated_normal(shape, stddev=0.1))
-
-        def bias(shape):
-            return tf.Variable(tf.constant(0.1, shape=shape))
-
-        eshape = observation_space.shape[0]
-        nn_outputs = []
-
-        x = tf.placeholder(tf.float32, (None,) + observation_space.shape)
-
-        # Layer 1 parameters
-        n_channel1 = 16
-        w1 = weight([eshape, n_channel1])
-        b1 = bias([n_channel1])
-
-        # Layer 2 parameters
-        n_channel2 = 8
-        w2 = weight([n_channel1, n_channel2])
-        b2 = bias([n_channel2])
-
-        # Layer 1
-        layer1 = tf.sigmoid(tf.matmul(x, w1) + b1)
-
-        # Layer 2
-        layer2 = tf.sigmoid(tf.matmul(layer1, w2) + b2)
-
-        for i in range(n_heads):
-            # Layer 3 parameters
-            w3 = weight([n_channel2, action_space.n])
-            b3 = bias([action_space.n])
-
-            # Layer 3
-            layer3 = tf.matmul(layer2, w3) + b3
-
-            nn_outputs.append(layer3)
-
-        return {"input": x, "head": nn_outputs}
-
-Experiment.register(BootstrappedDQNCartPole, "Bootstrapped DQN for the CartPole")
-
 from hobotrl.algorithms.bootstrapped_DQN import BootstrappedDQN
 
 
@@ -1142,6 +1039,8 @@ class BootstrappedDQNAtari(Experiment):
         :param augment_wrapper_args(dict): arguments for "AugmentEnvWrapper".
         :param agent_args(dict): arguments for the agent.
         :param runner_args(dict): arguments for the environment runner.
+        :param stack_n(int): number of frames to stack in total.
+        :param frame_skip_n(int): number of frames to skip.
         :param agent_type(class): class name of the agent.
         """
         assert stack_n >= 1
@@ -1207,9 +1106,10 @@ class BootstrappedDQNAtari(Experiment):
     def show_state_trans_result_wrapper(state):
         """
         Transform the state with "state_trans" and show the result in the image viewer.
+        Used to visualize the result of state_trans and should not be used during training.
 
         :param state: state.
-        :return: transformed image
+        :return: transformed image returned by state_trans.
         """
         global image_viewer
         import gym.envs.classic_control.rendering as rendering
@@ -1326,9 +1226,6 @@ class BootstrappedDQNBattleZone(BootstrappedDQNAtari):
                                       agent_args={"replay_buffer_args": {"capacity": 10000},
                                                   "min_buffer_size": 10000})
 
-    def run(self, args, **kwargs):
-        BootstrappedDQNAtari.run(self, args, **kwargs)
-
 Experiment.register(BootstrappedDQNBattleZone, "Bootstrapped DQN for the BattleZone")
 
 
@@ -1360,12 +1257,8 @@ class BootstrappedDQNEnduro(BootstrappedDQNAtari):
                                           "reward_scale": 0.3
                                           },
                                       agent_args={
-                                          "batch_size": 3
-                                      },
-                                      frame_skip_n=1)
-
-    def run(self, args, **kwargs):
-        BootstrappedDQNAtari.run(self, args, checkpoint_number=1300000)
+                                          "batch_size": 8
+                                      })
 
 Experiment.register(BootstrappedDQNEnduro, "Bootstrapped DQN for the Enduro")
 
@@ -1374,35 +1267,10 @@ class BootstrappedDQNIceHockey(BootstrappedDQNAtari):
     def __init__(self):
         BootstrappedDQNAtari.__init__(self,
                                       env=gym.make('IceHockey-v0'),
-                                      augment_wrapper_args={
-                                          "reward_scale": 1.0
-                                          },
-                                      agent_args={
-                                          "batch_size": 3,
-                                      },
-                                      # runner_args={"render_env": True,
-                                      #              "frame_time": 0.05}
-                                      frame_skip_n=4
-                                      )
-
-    def run(self, args, **kwargs):
-        BootstrappedDQNAtari.run(self, args, checkpoint_number=23800000)
+                                      augment_wrapper_args={"reward_scale": 1.0},
+                                      agent_args={"batch_size": 3})
 
 Experiment.register(BootstrappedDQNIceHockey, "Bootstrapped DQN for the IceHockey")
-
-
-class BootstrappedDQNKangaroo(BootstrappedDQNAtari):
-    def __init__(self):
-        BootstrappedDQNAtari.__init__(self,
-                                      env=gym.make('Kangaroo-v0'),
-                                      augment_wrapper_args={
-                                          "reward_scale": 1.0
-                                          },
-                                      runner_args={"render_env": True,
-                                                   "frame_time": 0.05}
-                                      )
-
-Experiment.register(BootstrappedDQNKangaroo, "Bootstrapped DQN for the Kangaroo")
 
 
 class RandomizedBootstrappedDQNBreakOut(BootstrappedDQNAtari):
@@ -1411,21 +1279,13 @@ class RandomizedBootstrappedDQNBreakOut(BootstrappedDQNAtari):
         from hobotrl.algorithms.bootstrapped_DQN import RandomizedBootstrappedDQN
 
         def eps_function(step):
-            return 0.025*(math.cos(step/4.0e5*math.pi) + 1)
+            return 0.2*(math.cos(step/4.0e5*math.pi) + 1)
 
         BootstrappedDQNAtari.__init__(self,
-                                      env=gym.make('BreakoutNoFrameskip-v0'),
-                                      runner_args={"no_reward_reset_interval": 2000,
-                                                   # "render_env": True,
-                                                   # "frame_time": 0.05
-                                                   },
-                                      agent_args={"eps_function": (lambda x: 0)},  # {"eps_function": LinearSequence(1e6, 0.2, 0.0)},
-                                      agent_type=RandomizedBootstrappedDQN,
-                                      frame_skip_n=4
-                                      )
-
-    def run(self, args, **kwargs):
-        BootstrappedDQNAtari.run(self, args, checkpoint_number=14200000)
+                                      env=gym.make('Breakout-v0'),
+                                      runner_args={"no_reward_reset_interval": 2000},
+                                      agent_args={"eps_function": eps_function},
+                                      agent_type=RandomizedBootstrappedDQN)
 
 Experiment.register(RandomizedBootstrappedDQNBreakOut, "Randomized Bootstrapped DQN for the Breakout")
 
@@ -1454,10 +1314,10 @@ def demo_experiment_generator(experiment_class, checkpoint_file_name, frame_time
     return BootstrappedDQNDemo
 
 Experiment.register(demo_experiment_generator(RandomizedBootstrappedDQNBreakOut, "60000.ckpt", frame_time=0.1), "Demo for the Breakout")
-Experiment.register(demo_experiment_generator(BootstrappedDQNPong, "4092000.ckpt", frame_time=0.0), "Demo for the Pong")
+Experiment.register(demo_experiment_generator(BootstrappedDQNPong, "4092000.ckpt", frame_time=0.01), "Demo for the Pong")
 Experiment.register(demo_experiment_generator(BootstrappedDQNBattleZone, "2232000.ckpt", frame_time=0.02), "Demo for the Battle Zone")
 Experiment.register(demo_experiment_generator(BootstrappedDQNEnduro, "17000000.ckpt", frame_time=0.02), "Demo for the Enduro")
-Experiment.register(demo_experiment_generator(BootstrappedDQNIceHockey, "27200000.ckpt", frame_time=0.02), "Demo for the Ice Hockey")
+Experiment.register(demo_experiment_generator(BootstrappedDQNIceHockey, "23400000.ckpt", frame_time=0.04), "Demo for the Ice Hockey")
 
 
 class CEMBootstrappedDQNSnakeGame(Experiment):
@@ -1465,25 +1325,10 @@ class CEMBootstrappedDQNSnakeGame(Experiment):
         """
         Run the experiment.
         """
-        def render():
-            """
-            Render the environment and related information to the console.
-            """
-            if not display:
-                return
-
-            print env.render(mode='ansi')
-            print "Reward:", reward
-            print "Head:", agent.current_head
-            print "Done:", done
-            print ""
-            time.sleep(frame_time)
-
         from environments.snake import SnakeGame
         from hobotrl.algorithms.bootstrapped_DQN import CEMBootstrappedDQN
         from hobotrl.environments import EnvRunner2
 
-        import time
         import os
         import random
 
@@ -1492,7 +1337,7 @@ class CEMBootstrappedDQNSnakeGame(Experiment):
         n_head = 10
 
         noise_candidates = [0.05, 0.10, 0.15, 0.20]
-        portion_candidates = [1.]
+        portion_candidates = [0.3, 0.5, 0.8, 1.]
         grid = [(n, p) for n in noise_candidates for p in portion_candidates]
 
         for noise, portion in grid:
@@ -1537,7 +1382,6 @@ class CEMBootstrappedDQNSnakeGame(Experiment):
                                     render_options={"mode": "ansi"}
                                     )
             env_runner.run()
-            # env_runner.run_demo("17000.ckpt")
 
     @staticmethod
     def loss_function(output, target):
@@ -1661,11 +1505,7 @@ class CEMBootstrappedDQNBreakout(CEMBootstrappedDQNAtari):
                                                                      "cem_portion": 0.8,
                                                                      "cem_update_interval": 50,
                                                                      "reward_decay": 0.99},
-                                                         runner_args={"no_reward_reset_interval": 800,
-                                                                      "no_reward_punishment": 5})
-
-    # def run(self, args, checkpoint_number=None):
-    #     CEMBootstrappedDQNAtari.run(self, args, checkpoint_number=100000)
+                                                         runner_args={"no_reward_reset_interval": 800})
 
 Experiment.register(CEMBootstrappedDQNBreakout, "CEM Bootstrapped DQN for the Breakout")
 
@@ -1677,12 +1517,11 @@ class CEMBootstrappedDQNIceHockey(CEMBootstrappedDQNAtari):
                                                           agent_type=CEMBootstrappedDQN,
                                                           agent_args={"cem_noise": 0.1,
                                                                       "cem_portion": 0.3,
-                                                                      "cem_update_interval": 50},
-                                                          frame_skip_n=1)
+                                                                      "cem_update_interval": 50})
 
 Experiment.register(CEMBootstrappedDQNIceHockey, "CEM Bootstrapped DQN for the Ice Hockey")
 
-Experiment.register(demo_experiment_generator(CEMBootstrappedDQNBreakout, "8600000.ckpt", frame_time=0.3), "Demo for the Breakout")
+Experiment.register(demo_experiment_generator(CEMBootstrappedDQNBreakout, "20600000.ckpt", frame_time=0.01), "Demo for the Breakout")
 Experiment.register(demo_experiment_generator(CEMBootstrappedDQNIceHockey, "7000000.ckpt", frame_time=0.02), "Demo for the Breakout")
 
 if __name__ == '__main__':
