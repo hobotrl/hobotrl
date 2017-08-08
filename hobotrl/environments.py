@@ -154,7 +154,8 @@ class EnvRunner2(object):
 
         self.episode_count = 0  # Count episodes
         self.step_count = 0  # Count number of total steps
-        self.reward_history = [0.]  # Record the total reward of last a few episodes
+        self.current_episode_reward = 0.
+        self.reward_history = list()  # Record the total reward of last a few episodes
         self.last_reward_step = 0  # The step when the agent gets last reward
         self.current_episode_step_count = 0  # The step count of current episode
         self.loss_sum = 0.  # Sum of loss in current episode
@@ -204,15 +205,15 @@ class EnvRunner2(object):
                 # Save to csv
                 if self.log_file:
                     print "Episode %d Step %d:" % (self.episode_count, self.step_count),
-                    print "%7.2f/%.2f" % (self.reward_history[-2], self.reward_summary)
+                    print "%7.2f/%.2f" % (self.reward_history[-1], self.reward_summary)
 
-                    self.log_file.write("%d,%d,%f,%f\n" % (self.episode_count, self.step_count, self.reward_history[-2], self.reward_summary))
+                    self.log_file.write("%d,%d,%f,%f\n" % (self.episode_count, self.step_count, self.reward_history[-1], self.reward_summary))
 
                 # Save to summary writer
                 if self.summary_writer:
                     summary = tf.Summary()
                     summary.value.add(tag="step count", simple_value=self.step_count)
-                    summary.value.add(tag="reward", simple_value=self.reward_history[-2])
+                    summary.value.add(tag="reward", simple_value=self.reward_history[-1])
                     summary.value.add(tag="average reward", simple_value=self.reward_summary)
                     if str(self.loss_summary) != 'nan':
                         summary.value.add(tag="loss", simple_value=self.loss_summary)
@@ -277,24 +278,25 @@ class EnvRunner2(object):
             print "%.1f" % reward
 
         # Record reward and loss
-        self.reward_history[-1] += reward
+        self.current_episode_reward += reward
         self.loss_sum += loss
         # Episode done
         if done:
             next_state = self.env.reset()
 
-            self.add_reward()
+            self.save_reward_record()
             self.last_reward_step = self.step_count
 
             self.episode_count += 1
 
         return next_state, done
 
-    def add_reward(self):
+    def save_reward_record(self):
         """
-        Add a new record.
+        Save reward record for current episode.
         """
-        self.reward_history.append(0.)
+        self.reward_history.append(self.current_episode_reward)
+        self.current_episode_reward = 0.
 
         # Trim the history record if it's length is longer than moving_average_window_size
         if len(self.reward_history) > self.moving_average_window_size:
@@ -305,7 +307,7 @@ class EnvRunner2(object):
         """
         Get the average reward of last few episodes.
         """
-        return float(sum(self.reward_history[:-1]))/(len(self.reward_history)-1)
+        return float(sum(self.reward_history))/len(self.reward_history)
 
     @ property
     def loss_summary(self):
