@@ -115,12 +115,12 @@ class A3CCarExp(ACOOExperiment):
                  optimizer_ctor=lambda: tf.train.AdamOptimizer(1e-4), ddqn=False, aux_r=False, aux_d=False):
 
         def create_ac_car(input_state, num_action, **kwargs):
-            se = hrl.utils.Network.conv2ds(input_state,
+            se_v = hrl.utils.Network.conv2ds(input_state,
                                            shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
                                            out_flatten=True,
                                            activation=tf.nn.relu,
                                            l2=l2,
-                                           var_scope="se")
+                                           var_scope="se_v")
 
             q = hrl.utils.Network.layer_fcs(se, [256], num_action,
                                             activation_hidden=tf.nn.relu,
