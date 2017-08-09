@@ -21,7 +21,8 @@ class ActorCritic(object):
         :param name:
         :param state_shape:
         :param num_actions: dimensions of action, in Pendulum it's 1 and in CarRacing it's 3
-        :param create_net: should return {'pi_mean': pi_mean, 'pi_stddev': pi_stddev, 'v': v, 'se': se, 'r': r};
+        :param create_net: should return {'pi_mean': pi_mean, 'pi_stddev': pi_stddev, 'v': v,
+                                          'se_v': se_v, 'se_pi': se_pi, 'r': r};
         variables created for pi, v, status_encoder
         should be under scope '/pi', '/v', '/se'
         :param parent: parent network
@@ -51,16 +52,20 @@ class ActorCritic(object):
             variable_pi_stddev = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=name+"/learn/pi_stddev")
             variable_v = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=name+"/learn/v")
             target_variable_v = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=name+"/target/v")
-            variable_se = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=name+"/learn/se")  # shared state encoder
-            target_variable_se = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=name+"/target/se")  # shared state encoder
+            variable_se_v = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=name+"/learn/se_v")  # shared state encoder
+            target_variable_se_v = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=name+"/target/se_v")  # shared state encoder
+            variable_se_pi = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
+                                              scope=name + "/learn/se_pi")  # shared state encoder
+            target_variable_se_pi = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
+                                                     scope=name + "/target/se_pi")  # shared state encoder
             variable_r = []
 
             if self.aux_r:
                 variable_r = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=name + "learn/r")
                 self.r = net["r"]
-            self.var_all = variable_se + variable_pi_mean + variable_pi_stddev + variable_v + variable_r
-            self.variable_se, self.variable_pi_mean, self.variable_pi_stddev, self.variable_v, self.variable_r\
-                = variable_se, variable_pi_mean, variable_pi_stddev, variable_v, variable_r
+            self.var_all = variable_se_v + variable_se_pi + variable_pi_mean + variable_pi_stddev + variable_v + variable_r
+            self.variable_se_v, self.variable_se_pi, self.variable_pi_mean, self.variable_pi_stddev, self.variable_v, self.variable_r\
+                = variable_se_v, variable_se_pi, variable_pi_mean, variable_pi_stddev, variable_v, variable_r
             with tf.variable_scope("global_grad"):
                 self.acc_pi_mean = [tf.get_variable(escape(v.name) + "grad", dtype=tf.float32,
                                                  initializer=tf.zeros_like(v.initialized_value())) for v in
@@ -70,14 +75,17 @@ class ActorCritic(object):
                                     variable_pi_stddev]
                 self.acc_v = [tf.get_variable(escape(v.name) + "grad", dtype=tf.float32,
                                                  initializer=tf.zeros_like(v.initialized_value())) for v in variable_v]
-                self.acc_se = [tf.get_variable(escape(v.name) + "grad", dtype=tf.float32,
-                                                 initializer=tf.zeros_like(v.initialized_value())) for v in variable_se]
+                self.acc_se_v = [tf.get_variable(escape(v.name) + "grad", dtype=tf.float32,
+                                        initializer=tf.zeros_like(v.initialized_value())) for v in variable_se_v]
+                self.acc_se_pi = [tf.get_variable(escape(v.name) + "grad", dtype=tf.float32,
+                                                 initializer=tf.zeros_like(v.initialized_value())) for v in
+                                 variable_se_pi]
                 self.acc_r = [tf.get_variable(escape(v.name) + "grad", dtype=tf.float32,
                                              initializer=tf.zeros_like(v.initialized_value())) for v in variable_r]
-                self.acc_on = self.acc_se + self.acc_pi_mean + self.acc_pi_stddev + self.acc_v
-                self.acc_off = self.acc_se + self.acc_v + self.acc_r
-            var_on = variable_se + variable_pi_mean + variable_pi_stddev + variable_v
-            var_off = variable_se + variable_v + variable_r
+                self.acc_on = self.acc_se_v + self.acc_se_pi + self.acc_pi_mean + self.acc_pi_stddev + self.acc_v
+                self.acc_off = self.acc_se_v + self.acc_v + self.acc_r
+            var_on = variable_se_v + variable_se_pi + variable_pi_mean + variable_pi_stddev + variable_v
+            var_off = variable_se_v + variable_v + variable_r
 
             # self.v = tf.reduce_max(self.q, axis=1)
             self.td = tf.subtract(self.input_value, self.v, name="TD_Error")
@@ -88,29 +96,43 @@ class ActorCritic(object):
             with tf.name_scope("on_policy"):
                 # train pi
 
+                # The formula to calculate the entropy of a Normal distribution
                 # H = k/2 + k*log(2pi)/2 + log(abs(sigma))/2
                 # self.entropy = tf.reshape(tf.reduce_sum((1 + tf.log(2 * np.pi * tf.square(self.pi_stddev))) / 2,
                 #                                         axis=1, name="entropy"), [-1,1])
-                normal_dist = tf.contrib.distributions.Normal(self.pi_mean, self.pi_stddev)
-                self.entropy = normal_dist.entropy()
+                self.normal_dist = tf.contrib.distributions.Normal(self.pi_mean, self.pi_stddev)
+                self.sample = tf.squeeze(self.normal_dist.sample(1), axis=0)  # sample an action
+                self.entropy = self.normal_dist.entropy()
                 self.entropy_mean = tf.reduce_mean(self.entropy, name="entropy_mean")
 
                 # probability of input_action according to the formula of the normal distribution
                 # self.probability = 1.0 / tf.sqrt(2 * np.pi * tf.square(self.pi_stddev)) \
                 #                    * tf.exp(- tf.square((self.input_action - self.pi_mean) / self.pi_stddev) / 2)
                 # self.log_probability = tf.log(self.probability)
-                self.log_probability = normal_dist.log_prob(self.input_action)
+                self.log_probability = self.normal_dist.log_prob(self.input_action)
+
                 # calculate the loss of pi
+                # tf.stop_gradient() can stop the gradient computation of parameter of the critic network when training
+                # the actor network
                 self.spg_loss = -1.0 * tf.reduce_mean(self.log_probability * tf.stop_gradient(self.advantage))
                 self.reg_loss = tf.reduce_sum(tf.square(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES,
-                                                    scope=name+"/learn"))) - 0.1 * self.entropy_mean
+                                                     scope=name+"/learn"))) - 0.1 * self.entropy_mean
 
                 self.pi_loss = self.spg_loss + self.reg_loss
 
                 # train q
+
+                # the clip maybe redundant because all gradient will be clipped afterwards, but not being verified
                 self.v_loss = tf.reduce_mean(Network.clipped_square(self.td))
+                # self.on_loss = self.pi_loss + self.v_loss
                 self.on_loss = self.pi_loss + self.v_loss
-                grad_on_local = tf.gradients(self.on_loss, var_on)
+
+                grad_on = self.optimizer.compute_gradients(self.on_loss, var_on)
+                grad_on_local = []
+
+                for i, (grad, var) in enumerate(grad_on):
+                    if grad is not None:
+                        grad_on_local.append(tf.clip_by_norm(grad, 10))
 
                 with tf.control_dependencies(grad_on_local):
                     assigns_on = [tf.assign_add(g_grad, l_grad) for g_grad, l_grad in zip(self.acc_on, grad_on_local)]
@@ -181,7 +203,9 @@ class ActorCritic(object):
                 test_and_applies = []
                 for g_grad, vars in [(self.acc_v, variable_v), (self.acc_pi_mean, variable_pi_mean),
                                      (self.acc_pi_stddev, variable_pi_stddev),
-                                     (self.acc_se, variable_se), (self.acc_r, variable_r)]:
+                                     (self.acc_se_v, variable_se_v),
+                                     (self.acc_se_pi, variable_se_pi),
+                                     (self.acc_r, variable_r)]:
                     if len(g_grad) == 0:
                         continue
                     apply_g = self.optimizer.apply_gradients(zip(g_grad, vars), global_step=global_step)
@@ -196,7 +220,7 @@ class ActorCritic(object):
 
             with tf.name_scope("follow"):
                 self.follows = [tf.assign(target, learn) for target, learn in
-                                zip(target_variable_se + target_variable_v, variable_se + variable_v)]
+                                zip(target_variable_se_v + target_variable_v, variable_se_v + variable_v)]
 
             if self.parent is not None:
                 with tf.name_scope("push"):
@@ -204,7 +228,8 @@ class ActorCritic(object):
                     for g_grad, vars in [(self.acc_v, self.parent.variable_v),
                                          (self.acc_pi_mean, self.parent.variable_pi_mean),
                                          (self.acc_pi_stddev, self.parent.variable_pi_stddev),
-                                         (self.acc_se, self.parent.variable_se),
+                                         (self.acc_se_v, self.parent.variable_se_v),
+                                         (self.acc_se_pi, self.parent.variable_se_pi),
                                          (self.acc_r, self.parent.variable_r)]:
                         if len(g_grad) == 0:
                             continue
@@ -235,16 +260,14 @@ class ActorCritic(object):
         :param value:
         :return:
         """
-        result = self.sess.run(self.compute_on_policy + [self.pi_loss, self.v_loss, self.td, self.entropy],
+        result = self.sess.run(self.compute_on_policy + [self.reg_loss, self.spg_loss, self.log_probability,
+                               self.advantage, self.pi_loss, self.v_loss, self.td, self.entropy],
                                feed_dict={self.input_state: state,
                                           self.input_action: action,
                                           self.input_reward: reward,
                                           self.input_value: value,
                                           self.input_entropy: entropy})
-        logging.warning("-----------------------------------------------")
-        logging.warning("pi_loss: %s", result[-4])
-        logging.warning("-----------------------------------------------")
-        return result[-4:]
+        return result[-8:]
 
     def compute_off_gradient(self, state, action, reward, target_value, terminate):
         """
@@ -284,17 +307,7 @@ class ActorCritic(object):
         self.sess.run(self.pulls)
 
     def get_action(self, state):
-        # return self.sess.run([self.pi_dist], feed_dict={self.input_state: state})[0]
-        mean, stddev = self.sess.run([self.pi_mean, self.pi_stddev], feed_dict={self.input_state: state})
-        stddev = np.sqrt(stddev[0])
-        sample = []
-
-        for i in range(len(stddev)):
-            mu, sigma = mean[i], stddev[i]+1e-4
-            sample.append(np.random.normal(mu, sigma))
-        sample = (np.asarray(sample))[0]
-        logging.warning("mu: %s, stddev: %s, sample: %s", mu, stddev, sample)
-        return sample
+        return self.sess.run([self.sample], feed_dict={self.input_state: state})[0]
 
     def get_v(self, state):
         return self.sess.run([self.v], feed_dict={self.input_state: state})[0]
@@ -409,9 +422,6 @@ class A3CAgent(hrl.tf_dependent.base.BaseDeepAgent):
     def act(self, state, evaluate=False, **kwargs):
         self.step_n += 1
         action = self.net.get_action(np.asarray([state]))[0]  # batch size 1
-        # last_action = np.random.choice(np.arange(self.action_n), p=action)
-
-        # return last_action
         return action
 
     def step(self, state, action, reward, next_state,
@@ -450,10 +460,12 @@ class A3CAgent(hrl.tf_dependent.base.BaseDeepAgent):
                 R = self.compute_target(Si, Ai, Ri, Sj, T, batch_size)
 
                 # train V Pi, entropy annealing
-                pi_loss, v_loss, td, entropy = self.net.compute_on_gradient(state=Si, action=Ai, reward=Ri, value=R,
-                                                                            entropy=self.entropy)
+                reg_loss, spg_loss, log_prob, advan, pi_loss, v_loss, td, entropy = \
+                    self.net.compute_on_gradient(state=Si, action=Ai, reward=Ri, value=R, entropy=self.entropy)
                 info.update({"on/target_v": R, "on/entropy": entropy, "on/entropy_param": self.entropy,
-                             "on/pi_loss": pi_loss, "on/v_loss": v_loss, "on/td": td})
+                             "on/pi_loss": pi_loss, "on/v_loss": v_loss, "on/td": td,
+                             "on/advantage": advan, "on/log_prob": log_prob,
+                             "on/spg_loss": spg_loss, "on/reg_loss": reg_loss})
 
         if self.train_off_interval > 0:
             self.replay_off.push_sample(

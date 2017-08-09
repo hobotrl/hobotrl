@@ -205,39 +205,45 @@ class A3CPendulumExp(ACOOExperimentCon):
                  prob_min=5e-3,
                  entropy=hrl.utils.CappedLinear(1e6, 1e-2, 1e-3),
                  l2=1e-8,
-                 optimizer_ctor=lambda: tf.train.AdamOptimizer(1e-5), ddqn=False, aux_r=False, aux_d=False):
+                 optimizer_ctor=lambda: tf.train.AdamOptimizer(1e-4), ddqn=False, aux_r=False, aux_d=False):
 
         def create_ac_pendulum(input_state, num_action, **kwargs):
-            se = hrl.utils.Network.layer_fcs(input_state, [200], 100,
+            se_v = hrl.utils.Network.layer_fcs(input_state, [200], 100,
                                             activation_hidden=tf.nn.relu,
                                             activation_out=tf.nn.relu,
                                             l2=l2,
-                                            var_scope="se")
+                                            var_scope="se_v")
 
-            v = hrl.utils.Network.layer_fcs(se, [50], 1,
+            se_pi = hrl.utils.Network.layer_fcs(input_state, [200], 100,
+                                               activation_hidden=tf.nn.relu,
+                                               activation_out=tf.nn.relu,
+                                               l2=l2,
+                                               var_scope="se_pi")
+
+            v = hrl.utils.Network.layer_fcs(se_v, [50], 1,
                                             activation_hidden=tf.nn.relu,
                                             l2=l2,
                                             var_scope="v")
             v = tf.squeeze(v, axis=1)
 
-            pi_mean = hrl.utils.Network.layer_fcs(se, [50], num_action,
+            pi_mean = hrl.utils.Network.layer_fcs(se_pi, [50], num_action,
                                              activation_out=tf.nn.tanh,
                                              l2=l2,
                                              var_scope="pi_mean")
 
-            pi_stddev = hrl.utils.Network.layer_fcs(se, [50], num_action,
+            pi_stddev = hrl.utils.Network.layer_fcs(se_pi, [50], num_action,
                                                   activation_out=tf.nn.softplus,
                                                   l2=l2,
                                                   var_scope="pi_stddev")
 
-            r = hrl.utils.Network.layer_fcs(se, [50], 1,
+            r = hrl.utils.Network.layer_fcs(se_v, [50], 1,
                                             activation_hidden=tf.nn.relu,
                                             l2=l2,
                                             var_scope="r")
             r = tf.squeeze(r, axis=1)
 
             return {"pi_mean": pi_mean, "pi_stddev": pi_stddev, "v": v,
-                    "se": se, "r": r}
+                    "se_v": se_v, "se_pi": se_pi, "r": r}
 
         if f_create_net is None:
             f_create_net = create_ac_pendulum
@@ -251,7 +257,7 @@ class A3CPendulum(A3CPendulumExp):
     def __init__(self):
         env = gym.make("Pendulum-v0")
         env = hrl.envs.AugmentEnvWrapper(
-            env, reward_decay=0.9, reward_scale=0.01,
+            env, reward_decay=0.9, reward_scale=0.1,
             action_limit=np.asarray([env.action_space.low, env.action_space.high])
         )
         super(A3CPendulum, self).__init__(env)
