@@ -40,7 +40,6 @@ class ACExperiment(Experiment):
                 f_create_net=f_net,
                 state_shape=state_shape,
                 # ACUpdate arguments
-                num_actions=env.action_space.n,
                 discount_factor=discount_factor,
                 entropy=hrl.utils.CappedLinear(1e6, 1e-2, 1e-2),
                 target_estimator=None,
@@ -65,7 +64,7 @@ class ACExperiment(Experiment):
                                         logdir=args.logdir if args.index == 0 else None)
             runner.episode(1000)
 
-Experiment.register(ACExperiment, "test A3C")
+Experiment.register(ACExperiment, "experiments A3C")
 
 
 class ADQNExperiment(Experiment):
@@ -113,7 +112,7 @@ class ADQNExperiment(Experiment):
                                         logdir=args.logdir if args.index == 0 else None)
             runner.episode(1000)
 
-Experiment.register(ADQNExperiment, "test ADQN")
+Experiment.register(ADQNExperiment, "experiments ADQN")
 
 if __name__ == '__main__':
     Experiment.main()

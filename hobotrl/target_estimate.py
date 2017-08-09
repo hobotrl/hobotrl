@@ -64,9 +64,9 @@ class DDQNOneStepTD(TargetEstimator):
 
 
 class NStepTD(TargetEstimator):
-    def __init__(self, q_function, discount_factor=0.99):
+    def __init__(self, v_function, discount_factor=0.99):
         super(NStepTD, self).__init__(discount_factor)
-        self._q = q_function
+        self._v = v_function
 
     def estimate(self, state, action, reward, next_state, episode_done):
         batch_size = len(state)
@@ -76,8 +76,7 @@ class NStepTD(TargetEstimator):
             r = 0.0
         else:
             # calculate from q_function(next_state)
-            r = self._q([next_state[-1]])[0]
-            r = np.max(r, axis=-1)
+            r = self._v([next_state[-1]])[0]
         for i in range(batch_size):
             index = batch_size - i - 1
             r = reward[index] + self._discount_factor * r * (1.0 - episode_done[index])
@@ -91,17 +90,16 @@ class GAENStep(TargetEstimator):
     https://arxiv.org/abs/1506.02438
     """
 
-    def __init__(self, q_function, discount_factor=0.99, lambda_decay=0.95):
+    def __init__(self, v_function, discount_factor=0.99, lambda_decay=0.95):
         super(GAENStep, self).__init__(discount_factor)
-        self._q, self._lambda_decay = q_function, lambda_decay
+        self._v, self._lambda_decay = v_function, lambda_decay
 
     def estimate(self, state, action, reward, next_state, episode_done):
         batch_size = len(state)
         states = [s for s in state]
         if not episode_done[-1]:
             states.append(next_state[-1])  # need last next_state
-        state_values = self._q(np.asarray(states))
-        state_values = np.max(state_values, axis=1)
+        state_values = self._v(np.asarray(states))
         if episode_done[-1]:
             state_values = np.append(state_values, 0.0)
         # 1 step TD

@@ -102,7 +102,8 @@ class DQNExperiment(Experiment):
             agent.set_session(sess)
             runner = hrl.envs.EnvRunner(
                 self._env, agent, evaluate_interval=sys.maxint,
-                render_interval=sys.maxint, logdir=args.logdir
+                render_interval=sys.maxint, logdir=args.logdir,
+                render_once=True,
             )
             runner.episode(self._episode_n)
 
@@ -194,84 +195,55 @@ class PERDQNExperiment(Experiment):
 class DPGExperiment(Experiment):
 
     def __init__(self, env,
-                 f_net_ddp,
-                 f_net_dqn,
+                 f_create_net,
                  episode_n=1000,
-                 optimizer_ddp_ctor=lambda: tf.train.AdamOptimizer(learning_rate=1e-3),
-                 optimizer_dqn_ctor=lambda: tf.train.AdamOptimizer(learning_rate=1e-3),
-                 target_sync_rate=0.001,
-                 ddp_update_interval=1,
-                 ddp_sync_interval=1,
-                 dqn_update_interval=1,
-                 dqn_sync_interval=1,
-                 max_gradient=10.0,
-                 ou_params=(0.0, 0.15, 0.2),
-                 gamma=0.99,
-                 batch_size=8,
+                 # ACUpdate arguments
+                 discount_factor=0.9,
+                 # optimizer arguments
+                 network_optimizer_ctor=lambda:hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3), grad_clip=10.0),
+                 # policy arguments
+                 ou_params=(0, 0.2, 0.2),
+                 # target network sync arguments
+                 target_sync_interval=10,
+                 target_sync_rate=0.01,
+                 # sampler arguments
+                 batch_size=32,
                  replay_capacity=1000):
-        self.env, self.f_net_ddp, self.f_net_dqn, self.episode_n, \
-            self.optimizer_ddp_ctor, self.optimizer_dqn_ctor, self.target_sync_rate, \
-            self.ddp_update_interval, self.ddp_sync_interval, \
-            self.dqn_update_interval, self.dqn_sync_interval, \
-            self.max_gradient, \
-            self.gamma, self.ou_params, \
-            self.batch_size, self.replay_capacity = env, f_net_ddp, f_net_dqn, episode_n, \
-                                                    optimizer_ddp_ctor, optimizer_dqn_ctor, target_sync_rate, \
-                                                    ddp_update_interval, ddp_sync_interval, \
-                                                    dqn_update_interval, dqn_sync_interval, \
-                                                    max_gradient, \
-                                                    gamma, ou_params, \
-                                                    batch_size, replay_capacity
+        self._env, self._f_create_net, self._episode_n,\
+            self._discount_factor, self._network_optimizer_ctor, \
+            self._ou_params, self._target_sync_interval, self._target_sync_rate, \
+            self._batch_size, self._replay_capacity = \
+            env, f_create_net, episode_n, \
+            discount_factor, network_optimizer_ctor, \
+            ou_params, target_sync_interval, target_sync_rate, \
+            batch_size, replay_capacity
         super(DPGExperiment, self).__init__()
 
     def run(self, args):
-        training_params_ddp = (self.optimizer_ddp_ctor(), self.target_sync_rate, self.max_gradient)
-        training_params_dqn = (self.optimizer_dqn_ctor(), self.target_sync_rate, self.max_gradient)
-        schedule_ddp = (self.ddp_update_interval, self.ddp_sync_interval)
-        schedule_dqn = (self.dqn_update_interval, self.dqn_sync_interval)
-        state_shape = list(self.env.observation_space.shape)
-        action_shape = list(self.env.action_space.shape)
+        state_shape = list(self._env.observation_space.shape)
+        dim_action = self._env.action_space.shape[-1]
         global_step = tf.get_variable(
             'global_step', [], dtype=tf.int32,
              initializer=tf.constant_initializer(0), trainable=False
         )
-        agent = dpg.DPG(
-            # === ReplayMixin params ===
-            buffer_class=hrl.playback.MapPlayback,
-            buffer_param_dict={
-                "capacity": self.replay_capacity,
-                "sample_shapes": {
-                    'state': state_shape,
-                    'action': action_shape,
-                    'reward': (),
-                    'next_state': state_shape,
-                    'episode_done': ()
-                 }},
-            batch_size=self.batch_size,
-            # === OUExplorationMixin ===
-            ou_params=self.ou_params,
-            action_shape=action_shape,
-            # === DeepDeterministicPolicyMixin ===
-            ddp_param_dict={
-                'f_net': self.f_net_ddp,
-                'state_shape': state_shape,
-                'action_shape': action_shape,
-                'training_params': training_params_ddp,
-                'schedule': schedule_ddp,
-                'graph': tf.get_default_graph()
-            },
-            # === DeepQFuncMixin params ===
-            dqn_param_dict={
-                'gamma': self.gamma,
-                'f_net': self.f_net_dqn,
-                'state_shape': state_shape,
-                'action_shape': action_shape,
-                'training_params': training_params_dqn,
-                'schedule': schedule_dqn,
-                'greedy_policy': True,
-                'graph': tf.get_default_graph()
-            },
-            is_action_in=True
+        agent = hrl.DPG(
+            f_create_net=self._f_create_net,
+            state_shape=state_shape,
+            dim_action=dim_action,
+            # ACUpdate arguments
+            discount_factor=self._discount_factor,
+            target_estimator=None,
+            # optimizer arguments
+            network_optimizer=self._network_optimizer_ctor(),
+            # policy arguments
+            ou_params=self._ou_params,
+            # target network sync arguments
+            target_sync_interval=self._target_sync_interval,
+            target_sync_rate=self._target_sync_rate,
+            # sampler arguments
+            sampler=hrl.sampling.TransitionSampler(hrl.playback.MapPlayback(self._replay_capacity), self._batch_size),
+            batch_size=self._batch_size,
+            global_step=global_step,
         )
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
@@ -282,11 +254,11 @@ class DPGExperiment(Experiment):
         with sv.managed_session(config=config) as sess:
             agent.set_session(sess)
             runner = hrl.envs.EnvRunner(
-                self.env, agent, evaluate_interval=sys.maxint, render_interval=40, 
+                self._env, agent, evaluate_interval=sys.maxint, render_interval=40,
                 render_once=True,
                 logdir=args.logdir
             )
-            runner.episode(self.episode_n)
+            runner.episode(self._episode_n)
 
 
 class ACOOExperiment(Experiment):
@@ -383,3 +355,105 @@ class ACOOExperiment(Experiment):
                 runner.episode(self.episode_n)
 
 
+class ACExperiment(Experiment):
+
+    def __init__(self,
+                 env, f_create_net, episode_n=1000,
+                 discount_factor=0.9,
+                 entropy=1e-2,
+                 network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3), grad_clip=10.0),
+                 batch_size=8
+                 ):
+        super(ACExperiment, self).__init__()
+        self._env, self._f_create_net, self._episode_n, \
+            self._discount_factor, self._entropy, self._network_optimizer_ctor, self._batch_size = \
+            env, f_create_net, episode_n, \
+            discount_factor, entropy, network_optimizer_ctor, batch_size
+
+    def run(self, args):
+
+        state_shape = list(self._env.observation_space.shape)
+
+        global_step = tf.get_variable(
+            'global_step', [], dtype=tf.int32,
+            initializer=tf.constant_initializer(0), trainable=False
+        )
+        agent = hrl.ActorCritic(
+            f_create_net=self._f_create_net,
+            state_shape=state_shape,
+            # ACUpdate arguments
+            discount_factor=self._discount_factor,
+            entropy=self._entropy,
+            target_estimator=None,
+            max_advantage=100.0,
+            # optimizer arguments
+            network_optmizer=self._network_optimizer_ctor(),
+            max_gradient=10.0,
+            # sampler arguments
+            sampler=None,
+            batch_size=self._batch_size,
+            global_step=global_step,
+        )
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        sv = agent.init_supervisor(
+            graph=tf.get_default_graph(), worker_index=0,
+            init_op=tf.global_variables_initializer(), save_dir=args.logdir
+        )
+        with sv.managed_session(config=config) as sess:
+            agent.set_session(sess)
+            runner = hrl.envs.EnvRunner(
+                self._env, agent, evaluate_interval=sys.maxint,
+                render_interval=sys.maxint, logdir=args.logdir
+            )
+            runner.episode(self._episode_n)
+
+
+class A3CExperiment(Experiment):
+    def __init__(self,
+                 env, f_create_net, episode_n=1000,
+                 discount_factor=0.9,
+                 entropy=1e-2,
+                 network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3), grad_clip=10.0),
+                 batch_size=8
+                 ):
+        super(A3CExperiment, self).__init__()
+        self._env, self._f_create_net, self._episode_n, \
+            self._discount_factor, self._entropy, self._network_optimizer_ctor, self._batch_size = \
+            env, f_create_net, episode_n, \
+            discount_factor, entropy, network_optimizer_ctor, batch_size
+
+    def run(self, args):
+        state_shape = list(self._env.observation_space.shape)
+        num_actions = self._env.action_space.n
+
+        def create_optimizer():
+            return tf.train.AdamOptimizer(1e-3)
+
+        def create_agent(n_optimizer, global_step):
+            agent = hrl.ActorCritic(
+                f_create_net=self._f_create_net,
+                state_shape=state_shape,
+                # ACUpdate arguments
+                discount_factor=self._discount_factor,
+                entropy=self._entropy,
+                target_estimator=None,
+                max_advantage=100.0,
+                # optimizer arguments
+                network_optmizer=n_optimizer,
+                # sampler arguments
+                sampler=None,
+                batch_size=self._batch_size,
+
+                global_step=global_step,
+            )
+            return agent
+
+        agent = hrl.async.ClusterAgent(create_agent, create_optimizer, args.cluster, args.job, args.index, args.logdir)
+        with agent.wait_for_session() as sess:
+            agent.set_session(sess)
+            runner = hrl.envs.EnvRunner(self._env, agent, reward_decay=self._discount_factor,
+                                        evaluate_interval=sys.maxint, render_interval=sys.maxint,
+                                        render_once=True,
+                                        logdir=args.logdir if args.index == 0 else None)
+            runner.episode(1000)

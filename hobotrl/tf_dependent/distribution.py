@@ -61,6 +61,12 @@ class NNDistribution(object):
     def sample_run(self, inputs):
         raise NotImplementedError()
 
+    def input_sample(self):
+        raise NotImplementedError()
+
+    def dist_function(self):
+        raise NotImplementedError()
+
     def set_session(self, sess):
         self._sess = sess
 
@@ -166,14 +172,15 @@ class NormalDistribution(NNDistribution):
         :param kwargs:
         """
         super(NormalDistribution, self).__init__(**kwargs)
-        self._dist_function, self._epsilon, self._input_sample = dist_function, input_sample, epsilon
+        self._dist_function, self._input_sample, self._epsilon = dist_function, input_sample, epsilon
         self._action_dim = dist_function.output("mean").op.shape.as_list()[-1]
         with tf.variable_scope("dist") as vs:
             self._op_mean, self._op_stddev = dist_function.output("mean").op, dist_function.output("stddev").op
             self._op_stddev = self._op_stddev + epsilon
-            self._op_entropy = (1 + tf.log(2 * np.pi * self._op_stddev)) / 2.0
-            self._op_prob = 1.0 / tf.sqrt(2 * np.pi * self._op_stddev) \
-                            * tf.exp(- tf.square(self._input_sample - self._op_mean) / (2.0 * self._op_stddev))
+            variance = self._op_stddev
+            self._op_entropy = (1 + tf.log(2 * np.pi * variance)) / 2.0
+            self._op_prob = 1.0 / tf.sqrt(2 * np.pi * variance) \
+                            * tf.exp(- tf.square(self._input_sample - self._op_mean) / (2.0 * variance))
 
             self._op_log_prob = tf.log(self._op_prob)
 
@@ -236,5 +243,12 @@ class NormalDistribution(NNDistribution):
             sample_i.append(np.random.normal(mu, sigma))
         sample_i = np.asarray(sample_i)
         return sample_i
+
+    def input_sample(self):
+        return self._input_sample
+
+    def dist_function(self):
+        return self._dist_function
+
 
 

@@ -9,7 +9,7 @@ import gym
 import hobotrl as hrl
 
 
-class TestAC(unittest.TestCase):
+class TestDPG(unittest.TestCase):
     def test_run(self):
         tf.reset_default_graph()
         env = gym.make('Pendulum-v0')

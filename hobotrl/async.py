@@ -16,7 +16,9 @@ class ClusterAgent(Agent):
     Creates agents according to cluster_spec information,
     and wraps local agents according to job/job_index specification
     """
-    def __init__(self, agent_creator, optimizer_creator, cluster_spec, job, job_index, logdir, *args, **kwargs):
+    def __init__(self, agent_creator, optimizer_creator,
+                 cluster_spec, job, job_index, logdir,
+                 grad_clip=None, *args, **kwargs):
         """
 
         :param agent_creator: function: agent_creator(tf.Variable global_step, NetworkOptimizer n_optimizer) => Agent

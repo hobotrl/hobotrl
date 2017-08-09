@@ -59,6 +59,26 @@ class DQN(sampling.TransitionBatchUpdate,
                  update_interval=4, replay_size=1000, batch_size=32,
                  sampler=None,
                  *args, **kwargs):
+        """
+        :param f_create_q: function, f_create_q([state, action]) => {"q": op_q}
+        :param state_shape: shape of state
+        :param num_actions: action count
+        :param discount_factor:
+        :param ddqn: True if using double DQN
+        :param target_sync_interval: interval syncing weights from learned network to target network
+        :param target_sync_rate: syncing rate. 1.0 for hard sync, 0 < r < 1.0 for soft sync.
+        :param greedy_epsilon: epsilon for epsilon greedy policy
+        :param network_optimizer: NetworkOptimizer instance, default to LocalOptimizer
+        :type network_optimizer: network.NetworkOptimizer
+        :param max_gradient: gradient clip value
+        :param update_interval: network update interval between Agent.step()
+        :param replay_size: replay memory size.
+        :param batch_size:
+        :param sampler: Sampler, default to TransitionSampler.
+                if None, a TransitionSampler is created using update_interval, replay_size, batch_size
+        :param args:
+        :param kwargs:
+        """
         kwargs.update({
             "f_create_q": f_create_q,
             "state_shape": state_shape,
@@ -108,7 +128,7 @@ class DQN(sampling.TransitionBatchUpdate,
         info = self.network_optimizer.optimize_step(self.sess)
         if self._update_count % self._target_sync_interval == 0:
             self.network.sync_target(self.sess, self._target_sync_rate)
-        return info, {"score": info["td_losses"]}
+        return info, {"score": info["FitTargetQ/td/td_losses"]}
 
     def set_session(self, sess):
         super(DQN, self).set_session(sess)
