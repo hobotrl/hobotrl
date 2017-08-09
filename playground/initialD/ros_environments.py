@@ -26,7 +26,6 @@ from rospy.timer import Timer
 sys.path.append('.')
 import my_message_filters as message_filters
 from std_msgs.msg import Char, Bool, Float32
-from sensor_msgs.msg import Image
 
 
 class DrivingSimulatorEnv(object):
@@ -718,7 +717,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
 
     def __prep_image(self, img):
          return imresize(
-             self.brg.imgmsg_to_cv2(img, 'rgb8'),
+             self.brg.compressed_imgmsg_to_cv2(img, 'rgb8'),
              (640, 640))
 
     def __prep_reward(self, reward):

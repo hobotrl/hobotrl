@@ -59,10 +59,14 @@ class BaseAgent(object):
         kwargs : other params
         """
         self._stepper.step()
+        learning_off = kwargs['learning_off'] if 'learning_off' in kwargs else False
         # Agent improve itself with new experience
-        info = self.reinforce_(state, action, reward, next_state,
-                               episode_done=episode_done, **kwargs)
-
+        if not learning_off:
+            info = self.reinforce_(
+                state, action, reward, next_state,
+                episode_done=episode_done, **kwargs)
+        else:
+            info = {}
         # Agent take action in reaction to current state
         next_action = self.act(next_state, **kwargs)
         info.update(self._params.get_params())

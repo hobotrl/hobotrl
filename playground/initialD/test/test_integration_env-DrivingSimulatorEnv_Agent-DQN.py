@@ -20,7 +20,7 @@ from ros_environments import DrivingSimulatorEnv
 import rospy
 import message_filters
 from std_msgs.msg import Char, Bool, Int16, Float32
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import CompressedImage
 
 # Environment
 def compile_reward(rewards):
@@ -36,7 +36,7 @@ def compile_obs(obss):
     return obs
 
 env = DrivingSimulatorEnv(
-    defs_obs=[('/training/image', Image)],
+    defs_obs=[('/training/image/compressed', CompressedImage)],
     func_compile_obs=compile_obs,
     defs_reward=[
         ('/rl/has_obstacle_nearby', Bool),

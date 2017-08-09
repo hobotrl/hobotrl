@@ -24,7 +24,7 @@ class restart_ros_launch:
         # process related
         self.process_list = list()
         self.process_names = [
-            ['roslaunch', 'planning', 'honda_S1-2.launch'],
+            ['roslaunch', 'planning', 'honda_S5-1.launch'],
             # ['python', '/home/lewis/Projects/hobotrl/playground/initialD/gazebo_rl_reward.py']
         ]
         # Simulator states
