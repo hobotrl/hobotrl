@@ -247,6 +247,43 @@ class Network(object):
         return optimizer.apply_gradients(gradients), gradients
 
 
+class NP(object):
+    @staticmethod
+    def one_hot(array, num):
+        oh = np.zeros(shape=array.shape+[num])
+        oh[np.arange(array.size), array] = 1
+        return oh
+
+
+class hashable_list(list):
+    @staticmethod
+    def __new__(S, *args, **kwargs):
+        """ T.__new__(S, ...) -> a new object with type S, a subtype of T """
+        return list.__new__(S, [])
+
+    def __init__(self, another=None):
+        super(hashable_list, self).__init__()
+        if another is not None:
+            for o in another:
+                self.append(o)
+
+    def __hash__(self):
+        h = 0
+        if len(self) == 0:
+            return h
+        for o in self:
+            h += o.__hash__()
+        return h
+
+    def __eq__(self, other):
+        if other is None or len(self) != len(other):
+            return False
+        for i in range(len(other)):
+            if not self[i].__eq__(other[i]):
+                return False
+        return True
+
+
 class FloatParam(float):
     """
     float(x) -> floating point number

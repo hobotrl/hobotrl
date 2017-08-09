@@ -252,5 +252,43 @@ class DDPGCar(DPGExperiment):
 Experiment.register(DDPGCar, "DDPG for CarRacing")
 
 
+class DQNCarRacing(DQNExperiment):
+
+    def __init__(self, env=None, f_create_q=None, episode_n=10000, discount_factor=0.99, ddqn=False, target_sync_interval=100,
+                 target_sync_rate=1.0,
+                 update_interval=400,
+                 replay_size=2000,
+                 batch_size=32,
+                 greedy_epsilon=hrl.utils.CappedLinear(1e6, 1.0, 0.05),
+                 network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3),
+                                                                           grad_clip=10.0)):
+        if env is None:
+            env = gym.make("CarRacing-v0")
+            env = wrap_car(env, 3, 3)
+        if f_create_q is None:
+            l2=1e-8
+
+            def f_critic(inputs):
+                input_state = inputs[0]
+                se = hrl.utils.Network.conv2ds(input_state,
+                                               shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
+                                               out_flatten=True,
+                                               activation=tf.nn.relu,
+                                               l2=l2,
+                                               var_scope="se")
+                q = hrl.utils.Network.layer_fcs(se, [256], env.action_space.n,
+                                                activation_hidden=tf.nn.relu,
+                                                activation_out=None,
+                                                l2=l2,
+                                                var_scope="q")
+                return {"q": q}
+            f_create_q = f_critic
+        super(DQNCarRacing, self).__init__(env, f_create_q, episode_n, discount_factor, ddqn, target_sync_interval,
+                                           target_sync_rate, update_interval, replay_size, batch_size, greedy_epsilon,
+                                           network_optimizer_ctor)
+
+Experiment.register(DQNCarRacing, "DQN for CarRacing, tuned with ddqn, duel network, etc.")
+
+
 if __name__ == '__main__':
     Experiment.main()
