@@ -102,14 +102,14 @@ class ActorCritic(object):
                 #                                         axis=1, name="entropy"), [-1,1])
                 self.normal_dist = tf.contrib.distributions.Normal(self.pi_mean, self.pi_stddev)
                 self.sample = tf.squeeze(self.normal_dist.sample(1), axis=0)  # sample an action
-                self.entropy = self.normal_dist.entropy()
+                self.entropy = tf.reduce_sum(self.normal_dist.entropy(), axis=1)
                 self.entropy_mean = tf.reduce_mean(self.entropy, name="entropy_mean")
 
                 # probability of input_action according to the formula of the normal distribution
                 # self.probability = 1.0 / tf.sqrt(2 * np.pi * tf.square(self.pi_stddev)) \
                 #                    * tf.exp(- tf.square((self.input_action - self.pi_mean) / self.pi_stddev) / 2)
                 # self.log_probability = tf.log(self.probability)
-                self.log_probability = self.normal_dist.log_prob(self.input_action)
+                self.log_probability = tf.reduce_sum(self.normal_dist.log_prob(self.input_action), axis=1)
 
                 # calculate the loss of pi
                 # tf.stop_gradient() can stop the gradient computation of parameter of the critic network when training
@@ -117,7 +117,6 @@ class ActorCritic(object):
                 self.spg_loss = -1.0 * tf.reduce_mean(self.log_probability * tf.stop_gradient(self.advantage))
                 self.reg_loss = tf.reduce_sum(tf.square(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES,
                                                      scope=name+"/learn"))) - 0.1 * self.entropy_mean
-
                 self.pi_loss = self.spg_loss + self.reg_loss
 
                 # train q
@@ -351,7 +350,7 @@ class A3CAgent(hrl.tf_dependent.base.BaseDeepAgent):
             self.replay_on = hrl.playback.MapPlayback(train_on_interval,
                                                       sample_shapes={
                                                           "state": self.state_shape,
-                                                          "action": [],
+                                                          "action": [self.action_n],
                                                           "next_state": self.state_shape,
                                                           "reward": [],
                                                           "episode_done": []
@@ -369,7 +368,7 @@ class A3CAgent(hrl.tf_dependent.base.BaseDeepAgent):
             self.replay_on = hrl.playback.MapPlayback(1,
                                                       sample_shapes={
                                                           "state": self.state_shape,
-                                                          "action": [],
+                                                          "action": [self.action_n],
                                                           "next_state": self.state_shape,
                                                           "reward": [],
                                                           "episode_done": []

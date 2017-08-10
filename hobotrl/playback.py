@@ -65,7 +65,7 @@ class Playback(object):
         """
         if self.data is None:
             # lazy creation
-            print "initializnig data with:", sample
+            print "initializing data with:", sample
             self.data = np.zeros(shape=([self.capacity] + self.sample_shape),
                                    dtype=sample.dtype)
             print "initializing data:", self.data.shape, ",", self.data.dtype
