@@ -89,75 +89,6 @@ class ProcessFrame96H(gym.ObservationWrapper):
         return img
 
 
-def wrap_car(env, steer_n, speed_n):
-    """Apply a common set of wrappers for Atari games."""
-    env = CarDiscreteWrapper(env, steer_n, speed_n)
-    env = envs.MaxAndSkipEnv(env, skip=2, max_len=1)
-    # env = ProcessFrame96H(env)
-    env = envs.FrameStack(env, 4)
-    env = envs.ScaledRewards(env, 0.1)
-    env = envs.ScaledFloatFrame(env)
-    return env
-
-
-class A3CCarExp(ACOOExperiment):
-    def __init__(self, env, f_create_net=None,
-                 episode_n=10000,
-                 reward_decay=0.99,
-                 on_batch_size=32,
-                 off_batch_size=32,
-                 off_interval=0,
-                 sync_interval=1000,
-                 replay_size=128,
-                 prob_min=5e-3,
-                 entropy=hrl.utils.CappedLinear(1e6, 1e-2, 1e-3),
-                 l2=1e-8,
-                 optimizer_ctor=lambda: tf.train.AdamOptimizer(1e-4), ddqn=False, aux_r=False, aux_d=False):
-
-        def create_ac_car(input_state, num_action, **kwargs):
-            se = hrl.utils.Network.conv2ds(input_state,
-                                           shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
-                                           out_flatten=True,
-                                           activation=tf.nn.relu,
-                                           l2=l2,
-                                           var_scope="se")
-
-            q = hrl.utils.Network.layer_fcs(se, [256], num_action,
-                                            activation_hidden=tf.nn.relu,
-                                            l2=l2,
-                                            var_scope="q")
-            pi = hrl.utils.Network.layer_fcs(se, [256], num_action,
-                                             activation_hidden=tf.nn.relu,
-                                             # activation_out=tf.nn.softplus,
-                                             l2=l2,
-                                             var_scope="pi")
-
-            pi = tf.nn.softmax(pi)
-            # pi = pi + prob_min
-            # pi = pi / tf.reduce_sum(pi, axis=-1, keep_dims=True)
-            r = hrl.utils.Network.layer_fcs(se, [256], 1,
-                                            activation_hidden=tf.nn.relu,
-                                            l2=l2,
-                                            var_scope="r")
-
-            return {"pi": pi, "q": q, "se": se, "r": r}
-        if f_create_net is None:
-            f_create_net = create_ac_car
-        logging.warning("before super(A3CCarExp, self).__init__")
-        super(A3CCarExp, self).__init__(env, f_create_net, episode_n, reward_decay, on_batch_size, off_batch_size,
-                                     off_interval, sync_interval, replay_size, prob_min, entropy, l2, optimizer_ctor,
-                                     ddqn, aux_r, aux_d)
-
-
-class A3CCarDiscrete(A3CCarExp):
-    def __init__(self):
-        env = gym.make("CarRacing-v0")
-        env = wrap_car(env, 3, 3)
-        super(A3CCarDiscrete, self).__init__(env)
-
-Experiment.register(A3CCarDiscrete, "discrete A3C for CarRacing")
-
-
 class CarContinuousWrapper(gym.Wrapper):
 
     def __init__(self, env):
@@ -191,6 +122,89 @@ class CarGrassWrapper(gym.Wrapper):
             if front and back and left and right:
                 reward -= self.grass_penalty
         return ob, reward, done, info
+
+
+def wrap_car(env):
+    """Apply a common set of wrappers for Atari games."""
+    env = CarGrassWrapper(env, grass_penalty=0.5)
+    env = CarContinuousWrapper(env)
+    env = envs.MaxAndSkipEnv(env, skip=2, max_len=1)
+    env = envs.FrameStack(env, 4)
+    env = envs.ScaledRewards(env, 0.1)
+    env = envs.ScaledFloatFrame(env)
+    env = envs.AugmentEnvWrapper(env, reward_decay=0.99)
+    return env
+
+
+class A3CCarExp(ACOOExperimentCon):
+    def __init__(self, env, f_create_net=None,
+                 episode_n=10000,
+                 reward_decay=0.99,
+                 on_batch_size=32,
+                 off_batch_size=32,
+                 off_interval=0,
+                 sync_interval=1000,
+                 replay_size=128,
+                 prob_min=5e-3,
+                 entropy=hrl.utils.CappedLinear(1e6, 1e-2, 1e-3),
+                 l2=1e-8,
+                 optimizer_ctor=lambda: tf.train.AdamOptimizer(1e-4), ddqn=False, aux_r=False, aux_d=False):
+
+        def create_ac_car(input_state, num_action, **kwargs):
+            se_v = hrl.utils.Network.conv2ds(input_state,
+                                           shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
+                                           out_flatten=True,
+                                           activation=tf.nn.relu,
+                                           l2=l2,
+                                           var_scope="se_v")
+
+            se_pi = hrl.utils.Network.conv2ds(input_state,
+                                             shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
+                                             out_flatten=True,
+                                             activation=tf.nn.relu,
+                                             l2=l2,
+                                             var_scope="se_pi")
+
+            v = hrl.utils.Network.layer_fcs(se_v, [256], 1,
+                                            activation_hidden=tf.nn.relu,
+                                            l2=l2,
+                                            var_scope="q")
+            v = tf.squeeze(v, axis=1)
+
+            pi_mean = hrl.utils.Network.layer_fcs(se_pi, [256], num_action,
+                                             activation_hidden=tf.nn.relu,
+                                             activation_out=tf.nn.tanh,
+                                             l2=l2,
+                                             var_scope="pi_mean")
+
+            pi_stddev = hrl.utils.Network.layer_fcs(se_pi, [256], num_action,
+                                                  activation_hidden=tf.nn.relu,
+                                                  activation_out=tf.nn.softplus,
+                                                  l2=l2,
+                                                  var_scope="pi_stddev")
+
+            r = hrl.utils.Network.layer_fcs(se_v, [256], 1,
+                                            activation_hidden=tf.nn.relu,
+                                            l2=l2,
+                                            var_scope="r")
+            r = tf.squeeze(r, axis=1)
+
+            return {"pi_mean": pi_mean, "pi_stddev": pi_stddev, "v": v, "se_v": se_v, "se_pi": se_pi, "r": r}
+        if f_create_net is None:
+            f_create_net = create_ac_car
+        logging.warning("before super(A3CCarExp, self).__init__")
+        super(A3CCarExp, self).__init__(env, f_create_net, episode_n, reward_decay, on_batch_size, off_batch_size,
+                                     off_interval, sync_interval, replay_size, prob_min, entropy, l2, optimizer_ctor,
+                                     ddqn, aux_r, aux_d)
+
+
+class A3CCarRacing(A3CCarExp):
+    def __init__(self):
+        env = gym.make("CarRacing-v0")
+        env = wrap_car(env)
+        super(A3CCarRacing, self).__init__(env)
+
+Experiment.register(A3CCarRacing, "Continuous A3C for CarRacing")
 
 
 class A3CPendulumExp(ACOOExperimentCon):
@@ -257,11 +271,11 @@ class A3CPendulum(A3CPendulumExp):
     def __init__(self):
         env = gym.make("Pendulum-v0")
         env = hrl.envs.AugmentEnvWrapper(
-            env, reward_decay=0.9, reward_scale=1,
+            env, reward_decay=0.9, reward_scale=0.1,
             action_limit=np.asarray([env.action_space.low, env.action_space.high])
         )
         super(A3CPendulum, self).__init__(env)
-Experiment.register(A3CPendulum, "continuous A3C for Pendulum")
+Experiment.register(A3CPendulum, "Continuous A3C for Pendulum")
 
 
 if __name__ == '__main__':
