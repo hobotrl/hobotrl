@@ -257,7 +257,7 @@ class A3CPendulum(A3CPendulumExp):
     def __init__(self):
         env = gym.make("Pendulum-v0")
         env = hrl.envs.AugmentEnvWrapper(
-            env, reward_decay=0.9, reward_scale=0.1,
+            env, reward_decay=0.9, reward_scale=1,
             action_limit=np.asarray([env.action_space.low, env.action_space.high])
         )
         super(A3CPendulum, self).__init__(env)
