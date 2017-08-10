@@ -279,9 +279,9 @@ class MapPlayback(Playback):
         for i in range(batch_size):
             sample = batch[i]
             for field in sample:
-                column_batch[field].append(sample[i])
+                column_batch[field].append(sample[field])
         for field in column_batch:
-            column_batch[field] = np.asarray(column_batch)
+            column_batch[field] = np.asarray(column_batch[field])
         return column_batch
 
 

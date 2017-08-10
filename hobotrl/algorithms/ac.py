@@ -11,17 +11,7 @@ import hobotrl.target_estimate as target_estimate
 import hobotrl.tf_dependent.distribution as distribution
 from hobotrl.tf_dependent.base import BaseDeepAgent
 from hobotrl.policy import StochasticPolicy
-
-
-class StateValueFunction(network.NetworkFunction):
-    def __init__(self, q_function):
-        """
-        :param q_function: NetworkFunction calculating Q
-        :type q_function: network.NetworkFunction
-        """
-        op_v = tf.reduce_max(q_function.output().op, axis=1)
-        super(StateValueFunction, self).__init__(network.NetworkSymbol(op_v, "v", q_function.network),
-                                                 q_function.inputs, q_function.variables)
+from value_based import StateValueFunction
 
 
 class DiscreteActorCriticUpdater(network.NetworkUpdater):

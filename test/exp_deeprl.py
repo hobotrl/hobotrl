@@ -73,10 +73,10 @@ class DQNPendulum(DQNExperiment):
             env = hrl.envs.C2DEnvWrapper(env, [5])
             env = hrl.envs.AugmentEnvWrapper(env, reward_decay=0.9, reward_scale=0.1)
         if f_create_q is None:
-            def f_net(inputs, num_action, is_training):
-                input_var = inputs
+            def f_net(inputs):
+                input_state = inputs[0]
                 fc_out = hrl.utils.Network.layer_fcs(
-                    input_var, [200, 200], num_action,
+                    input_state, [200, 200], env.action_space.n,
                     activation_hidden=tf.nn.relu, activation_out=None, l2=1e-4
                 )
                 return {"q": fc_out}
@@ -234,51 +234,43 @@ class OTDQNPendulum(Experiment):
     should verify on more difficult problems
     """
     def run(self, args):
-        reward_decay = 0.9
-        K = 4
-        batch_size = 8
-        weight_lower = 1.0
-        weight_upper = 1.0
+        discount_factor = 0.9
+        K = 8
+        batch_size = 4
+        weight_lower = 0.0
+        weight_upper = 0.0
         target_sync_interval = 10
+        target_sync_rate = 0.01
         replay_size = 1000
 
         env = gym.make("Pendulum-v0")
         env = hrl.envs.C2DEnvWrapper(env, [5])
-        env = hrl.envs.AugmentEnvWrapper(env, reward_decay=reward_decay, reward_scale=0.1)
+        env = hrl.envs.AugmentEnvWrapper(env, reward_decay=discount_factor, reward_scale=0.1)
 
         optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
 
-        target_sync_rate = 0.01
         training_params = (optimizer_td, target_sync_rate, 10.0)
 
-        def f_net(inputs, num_action):
-            input_var = inputs
-            fc_out = hrl.utils.Network.layer_fcs(input_var, [200, 200], num_action,
+        def f_net(inputs):
+            input_state = inputs[0]
+            fc_out = hrl.utils.Network.layer_fcs(input_state, [200, 200], env.action_space.n,
                                                  activation_hidden=tf.nn.relu, activation_out=None, l2=1e-4)
-            return fc_out
+            return {"q": fc_out}
 
         state_shape = list(env.observation_space.shape)
         global_step = tf.get_variable('global_step', [],
                                       dtype=tf.int32,
                                       initializer=tf.constant_initializer(0),
                                       trainable=False)
-        agent = play_ot.OTDQN(
-            # EpsilonGreedyPolicyMixin params
-            actions=range(env.action_space.n),
-            epsilon=0.2,
-            # OTDQN
-            f_net=f_net,
-            state_shape=state_shape,
-            action_n=env.action_space.n,
-            reward_decay=reward_decay,
-            batch_size=batch_size,
-            K=K,
-            weight_lower=weight_lower,
-            weight_upper=weight_upper,
-            optimizer=optimizer_td,
-            target_sync_interval=target_sync_interval,
-            replay_capacity=replay_size,
-            # BaseDeepAgent
+        agent = ot.OTDQN(
+            f_create_q=f_net,
+            lower_weight=weight_lower, upper_weight=weight_upper, neighbour_size=K,
+            state_shape=state_shape, num_actions=env.action_space.n, discount_factor=discount_factor,
+            target_sync_interval=target_sync_interval, target_sync_rate=target_sync_rate,
+            greedy_epsilon=0.2,
+            network_optimizer=None, max_gradient=10.0,
+            update_interval=2,
+            replay_size=replay_size, batch_size=batch_size, sampler=None,
             global_step=global_step
         )
         config = tf.ConfigProto()
@@ -287,7 +279,7 @@ class OTDQNPendulum(Experiment):
                                    init_op=tf.global_variables_initializer(), save_dir=args.logdir)
         with sv.managed_session(config=config) as sess:
             agent.set_session(sess)
-            runner = hrl.envs.EnvRunner(env, agent, reward_decay=reward_decay,
+            runner = hrl.envs.EnvRunner(env, agent, reward_decay=discount_factor,
                                         evaluate_interval=sys.maxint, render_interval=sys.maxint, logdir=args.logdir)
             runner.episode(500)
 

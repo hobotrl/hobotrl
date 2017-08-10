@@ -21,7 +21,7 @@ class ClusterAgent(Agent):
                  grad_clip=None, *args, **kwargs):
         """
 
-        :param agent_creator: function: agent_creator(tf.Variable global_step, NetworkOptimizer n_optimizer) => Agent
+        :param agent_creator: function: agent_creator(tf.Variable global_step, NetworkOptimizer network_optimizer) => Agent
         :param optimizer_creator: function: optimizer_creator() => tf.train.Optimizer
         :param cluster_spec:
         :param job:
