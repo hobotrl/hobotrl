@@ -93,23 +93,24 @@ class ActorCriticUpdater(network.NetworkUpdater):
         self._policy_dist, self._v_function = policy_dist, v_function
         self._target_estimator = target_estimator
         self._entropy = entropy
-        with tf.name_scope("DiscreteActorCriticUpdate"):
+        with tf.name_scope("ActorCriticUpdater"):
             with tf.name_scope("input"):
-                self._input_target_q = tf.placeholder(dtype=tf.float32, shape=[None], name="input_target_q")
+                self._input_target_v = tf.placeholder(dtype=tf.float32, shape=[None], name="input_target_v")
                 self._input_action = policy_dist.input_sample()
                 self._input_entropy = tf.placeholder(dtype=tf.float32, shape=[], name="input_entropy")
             op_v = v_function.output().op
             with tf.name_scope("value"):
-                td = self._input_target_q - op_v
+                td = self._input_target_v - op_v
                 self._q_loss = tf.reduce_mean(network.Utils.clipped_square(td))
             with tf.name_scope("policy"):
                 # v = tf.reduce_max(op_q, axis=1)  # state value for greedy policy
-                advantage = self._input_target_q - op_v
+                advantage = self._input_target_v - op_v
                 advantage = tf.clip_by_value(advantage, -max_advantage, max_advantage, name="advantage")
                 pi_loss = tf.reduce_mean(self._policy_dist.log_prob() * tf.stop_gradient(advantage))
                 entropy_loss = tf.reduce_mean(self._input_entropy * self._policy_dist.entropy())
                 self._pi_loss = pi_loss
             self._op_loss = self._q_loss - (self._pi_loss + entropy_loss)
+            print "advantage, self._policy_dist.entropy(), self._policy_dist.log_prob()", advantage, self._policy_dist.entropy(), self._policy_dist.log_prob()
         self._update_operation = network.MinimizeLoss(self._op_loss,
                                                       var_list=self._v_function.variables +
                                                                self._policy_dist._dist_function.variables)
@@ -128,16 +129,25 @@ class ActorCriticUpdater(network.NetworkUpdater):
         feed_dict.update(self._policy_dist.dist_function().input_dict(state))
         feed_more = {
             self._input_action: action,
-            self._input_target_q: target_value,
+            self._input_target_v: target_value,
             self._input_entropy: self._entropy
         }
         feed_dict.update(feed_more)
-        return network.UpdateRun(feed_dict=feed_dict, fetch_dict={
+        fetch_dict = {
             "target_value": target_value,
             "pi_loss": self._pi_loss,
             "q_loss": self._q_loss,
-            "entropy": self._policy_dist.entropy()
-        })
+            "entropy": self._policy_dist.entropy(),
+            "log_prob": self._policy_dist.log_prob(),
+        }
+        if isinstance(self._policy_dist, hrl.tf_dependent.distribution.NormalDistribution):
+            fetch_dict.update({
+                "stddev": self._policy_dist.stddev(),
+                "mean": self._policy_dist.mean()
+            })
+        else:
+            pass
+        return network.UpdateRun(feed_dict=feed_dict, fetch_dict=fetch_dict)
 
 
 class DiscretePGUpdater(network.NetworkUpdater):

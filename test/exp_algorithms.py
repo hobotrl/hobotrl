@@ -507,7 +507,6 @@ class A3CExperiment(Experiment):
 
     def run(self, args):
         state_shape = list(self._env.observation_space.shape)
-        num_actions = self._env.action_space.n
 
         def create_optimizer():
             return tf.train.AdamOptimizer(1e-3)
