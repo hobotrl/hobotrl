@@ -178,11 +178,12 @@ class NormalDistribution(NNDistribution):
             self._op_mean, self._op_stddev = dist_function.output("mean").op, dist_function.output("stddev").op
             self._op_stddev = self._op_stddev + epsilon
             variance = self._op_stddev
-            self._op_entropy = (1 + tf.log(2 * np.pi * variance)) / 2.0
-            self._op_prob = 1.0 / tf.sqrt(2 * np.pi * variance) \
-                            * tf.exp(- tf.square(self._input_sample - self._op_mean) / (2.0 * variance))
-
-            self._op_log_prob = tf.log(self._op_prob)
+            # treat each dimension as univariate normal distribution
+            self._op_entropy = tf.reduce_sum(tf.log(2 * np.pi * np.e * variance) / 2.0, axis=1)
+            self._op_log_prob = tf.reduce_sum(-0.5 * tf.square(self._input_sample - self._op_mean) / variance \
+                                - 0.5 * tf.log(variance) - 0.5 * np.log(2.0 * np.pi), axis=1)
+            self._op_prob = tf.reduce_sum(1.0 / tf.sqrt(2 * np.pi * variance)
+                                          * tf.exp(-0.5 * tf.square(self._input_sample - self._op_mean) / variance), axis=1)
 
     def dist_input(self, inputs):
         if type(inputs) == list:
@@ -199,7 +200,7 @@ class NormalDistribution(NNDistribution):
     def entropy_run(self, inputs):
         return self._sess.run(self._op_entropy, feed_dict=self.dist_input(inputs))
 
-    def prob(self):
+    def prob(self, stable=False):
         return self._op_prob
 
     def prob_run(self, inputs, sample):
@@ -207,7 +208,7 @@ class NormalDistribution(NNDistribution):
         feed_dict[self._input_sample] = sample
         return self._sess.run(self._op_prob, feed_dict=feed_dict)
 
-    def log_prob(self):
+    def log_prob(self, stable=False):
         return self._op_log_prob
 
     def log_prob_run(self, inputs, sample):
