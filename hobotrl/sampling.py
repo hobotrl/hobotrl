@@ -144,7 +144,6 @@ class TruncateTrajectorySampler(Sampler):
 
     def step(self, state, action, reward, next_state, episode_done, **kwargs):
         """
-
         :param state:
         :param action:
         :param reward:
@@ -163,9 +162,12 @@ class TruncateTrajectorySampler(Sampler):
             for i in range(max_try):
                 batch = self._replay.sample_batch(batch_size)
                 batch = playback.MapPlayback.to_rowwise(batch)
-                traj = filter(lambda x: x is not None, [self._trajectory_near(sample) for sample in batch])
+                traj = [self._trajectory_near(sample) for sample in batch]
+                traj = filter(lambda x: x is not None, traj)
                 trajectories.extend(traj)
                 batch_size -= len(traj)
+                if batch_size <= 0:
+                    break
             if len(trajectories) < self._batch_size:
                 # sample failed
                 print "sample failed!"
@@ -215,15 +217,17 @@ class TruncateTrajectorySampler(Sampler):
         if max_end - min_start < self._trajectory_length:
             # not enough samples near sample_i, because of episode_done's
             return None
+        nearby_row = playback.MapPlayback.to_rowwise(nearby)
         if max_end < sample_i + self._trajectory_length / 2:
             end = sample_i_nearby + (max_end - sample_i)
-            return nearby[end - self._trajectory_length + 1: end + 1]
+            result = nearby_row[end - self._trajectory_length + 1: end + 1]
         elif min_start > sample_i - self._trajectory_length /2 + 1 - self._trajectory_length % 2:
             start = sample_i_nearby - (sample_i - min_start)
-            return nearby[start, start + self._trajectory_length + 1]
+            result = nearby_row[start: start + self._trajectory_length]
         else:
-            end = sample_i + self._trajectory_length / 2
-            return nearby[end - self._trajectory_length + 1, end + 1]
+            end = sample_i_nearby + self._trajectory_length / 2
+            result = nearby_row[end - self._trajectory_length + 1: end + 1]
+        return playback.MapPlayback.to_columnwise(result)
 
     def _get_batch(self, start, end):
         return self._replay.get_batch((np.arange(start, end + 1) + self._replay.get_capacity())

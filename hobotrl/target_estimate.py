@@ -4,6 +4,7 @@ Estimators calculating target state value or target action value.
 """
 
 
+import sys
 import logging
 import numpy as np
 from utils import NP
@@ -121,3 +122,40 @@ class ContinuousActionEstimator(TargetEstimator):
         target_q = self._critic(next_state, target_action)
         target_q = reward + self._discount_factor * (1.0 - episode_done) * target_q
         return target_q
+
+
+class OptimalityTighteningEstimator(TargetEstimator):
+    """
+    Estimate target value to fit Q function according to:
+    Learning to Play in a Day: Faster Deep Reinforcement Learning by Optimality Tightening
+    https://arxiv.org/abs/1611.01606
+    """
+    def __init__(self, v_function, weight_upper=4.0, weight_lower=4.0, discount_factor=0.99):
+        super(OptimalityTighteningEstimator, self).__init__(discount_factor)
+        self._v = v_function
+        self._weight_upper, self._weight_lower = weight_upper, weight_lower
+
+    def estimate(self, state, action, reward, next_state, episode_done):
+        """
+        estimate target value for all states, within this trajectory
+        :param state:
+        :param action:
+        :param reward:
+        :param next_state:
+        :param episode_done:
+        :return:
+        """
+        states = np.concatenate((state, next_state[-1:]))
+        state_value = self._v(states)
+        td_target = reward + self._discount_factor * state_value[1:] * (1.0 - episode_done)
+        upper_bounds, lower_bounds = 1.0 * td_target, 1.0 * td_target  # copy td_target as init
+        for i in range(len(td_target)-2, -1, -1):
+            l = max(lower_bounds[i+1], td_target[i+1]) * self._discount_factor + reward[i+1]
+            lower_bounds[i] = max(l, lower_bounds[i])
+
+        for i in range(1, len(td_target)):
+            u = min(upper_bounds[i-1], td_target[i-1]) / self._discount_factor - reward[i-1]
+            upper_bounds[i] = min(u, upper_bounds[i])
+        w_all = 1.0 + self._weight_lower + self._weight_upper
+        target_value = (td_target + self._weight_lower * lower_bounds + self._weight_upper * upper_bounds) / w_all
+        return target_value

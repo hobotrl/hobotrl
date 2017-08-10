@@ -11,34 +11,8 @@ import hobotrl.network as network
 import hobotrl.sampling as sampling
 from hobotrl.tf_dependent.base import BaseDeepAgent
 from hobotrl.playback import MapPlayback
-from hobotrl.policy import EpsilonGreedyPolicy
+from value_based import ValueBasedAgent
 import hobotrl.target_estimate as target_estimate
-
-
-class ValueBasedAgent(hrl.core.Agent):
-
-    def __init__(self, greedy_epsilon, num_actions, *args, **kwargs):
-        kwargs.update({"greedy_epsilon": greedy_epsilon, "num_actions": num_actions})
-        super(ValueBasedAgent, self).__init__(*args, **kwargs)
-        self._q_function = self.init_value_function(*args, **kwargs)
-        self._policy = self.init_policy(*args, **kwargs)
-
-    def init_value_function(self, *args, **kwargs):
-        """
-        should be implemented by sub-classes.
-        should return Q Function
-        :param args:
-        :param kwargs:
-        :return:
-        :rtype: network.Function
-        """
-        raise NotImplementedError()
-
-    def init_policy(self, greedy_epsilon, num_actions, *args, **kwargs):
-        return EpsilonGreedyPolicy(self._q_function, greedy_epsilon, num_actions)
-
-    def act(self, state, **kwargs):
-        return self._policy.act(state, **kwargs)
 
 
 class DQN(sampling.TransitionBatchUpdate,
@@ -100,15 +74,9 @@ class DQN(sampling.TransitionBatchUpdate,
         kwargs.update({"sampler": sampler})
         # call super.__init__
         super(DQN, self).__init__(*args, **kwargs)
-
         self.network_optimizer = network_optimizer
-        if ddqn:
-            estimator = target_estimate.DDQNOneStepTD(self.learn_q, self.target_q, discount_factor)
-        else:
-            estimator = target_estimate.OneStepTD(self.target_q, discount_factor)
-        network_optimizer.add_updater(network.FitTargetQ(self.learn_q, estimator), name="td")
-        network_optimizer.add_updater(network.L2(self.network), name="l2")
-        network_optimizer.compile()
+        self._ddqn, self._discount_factor = ddqn, discount_factor
+        self.init_updaters_()
         self._target_sync_interval, self._target_sync_rate = target_sync_interval, target_sync_rate
         self._update_count = 0
 
@@ -121,6 +89,16 @@ class DQN(sampling.TransitionBatchUpdate,
         self.target_q = network.NetworkFunction(self.network.target["q"])
         return self.learn_q
 
+    def init_updaters_(self):
+        if self._ddqn:
+            estimator = target_estimate.DDQNOneStepTD(self.learn_q, self.target_q, self._discount_factor)
+        else:
+            estimator = target_estimate.OneStepTD(self.target_q, self._discount_factor)
+        self.network_optimizer.add_updater(network.FitTargetQ(self.learn_q, estimator), name="td")
+        self.network_optimizer.add_updater(network.L2(self.network), name="l2")
+        self.network_optimizer.compile()
+        pass
+
     def update_on_transition(self, batch):
         self._update_count += 1
         self.network_optimizer.updater("td").update(self.sess, batch)
@@ -132,6 +110,5 @@ class DQN(sampling.TransitionBatchUpdate,
 
     def set_session(self, sess):
         super(DQN, self).set_session(sess)
-        self.learn_q.set_session(sess)
-        self.target_q.set_session(sess)
+        self.network.set_session(sess)
 
