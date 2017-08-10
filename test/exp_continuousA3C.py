@@ -168,7 +168,7 @@ class A3CCarExp(ACOOExperimentCon):
             v = hrl.utils.Network.layer_fcs(se_v, [256], 1,
                                             activation_hidden=tf.nn.relu,
                                             l2=l2,
-                                            var_scope="q")
+                                            var_scope="v")
             v = tf.squeeze(v, axis=1)
 
             pi_mean = hrl.utils.Network.layer_fcs(se_pi, [256], num_action,
