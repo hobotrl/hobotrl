@@ -13,61 +13,6 @@ from exp_algorithms import *
 import hobotrl.environments as envs
 
 
-class CarDiscreteWrapper(gym.Wrapper):
-    """
-    Wraps car env into discrete action control problem
-    """
-
-    def __init__(self, env, steer_n, speed_n):
-        super(CarDiscreteWrapper, self).__init__(env)
-        self.steer_n, self.speed_n = steer_n, speed_n
-        self.env = env
-        self.action_n = steer_n * speed_n
-        self.action_space = gym.spaces.discrete.Discrete(self.action_n)
-
-    def __getattr__(self, name):
-        print("getattr:", name, " @ ", id(self.env))
-        if name == "action_space":
-            print("getattr: action_space:", name)
-            return self.action_space
-        else:
-            return getattr(self.env, name)
-
-    def _step(self, action):
-        action_c = self.action_d2c(action)
-        next_state, reward, done, info = self.env.step(action_c)
-
-        return next_state, reward, done, info
-
-    def action_c2d(self, action):
-        """
-        continuous action to discrete action
-        :param action:
-        :return:
-        """
-        steer_i = int((action[0] - (-1.0)) / 2.0 * self.steer_n)
-        steer_i = self.steer_n - 1 if steer_i >= self.steer_n else steer_i
-        if abs(action[1]) > abs(action[2]):
-            speed_action = action[1]
-        else:
-            speed_action = -action[2]
-        speed_i = int((speed_action - (-1.0)) / 2.0 * self.speed_n)
-        speed_i = self.speed_n - 1 if speed_i >= self.speed_n else speed_i
-        return steer_i * self.speed_n + speed_i
-
-    def action_d2c(self, action):
-        steer_i = int(action / self.speed_n)
-        speed_i = action % self.speed_n
-        action_c = np.asarray([0., 0., 0.])
-        action_c[0] = float(steer_i) / self.steer_n * 2 - 1.0 + 1.0 / self.steer_n
-        speed_c = float(speed_i) / self.speed_n * 2 - 1.0 + 1.0 / self.speed_n
-        if speed_c >= 0:
-            action_c[1], action_c[2] = speed_c, 0
-        else:
-            action_c[1], action_c[2] = 0, -speed_c
-        return action_c
-
-
 class ProcessFrame96H(gym.ObservationWrapper):
     def __init__(self, env=None):
         super(ProcessFrame96H, self).__init__(env)
@@ -125,7 +70,7 @@ class CarGrassWrapper(gym.Wrapper):
 
 
 def wrap_car(env):
-    """Apply a common set of wrappers for Atari games."""
+    """Apply a common set of wrappers for Box2d games."""
     env = CarGrassWrapper(env, grass_penalty=0.5)
     env = CarContinuousWrapper(env)
     env = envs.MaxAndSkipEnv(env, skip=2, max_len=1)

@@ -102,6 +102,8 @@ class ActorCritic(object):
                 #                                         axis=1, name="entropy"), [-1,1])
                 self.normal_dist = tf.contrib.distributions.Normal(self.pi_mean, self.pi_stddev)
                 self.sample = tf.squeeze(self.normal_dist.sample(1), axis=0)  # sample an action
+                logging.warning("----------------------------------------")
+                logging.warning("shape of sample: %s", np.shape(self.sample))
                 self.entropy = tf.reduce_sum(self.normal_dist.entropy(), axis=1)
                 self.entropy_mean = tf.reduce_mean(self.entropy, name="entropy_mean")
 
