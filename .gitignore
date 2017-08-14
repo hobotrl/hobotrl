@@ -20,7 +20,7 @@ summary/
 
 # compiled python (.pyc)
 *.pyc
-
+*.egg-info
 # log file
 *.log
 *.csv
