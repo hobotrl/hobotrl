@@ -12,7 +12,7 @@ both mixin-style and non-... usages.
 import math
 import numpy as np
 from numpy import max
-from numpy.random import rand, randint
+from numpy.random import rand, randint, poisson
 import tensorflow.contrib.layers as layers
 import tensorflow as tf
 
@@ -155,6 +155,52 @@ class EpsilonGreedyPolicy(object):
             idx_action = randint(0, len(self.__ACTIONS))
         elif not exploration_off and rand() < self.__EPSILON:
             idx_action = randint(0, len(self.__ACTIONS))
+        else:
+            # Follow greedy policy with 1-epsilon prob.
+            # break tie randomly
+            q_vals = np.asarray(
+                self.__get_value(state=state, **kwargs)
+            ).flatten()
+            max_q_val = max(q_vals)
+            idx_best_actions = [
+                i for i in range(len(q_vals))
+                if (q_vals[i] - max_q_val)**2 < self.__TOL
+            ]
+            idx_action = idx_best_actions[randint(0, len(idx_best_actions))]
+        return self.__ACTIONS[idx_action]
+
+
+class EpsilonGreedyStickyPolicy(object):
+    """Epsilon sticky policy."""
+    def __init__(self, actions, f_get_value,
+                 epsilon, sticky_mass, tol=1e-10, **kwargs):
+        """Initialization"""
+        self.__ACTIONS = actions
+        self.__get_value = f_get_value
+        self.__EPSILON = epsilon
+        self.__STICKY_MASS = sticky_mass
+        self.__sticky_cnt = 0
+        self.__repeat_idx_action = None
+        self.__TOL = tol
+
+    def act_single_(self, state, **kwargs):
+        """Epsilon greedy action selection.
+
+        Repeat random action with `epsilon` prob.
+        """
+        exploration_off = kwargs['exploration_off'] \
+            if 'exploration_off' in kwargs else False
+        if state is None:
+            idx_action = randint(0, len(self.__ACTIONS))
+        elif not exploration_off and \
+            (rand() < self.__EPSILON or self.__sticky_cnt>0):
+            if self.__sticky_cnt > 0:
+                idx_action = self.__repeat_idx_action
+                self.__sticky_cnt -= 1
+            else:
+                self.__sticky_cnt = poisson(self.__STICKY_MASS)
+                idx_action = randint(0, len(self.__ACTIONS))
+                self.__repeat_idx_action = idx_action
         else:
             # Follow greedy policy with 1-epsilon prob.
             # break tie randomly

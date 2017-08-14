@@ -13,8 +13,8 @@ from tensorflow import layers
 from tensorflow.contrib.layers import l2_regularizer
 
 from hobotrl.playback import MapPlayback
-# from hobotrl.algorithms.dqn import DQN
 from dqn import DQNSticky
+from hobotrl.environments.environments import FrameStack
 
 from ros_environments import DrivingSimulatorEnv
 
@@ -22,6 +22,8 @@ import rospy
 import message_filters
 from std_msgs.msg import Char, Bool, Int16, Float32
 from sensor_msgs.msg import CompressedImage
+
+from gym.spaces import Discrete, Box
 
 # Environment
 def compile_reward(rewards):
@@ -38,10 +40,8 @@ def compile_reward(rewards):
 
 def compile_obs(obss):
     obs1 = obss[-1][0]
-    obs2 = obss[-3][0]
-    obs3 = obss[-5][0]
-    obs = np.concatenate([obs1, obs2, obs3], axis=2)
-    return obs
+    # obs = np.concatenate([obs1, obs2, obs3], axis=2)
+    return obs1
 
 env = DrivingSimulatorEnv(
     defs_obs=[('/training/image/compressed', CompressedImage)],
@@ -55,10 +55,15 @@ env = DrivingSimulatorEnv(
     func_compile_reward=compile_reward,
     defs_action=[('/autoDrive_KeyboardMode', Char)],
     rate_action=10.0,
-    window_sizes={'obs': 5, 'reward': 5},
-    buffer_sizes={'obs': 5, 'reward': 5},
+    window_sizes={'obs': 2, 'reward': 3},
+    buffer_sizes={'obs': 2, 'reward': 3},
     step_delay_target=1.0
 )
+env.observation_space = Box(low=0, high=255, shape=(640, 640, 3))
+env.action_space = Discrete(3)
+env.reward_range = (-np.inf, np.inf)
+env.metadata = {}
+env = FrameStack(env, 3)
 ACTIONS = [(Char(ord(mode)),) for mode in ['s', 'd', 'a']]
 
 # Agent
@@ -114,7 +119,8 @@ def f_net(inputs, num_outputs, is_training):
 optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
 target_sync_rate = 0.001
 training_params = (optimizer_td, target_sync_rate, 10.0)
-state_shape = (640, 640, 3*3)
+# state_shape = (640, 640, 3*3)
+state_shape = env.observation_space.shape
 graph = tf.get_default_graph()
 global_step = tf.get_variable(
     'global_step', [], dtype=tf.int32,
@@ -124,7 +130,7 @@ global_step = tf.get_variable(
 agent = DQNSticky(
     # EpsilonGreedyPolicyMixin params
     actions=range(len(ACTIONS)),
-    epsilon=0.2,
+    epsilon=0.5,
     sticky_mass=1,
     # DeepQFuncMixin params
     dqn_param_dict={
@@ -212,9 +218,11 @@ try:
                 max_idx = np.argmax([v for _, v in p_dict])
                 p_str = "({:.3f}) [Q_vals]: ".format(time.time())
                 for i, (a, v) in enumerate(p_dict):
-                    p_str += '{}{:3d}: {:.5f}  '.format(
-                        '|-|' if i==max_idx else ' '*3,
-                        a, v)
+                    if a == ACTIONS[next_action][0].data:
+                        sym = '|x|' if i==max_idx else ' x '
+                    else:
+                        sym = '| |' if i==max_idx else '   '
+                    p_str += '{}{:3d}: {:.5f}  '.format(sym, a, v)
                 print p_str
                 # print update_info
                 if done is True:
@@ -246,7 +254,7 @@ finally:
     print "="*30
     print "Tidying up..."
     # kill orphaned monitor daemon process
-    env.exit()
+    env.env.exit()
     os.killpg(os.getpgid(os.getpid()), signal.SIGKILL)
     print "="*30
 
