@@ -102,8 +102,6 @@ class ActorCritic(object):
                 #                                         axis=1, name="entropy"), [-1,1])
                 self.normal_dist = tf.contrib.distributions.Normal(self.pi_mean, self.pi_stddev)
                 self.sample = tf.squeeze(self.normal_dist.sample(1), axis=0)  # sample an action
-                logging.warning("----------------------------------------")
-                logging.warning("shape of sample: %s", np.shape(self.sample))
                 self.entropy = tf.reduce_sum(self.normal_dist.entropy(), axis=1)
                 self.entropy_mean = tf.reduce_mean(self.entropy, name="entropy_mean")
 
@@ -133,7 +131,7 @@ class ActorCritic(object):
 
                 for i, (grad, var) in enumerate(grad_on):
                     if grad is not None:
-                        grad_on_local.append(tf.clip_by_norm(grad, 10))
+                        grad_on_local.append(tf.clip_by_norm(grad, 5))
 
                 with tf.control_dependencies(grad_on_local):
                     assigns_on = [tf.assign_add(g_grad, l_grad) for g_grad, l_grad in zip(self.acc_on, grad_on_local)]
@@ -308,10 +306,12 @@ class ActorCritic(object):
         self.sess.run(self.pulls)
 
     def get_action(self, state):
-        return self.sess.run([self.sample], feed_dict={self.input_state: state})[0]
+        sa, me, pi = self.sess.run([self.sample, self.pi_mean, self.pi_stddev], feed_dict={self.input_state: state})
+        logging.warning("--------------------------------------")
+        logging.warning("mean: %s, stddev: %s, sample: %s", me, pi, sa)
+        return sa
 
     def get_v(self, state):
-        logging.warning("mean: %s, stddev: %s", self.pi_mean.eval(), self.pi_loss.eval())
         return self.sess.run([self.v], feed_dict={self.input_state: state})[0]
 
     def get_target_v(self, state, reward, terminate):
