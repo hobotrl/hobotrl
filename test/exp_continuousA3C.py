@@ -75,7 +75,7 @@ def wrap_car(env):
     env = CarContinuousWrapper(env)
     env = envs.MaxAndSkipEnv(env, skip=2, max_len=1)
     env = envs.FrameStack(env, 4)
-    env = envs.ScaledRewards(env, 0.1)
+    env = envs.ScaledRewards(env, 0.01)
     env = envs.ScaledFloatFrame(env)
     env = envs.AugmentEnvWrapper(env, reward_decay=0.99)
     return env
