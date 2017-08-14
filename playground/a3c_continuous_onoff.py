@@ -311,6 +311,7 @@ class ActorCritic(object):
         return self.sess.run([self.sample], feed_dict={self.input_state: state})[0]
 
     def get_v(self, state):
+        logging.warning("mean: %s, stddev: %s", self.pi_mean.eval(), self.pi_loss.eval())
         return self.sess.run([self.v], feed_dict={self.input_state: state})[0]
 
     def get_target_v(self, state, reward, terminate):
