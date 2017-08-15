@@ -85,7 +85,7 @@ class A3CCarExp(ACOOExperimentCon):
     def __init__(self, env, f_create_net=None,
                  episode_n=10000,
                  reward_decay=0.99,
-                 entropy_scale=0.0001,
+                 entropy_scale=0.001,
                  on_batch_size=32,
                  off_batch_size=32,
                  off_interval=0,
