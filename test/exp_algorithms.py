@@ -380,6 +380,7 @@ class ACOOExperimentCon(Experiment):
                  f_create_net,
                  episode_n=10000,
                  reward_decay=0.99,
+                 entropy_scale=1,
                  on_batch_size=32,
                  off_batch_size=32,
                  off_interval=8,
@@ -398,6 +399,7 @@ class ACOOExperimentCon(Experiment):
         self.f_create_net = f_create_net
         self.episode_n = episode_n
         self.reward_decay = reward_decay
+        self.entropy_scale = entropy_scale
         self.on_batch_size = on_batch_size
         self.off_batch_size = off_batch_size
         self.off_interval = off_interval
@@ -426,7 +428,8 @@ class ACOOExperimentCon(Experiment):
             logging.warning("starting ps server")
             server.join()
         else:
-            kwargs = {"ddqn": self.ddqn, "aux_r": self.aux_r, "aux_d": self.aux_d, "reward_decay": self.reward_decay}
+            kwargs = {"ddqn": self.ddqn, "aux_r": self.aux_r, "aux_d": self.aux_d, "reward_decay": self.reward_decay,
+                      "entropy_scale": self.entropy_scale}
             env = self.env
             state_shape = list(self.env.observation_space.shape)
             with tf.device("/job:worker/task:0"):
