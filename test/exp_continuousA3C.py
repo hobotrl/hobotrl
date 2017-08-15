@@ -85,6 +85,7 @@ class A3CCarExp(ACOOExperimentCon):
     def __init__(self, env, f_create_net=None,
                  episode_n=10000,
                  reward_decay=0.99,
+                 entropy_scale=0.0001,
                  on_batch_size=32,
                  off_batch_size=32,
                  off_interval=0,
@@ -122,7 +123,7 @@ class A3CCarExp(ACOOExperimentCon):
                                              l2=l2,
                                              var_scope="pi_mean")
 
-            pi_stddev = hrl.utils.Network.layer_fcs(se_pi, [256], num_action,
+            pi_stddev = hrl.utils.Network.layer_fcs(se_pi, [256], 1,
                                                   activation_hidden=tf.nn.relu,
                                                   activation_out=tf.nn.softplus,
                                                   l2=l2,
@@ -138,9 +139,9 @@ class A3CCarExp(ACOOExperimentCon):
         if f_create_net is None:
             f_create_net = create_ac_car
         logging.warning("before super(A3CCarExp, self).__init__")
-        super(A3CCarExp, self).__init__(env, f_create_net, episode_n, reward_decay, on_batch_size, off_batch_size,
-                                     off_interval, sync_interval, replay_size, prob_min, entropy, l2, optimizer_ctor,
-                                     ddqn, aux_r, aux_d)
+        super(A3CCarExp, self).__init__(env, f_create_net, episode_n, reward_decay, entropy_scale, on_batch_size,
+                                        off_batch_size, off_interval, sync_interval, replay_size, prob_min, entropy,
+                                        l2, optimizer_ctor, ddqn, aux_r, aux_d)
 
 
 class A3CCarRacing(A3CCarExp):
@@ -156,6 +157,7 @@ class A3CPendulumExp(ACOOExperimentCon):
     def __init__(self, env, f_create_net=None,
                  episode_n=10000,
                  reward_decay=0.99,
+                 entropy_scale=0.1,
                  on_batch_size=32,
                  off_batch_size=32,
                  off_interval=0,
@@ -207,9 +209,9 @@ class A3CPendulumExp(ACOOExperimentCon):
         if f_create_net is None:
             f_create_net = create_ac_pendulum
         logging.warning("before super(A3CPendulumExp, self).__init__")
-        super(A3CPendulumExp, self).__init__(env, f_create_net, episode_n, reward_decay, on_batch_size, off_batch_size,
-                                     off_interval, sync_interval, replay_size, prob_min, entropy, l2, optimizer_ctor,
-                                     ddqn, aux_r, aux_d)
+        super(A3CPendulumExp, self).__init__(env, f_create_net, episode_n, reward_decay, entropy_scale, on_batch_size,
+                                             off_batch_size, off_interval, sync_interval, replay_size, prob_min,
+                                             entropy, l2, optimizer_ctor, ddqn, aux_r, aux_d)
 
 
 class A3CPendulum(A3CPendulumExp):

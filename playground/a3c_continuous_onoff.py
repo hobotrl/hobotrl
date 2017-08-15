@@ -14,7 +14,7 @@ def escape(name):
 class ActorCritic(object):
 
     def __init__(self, id, name, state_shape, num_actions, create_net, optimizer, parent=None, global_step=None,
-                 ddqn=False, aux_r=False, aux_d=False, reward_decay=0.99, prob_min=1e-2):
+                 ddqn=False, aux_r=False, aux_d=False, reward_decay=0.99, entropy_scale=1, prob_min=1e-2):
         """
 
         :param id:
@@ -31,7 +31,8 @@ class ActorCritic(object):
         """
         self.num_actions, self.state_shape = num_actions, state_shape
         self.parent = parent  # global ActorCritic
-        self.ddqn, self.aux_r, self.aux_d, self.reward_decay = ddqn, aux_r, aux_d, reward_decay
+        self.ddqn, self.aux_r, self.aux_d, self.reward_decay ,self.entropy_scale \
+            = ddqn, aux_r, aux_d, reward_decay, entropy_scale
         self.optimizer = optimizer
         with tf.name_scope("input"):
             self.input_state = tf.placeholder(dtype=tf.float32, shape=[None] + state_shape, name="input_state")
@@ -102,7 +103,7 @@ class ActorCritic(object):
                 #                                         axis=1, name="entropy"), [-1,1])
                 self.normal_dist = tf.contrib.distributions.Normal(self.pi_mean, self.pi_stddev)
                 self.sample = tf.squeeze(self.normal_dist.sample(1), axis=0)  # sample an action
-                self.entropy = tf.reduce_sum(self.normal_dist.entropy(), axis=1)
+                self.entropy = self.normal_dist.entropy()
                 self.entropy_mean = tf.reduce_mean(self.entropy, name="entropy_mean")
 
                 # probability of input_action according to the formula of the normal distribution
@@ -110,13 +111,13 @@ class ActorCritic(object):
                 #                    * tf.exp(- tf.square((self.input_action - self.pi_mean) / self.pi_stddev) / 2)
                 # self.log_probability = tf.log(self.probability)
                 self.log_probability = tf.reduce_sum(self.normal_dist.log_prob(self.input_action), axis=1)
-
                 # calculate the loss of pi
                 # tf.stop_gradient() can stop the gradient computation of parameter of the critic network when training
                 # the actor network
                 self.spg_loss = -1.0 * tf.reduce_mean(self.log_probability * tf.stop_gradient(self.advantage))
                 self.reg_loss = tf.reduce_sum(tf.square(tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES,
-                                                     scope=name+"/learn"))) - 0.1 * self.entropy_mean
+                                                     scope=name+"/learn"))) - self.entropy_scale * self.entropy_mean
+                logging.warning("------------------%s-------------------", self.entropy_scale)
                 self.pi_loss = self.spg_loss + self.reg_loss
 
                 # train q
@@ -259,13 +260,15 @@ class ActorCritic(object):
         :param value:
         :return:
         """
-        result = self.sess.run(self.compute_on_policy + [self.reg_loss, self.spg_loss, self.log_probability,
+        result = self.sess.run(self.compute_on_policy + [self.entropy, self.log_probability, self.reg_loss, self.spg_loss, self.log_probability,
                                self.advantage, self.pi_loss, self.v_loss, self.td, self.entropy],
                                feed_dict={self.input_state: state,
                                           self.input_action: action,
                                           self.input_reward: reward,
                                           self.input_value: value,
                                           self.input_entropy: entropy})
+        logging.warning("------------------------------------")
+        logging.warning("input action: %s, log_prob: %s, entropy: %s", action, result[-9], result[-10])
         return result[-8:]
 
     def compute_off_gradient(self, state, action, reward, target_value, terminate):
@@ -306,10 +309,10 @@ class ActorCritic(object):
         self.sess.run(self.pulls)
 
     def get_action(self, state):
-        sa, me, pi = self.sess.run([self.sample, self.pi_mean, self.pi_stddev], feed_dict={self.input_state: state})
+        result = self.sess.run([self.sample, self.pi_mean, self.pi_stddev], feed_dict={self.input_state: state})
         logging.warning("--------------------------------------")
-        logging.warning("mean: %s, stddev: %s, sample: %s", me, pi, sa)
-        return sa
+        logging.warning("mean: %s, stddev: %s, sample: %s", result[1], result[2], result[0])
+        return result[0]
 
     def get_v(self, state):
         return self.sess.run([self.v], feed_dict={self.input_state: state})[0]
@@ -328,6 +331,7 @@ class A3CAgent(hrl.tf_dependent.base.BaseDeepAgent):
     def __init__(self, create_net, state_shape, num_actions,
                  replay_capacity,
                  reward_decay,
+                 entropy_scale,
                  train_on_interval,
                  train_off_interval,
                  target_follow_interval,
@@ -346,8 +350,8 @@ class A3CAgent(hrl.tf_dependent.base.BaseDeepAgent):
         self.name, self.index = name, index
         self.state_shape, self.action_n = list(state_shape), num_actions
         self.reward_decay, self.train_on_interval, self.train_off_interval, self.target_follow_interval, \
-        self.off_batch_size, self.entropy = reward_decay, train_on_interval, train_off_interval, \
-                                            target_follow_interval, off_batch_size, entropy
+        self.off_batch_size, self.entropy, self.entropy_scale = reward_decay, train_on_interval, train_off_interval, \
+                                            target_follow_interval, off_batch_size, entropy, entropy_scale
         # playback buffer
         if train_on_interval > 0:
             self.replay_on = hrl.playback.MapPlayback(train_on_interval,
@@ -410,7 +414,8 @@ class A3CAgent(hrl.tf_dependent.base.BaseDeepAgent):
         self.global_step = global_step
         self.net = ActorCritic(index, "%s%d" % (name, index), state_shape, num_actions, create_net,
                                optimizer=optimizer, parent=parent_net, global_step=global_step,
-                               ddqn=ddqn, aux_r=aux_r, aux_d=aux_d, reward_decay=reward_decay)
+                               ddqn=ddqn, aux_r=aux_r, aux_d=aux_d, reward_decay=reward_decay,
+                               entropy_scale=entropy_scale)
         pass
 
     def set_session(self, sess):
