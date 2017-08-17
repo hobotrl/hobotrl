@@ -61,14 +61,14 @@ env = DrivingSimulatorEnv(
     rate_action=10.0,
     window_sizes={'obs': 2, 'reward': 3},
     buffer_sizes={'obs': 2, 'reward': 3},
-    step_delay_target=0.3
+    step_delay_target=0.7
 )
 env.observation_space = Box(low=0, high=255, shape=(640, 640, 3))
 env.action_space = Discrete(3)
 env.reward_range = (-np.inf, np.inf)
 env.metadata = {}
 # env = FrameStack(env, 1)
-ACTIONS = [(Char(ord(mode)),) for mode in ['s', 'a', 'd']]
+ACTIONS = [(Char(ord(mode)),) for mode in ['s', 'd', 'a']]
 
 
 state_shape = env.observation_space.shape
@@ -126,18 +126,29 @@ try:
             cum_td_loss = 0.0
             exploration_off = (n_ep%n_test==0)
             state = env.reset()
-            print "state shape: ", state.shape
-            state = cv2.resize(state, (224, 224))
-            state = np.array(state, dtype=np.float32)
-            state /= 255.0
+            # print "state shape: {}".format(state.shape)
+            # print "state type: {}".format(type(state))
+            # resize maybe different from tf.resize
+            # tensor_state = tf.convert_to_tensor(state)
+            state = tf.image.resize_images(state, [224, 224])
+            state = tf.image.convert_image_dtype(state, tf.float32)
             state = preprocess_image(state)
+            # print "state: {}".format(state)
+            # print "state type: {}".format(type(state))
+            np_state = sess.run(state)
+            # print "np state: {}".format(np_state)
+            # state = cv2.resize(state, (224, 224))
+            # state = np.array(state, dtype=np.float32)
+            # state /= 255.0
+            # state = preprocess_image(state)
             action = sess.run(preds, feed_dict={
                 inputs: np.repeat(
-                    state[np.newaxis, :, :, :],
+                    np_state[np.newaxis, :, :, :],
                     axis=0,
                     repeats=256),
                 is_train: False,
             })[0]
+            print "action: {}".format(action)
             # action = agent.act(state, exploration_off=exploration_off)
             next_state, reward, done, info = env.step(ACTIONS[action])
             queue = deque([(state, 0)]*1)
@@ -154,17 +165,24 @@ try:
                 #     learning_off=exploration_off,
                 #     exploration_off=exploration_off)
 
-                next_state = cv2.resize(next_state, (224, 224))
-                next_state = np.array(next_state, dtype=np.float32)
-                next_state /= 255.0
+                # next_state = cv2.resize(next_state, (224, 224))
+                # next_state = np.array(next_state, dtype=np.float32)
+                # next_state /= 255.0
+                next_state = tf.image.resize_images(next_state, [224, 224])
+                next_state = tf.image.convert_image_dtype(next_state, tf.float32)
                 next_state = preprocess_image(next_state)
+                # print "state: {}".format(next_state)
+                # print "state type: {}".format(type(next_state))
+                np_next_state = sess.run(next_state)
+                # print "np state: {}".format(np_next_state)
                 next_action = sess.run(preds, feed_dict={
                     inputs: np.repeat(
-                        next_state[np.newaxis, :, :, :],
+                        np_next_state[np.newaxis, :, :, :],
                         axis=0,
                         repeats=256),
                     is_train: False,
                 })[0]
+                print "next_action: {}".format(next_action)
 
                 if done is True:
                     break
