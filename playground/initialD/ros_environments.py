@@ -225,7 +225,13 @@ class DrivingSimulatorEnv(object):
                             self.cnt_q_except.value)
                     time.sleep(0.1)
             reward_list.append(rewards)
-        print "[step()]: reward vector {}".format(reward_list)
+        p_str = "[step()]: reward vector "
+        fmt_dict = {float: '{:.4f},', bool: '{},', int: "{},"}
+        for reward in reward_list:
+            slice_str = " ".join(
+                map(lambda ele: fmt_dict[type(ele)], reward)).format(*reward)
+            p_str += "\n    [" + slice_str + "],"
+        print p_str
         reward = self.__compile_reward(reward_list)
 
         # done
