@@ -12,7 +12,15 @@ import tensorflow as tf
 from tensorflow import layers
 from tensorflow.contrib.layers import l2_regularizer
 
+import hobotrl as hrl
+from hobotrl.experiment import Experiment
 from hobotrl.environments import *
+import hobotrl.algorithms.ac as ac
+import hobotrl.algorithms.dqn as dqn
+import hobotrl.algorithms.per as per
+import playground.optimal_tighten as play_ot
+import hobotrl.algorithms.ot as ot
+import playground.a3c_onoff as a3coo
 from exp_algorithms import *
 
 

@@ -1,3 +1,4 @@
+import argparse
 import traceback
 # ROS py
 import rospy
@@ -156,6 +157,13 @@ if __name__ == '__main__':
     time_elapsed = 1e4*1e9  # 1e4 seconds 
     new_ep = True
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument("n_ep", help="Num of episode to recored", type=int)
+    args = parser.parse_args()
+    print "[VideoRecorder]: Parsed n_ep is {}".format(args.n_ep)
+    if args.n_ep > 0:
+        ep_counter = args.n_ep
+
     try:
         print "[VideoRecorder]: recording episode {}".format(ep_counter)
         rospy.init_node('training_data_capture')
@@ -176,4 +184,4 @@ if __name__ == '__main__':
             dec_file.close()
         if status_file is not None:
             status_file.close()
-    print "All files closed properlly."
+    print "All files closed properlly for episode {}.".format(ep_counter)

@@ -13,7 +13,7 @@ import tensorflow as tf
 from tensorflow import layers
 from tensorflow.contrib.layers import l2_regularizer
 
-from hobotrl.playback import MapPlayback
+from hobotrl.playback import BalancedMapPlayback
 from dqn import DQNSticky
 from hobotrl.environments.environments import FrameStack
 
@@ -37,7 +37,7 @@ def compile_reward(rewards):
             -70.0 * float(reward[4]),  # ped 0 ~ -0.07
         )),
         rewards)
-    return np.mean(rewards)/1000.0
+    return np.mean(rewards)/100.0
 
 def compile_obs(obss):
     obs1 = obss[-1][0]
@@ -58,7 +58,7 @@ env = DrivingSimulatorEnv(
     rate_action=10.0,
     window_sizes={'obs': 2, 'reward': 3},
     buffer_sizes={'obs': 2, 'reward': 3},
-    step_delay_target=1.0
+    step_delay_target=0.5
 )
 env.observation_space = Box(low=0, high=255, shape=(640, 640, 3))
 env.action_space = Discrete(3)
@@ -71,7 +71,7 @@ ACTIONS = [(Char(ord(mode)),) for mode in ['s', 'd', 'a']]
 def f_net(inputs, num_outputs, is_training):
     inputs = inputs/128 - 1.0
     # (640, 640, 3*n) -> ()
-    with tf.device('/gpu:1'):
+    with tf.device('/gpu:0'):
         conv1 = layers.conv2d(
             inputs=inputs, filters=16, kernel_size=(8, 8), strides=1,
             kernel_regularizer=l2_regularizer(scale=1e-2), name='conv1')
@@ -118,7 +118,7 @@ def f_net(inputs, num_outputs, is_training):
     return q
 
 optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
-target_sync_rate = 1.0
+target_sync_rate = 0.001
 training_params = (optimizer_td, target_sync_rate, 10.0)
 # state_shape = (640, 640, 3*3)
 state_shape = env.observation_space.shape
@@ -131,8 +131,8 @@ global_step = tf.get_variable(
 agent = DQNSticky(
     # EpsilonGreedyPolicyMixin params
     actions=range(len(ACTIONS)),
-    epsilon=0.5,
-    sticky_mass=1,
+    epsilon=0.1,
+    sticky_mass=3,
     # DeepQFuncMixin params
     dqn_param_dict={
         'gamma': 0.9,
@@ -140,13 +140,14 @@ agent = DQNSticky(
         'state_shape': state_shape,
         'num_actions':len(ACTIONS),
         'training_params':training_params,
-        'schedule':(1, 1000),
+        'schedule':(1, 1),
         'greedy_policy':True,
         'ddqn': True,
         'graph':graph},
     # ReplayMixin params
-    buffer_class=MapPlayback,
+    buffer_class=BalancedMapPlayback,
     buffer_param_dict={
+        "num_actions": len(ACTIONS),
         "capacity": 5000,
         "sample_shapes": {
             'state': state_shape,
@@ -171,17 +172,22 @@ try:
         is_chief=True,
         init_op=tf.global_variables_initializer(),
         logdir='./experiment',
-        save_summaries_secs=20,
-        save_model_secs=1800)
+        save_summaries_secs=10,
+        save_model_secs=600)
 
     with sv.managed_session(config=config) as sess:
         agent.set_session(sess)
+        action_fraction = np.ones(3,) / 3.0
+        action_td_loss = np.zeros(3,)
         while True:
             n_ep += 1
             cum_reward = 0.0
             n_steps = 0
+            cnt_done = 0
             cum_td_loss = 0.0
             exploration_off = (n_ep%n_test==0)
+            time.sleep(2.0)
+            env.env.n_ep = n_ep
             state = env.reset()
             action = agent.act(state, exploration_off=exploration_off)
             next_state, reward, done, info = env.step(ACTIONS[action])
@@ -189,9 +195,12 @@ try:
             queue.append((state, action))
             state, action = queue.popleft()
             while True:
-                print "[Delayed action] {}".format(ACTIONS[action])
                 n_steps += 1
                 cum_reward += reward
+                # if n_steps < 35:
+                #    agent.set_epsilon(0.1)
+                # else:
+                #    agent.set_epsilon(0.3)
                 next_action, update_info = agent.step(
                     sess=sess, state=state, action=action,
                     reward=reward, next_state=next_state,
@@ -200,6 +209,23 @@ try:
                     exploration_off=exploration_off)
                 cum_td_loss += update_info['td_loss'] if 'td_loss' in update_info \
                     and update_info['td_loss'] is not None else 0
+                print "[Delayed action] {}".format(ACTIONS[action])
+                if 'td_losses' in update_info:
+                    prt_str = zip(
+                        update_info['actions'],
+                        update_info['q_vals'],
+                        update_info['td_target'],
+                        update_info['td_losses'],
+                        update_info['rewards'],
+                        update_info['done'])
+                    for s in prt_str:
+                        action_fraction *= 0.9
+                        action_fraction[s[0]] += 0.1
+                        action_td_loss[s[0]] = \
+                            0.9*action_td_loss[s[0]] + 0.1*s[3]
+                        # print ("{} "+"{:8.5f} "*4+"{}").format(*s)
+                    #print action_fraction
+                    #print action_td_loss
                 summary_proto = tf.Summary()
                 for tag in update_info:
                     summary_proto.value.add(
@@ -218,6 +244,15 @@ try:
                     summary_proto.value.add(
                         tag='next_q_vals_{}'.format(ac[0].data),
                         simple_value=next_q_vals_nt[i])
+                    summary_proto.value.add(
+                        tag='next_q_vals_{}'.format(ac[0].data),
+                        simple_value=next_q_vals_nt[i])
+                    summary_proto.value.add(
+                        tag='action_td_loss_{}'.format(ac[0].data),
+                        simple_value=action_td_loss[i])
+                    summary_proto.value.add(
+                        tag='action_fraction_{}'.format(ac[0].data),
+                        simple_value=action_fraction[i])
                 p_dict = sorted(zip(
                     map(lambda x: x[0].data, ACTIONS), next_q_vals_nt))
                 max_idx = np.argmax([v for _, v in p_dict])
@@ -236,6 +271,7 @@ try:
                            "average td_loss is {}. No exploration {}").format(
                                n_ep, n_steps, cum_reward,
                                cum_td_loss/n_steps, exploration_off)
+                if done is True and last_done is True:
                     if not exploration_off:
                         summary_proto.value.add(
                             tag='num_episode', simple_value=n_ep)
@@ -248,10 +284,15 @@ try:
                             tag='cum_reward_noexpolore',
                             simple_value=cum_reward)
                 sv.summary_computed(sess, summary=summary_proto)
-                if done is True:
+                if done is True and last_done is True:
                     break
                 state, action = next_state, next_action  # s',a' -> s,a
+                last_done = done
                 next_state, reward, done, info = env.step(ACTIONS[action])
+                if done is True:
+                    last_done = True
+                elif last_done is True or reward < -0.9:
+                    done = True
                 queue.append((state, action))
                 state, action = queue.popleft()
 except Exception as e:
