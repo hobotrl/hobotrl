@@ -3,12 +3,13 @@
 #
 
 exp_file=./test/exp_new.py
-exp_name=ACExperiment
+exp_name=A3CPendulum
 log_dir=./log/$exp_name
-device=2
-# cluster="{'ps':['localhost:2232'], 'worker':['localhost:2233', 'localhost:2234', 'localhost:2235']}"
-cluster="{'ps':['localhost:2232'], 'worker':['localhost:2233','localhost:2234']}"
-worker_n=2
+device=4
+cluster="{'ps':['localhost:2232'], 'worker':['localhost:2233', 'localhost:2234', 'localhost:2235']}"
+# cluster="{'ps':['localhost:2232'], 'worker':['localhost:2233','localhost:2234']}"
+# cluster="{'ps':['localhost:2232'], 'worker':['localhost:2233']}"
+worker_n=3
 
 mkdir -p $log_dir 
 python $exp_file run --name $exp_name --cluster "$cluster" --job ps > $log_dir/ps.txt 2>&1 &

@@ -15,7 +15,7 @@ from hobotrl.async import ClusterAgent
 import hobotrl.network as network
 
 
-class ACExperiment(Experiment):
+class A3CPendulum(Experiment):
     def run(self, args):
         env = gym.make('Pendulum-v0')
         env = hrl.envs.C2DEnvWrapper(env, [5])
@@ -41,11 +41,11 @@ class ACExperiment(Experiment):
                 state_shape=state_shape,
                 # ACUpdate arguments
                 discount_factor=discount_factor,
-                entropy=hrl.utils.CappedLinear(1e6, 1e-2, 1e-2),
+                entropy=hrl.utils.CappedLinear(1e6, 4e-2, 4e-2),
                 target_estimator=None,
                 max_advantage=100.0,
                 # optimizer arguments
-                network_optmizer=n_optimizer,
+                network_optimizer=n_optimizer,
                 max_gradient=10.0,
                 # sampler arguments
                 sampler=None,
@@ -59,12 +59,12 @@ class ACExperiment(Experiment):
         with agent.wait_for_session() as sess:
             agent.set_session(sess)
             runner = hrl.envs.EnvRunner(env, agent, reward_decay=discount_factor,
-                                        evaluate_interval=sys.maxint, render_interval=sys.maxint,
+                                        evaluate_interval=sys.maxint, render_interval=args.render_interval,
                                         render_once=True,
                                         logdir=args.logdir if args.index == 0 else None)
-            runner.episode(1000)
+            runner.episode(2000)
 
-Experiment.register(ACExperiment, "experiments A3C")
+Experiment.register(A3CPendulum, "experiments A3C")
 
 
 class ADQNExperiment(Experiment):
@@ -99,7 +99,7 @@ class ADQNExperiment(Experiment):
                 # epsilon greedy arguments
                 greedy_epsilon=hrl.utils.CappedLinear(1e5, 0.5, 0.1),
                 global_step=global_step,
-                network_optmizer=n_optimizer
+                network_optimizer=n_optimizer
             )
             return agent
 
@@ -107,7 +107,7 @@ class ADQNExperiment(Experiment):
         with agent.wait_for_session() as sess:
             agent.set_session(sess)
             runner = hrl.envs.EnvRunner(env, agent, reward_decay=discount_factor,
-                                        evaluate_interval=sys.maxint, render_interval=sys.maxint,
+                                        evaluate_interval=sys.maxint, render_interval=args.render_interval,
                                         render_once=True,
                                         logdir=args.logdir if args.index == 0 else None)
             runner.episode(1000)

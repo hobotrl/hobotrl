@@ -89,7 +89,7 @@ class DQNExperiment(Experiment):
             batch_size=self._batch_size,
             # epsilon greedy arguments
             greedy_epsilon=hrl.utils.CappedLinear(1e5, 0.5, 0.1),
-            network_optmizer=self._network_optimizer_ctor(),
+            network_optimizer=self._network_optimizer_ctor(),
             global_step=global_step
         )
         config = tf.ConfigProto()
@@ -102,7 +102,7 @@ class DQNExperiment(Experiment):
             agent.set_session(sess)
             runner = hrl.envs.EnvRunner(
                 self._env, agent, evaluate_interval=sys.maxint,
-                render_interval=sys.maxint, logdir=args.logdir,
+                render_interval=args.render_interval, logdir=args.logdir,
                 render_once=True,
             )
             runner.episode(self._episode_n)
@@ -178,7 +178,7 @@ class PERDQNExperiment(Experiment):
             batch_size=self._batch_size,
             # epsilon greedy arguments
             greedy_epsilon=hrl.utils.CappedLinear(1e5, 0.5, 0.1),
-            network_optmizer=self._network_optimizer_ctor(),
+            network_optimizer=self._network_optimizer_ctor(),
             global_step=global_step,
             **kwargs)
         config = tf.ConfigProto()
@@ -187,7 +187,8 @@ class PERDQNExperiment(Experiment):
                                    init_op=tf.global_variables_initializer(), save_dir=args.logdir)
         with sv.managed_session(config=config) as sess:
             agent.set_session(sess)
-            runner = hrl.envs.EnvRunner(self._env, agent, evaluate_interval=sys.maxint, render_interval=sys.maxint,
+            runner = hrl.envs.EnvRunner(self._env, agent,
+                                        evaluate_interval=sys.maxint, render_interval=args.render_interval,
                                         logdir=args.logdir)
             runner.episode(self._episode_n)
 
@@ -349,7 +350,7 @@ class ACOOExperiment(Experiment):
             with sv.prepare_or_wait_for_session(server.target) as sess:
                 agent.set_session(sess)
                 runner = hrl.envs.EnvRunner(env, agent, reward_decay=self.reward_decay,
-                                            evaluate_interval=sys.maxint, render_interval=sys.maxint,
+                                            evaluate_interval=sys.maxint, render_interval=args.render_interval,
                                             render_once=True,
                                             logdir=args.logdir if args.index == 0 else None)
                 runner.episode(self.episode_n)
@@ -387,7 +388,7 @@ class ACExperiment(Experiment):
             target_estimator=None,
             max_advantage=100.0,
             # optimizer arguments
-            network_optmizer=self._network_optimizer_ctor(),
+            network_optimizer=self._network_optimizer_ctor(),
             max_gradient=10.0,
             # sampler arguments
             sampler=None,
@@ -404,7 +405,7 @@ class ACExperiment(Experiment):
             agent.set_session(sess)
             runner = hrl.envs.EnvRunner(
                 self._env, agent, evaluate_interval=sys.maxint,
-                render_interval=sys.maxint, logdir=args.logdir
+                render_interval=args.render_interval, logdir=args.logdir
             )
             runner.episode(self._episode_n)
 
@@ -412,34 +413,37 @@ class ACExperiment(Experiment):
 class A3CExperiment(Experiment):
     def __init__(self,
                  env, f_create_net, episode_n=1000,
+                 learning_rate=1e-4,
                  discount_factor=0.9,
                  entropy=1e-2,
-                 network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3), grad_clip=10.0),
                  batch_size=8
                  ):
         super(A3CExperiment, self).__init__()
-        self._env, self._f_create_net, self._episode_n, \
-            self._discount_factor, self._entropy, self._network_optimizer_ctor, self._batch_size = \
-            env, f_create_net, episode_n, \
-            discount_factor, entropy, network_optimizer_ctor, batch_size
+        self._env, self._f_create_net, self._episode_n, self._learning_rate, \
+            self._discount_factor, self._entropy, self._batch_size = \
+            env, f_create_net, episode_n, learning_rate, \
+            discount_factor, entropy, batch_size
 
     def run(self, args):
         state_shape = list(self._env.observation_space.shape)
 
         def create_optimizer():
-            return tf.train.AdamOptimizer(1e-3)
+            return tf.train.AdamOptimizer(self._learning_rate)
 
         def create_agent(n_optimizer, global_step):
+            # all ScheduledParam hyper parameters are mutable objects.
+            # so we will not want to use same object for different Agent instances.
+            entropy = hrl.utils.clone_params(self._entropy)
             agent = hrl.ActorCritic(
                 f_create_net=self._f_create_net,
                 state_shape=state_shape,
                 # ACUpdate arguments
                 discount_factor=self._discount_factor,
-                entropy=self._entropy,
+                entropy=entropy,
                 target_estimator=None,
                 max_advantage=100.0,
                 # optimizer arguments
-                network_optmizer=n_optimizer,
+                network_optimizer=n_optimizer,
                 # sampler arguments
                 sampler=None,
                 batch_size=self._batch_size,
@@ -452,7 +456,7 @@ class A3CExperiment(Experiment):
         with agent.wait_for_session() as sess:
             agent.set_session(sess)
             runner = hrl.envs.EnvRunner(self._env, agent, reward_decay=self._discount_factor,
-                                        evaluate_interval=sys.maxint, render_interval=sys.maxint,
+                                        evaluate_interval=sys.maxint, render_interval=args.render_interval,
                                         render_once=True,
                                         logdir=args.logdir if args.index == 0 else None)
-            runner.episode(1000)
+            runner.episode(self._episode_n)

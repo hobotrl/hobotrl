@@ -22,7 +22,7 @@ class L2(network.NetworkUpdater):
         return self._update_operation
 
     def update(self, sess, *args, **kwargs):
-        return network.UpdateRun()
+        return network.UpdateRun(fetch_dict={"l2_loss": self._l2_loss})
 
 
 class FitTargetQ(network.NetworkUpdater):

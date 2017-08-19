@@ -15,7 +15,7 @@ from value_based import StateValueFunction
 
 
 class DiscreteActorCriticUpdater(network.NetworkUpdater):
-    def __init__(self, policy_dist, q_function, target_estimator, entropy=1e-3, max_advantage=10.0):
+    def __init__(self, policy_dist, q_function, target_estimator, entropy=1e-3, max_advantage=10.0, actor_weight=0.1):
         """
         :param policy_dist:
         :type policy_dist: distribution.DiscreteDistribution
@@ -48,7 +48,7 @@ class DiscreteActorCriticUpdater(network.NetworkUpdater):
                 pi_loss = tf.reduce_mean(self._policy_dist.log_prob() * tf.stop_gradient(advantage))
                 entropy_loss = tf.reduce_mean(self._input_entropy * self._policy_dist.entropy())
                 self._pi_loss = pi_loss
-            self._op_loss = self._q_loss - (self._pi_loss + entropy_loss)
+            self._op_loss = self._q_loss - actor_weight * (self._pi_loss + entropy_loss)
         self._update_operation = network.MinimizeLoss(self._op_loss,
                                                       var_list=self._q_function.variables +
                                                                self._policy_dist._dist_function.variables)
@@ -103,9 +103,9 @@ class ActorCriticUpdater(network.NetworkUpdater):
                 td = self._input_target_v - op_v
                 self._q_loss = tf.reduce_mean(network.Utils.clipped_square(td))
             with tf.name_scope("policy"):
-                # v = tf.reduce_max(op_q, axis=1)  # state value for greedy policy
                 advantage = self._input_target_v - op_v
-                advantage = tf.clip_by_value(advantage, -max_advantage, max_advantage, name="advantage")
+                self._advantage = advantage
+                # advantage = tf.clip_by_value(advantage, -max_advantage, max_advantage, name="advantage")
                 pi_loss = tf.reduce_mean(self._policy_dist.log_prob() * tf.stop_gradient(advantage))
                 entropy_loss = tf.reduce_mean(self._input_entropy * self._policy_dist.entropy())
                 self._pi_loss = pi_loss
@@ -134,6 +134,7 @@ class ActorCriticUpdater(network.NetworkUpdater):
         }
         feed_dict.update(feed_more)
         fetch_dict = {
+            "advantage": self._advantage,
             "target_value": target_value,
             "pi_loss": self._pi_loss,
             "q_loss": self._q_loss,
@@ -250,6 +251,7 @@ class ActorCritic(sampling.TrajectoryBatchUpdate,
             "max_gradient": max_gradient,
             "batch_size": batch_size,
         })
+        print "network_optimizer:", network_optimizer
         if network_optimizer is None:
             network_optimizer = network.LocalOptimizer(grad_clip=max_gradient)
         if sampler is None:
@@ -273,6 +275,7 @@ class ActorCritic(sampling.TrajectoryBatchUpdate,
                 # network output v
                 self._v_function = network.NetworkFunction(self.network["v"])
         else:
+            # continuous action: mean / stddev represents normal distribution
             dim_action = self.network["mean"].op.shape.as_list()[-1]
             self._input_action = tf.placeholder(dtype=tf.float32, shape=[None, dim_action], name="input_action")
             self._pi_function = network.NetworkFunction(
@@ -283,12 +286,13 @@ class ActorCritic(sampling.TrajectoryBatchUpdate,
             self._v_function = network.NetworkFunction(self.network["v"])
             # continuous action: mean / stddev for normal distribution
         if target_estimator is None:
-            target_estimator = target_estimate.NStepTD(self._v_function, discount_factor)
+            # target_estimator = target_estimate.NStepTD(self._v_function, discount_factor)
+            target_estimator = target_estimate.GAENStep(self._v_function, discount_factor)
         self.network_optimizer = network_optimizer
         network_optimizer.add_updater(
             ActorCriticUpdater(policy_dist=self._pi_distribution,
                                v_function=self._v_function,
-                                       target_estimator=target_estimator, entropy=entropy), name="ac")
+                               target_estimator=target_estimator, entropy=entropy), name="ac")
         network_optimizer.add_updater(network.L2(self.network), name="l2")
         network_optimizer.compile()
 
