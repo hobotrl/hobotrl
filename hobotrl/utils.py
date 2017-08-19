@@ -12,7 +12,7 @@ both mixin-style and non-... usages.
 import math
 import numpy as np
 from numpy import max
-from numpy.random import rand, randint, poisson
+from numpy.random import rand, randint
 import tensorflow.contrib.layers as layers
 import tensorflow as tf
 
@@ -170,56 +170,6 @@ class EpsilonGreedyPolicy(object):
         return self.__ACTIONS[idx_action]
 
 
-class EpsilonGreedyStickyPolicy(object):
-    """Epsilon sticky policy."""
-    def __init__(self, actions, f_get_value,
-                 epsilon, sticky_mass, tol=1e-10, **kwargs):
-        """Initialization"""
-        self.__ACTIONS = actions
-        self.__get_value = f_get_value
-        self.__EPSILON = epsilon
-        self.__STICKY_MASS = sticky_mass
-        self.__sticky_cnt = 0
-        self.__repeat_idx_action = None
-        self.__TOL = tol
-
-    def act_single_(self, state, **kwargs):
-        """Epsilon greedy action selection.
-
-        Repeat random action with `epsilon` prob.
-        """
-        exploration_off = kwargs['exploration_off'] \
-            if 'exploration_off' in kwargs else False
-        if state is None:
-            idx_action = randint(0, len(self.__ACTIONS))
-        elif not exploration_off and \
-            (rand() < self.__EPSILON or self.__sticky_cnt>0):
-            if self.__sticky_cnt > 0:
-                idx_action = self.__repeat_idx_action
-                self.__sticky_cnt -= 1
-            else:
-                self.__sticky_cnt = poisson(self.__STICKY_MASS)
-                idx_action = randint(0, len(self.__ACTIONS))
-                self.__repeat_idx_action = idx_action
-        else:
-            # Follow greedy policy with 1-epsilon prob.
-            # break tie randomly
-            q_vals = np.asarray(
-                self.__get_value(state=state, **kwargs)
-            ).flatten()
-            max_q_val = max(q_vals)
-            idx_best_actions = [
-                i for i in range(len(q_vals))
-                if (q_vals[i] - max_q_val)**2 < self.__TOL
-            ]
-            idx_action = idx_best_actions[randint(0, len(idx_best_actions))]
-        return self.__ACTIONS[idx_action]
-
-    def set_epsilon(self, new_epsilon):
-        print "Epsilon set as {}".format(new_epsilon)
-        self.__EPSILON = new_epsilon
-
-
 class Network(object):
 
     @staticmethod
@@ -295,6 +245,43 @@ class Network(object):
             if grad is not None:
                 gradients[i] = (tf.clip_by_norm(grad, clip_val), var)
         return optimizer.apply_gradients(gradients), gradients
+
+
+class NP(object):
+    @staticmethod
+    def one_hot(array, num):
+        oh = np.zeros(shape=array.shape+[num])
+        oh[np.arange(array.size), array] = 1
+        return oh
+
+
+class hashable_list(list):
+    @staticmethod
+    def __new__(S, *args, **kwargs):
+        """ T.__new__(S, ...) -> a new object with type S, a subtype of T """
+        return list.__new__(S, [])
+
+    def __init__(self, another=None):
+        super(hashable_list, self).__init__()
+        if another is not None:
+            for o in another:
+                self.append(o)
+
+    def __hash__(self):
+        h = 0
+        if len(self) == 0:
+            return h
+        for o in self:
+            h += o.__hash__()
+        return h
+
+    def __eq__(self, other):
+        if other is None or len(self) != len(other):
+            return False
+        for i in range(len(other)):
+            if not self[i].__eq__(other[i]):
+                return False
+        return True
 
 
 class FloatParam(float):
@@ -561,6 +548,11 @@ class Stepper(IntHandle):
         self._n += 1
 
 
+def clone_params(*params):
+    params = [p.clone() if isinstance(p, ScheduledParam) else p for p in params]
+    return params[0] if len(params) == 1 else params
+
+
 class ScheduledParam(FloatParam):
 
     @staticmethod
@@ -579,11 +571,17 @@ class ScheduledParam(FloatParam):
         x = schedule(0)
         super(ScheduledParam, self).__init__(x)
 
+    def clone(self):
+        return ScheduledParam(self._schedule, self._n)
+
     @property
     def value(self):
         if self._schedule is not None and self._n is not None:
             self._value = self._schedule(self._n.value())
         return super(ScheduledParam, self).value
+
+    def __str__(self):
+        return "[%d]%f" % (self._n.value(), self._value)
 
     def set_int_handle(self, int_handle):
         self._n = int_handle

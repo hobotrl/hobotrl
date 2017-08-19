@@ -12,9 +12,11 @@ import tensorflow as tf
 from tensorflow import layers
 from tensorflow.contrib.layers import l2_regularizer
 
-from hobotrl.playback import MapPlayback
+import hobotrl as hrl
+
+#from hobotrl.playback import MapPlayback
 # from hobotrl.algorithms.dqn import DQN
-from dqn import DQNSticky
+#from dqn import DQNSticky
 
 from ros_environments import DrivingSimulatorEnv
 
@@ -61,8 +63,10 @@ env = DrivingSimulatorEnv(
 )
 ACTIONS = [(Char(ord(mode)),) for mode in ['s', 'd', 'a']]
 
+
 # Agent
-def f_net(inputs, num_outputs, is_training):
+def f_net(inputs):
+    inputs = inputs[0]
     inputs = inputs/128 - 1.0
     # (640, 640, 3*n) -> ()
     with tf.device('/gpu:1'):
@@ -106,10 +110,10 @@ def f_net(inputs, num_outputs, is_training):
             kernel_regularizer=l2_regularizer(scale=1e-2), name='hid2')
         print hid2.shape
         q = layers.dense(
-            inputs=hid2, units=num_outputs, activation=None,
+            inputs=hid2, units=len(ACTIONS), activation=None,
             kernel_regularizer=l2_regularizer(scale=1e-2), name='q')
-        q = tf.squeeze(q, name='out_sqz')
-    return q
+        q = tf.squeeze(q, name='out_sqz', axis=1)
+    return {"q": q}
 
 optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
 target_sync_rate = 0.001
@@ -121,34 +125,22 @@ global_step = tf.get_variable(
     initializer=tf.constant_initializer(0), trainable=False
 )
 
-agent = DQNSticky(
-    # EpsilonGreedyPolicyMixin params
-    actions=range(len(ACTIONS)),
-    epsilon=0.2,
-    sticky_mass=1,
-    # DeepQFuncMixin params
-    dqn_param_dict={
-        'gamma': 0.9,
-        'f_net': f_net,
-        'state_shape': state_shape,
-        'num_actions':len(ACTIONS),
-        'training_params':training_params,
-        'schedule':(1, 1),
-        'greedy_policy':True,
-        'ddqn': True,
-        'graph':graph},
-    # ReplayMixin params
-    buffer_class=MapPlayback,
-    buffer_param_dict={
-        "capacity": 5000,
-        "sample_shapes": {
-            'state': state_shape,
-            'action': (),
-            'reward': (),
-            'next_state': state_shape,
-            'episode_done': () }},
-    batch_size=8,
-    # BaseDeepAgent
+agent = hrl.DQN(
+    f_create_q=f_net, state_shape=state_shape,
+    # OneStepTD arguments
+    num_actions=len(ACTIONS), discount_factor=0.9,
+    ddqn=False,
+    # target network sync arguments
+    target_sync_interval=1,
+    target_sync_rate=0.001,
+    # epsilon greeedy arguments
+    greedy_epsilon=0.2,
+    # optimizer arguments
+    network_optimizer=hrl.network.LocalOptimizer(tf.train.GradientDescentOptimizer(1e-3), 10.0),
+    max_gradient=10.0,
+    # sampler arguments
+    update_interval=1, replay_size=5000, batch_size=8,
+    # sticky mass todo
     global_step=global_step
 )
 
@@ -181,12 +173,18 @@ try:
             while True:
                 n_steps += 1
                 cum_reward += reward
-                next_action, update_info = agent.step(
-                    sess=sess, state=state, action=action,
-                    reward=reward, next_state=next_state,
-                    episode_done=done,
-                    learning_off=exploration_off,
-                    exploration_off=exploration_off)
+                if not exploration_off:
+                    update_info = agent.step(
+                        sess=sess, state=state, action=action,
+                        reward=reward, next_state=next_state,
+                        episode_done=done,
+
+                        learning_off=exploration_off,
+                        exploration_off=exploration_off
+                    )
+                else:
+                    update_info = {}
+                next_action = agent.act(next_state, on=not exploration_off)
                 cum_td_loss += update_info['td_loss'] if 'td_loss' in update_info \
                     and update_info['td_loss'] is not None else 0
                 summary_proto = tf.Summary()

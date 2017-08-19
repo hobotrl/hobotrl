@@ -26,8 +26,7 @@ TODO: [Lewis] mixins with overriding are linear in nature, not sure if
 import numpy as np
 
 from core import BaseAgent
-from utils import TabularQFunc
-from utils import EpsilonGreedyPolicy, EpsilonGreedyStickyPolicy
+from utils import TabularQFunc, EpsilonGreedyPolicy
 
 
 class BaseValueMixin(object):
@@ -165,31 +164,6 @@ class EpsilonGreedyPolicyMixin(BasePolicyMixin):
 
     def act_single_(self, *args, **kwargs):
         return self.__epgp.act_single_(*args, **kwargs)
-
-
-class EpsilonGreedyStickyPolicyMixin(BasePolicyMixin):
-    """Thin Wrapper for EpsilonGreedyPolicy
-    """
-    def __init__(self, **kwargs):
-        super(EpsilonGreedyStickyPolicyMixin, self).__init__(**kwargs)
-
-        print kwargs
-        # Check if `get_value` is properly initialized
-        try:
-            kwargs['f_get_value'] = self.get_value
-        except:
-            raise ValueError(
-                'EpsilonGreedyStickyPolicyMixin: '
-                'method `get_value()` not properly initialized.'
-            )
-
-        self.__epgp = EpsilonGreedyStickyPolicy(**kwargs)
-
-    def act_single_(self, *args, **kwargs):
-        return self.__epgp.act_single_(*args, **kwargs)
-
-    def set_epsilon(self, new_epsilon):
-        self.__epgp.set_epsilon(new_epsilon)
 
 
 class ReplayMixin(object):
