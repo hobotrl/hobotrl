@@ -16,7 +16,7 @@ from tensorflow import layers
 from tensorflow.contrib.layers import l2_regularizer
 
 from hobotrl.playback import MapPlayback
-from dqn import DQNSticky
+from playground.initialD.imitaion_learning import TmpPretrainedAgent
 from hobotrl.environments.environments import FrameStack
 
 from ros_environments import DrivingSimulatorEnv
@@ -47,8 +47,10 @@ def compile_obs(obss):
     # obs = np.concatenate([obs1, obs2, obs3], axis=2)
     return obs1
 
+# What is the result's name?? Need check
 env = DrivingSimulatorEnv(
-    defs_obs=[('/training/image/compressed', CompressedImage)],
+    defs_obs=[('/training/image/compressed', CompressedImage),
+              ('/decision_results', Int16)],
     func_compile_obs=compile_obs,
     defs_reward=[
         ('/rl/has_obstacle_nearby', Bool),
@@ -85,39 +87,30 @@ def preprocess_image(input_image):
 
     return image
 
+def is_common_scence(state):
+    pass
+
 
 try:
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
 
-    # sv = tf.train.Supervisor(
-    #     graph=tf.get_default_graph(),
-    #     is_chief=True,
-    #     init_op=tf.global_variables_initializer(),
-    #     logdir='./experiment',
-    #     save_summaries_secs=20,
-    #     save_model_secs=1800)
-
-    # recover
-
-
-    # inputs = tf.placeholder(dtype=tf.float32, shape=[None, 640, 640, 3])
-    # resized_inputs = tf.image.resize_images(inputs, [224, 224])
-    # preds = f_net_policy(resized_inputs, 3)
-
-
-    # with sv.managed_session(config=config) as sess:
     with tf.Session() as sess:
         # agent.set_session(sess)
-        checkpoint = "/home/pirate03/PycharmProjects/resnet-18-tensorflow/log2_15/model.ckpt-9999"
-        saver = tf.train.import_meta_graph('/home/pirate03/PycharmProjects/resnet-18-tensorflow/log2_15/model.ckpt-9999.meta',
-                                           clear_devices=True)
-        saver.restore(sess, checkpoint)
-        graph = tf.get_default_graph()
+        checkpoint_path = "/home/pirate03/PycharmProjects/resnet-18-tensorflow/log2_15/model.ckpt-9999"
 
-        inputs = graph.get_tensor_by_name('train_image/shuffle_batch:0')
-        preds = graph.get_tensor_by_name('tower_0/ToInt32:0')
-        is_train = graph.get_operation_by_name('is_train').outputs[0]
+        sess = tf.Session()
+        graph = tf.get_default_graph()
+        global_step = tf.get_variable(
+            'global_step', [], dtype=tf.int32,
+            initializer=tf.constant_initializer(0), trainable=False
+        )
+        input_name = 'train_image/shuffle_batch:0'
+        output_name = 'tower_0/ToInt32:0'
+        pretrained_agent = TmpPretrainedAgent(sess=sess, graph=graph, global_step=global_step,
+                                              checkpoint_path=checkpoint_path, input_name=input_name,
+                                              output_name=output_name)
+
         # lr = graph.get_operation_by_name('lr').outputs[0]
         while True:
             n_ep += 1
@@ -135,19 +128,22 @@ try:
             state = preprocess_image(state)
             # print "state: {}".format(state)
             # print "state type: {}".format(type(state))
-            np_state = sess.run(state)
+            state = sess.run(state)
             # print "np state: {}".format(np_state)
             # state = cv2.resize(state, (224, 224))
             # state = np.array(state, dtype=np.float32)
             # state /= 255.0
             # state = preprocess_image(state)
-            action = sess.run(preds, feed_dict={
-                inputs: np.repeat(
-                    np_state[np.newaxis, :, :, :],
-                    axis=0,
-                    repeats=256),
-                is_train: False,
-            })[0]
+            action = None
+            if is_common_scence(state):
+                env.step('1')
+                action = pretrained_agent.act(state)
+            else:
+                # not sure '0' or '1'
+                # HOW TO USE SUBSCRIBER
+                env.step('0')
+                action = None
+
             print "action: {}".format(action)
             # action = agent.act(state, exploration_off=exploration_off)
             next_state, reward, done, info = env.step(ACTIONS[action])
@@ -158,30 +154,22 @@ try:
                 print "[Delayed action] {}".format(ACTIONS[action])
                 n_steps += 1
                 cum_reward += reward
-                # _, update_info = agent.step(
-                #     sess=sess, state=state, action=action,
-                #     reward=reward, next_state=next_state,
-                #     episode_done=done,
-                #     learning_off=exploration_off,
-                #     exploration_off=exploration_off)
-
-                # next_state = cv2.resize(next_state, (224, 224))
-                # next_state = np.array(next_state, dtype=np.float32)
-                # next_state /= 255.0
                 next_state = tf.image.resize_images(next_state, [224, 224])
                 next_state = tf.image.convert_image_dtype(next_state, tf.float32)
                 next_state = preprocess_image(next_state)
                 # print "state: {}".format(next_state)
                 # print "state type: {}".format(type(next_state))
-                np_next_state = sess.run(next_state)
+                next_state = sess.run(next_state)
                 # print "np state: {}".format(np_next_state)
-                next_action = sess.run(preds, feed_dict={
-                    inputs: np.repeat(
-                        np_next_state[np.newaxis, :, :, :],
-                        axis=0,
-                        repeats=256),
-                    is_train: False,
-                })[0]
+                if is_common_scence(next_state):
+                    env.step('1')
+                    next_action = pretrained_agent.act(next_state)
+                else:
+                    # not sure '0' or '1'
+                    # HOW TO USE SUBSCRIBER
+                    env.step('0')
+                    next_action = None
+
                 print "next_action: {}".format(next_action)
 
                 if done is True:
