@@ -99,18 +99,21 @@ class ActorCritic(object):
 
                 # The formula to calculate the entropy of a Normal distribution
                 # H = k/2 + k*log(2pi)/2 + log(abs(sigma))/2
-                # self.entropy = tf.reshape(tf.reduce_sum((1 + tf.log(2 * np.pi * tf.square(self.pi_stddev))) / 2,
-                #                                         axis=1, name="entropy"), [-1,1])
-                self.normal_dist = tf.contrib.distributions.Normal(self.pi_mean, self.pi_stddev)
-                self.sample = tf.squeeze(self.normal_dist.sample(1), axis=0)  # sample an action
-                self.entropy = self.normal_dist.entropy()
+                self.entropy = tf.reduce_sum(tf.log(2.0 * np.pi * np.e * tf.square(self.pi_stddev)) / 2.0,
+                                             axis=1, name="entropy")
+                # self.normal_dist = tf.contrib.distributions.Normal(self.pi_mean, self.pi_stddev)
+                # self.sample = tf.squeeze(self.normal_dist.sample(1), axis=0)  # sample an action
+
+                # self.entropy = tf.reduce_sum(self.normal_dist.entropy(), axis=1)
                 self.entropy_mean = tf.reduce_mean(self.entropy, name="entropy_mean")
 
                 # probability of input_action according to the formula of the normal distribution
-                # self.probability = 1.0 / tf.sqrt(2 * np.pi * tf.square(self.pi_stddev)) \
-                #                    * tf.exp(- tf.square((self.input_action - self.pi_mean) / self.pi_stddev) / 2)
-                # self.log_probability = tf.log(self.probability)
-                self.log_probability = tf.reduce_sum(self.normal_dist.log_prob(self.input_action), axis=1)
+                self.probability = 1.0 / tf.sqrt(2.0 * np.pi * tf.square(self.pi_stddev)) \
+                                   * tf.exp(- tf.square((self.input_action - self.pi_mean) / self.pi_stddev) / 2.0)
+                self.log_probability = tf.reduce_sum(-0.5 * tf.square((self.input_action - self.pi_mean) /
+                                                     self.pi_stddev) - 0.5 * tf.log(tf.square(self.pi_stddev)) - 0.5 *
+                                                     np.log(2.0 * np.pi), axis=1)
+                # self.log_probability = tf.reduce_sum(self.normal_dist.log_prob(self.input_action), axis=1)
                 # calculate the loss of pi
                 # tf.stop_gradient() can stop the gradient computation of parameter of the critic network when training
                 # the actor network
@@ -309,10 +312,11 @@ class ActorCritic(object):
         self.sess.run(self.pulls)
 
     def get_action(self, state):
-        result = self.sess.run([self.sample, self.pi_mean, self.pi_stddev], feed_dict={self.input_state: state})
+        result = self.sess.run([self.pi_mean, self.pi_stddev], feed_dict={self.input_state: state})
+        sample = np.random.normal(result[0], result[1])
         logging.warning("--------------------------------------")
-        logging.warning("mean: %s, stddev: %s, sample: %s", result[1], result[2], result[0])
-        return result[0]
+        logging.warning("mean: %s, stddev: %s, sample: %s", result[0], result[1], sample)
+        return sample
 
     def get_v(self, state):
         return self.sess.run([self.v], feed_dict={self.input_state: state})[0]
