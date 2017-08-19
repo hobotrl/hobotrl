@@ -15,13 +15,13 @@ import exp_algorithms as alg
 
 class ACPendulum(ACExperiment):
 
-    def __init__(self, env=None, f_create_net=None, episode_n=1000, discount_factor=0.9, entropy=1e-2,
+    def __init__(self, env=None, f_create_net=None, episode_n=2000, discount_factor=0.9, entropy=1e-1,
                  network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3),
                                                                            grad_clip=10.0), batch_size=8):
         if env is None:
             env = gym.make("Pendulum-v0")
             env = hrl.envs.C2DEnvWrapper(env, [5])
-            env = hrl.envs.AugmentEnvWrapper(env, reward_decay=0.9, reward_scale=0.1)
+            env = hrl.envs.AugmentEnvWrapper(env, reward_decay=discount_factor, reward_scale=0.1)
         if f_create_net is None:
             def f_net(inputs):
                 l2 = 1e-4
@@ -34,6 +34,46 @@ class ACPendulum(ACExperiment):
         super(ACPendulum, self).__init__(env, f_create_net, episode_n, discount_factor, entropy,
                                          network_optimizer_ctor, batch_size)
 Experiment.register(ACPendulum, "discrete actor critic for Pendulum")
+
+
+class ACOOPendulum(ACOOExperiment):
+    def __init__(self, env=None, f_create_net=None, episode_n=1000, reward_decay=0.9, on_batch_size=8, off_batch_size=32,
+                 off_interval=0, sync_interval=1000, replay_size=10000, prob_min=5e-3,
+                 entropy=hrl.utils.CappedLinear(4e5, 1e-2, 1e-3), l2=1e-8,
+                 optimizer_ctor=lambda: tf.train.AdamOptimizer(1e-3), ddqn=False, aux_r=False, aux_d=False):
+        if env is None:
+            env = gym.make("Pendulum-v0")
+            env = hrl.envs.C2DEnvWrapper(env, [5])
+            env = hrl.envs.AugmentEnvWrapper(env, reward_decay=reward_decay, reward_scale=0.1)
+        if f_create_net is None:
+            def f_net(inputs):
+                input_state = inputs[0]
+                se = hrl.network.Utils.layer_fcs(input_state,
+                                                 shape=[200],
+                                                 out_count=100,
+                                                 activation_hidden=tf.nn.elu,
+                                                 activation_out=tf.nn.elu,
+                                                 l2=l2,
+                                                 var_scope="se")
+
+                q = hrl.utils.Network.layer_fcs(se, [256], env.action_space.n,
+                                                activation_hidden=tf.nn.relu,
+                                                l2=l2,
+                                                var_scope="q")
+                pi = hrl.utils.Network.layer_fcs(se, [256], env.action_space.n,
+                                                 activation_hidden=tf.nn.relu,
+                                                 # activation_out=tf.nn.softplus,
+                                                 l2=l2,
+                                                 var_scope="pi")
+                pi = tf.nn.softmax(pi)
+                # pi = pi + prob_min
+                # pi = pi / tf.reduce_sum(pi, axis=-1, keep_dims=True)
+                return {"pi": pi, "q": q, "se": se}
+            f_create_net = f_net
+        super(ACOOPendulum, self).__init__(env, f_create_net, episode_n, reward_decay, on_batch_size, off_batch_size,
+                                           off_interval, sync_interval, replay_size, prob_min, entropy, l2,
+                                           optimizer_ctor, ddqn, aux_r, aux_d)
+Experiment.register(ACOOPendulum, "discrete actor critic for Pendulum")
 
 
 class ACContinuousPendulum(ACExperiment):
@@ -280,7 +320,8 @@ class OTDQNPendulum(Experiment):
         with sv.managed_session(config=config) as sess:
             agent.set_session(sess)
             runner = hrl.envs.EnvRunner(env, agent, reward_decay=discount_factor,
-                                        evaluate_interval=sys.maxint, render_interval=sys.maxint, logdir=args.logdir)
+                                        evaluate_interval=sys.maxint, render_interval=args.render_interval,
+                                        logdir=args.logdir)
             runner.episode(500)
 
 Experiment.register(OTDQNPendulum, "Optimaly Tightening DQN for Pendulum")
@@ -341,7 +382,8 @@ class AOTDQNPendulum(Experiment):
         with sv.managed_session(config=config) as sess:
             agent.set_session(sess)
             runner = hrl.envs.EnvRunner(env, agent, reward_decay=reward_decay,
-                                        evaluate_interval=sys.maxint, render_interval=sys.maxint, logdir=args.logdir)
+                                        evaluate_interval=sys.maxint, render_interval=args.render_interval,
+                                        logdir=args.logdir)
             runner.episode(500)
 
 Experiment.register(AOTDQNPendulum, "Optimaly Tightening DQN for Pendulum")
@@ -427,7 +469,8 @@ class AOTDQNBreakout(Experiment):
         with sv.managed_session(config=config) as sess:
             agent.set_session(sess)
             runner = hrl.envs.EnvRunner(env, agent, reward_decay=reward_decay,
-                                        evaluate_interval=sys.maxint, render_interval=sys.maxint, logdir=args.logdir)
+                                        evaluate_interval=sys.maxint, render_interval=args.render_interval,
+                                        logdir=args.logdir)
             runner.episode(500)
 
 Experiment.register(AOTDQNBreakout, "Optimaly Tightening DQN for Breakout")

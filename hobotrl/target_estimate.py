@@ -154,7 +154,7 @@ class OptimalityTighteningEstimator(TargetEstimator):
             lower_bounds[i] = max(l, lower_bounds[i])
 
         for i in range(1, len(td_target)):
-            u = min(upper_bounds[i-1], td_target[i-1]) / self._discount_factor - reward[i-1]
+            u = min(upper_bounds[i-1], td_target[i-1]) / self._discount_factor - reward[i-1] / self._discount_factor
             upper_bounds[i] = min(u, upper_bounds[i])
         w_all = 1.0 + self._weight_lower + self._weight_upper
         target_value = (td_target + self._weight_lower * lower_bounds + self._weight_upper * upper_bounds) / w_all

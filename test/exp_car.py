@@ -194,10 +194,9 @@ Experiment.register(A3CCarDiscrete, "discrete A3C for CarRacing")
 
 
 class A3CCarContinuous(A3CExperiment):
-    def __init__(self, env=None, f_create_net=None, episode_n=1000, discount_factor=0.9,
-                 entropy=hrl.utils.CappedLinear(1e6, 1e-3, 1e-4),
-                 network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3),
-                                                                           grad_clip=10.0), batch_size=8):
+    def __init__(self, env=None, f_create_net=None, episode_n=1000, learning_rate=5e-5, discount_factor=0.99,
+                 entropy=hrl.utils.CappedLinear(1e6, 2e-2, 1e-4),
+                 batch_size=32):
         if env is None:
             env = gym.make("CarRacing-v0")
             env = CarGrassWrapper(env, grass_penalty=0.5)
@@ -227,20 +226,60 @@ class A3CCarContinuous(A3CExperiment):
                 v = tf.squeeze(v, axis=1)
                 mean = hrl.utils.Network.layer_fcs(se, [256], dim_action,
                                                    activation_hidden=tf.nn.relu,
-                                                   activation_out=tf.tanh,
+                                                   activation_out=None,
                                                    l2=l2,
                                                    var_scope="mean")
+                mean = tf.nn.tanh(mean / 4.0)
                 stddev = hrl.utils.Network.layer_fcs(se, [256], dim_action,
                                                      activation_hidden=tf.nn.relu,
-                                                     activation_out=tf.nn.softplus,
+                                                     # activation_out=tf.nn.softplus,
+                                                     activation_out=None,
                                                      l2=l2,
                                                      var_scope="stddev")
-
+                stddev = 4.0 * tf.nn.sigmoid(stddev / 4.0)
                 return {"v": v, "mean": mean, "stddev": stddev}
             f_create_net = create_ac_car
-        super(A3CCarContinuous, self).__init__(env, f_create_net, episode_n, discount_factor, entropy,
-                                               network_optimizer_ctor, batch_size)
+        super(A3CCarContinuous, self).__init__(env, f_create_net, episode_n, learning_rate, discount_factor, entropy,
+                                               batch_size)
 Experiment.register(A3CCarContinuous, "continuous A3C for CarRacing")
+
+
+class A3CCarDiscrete2(A3CExperiment):
+    def __init__(self, env=None, f_create_net=None, episode_n=10000, learning_rate=5e-5, discount_factor=0.99,
+                 entropy=hrl.utils.CappedLinear(1e6, 2e-2, 5e-3),
+                 batch_size=32):
+        if env is None:
+            env = gym.make("CarRacing-v0")
+            env = wrap_car(env, 3, 3)
+        if f_create_net is None:
+            dim_action = env.action_space.n
+
+            def create_ac_car(inputs):
+                l2 = 1e-7
+                input_state = inputs[0]
+                se = hrl.utils.Network.conv2ds(input_state,
+                                               shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
+                                               out_flatten=True,
+                                               activation=tf.nn.relu,
+                                               l2=l2,
+                                               var_scope="se")
+
+                v = hrl.utils.Network.layer_fcs(se, [256], 1,
+                                                activation_hidden=tf.nn.relu,
+                                                l2=l2,
+                                                var_scope="v")
+                v = tf.squeeze(v, axis=1)
+                pi = hrl.utils.Network.layer_fcs(se, [256], dim_action,
+                                                 activation_hidden=tf.nn.relu,
+                                                 activation_out=tf.nn.softmax,
+                                                 l2=l2,
+                                                 var_scope="pi")
+
+                return {"v": v, "pi": pi}
+            f_create_net = create_ac_car
+        super(A3CCarDiscrete2, self).__init__(env, f_create_net, episode_n, learning_rate, discount_factor, entropy,
+                                              batch_size)
+Experiment.register(A3CCarDiscrete2, "continuous A3C for CarRacing")
 
 
 class DDPGCar(DPGExperiment):
