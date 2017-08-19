@@ -420,7 +420,7 @@ class UpdateOperation(object):
         :param fetch_dict: optional dict of values or tf.Tensor's which should return to invoker by this update
         """
         super(UpdateOperation, self).__init__()
-        self._op_list, self._var_list, = op_list, var_list
+        self._op_list, self._var_list, = op_list, self.merge_list_(var_list)
         self._updater = None
 
     def __hash__(self):
@@ -428,6 +428,16 @@ class UpdateOperation(object):
 
     def __eq__(self, other):
         return id(self) == id(other)
+
+    def merge_list_(self, var_list):
+        var_set = {}
+        result = []
+        for var in var_list:
+            if var in var_set:
+                continue
+            result.append(var)
+            var_set[var] = var
+        return result
 
 
 class MinimizeLoss(UpdateOperation):
@@ -643,7 +653,7 @@ class BaseNetworkOptimizer(NetworkOptimizer):
             for i, (grad, var) in enumerate(grads_vars):
                 if grad is not None:
                     grads_vars[i] = (grad * self._updater_weights[grad_update._updater], var)
-            weighted_grads.append(grads_vars)
+            weighted_grads.extend(grads_vars)
         # merge weighted_grads
         var_indices = {}
         merged_grad_vars = []
@@ -717,6 +727,13 @@ class LocalOptimizer(BaseNetworkOptimizer):
     apply gradients to local variables
     """
     def __init__(self, optimizer=None, grad_clip=None, name=""):
+        """
+
+        :param optimizer:
+        :type optimizer: tf.train.Optimizer
+        :param grad_clip:
+        :param name:
+        """
         super(LocalOptimizer, self).__init__(grad_clip, name)
         if optimizer is None:
             optimizer = tf.train.AdamOptimizer(1e-4)
@@ -743,14 +760,17 @@ class DistributedOptimizer(BaseNetworkOptimizer):
         super(DistributedOptimizer, self).__init__(grad_clip, name)
         self._global_optimizer = global_optimizer
         self._var_map = local_global_var_map
+        logging.warning("var map:%s", local_global_var_map)
 
     def apply_gradients_op_(self, grads_and_vars):
-        grads_and_globalvars = [(grad, self._var_map[var]) for grad, var in grads_and_vars]
-        apply_op = self._global_optimizer.apply_gradients(grads_and_globalvars)
-        with tf.control_dependencies([apply_op]):
-            pulls = [tf.assign(local_var, global_var) for local_var, global_var in self._var_map.items()]
-            pulls = tf.group(*pulls)
-            return pulls
+        with tf.name_scope(self._name):
+            grads_and_globalvars = [(grad, self._var_map[var]) for grad, var in grads_and_vars]
+            logging.warning("grads_and_global_vars:%s", grads_and_globalvars)
+            apply_op = self._global_optimizer.apply_gradients(grads_and_globalvars)
+            with tf.control_dependencies([apply_op]):
+                pulls = [tf.assign(local_var, global_var) for local_var, global_var in self._var_map.items()]
+                pulls = tf.group(*pulls)
+                return pulls
 
 
 class OptimizerPlaceHolder(NetworkOptimizer):

@@ -124,7 +124,7 @@ agent = hrl.DQN(
     batch_size=8,
     # epsilon greedy arguments
     greedy_epsilon=hrl.utils.CappedLinear(1e5, 0.5, 0.1),
-    network_optmizer=None,
+    network_optimizer=None,
     global_step=None
 )
 #
