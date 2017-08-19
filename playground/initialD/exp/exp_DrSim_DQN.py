@@ -18,7 +18,7 @@ import hobotrl as hrl
 # from hobotrl.algorithms.dqn import DQN
 #from dqn import DQNSticky
 
-from ros_environments import DrivingSimulatorEnv
+from ros_environments import DrivingSimulatorEnvClient as DrivingSimulatorEnv
 
 import rospy
 import message_filters
@@ -46,6 +46,8 @@ def compile_obs(obss):
     return obs
 
 env = DrivingSimulatorEnv(
+    address="localhost",
+    port="22230",
     defs_obs=[('/training/image/compressed', CompressedImage)],
     func_compile_obs=compile_obs,
     defs_reward=[

@@ -9,6 +9,7 @@ sys.path.append('..')
 from ros_environments import DrivingSimulatorEnvServer as DrivingSimulatorEnv
 
 import rospy
+import numpy as np
 import message_filters
 from std_msgs.msg import Char, Bool, Int16, Float32
 from sensor_msgs.msg import CompressedImage
