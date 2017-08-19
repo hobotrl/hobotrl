@@ -43,7 +43,7 @@ class TestDQN(unittest.TestCase):
             # epsilon greedy arguments
             greedy_epsilon=hrl.utils.CappedLinear(1e5, 0.5, 0.1),
             global_step=global_step,
-            network_optimizer=hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3), grad_clip=10.0)
+            network_optmizer=hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3), grad_clip=10.0)
         )
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True

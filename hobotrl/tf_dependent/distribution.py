@@ -1,8 +1,5 @@
 # -*- coding: utf-8 -*-
 
-
-import logging
-
 import tensorflow as tf
 import numpy as np
 import hobotrl.network as network
@@ -155,7 +152,6 @@ class DiscreteDistribution(NNDistribution):
         for p in distribution:
             sample = np.random.choice(np.arange(self._dist_n), p=p)
             sample_i.append(sample)
-            logging.warning("distribution:%s, sample:%s", p, sample)
         sample_i = np.asarray(sample_i)
         return sample_i
 
@@ -236,25 +232,16 @@ class NormalDistribution(NNDistribution):
         # not implemented
         raise NotImplementedError()
 
-    def sample_run(self, inputs, support=[-1.0, 1.0]):
+    def sample_run(self, inputs):
         # distribution with shape [batch_size, dist_n]
         mean, stddev = self._sess.run(
             [self._op_mean, self._op_stddev],
             feed_dict=self.dist_input(inputs))
         sample_i = []
         stddev = np.sqrt(stddev)
-        size = support[1] - support[0]
-        half = size / 2
         for i in range(len(mean)):
             mu, sigma = mean[i], stddev[i]
-            sample = np.random.normal(mu, sigma)
-            overflow = sample > support[1]
-            underflow = sample < support[0]
-            sample = sample * (1 - (overflow + underflow)) + \
-                     (np.abs((sample - support[1]) % (2*size) - size) - half) * overflow + \
-                     (half - np.abs((support[0] - sample) % (2*size) - size)) * underflow
-            # sample = np.clip(sample, support[0], support[1])
-            sample_i.append(sample)
+            sample_i.append(np.random.normal(mu, sigma))
         sample_i = np.asarray(sample_i)
         return sample_i
 
@@ -263,4 +250,6 @@ class NormalDistribution(NNDistribution):
 
     def dist_function(self):
         return self._dist_function
+
+
 

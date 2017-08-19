@@ -548,11 +548,6 @@ class Stepper(IntHandle):
         self._n += 1
 
 
-def clone_params(*params):
-    params = [p.clone() if isinstance(p, ScheduledParam) else p for p in params]
-    return params[0] if len(params) == 1 else params
-
-
 class ScheduledParam(FloatParam):
 
     @staticmethod
@@ -571,17 +566,11 @@ class ScheduledParam(FloatParam):
         x = schedule(0)
         super(ScheduledParam, self).__init__(x)
 
-    def clone(self):
-        return ScheduledParam(self._schedule, self._n)
-
     @property
     def value(self):
         if self._schedule is not None and self._n is not None:
             self._value = self._schedule(self._n.value())
         return super(ScheduledParam, self).value
-
-    def __str__(self):
-        return "[%d]%f" % (self._n.value(), self._value)
 
     def set_int_handle(self, int_handle):
         self._n = int_handle

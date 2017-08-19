@@ -92,8 +92,7 @@ class BaseAgent(Agent):
                 episode_done=episode_done, **kwargs)
         else:
             info = {}
-        params = self._params.get_params()
-        info.update(params)
+        info.update(self._params.get_params())
         return info
 
     def new_episode(self, state):
