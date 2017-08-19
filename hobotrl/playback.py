@@ -65,7 +65,7 @@ class Playback(object):
         """
         if self.data is None:
             # lazy creation
-            print "initializnig data with:", sample
+            # print "initializnig data with:", sample
             self.data = np.zeros(shape=([self.capacity] + self.sample_shape),
                                    dtype=sample.dtype)
             print "initializing data:", self.data.shape, ",", self.data.dtype
@@ -155,14 +155,19 @@ class MapPlayback(Playback):
 
     def push_sample(self, sample, sample_score=0):
         for i in sample:
-            self.data[i].push_sample(sample[i], sample_score)
+             self.data[i].push_sample(sample[i], sample_score)
+        self.add_sample(sample, self.push_index, sample_score)
+        self.push_index = (self.push_index + 1) % self.capacity
 
     def add_sample(self, sample, index, sample_score=0):
-        for i in sample:
-            self.data[i].add_sample(sample[i], index, sample_score)
+        if self.count < self.capacity:
+            self.count += 1
+    #    for i in sample:
+    #        self.data[i].add_sample(sample[i], index, sample_score)
 
     def get_count(self):
         # BUG: return self.data[0].get_count() is enough?
+        return self.count
         for i in self.data:
             return self.data[i].get_count()
 
@@ -545,5 +550,54 @@ class NPPlayback(MapPlayback):
         self.minus_playback.reset()
         self.plus_playback.reset()
 
+
+class BalancedMapPlayback(MapPlayback):
+    def __init__(self, num_actions, *args, **kwargs):
+        super(BalancedMapPlayback, self).__init__(*args, **kwargs)
+        self.num_actions = num_actions
+        self.sample_prob =  num_actions * np.ones(self.capacity)
+        self.action_prob = 1.0/num_actions*np.ones(num_actions)
+        self.done_prob = 0.0
+
+    def next_batch_index(self, batch_size):
+        if self.get_count() == 0:
+            return np.asarray([], dtype=int)
+
+        p = self.sample_prob[:self.count] / np.sum(self.sample_prob[:self.count])
+        return np.random.choice(
+            np.arange(self.count), size=batch_size, replace=True, p=p)
+
+    def push_sample(self, sample, **kwargs):
+        index = self.push_index
+
+        assert 'action' in sample and 'episode_done' in sample
+        action = sample['action']
+        done = sample['episode_done']
+        if done:
+            self.sample_prob[index] = self.num_actions
+            self.sample_prob[index] = 1/self.done_prob
+        else:
+            self.sample_prob[index] = 1/self.action_prob[action]
+            self.sample_prob[index] *= 1/(1-self.done_prob)
+
+        delta = np.zeros(self.num_actions)
+        delta[action] += 1
+        delta /= np.sum(delta)
+        self.action_prob = self.action_prob*0.95 + delta*0.05
+        cap = 1e-4
+        self.action_prob[self.action_prob<cap] = cap
+        self.action_prob /= np.sum(self.action_prob)
+
+        self.done_prob = self.done_prob*0.95 + float(done)*0.05
+        cap = 1e-1
+        if self.done_prob < cap:
+            self.done_prob = cap
+        if self.done_prob > 1-cap:
+            self.done_prob = 1 - cap
+        #print "action {}, done {:.3f}, sample {:.3f}".format(
+        #    self.action_prob, self.done_prob, self.sample_prob[index])
+
+
+        super(BalancedMapPlayback, self).push_sample(sample, **kwargs)
 
 

@@ -215,6 +215,10 @@ class EpsilonGreedyStickyPolicy(object):
             idx_action = idx_best_actions[randint(0, len(idx_best_actions))]
         return self.__ACTIONS[idx_action]
 
+    def set_epsilon(self, new_epsilon):
+        print "Epsilon set as {}".format(new_epsilon)
+        self.__EPSILON = new_epsilon
+
 
 class Network(object):
 

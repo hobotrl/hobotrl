@@ -188,6 +188,9 @@ class EpsilonGreedyStickyPolicyMixin(BasePolicyMixin):
     def act_single_(self, *args, **kwargs):
         return self.__epgp.act_single_(*args, **kwargs)
 
+    def set_epsilon(self, new_epsilon):
+        self.__epgp.set_epsilon(new_epsilon)
+
 
 class ReplayMixin(object):
     """Experience Replay Wrapper

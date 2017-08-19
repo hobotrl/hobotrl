@@ -10,6 +10,10 @@ Last Modified: July 27, 2017
 import signal
 import time
 import sys
+import traceback
+# Comms
+import zmq
+import dill
 # Threading and Multiprocessing
 import threading
 import subprocess
@@ -87,6 +91,8 @@ class DrivingSimulatorEnv(object):
         self.is_env_resetting = Event()  # if environment is undergoing reset
         self.is_env_done = Event()  # if environment is is done for this ep
 
+        self.n_ep = -1
+
         # backend specs
         self.backend_cmds = [
             # roscore
@@ -98,7 +104,8 @@ class DrivingSimulatorEnv(object):
              '/home/lewis/Projects/hobotrl/playground/initialD/rviz_restart.py'],
             # video capture
             ['python',
-             '/home/lewis/Projects/hobotrl/playground/initialD/non_stop_data_capture.py']
+             '/home/lewis/Projects/hobotrl/playground/initialD/non_stop_data_capture.py',
+             self.n_ep]
         ]
         self.proc_backend = []
 
@@ -262,7 +269,7 @@ class DrivingSimulatorEnv(object):
 
         return next_state, reward, done, info
 
-    def reset(self):
+    def reset(self, **kwargs):
         """Environment reset."""
         # Setting sync. events
         # 1. Setting env_resetting will block further call to step.
@@ -413,6 +420,13 @@ class DrivingSimulatorEnv(object):
         self.is_envnode_resetting.set()
         while not self.is_exiting.is_set():
             try:
+                # env done check loop
+                #   reset() should clear `is_env_done`  
+                while self.is_env_done.is_set():
+                    print ("[__node_monitor]: env is done, "
+                           "waiting for reset.")
+                    time.sleep(1.0)
+
                 # start simulation backend
                 #   __start_backend() should set `is_backend_up` if successful
                 self.__start_backend()
@@ -420,12 +434,6 @@ class DrivingSimulatorEnv(object):
                     print "[__node_monitor]: backend not up..."
                     time.sleep(1.0)
 
-                # env done check loop
-                #   reset() should clear `is_env_done`  
-                while self.is_env_done.is_set():
-                    print ("[__node_monitor]: env is done, "
-                           "waiting for reset.")
-                    time.sleep(1.0)
 
                 # set up inter-process queues and monitor
                 while not self.is_q_cleared.is_set():
@@ -464,6 +472,7 @@ class DrivingSimulatorEnv(object):
             except Exception as e:
                 print "[__node_monitor]: exception running node ({}).".format(
                     e.message)
+                traceback.print_exc()
                 time.sleep(1.0)
             finally:
                 print "[__node_monitor]: finished running node."
@@ -495,7 +504,10 @@ class DrivingSimulatorEnv(object):
     def __start_backend(self):
         print '[DrSim]: initializing backend...'
         self.is_backend_up.clear()
-        for cmd in self.backend_cmds:
+        for i, cmd in enumerate(self.backend_cmds):
+            cmd = map(str, cmd)
+            if 'non_stop' in ' '.join(cmd):
+                cmd[-1] = str(self.n_ep)
             proc = subprocess.Popen(cmd)
             self.proc_backend.append(proc)
             print '[DrSim]: cmd [{}] running with PID {}'.format(
@@ -786,5 +798,106 @@ class DrivingSimulatorNode(multiprocessing.Process):
         if not data.data and not self.first_time.is_set():
             self.is_envnode_terminatable.set()
         self.first_time.clear()
+
+
+class DrivingSimulatorEnvServer(multiprocessing.Process):
+    def __init__(self, port):
+        self.port = port
+        self.context = None
+        self.socket = None
+        super(DrivingSimulatorEnvServer, self).__init__()
+
+    def run(self):
+        if self.socket is not None:
+           self.socket.close()
+        if self.context is not None:
+            self.context.term()
+        self.context = zmq.Context()
+        self.socket = self.context.socket(zmq.PAIR)
+        self.socket.bind("tcp://*:%s" % self.port)
+
+        try:
+            while True:
+                msg_type, msg_payload = self.socket.recv_pyobj()
+                print msg_payload
+                if msg_type == 'start':
+                    print msg_payload
+                    msg_payload['func_compile_obs'] = dill.loads(
+                        msg_payload['func_compile_obs'])
+                    msg_payload['func_compile_reward'] = dill.loads(
+                        msg_payload['func_compile_reward'])
+                    self.env = DrivingSimulatorEnv(**msg_payload)
+                    self.socket.send_pyobj(('start', None))
+                elif msg_type == 'reset':
+                    msg_rep = self.env.reset()
+                    self.socket.send_pyobj(('reset', msg_rep))
+                elif msg_type == 'step':
+                    msg_rep = self.env.step(*msg_payload)
+                    self.socket.send_pyobj(('step', msg_rep))
+                elif msg_type == 'exit':
+                    self.env.exit()
+                    self.env = None
+                    self.socket.send_pyobj(('exit', None))
+                else:
+                    raise ValueError(
+                        'EnvServer: unrecognized msg type {}.'.format(msg_type))
+
+        except:
+            traceback.print_exc()
+        finally:
+            self.socket.close()
+            self.context.term()
+
+    def exit(self):
+        try:
+            self.socket.close()
+        except:
+            pass
+        try:
+            self.context.term()
+        except:
+            pass
+        try:
+            self.env.exit()
+        except:
+            pass
+
+
+class DrivingSimulatorEnvClient(object):
+    def __init__(self, address, port, **kwargs):
+        self.context = zmq.Context()
+        self.socket = self.context.socket(zmq.PAIR)
+        self.socket.connect("tcp://{}:{}".format(address, port))
+        kwargs['func_compile_obs'] = dill.dumps(
+            kwargs['func_compile_obs'])
+        kwargs['func_compile_reward'] = dill.dumps(
+            kwargs['func_compile_reward'])
+        self.socket.send_pyobj(('start', kwargs))
+        msg_type, msg_payload = self.socket.recv_pyobj()
+        if not msg_type == 'start':
+            raise Exception('EnvClient: msg_type is not start.')
+
+    def reset(self):
+        self.socket.send_pyobj(('reset', None))
+        msg_type, msg_payload = self.socket.recv_pyobj()
+        if not msg_type == 'reset':
+            raise Exception('EnvClient: msg_type is not reset.')
+        return msg_payload
+
+    def step(self, action):
+        self.socket.send_pyobj(('step', (action,)))
+        msg_type, msg_payload = self.socket.recv_pyobj()
+        if not msg_type == 'step':
+            raise Exception('EnvClient: msg_type is not step.')
+        return msg_payload
+
+    def exit(self):
+        self.socket.send_pyobj(('exit', None))
+        msg_type, msg_payload = self.socket.recv_pyobj()
+        self.socket.close()
+        self.context.term()
+        if not msg_type == 'exit':
+            raise Exception('EnvClient: msg_type is not exit.')
+        return
 
 
