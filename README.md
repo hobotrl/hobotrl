@@ -26,12 +26,7 @@ Common RL framework and utilities.
 
 ## Getting started
 
-
-### Playing with hobotrl without installation
-
 All single process experiments resides in `test` folder.
-
-#### Running Experiments
 
 ```
 python test/exp_tabular.py run --name TabularGrid
@@ -42,58 +37,12 @@ for starter.
 python test/exp_tabular.py list
 python test/exp_deeprl.py list
 ```
-to get a list of experiments in each experiment file.
+to get a list of experiments in each file.
 
 ```
 . scripts/a3c_pong.sh
 ```
 to start processes to run a3c algorithm.
-
-#### Running Unit Tests
-
-```
-python -m unittest discover -s hobotrl -p "test*.py" -v
-```
-to run all unit test cases.
-
-### Installing
-
-```
-pip install -e .
-```
-
-So you can use algorithms elsewhere.
-
-### Usage
-
-```
->>> import hobotrl as hrl
->>> dir(hrl)
-```
-
-to see what's inside.
-
-Typically most widely used classes are imported in module `hobotrl`, like `DQN`, `DPG`, `ActorCritic`:
-
-#### Basic Algorithms
-
-```
->>> help(hrl.DQN)
-
->>> help(hrl.DPG)
-
->>> help(hrl.ActorCritic)
-
-```
-
-to consult help doc. Also remember to check out experiment files and unit tests as a reference.
-
-#### Distributed Algorithms
-
-In hobotrl, distributed training is implemented with Tensorflow's cluster capability.
-
-See bash scripts in `scripts` folder for starting `worker` and `ps` processes for distributed training.
-
 
 ### Driving Simulator Environment
 The steps for starting the driving simulator environment:
