@@ -195,7 +195,7 @@ Experiment.register(A3CCarDiscrete, "discrete A3C for CarRacing")
 
 class A3CCarContinuous(A3CExperiment):
     def __init__(self, env=None, f_create_net=None, episode_n=1000, learning_rate=5e-5, discount_factor=0.99,
-                 entropy=hrl.utils.CappedLinear(1e6, 2e-2, 1e-4),
+                 entropy=hrl.utils.CappedLinear(1e6, 1e-4, 1e-4),
                  batch_size=32):
         if env is None:
             env = gym.make("CarRacing-v0")
