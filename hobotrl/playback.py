@@ -584,7 +584,7 @@ class BalancedMapPlayback(MapPlayback):
         delta[action] += 1
         delta /= np.sum(delta)
         self.action_prob = self.action_prob*0.95 + delta*0.05
-        cap = 1e-4
+        cap = 1e-2
         self.action_prob[self.action_prob<cap] = cap
         self.action_prob /= np.sum(self.action_prob)
 
@@ -594,8 +594,8 @@ class BalancedMapPlayback(MapPlayback):
             self.done_prob = cap
         if self.done_prob > 1-cap:
             self.done_prob = 1 - cap
-        #print "action {}, done {:.3f}, sample {:.3f}".format(
-        #    self.action_prob, self.done_prob, self.sample_prob[index])
+        print "action {}, done {:.3f}, sample {:.3f}".format(
+           self.action_prob, self.done_prob, self.sample_prob[index])
 
 
         super(BalancedMapPlayback, self).push_sample(sample, **kwargs)

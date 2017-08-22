@@ -129,9 +129,10 @@ class DrivingSimulatorEnv(object):
             if delay < self.STEP_DELAY_TARGET:
                 time.sleep(self.STEP_DELAY_TARGET-delay)
             else:
-                print ("[step()]: delay {:.3f} >= target {:.3f}, if happen "
-                       "regularly please conconsider increasing target.").format(
-                           delay, self.STEP_DELAY_TARGET)
+                pass
+                #print ("[step()]: delay {:.3f} >= target {:.3f}, if happen "
+                #       "regularly please conconsider increasing target.").format(
+                #           delay, self.STEP_DELAY_TARGET)
         self.last_step_t = time.time()
 
         # do __step
@@ -141,8 +142,8 @@ class DrivingSimulatorEnv(object):
                 break
             time.sleep(1.0)
         next_state, reward, done, info = ret
-        print "[step()]: action {}, reward {}, done {}.".format(
-            action, reward, done)
+        #print "[step()]: action {}, reward {}, done {}.".format(
+        #    action, reward, done)
 
         # set done
         if done:
@@ -208,8 +209,8 @@ class DrivingSimulatorEnv(object):
                             self.cnt_q_except.value -= 1
                         else:
                             return None
-                        print "[__step()]: exception getting observation. {}.".format(
-                            self.cnt_q_except.value)
+                        #print "[__step()]: exception getting observation. {}.".format(
+                        #    self.cnt_q_except.value)
                     time.sleep(0.1)
             obs_list.append(next_states)
         next_state = self.__compile_obs(obs_list)
@@ -228,17 +229,17 @@ class DrivingSimulatorEnv(object):
                             self.cnt_q_except.value -= 1
                         else:
                             return None
-                        print "[__step()]: exception getting reward. {}.".format(
-                            self.cnt_q_except.value)
+                        #print "[__step()]: exception getting reward. {}.".format(
+                        #    self.cnt_q_except.value)
                     time.sleep(0.1)
             reward_list.append(rewards)
-        p_str = "[step()]: reward vector "
-        fmt_dict = {float: '{:.4f},', bool: '{},', int: "{},"}
-        for reward in reward_list:
-            slice_str = " ".join(
-                map(lambda ele: fmt_dict[type(ele)], reward)).format(*reward)
-            p_str += "\n    [" + slice_str + "],"
-        print p_str
+        # p_str = "[step()]: reward vector "
+        # fmt_dict = {float: '{:.4f},', bool: '{},', int: "{},"}
+        # for reward in reward_list:
+        #     slice_str = " ".join(
+        #         map(lambda ele: fmt_dict[type(ele)], reward)).format(*reward)
+        #     p_str += "\n    [" + slice_str + "],"
+        # print p_str
         reward = self.__compile_reward(reward_list)
 
         # done
@@ -717,7 +718,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
                 self.q_obs.task_done()
             self.q_obs.put(obs, timeout=self.Q_TIMEOUT)
         except:
-            print "[__enque_exp]: q_obs update exception!"
+            # print "[__enque_exp]: q_obs update exception!"
             pass
         try:
             rewards = exp[num_obs:] if num_reward>1 else [exp[num_obs]]
@@ -726,7 +727,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
                 self.q_reward.task_done()
             self.q_reward.put(rewards, timeout=self.Q_TIMEOUT)
         except:
-            print "[__enque_exp]: q_reward update exception!"
+            # print "[__enque_exp]: q_reward update exception!"
             pass
         if not self.is_receiving_obs.is_set():
             print "[__enque_exp]: first observation received."

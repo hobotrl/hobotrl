@@ -198,7 +198,8 @@ class EpsilonGreedyStickyPolicy(object):
                 idx_action = self.__repeat_idx_action
                 self.__sticky_cnt -= 1
             else:
-                self.__sticky_cnt = poisson(self.__STICKY_MASS)
+                # self.__sticky_cnt = poisson(self.__STICKY_MASS)
+                self.__sticky_cnt = self.__STICKY_MASS + 1
                 idx_action = randint(0, len(self.__ACTIONS))
                 self.__repeat_idx_action = idx_action
         else:
