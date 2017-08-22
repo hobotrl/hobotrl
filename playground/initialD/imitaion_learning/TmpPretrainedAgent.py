@@ -2,6 +2,10 @@ import tensorflow as tf
 import numpy as np
 from hobotrl.tf_dependent.base import BaseDeepAgent
 import os
+import sys
+sys.path.append("/home/pirate03/anaconda2/lib/python2.7/site-packages")
+import sklearn.metrics
+
 
 
 class TmpPretrainedAgent(BaseDeepAgent):
@@ -15,6 +19,7 @@ class TmpPretrainedAgent(BaseDeepAgent):
         self.output_name = output_name
         self.trainop_name = trainop_name
         self.saver = tf.train.Saver(tf.global_variables(), max_to_keep=1000)
+        self.update_n = 0
         super(TmpPretrainedAgent, self).__init__(sess=sess, graph=graph, global_step=global_step, **kwargs)
 
 
@@ -43,15 +48,38 @@ class TmpPretrainedAgent(BaseDeepAgent):
 
         return action
 
-    def learn(self, replay_buffer, update_n):
+    def learn(self, replay_buffer):
+        if self.update_n == 0:
+            preds = self.sess.run(self.outputs, feed_dict={self.inputs: replay_buffer, self.is_train: False})
+            y_true = np.array([y[1] for y in replay_buffer])
+            print "update_n: {}".format(self.update_n)
+            self.evaluate(y_true, preds)
+        self.evaluate(y_true, preds)
+
+
         replay_size = len(replay_buffer)
-        num_iter = 100
-        batch_size = 100
-        for i in range(num_iter):
+        batch_size = 128
+        num_update = replay_size * 10 / batch_size
+        for i in range(num_update):
             batch = replay_buffer[np.random.randint(replay_size, size=batch_size)]
-            self.sess.run(self.trainop, feed_dict={self.inputs: batch})
+            self.sess.run(self.trainop, feed_dict={self.inputs: batch, self.is_train: True})
+        self.update_n += 1
+        preds = self.sess.run(self.outputs, feed_dict={self.inputs: replay_buffer, self.is_train: False})
+        y_true = np.array([y[1] for y in replay_buffer])
+        print "update_n: {}".format(self.update_n)
+        self.evaluate(y_true, preds)
         save_path = os.path.join(self.train_dir, 'model.ckpt')
-        self.saver.save(self.sess, save_path, global_step=(update_n+1)*num_iter)
+        self.saver.save(self.sess, save_path, global_step=(self.update_n+1)*num_update)
+
+    def evaluate(self, y_true, preds):
+        prec = sklearn.metrics.precision_score(y_true, preds, average=None)
+        rec = sklearn.metrics.recall_score(y_true, preds, average=None)
+        f1 = sklearn.metrics.f1_score(y_true, preds, average=None)
+        conf_mat = sklearn.metrics.confusion_matrix(y_true, preds)
+        print "val_prec: {}".format(prec)
+        print "val_rec: {}".format(rec)
+        print "val_f1: {}".format(f1)
+        print "val_conf_mat: {}".format(conf_mat)
 
 
 class QueryAgent(TmpPretrainedAgent):
