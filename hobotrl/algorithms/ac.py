@@ -81,6 +81,8 @@ class DiscreteActorCriticUpdater(network.NetworkUpdater):
 class ActorCriticUpdater(network.NetworkUpdater):
     def __init__(self, policy_dist, v_function, target_estimator, entropy=1e-3, max_advantage=10.0):
         """
+        Actor Critic methods, for both continuous and discrete action spaces.
+
         :param policy_dist:
         :type policy_dist: distribution.NNDistribution
         :param v_function: Function calculating state value
@@ -105,8 +107,11 @@ class ActorCriticUpdater(network.NetworkUpdater):
             with tf.name_scope("policy"):
                 advantage = self._input_target_v - op_v
                 self._advantage = advantage
-                # advantage = tf.clip_by_value(advantage, -max_advantage, max_advantage, name="advantage")
-                pi_loss = tf.reduce_mean(self._policy_dist.log_prob() * tf.stop_gradient(advantage))
+                _mean, _var = tf.nn.moments(advantage, axes=[0])
+                print "_var shape:", _var
+                self._std_advantage = advantage / (tf.sqrt(_var) + 1.0)
+                # self._std_advantage = self._advantage
+                pi_loss = tf.reduce_mean(self._policy_dist.log_prob() * tf.stop_gradient(self._std_advantage))
                 entropy_loss = tf.reduce_mean(self._input_entropy * self._policy_dist.entropy())
                 self._pi_loss = pi_loss
             self._op_loss = self._q_loss - (self._pi_loss + entropy_loss)
@@ -135,6 +140,7 @@ class ActorCriticUpdater(network.NetworkUpdater):
         feed_dict.update(feed_more)
         fetch_dict = {
             "advantage": self._advantage,
+            "std_advantage": self._std_advantage,
             "target_value": target_value,
             "pi_loss": self._pi_loss,
             "q_loss": self._q_loss,
