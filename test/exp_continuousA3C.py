@@ -75,7 +75,7 @@ def wrap_car(env):
     env = CarContinuousWrapper(env)
     env = envs.MaxAndSkipEnv(env, skip=2, max_len=1)
     env = envs.FrameStack(env, 4)
-    env = envs.ScaledRewards(env, 0.01)
+    env = envs.ScaledRewards(env, 0.1)
     env = envs.ScaledFloatFrame(env)
     env = envs.AugmentEnvWrapper(env, reward_decay=0.99)
     return env
@@ -83,9 +83,9 @@ def wrap_car(env):
 
 class A3CCarExp(ACOOExperimentCon):
     def __init__(self, env, f_create_net=None,
-                 episode_n=10000,
+                 episode_n=1000,
                  reward_decay=0.99,
-                 entropy_scale=0.05,
+                 entropy_scale=0.01,
                  on_batch_size=32,
                  off_batch_size=32,
                  off_interval=0,
@@ -94,7 +94,7 @@ class A3CCarExp(ACOOExperimentCon):
                  prob_min=5e-3,
                  entropy=hrl.utils.CappedLinear(1e6, 1e-2, 1e-3),
                  l2=1e-8,
-                 optimizer_ctor=lambda: tf.train.AdamOptimizer(6e-5), ddqn=False, aux_r=False, aux_d=False):
+                 optimizer_ctor=lambda: tf.train.AdamOptimizer(5e-5), ddqn=False, aux_r=False, aux_d=False):
 
         def create_ac_car(input_state, num_action, **kwargs):
             se = hrl.utils.Network.conv2ds(input_state,
@@ -113,15 +113,17 @@ class A3CCarExp(ACOOExperimentCon):
 
             pi_mean = hrl.utils.Network.layer_fcs(se, [256], num_action,
                                              activation_hidden=tf.nn.relu,
-                                             activation_out=tf.nn.tanh,
+                                             activation_out=None,
                                              l2=l2,
                                              var_scope="pi_mean")
+            pi_mean = tf.nn.tanh(pi_mean / 4.0)
 
             pi_stddev = hrl.utils.Network.layer_fcs(se, [256], 1,
                                                   activation_hidden=tf.nn.relu,
-                                                  activation_out=tf.nn.softplus,
+                                                  activation_out=None,
                                                   l2=l2,
                                                   var_scope="pi_stddev")
+            pi_stddev = 4.0 * tf.nn.sigmoid(pi_stddev / 4.0)
 
             r = hrl.utils.Network.layer_fcs(se, [256], 1,
                                             activation_hidden=tf.nn.relu,
