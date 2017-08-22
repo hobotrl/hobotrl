@@ -4,7 +4,7 @@
 
 exp_file=./test/exp_continuousA3C.py
 exp_name=A3CCarRacing
-log_dir=./log/$exp_name"_0.001Entropy_0.1Reward"
+log_dir=./log/$exp_name"_0.005Entropy_0.1Reward"
 # cluster="{'ps':['localhost:2232'], 'worker':['localhost:2233', 'localhost:2234', 'localhost:2235']}"
 cluster="{'ps':['localhost:2262'], 'worker':['localhost:2263', 'localhost:2264', 'localhost:2265', 'localhost:2266']}"
 worker_n=4
