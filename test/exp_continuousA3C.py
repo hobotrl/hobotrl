@@ -85,7 +85,7 @@ class A3CCarExp(ACOOExperimentCon):
     def __init__(self, env, f_create_net=None,
                  episode_n=1000,
                  reward_decay=0.99,
-                 entropy_scale=0.001,
+                 entropy_scale=0.005,
                  on_batch_size=32,
                  off_batch_size=32,
                  off_interval=0,
@@ -123,7 +123,7 @@ class A3CCarExp(ACOOExperimentCon):
                                                   activation_out=None,
                                                   l2=l2,
                                                   var_scope="pi_stddev")
-            pi_stddev = 4.0 * tf.nn.sigmoid(pi_stddev / 4.0)
+            pi_stddev = tf.add(4.0 * tf.nn.sigmoid(pi_stddev / 4.0), 1e-2)
 
             r = hrl.utils.Network.layer_fcs(se, [256], 1,
                                             activation_hidden=tf.nn.relu,
