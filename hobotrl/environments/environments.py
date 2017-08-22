@@ -58,7 +58,7 @@ class EnvRunner(object):
         )
         next_state, reward, done, info = self.env.step(self.action)
         self.total_reward = reward + self.reward_decay * self.total_reward
-        _, info = self.agent.step(
+        info = self.agent.step(
             state=self.state, action=self.action, reward=reward,
             next_state=next_state, episode_done=done
         )
@@ -620,7 +620,7 @@ class InfoChange(RewardShaping):
         return reward
 
 
-class C2DEnvWrapper(object):
+class C2DEnvWrapper(gym.Wrapper):
     """
     wraps an continuous action env to discrete env.
     """
@@ -633,6 +633,7 @@ class C2DEnvWrapper(object):
         :param d2c_proc: function converting discrete action to continuous
         :param action_n: count of discrete actions, if d2c_proc is not None
         """
+        super(C2DEnvWrapper, self).__init__(env)
         self.env = env
         if quant_list is not None:
             self.quant_list = quant_list
@@ -649,14 +650,7 @@ class C2DEnvWrapper(object):
             self.action_space = gym.spaces.discrete.Discrete(self.action_n)
             self.d2c_proc = d2c_proc
 
-    def __getattr__(self, name):
-        if name == "action_space":
-            print("getattr: action_space:", name)
-            return self.action_space
-        else:
-            return getattr(self.env, name)
-
-    def step(self, *args, **kwargs):
+    def _step(self, *args, **kwargs):
         # lives_before = self.env.ale.lives()
         if len(args) > 0:
             action_i = args[0]

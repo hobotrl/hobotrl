@@ -21,6 +21,7 @@ import multiprocessing
 from multiprocessing import JoinableQueue as Queue
 from multiprocessing import Value, Event, Pipe
 # Image
+import numpy as np
 from scipy.misc import imresize
 import cv2
 from cv_bridge import CvBridge, CvBridgeError

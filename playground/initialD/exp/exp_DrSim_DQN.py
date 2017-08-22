@@ -12,11 +12,9 @@ import tensorflow as tf
 from tensorflow import layers
 from tensorflow.contrib.layers import l2_regularizer
 
-from hobotrl.playback import MapPlayback
-# from hobotrl.algorithms.dqn import DQN
-from dqn import DQNSticky
+import hobotrl as hrl
 
-from ros_environments import DrivingSimulatorEnv
+from ros_environments import DrivingSimulatorEnvClient as DrivingSimulatorEnv
 
 import rospy
 import message_filters
@@ -34,16 +32,23 @@ def compile_reward(rewards):
             -70.0 * float(reward[4]),  # ped 0 ~ -0.07
         )),
         rewards)
-    return np.mean(rewards)/1000.0
+    return rewards
+
+def compile_reward_agent(rewards):
+    return np.mean(rewards)/100.0
 
 def compile_obs(obss):
     obs1 = obss[-1][0]
     obs2 = obss[-3][0]
     obs3 = obss[-5][0]
-    obs = np.concatenate([obs1, obs2, obs3], axis=2)
+    return [obs1, obs2, obs3]
+
+def compile_obs_agent(obss):
+    obs = np.concatenate(obss, axis=2)
     return obs
 
 env = DrivingSimulatorEnv(
+    address="localhost", port="22230",
     defs_obs=[('/training/image/compressed', CompressedImage)],
     func_compile_obs=compile_obs,
     defs_reward=[
@@ -61,8 +66,10 @@ env = DrivingSimulatorEnv(
 )
 ACTIONS = [(Char(ord(mode)),) for mode in ['s', 'd', 'a']]
 
+
 # Agent
-def f_net(inputs, num_outputs, is_training):
+def f_net(inputs):
+    inputs = inputs[0]
     inputs = inputs/128 - 1.0
     # (640, 640, 3*n) -> ()
     with tf.device('/gpu:1'):
@@ -106,10 +113,9 @@ def f_net(inputs, num_outputs, is_training):
             kernel_regularizer=l2_regularizer(scale=1e-2), name='hid2')
         print hid2.shape
         q = layers.dense(
-            inputs=hid2, units=num_outputs, activation=None,
+            inputs=hid2, units=len(ACTIONS), activation=None,
             kernel_regularizer=l2_regularizer(scale=1e-2), name='q')
-        q = tf.squeeze(q, name='out_sqz')
-    return q
+    return {"q": q}
 
 optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
 target_sync_rate = 0.001
@@ -118,37 +124,24 @@ state_shape = (640, 640, 3*3)
 graph = tf.get_default_graph()
 global_step = tf.get_variable(
     'global_step', [], dtype=tf.int32,
-    initializer=tf.constant_initializer(0), trainable=False
-)
+    initializer=tf.constant_initializer(0), trainable=False)
 
-agent = DQNSticky(
-    # EpsilonGreedyPolicyMixin params
-    actions=range(len(ACTIONS)),
-    epsilon=0.2,
-    sticky_mass=1,
-    # DeepQFuncMixin params
-    dqn_param_dict={
-        'gamma': 0.9,
-        'f_net': f_net,
-        'state_shape': state_shape,
-        'num_actions':len(ACTIONS),
-        'training_params':training_params,
-        'schedule':(1, 1),
-        'greedy_policy':True,
-        'ddqn': True,
-        'graph':graph},
-    # ReplayMixin params
-    buffer_class=MapPlayback,
-    buffer_param_dict={
-        "capacity": 5000,
-        "sample_shapes": {
-            'state': state_shape,
-            'action': (),
-            'reward': (),
-            'next_state': state_shape,
-            'episode_done': () }},
-    batch_size=8,
-    # BaseDeepAgent
+agent = hrl.DQN(
+    f_create_q=f_net, state_shape=state_shape,
+    # OneStepTD arguments
+    num_actions=len(ACTIONS), discount_factor=0.9,
+    ddqn=False,
+    # target network sync arguments
+    target_sync_interval=1,
+    target_sync_rate=0.001,
+    # epsilon greeedy arguments
+    greedy_epsilon=0.2,
+    # optimizer arguments
+    network_optimizer=hrl.network.LocalOptimizer(optimizer_td, 10.0),
+    max_gradient=10.0,
+    # sampler arguments
+    update_interval=1, replay_size=5000, batch_size=8,
+    # sticky mass todo
     global_step=global_step
 )
 
@@ -176,17 +169,25 @@ try:
             cum_td_loss = 0.0
             exploration_off = (n_ep%n_test==0)
             state = env.reset()
+            state = compile_obs_agent(state)
             action = agent.act(state, exploration_off=exploration_off)
             next_state, reward, done, info = env.step(ACTIONS[action])
+            next_state = compile_obs_agent(next_state)
+            reward = compile_reward_agent(reward)
             while True:
                 n_steps += 1
                 cum_reward += reward
-                next_action, update_info = agent.step(
-                    sess=sess, state=state, action=action,
-                    reward=reward, next_state=next_state,
-                    episode_done=done,
-                    learning_off=exploration_off,
-                    exploration_off=exploration_off)
+                if not exploration_off:
+                    update_info = agent.step(
+                        sess=sess, state=state, action=action,
+                        reward=reward, next_state=next_state,
+                        episode_done=done,
+                        learning_off=exploration_off,
+                        exploration_off=exploration_off
+                    )
+                else:
+                    update_info = {}
+                next_action = agent.act(next_state, on=not exploration_off)
                 cum_td_loss += update_info['td_loss'] if 'td_loss' in update_info \
                     and update_info['td_loss'] is not None else 0
                 summary_proto = tf.Summary()
@@ -202,7 +203,8 @@ try:
                     summary_proto.value.add(
                         tag='q_vals_min',
                         simple_value=np.min(q_vals))
-                next_q_vals_nt = agent.get_value(next_state)
+                next_q_vals_nt = agent.learn_q(next_state[np.newaxis, :])[0]
+                print next_q_vals_nt
                 for i, action in enumerate(ACTIONS):
                     summary_proto.value.add(
                         tag='next_q_vals_{}'.format(action[0].data),
@@ -238,6 +240,8 @@ try:
                     break
                 state, action = next_state, next_action
                 next_state, reward, done, info = env.step(ACTIONS[action])
+                next_state = compile_obs_agent(next_state)
+                reward = compile_reward_agent(reward)
 except Exception as e:
     print e.message
     traceback.print_exc()

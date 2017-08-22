@@ -117,7 +117,7 @@ def f_net(inputs, num_outputs, is_training):
         q = tf.squeeze(q, name='out_sqz')
     return q
 
-optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.0002)
+optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
 target_sync_rate = 0.001
 training_params = (optimizer_td, target_sync_rate, 10.0)
 # state_shape = (640, 640, 3*3)

@@ -26,8 +26,7 @@ TODO: [Lewis] mixins with overriding are linear in nature, not sure if
 import numpy as np
 
 from core import BaseAgent
-from utils import TabularQFunc
-from utils import EpsilonGreedyPolicy, EpsilonGreedyStickyPolicy
+from utils import TabularQFunc, EpsilonGreedyPolicy
 
 
 class BaseValueMixin(object):
