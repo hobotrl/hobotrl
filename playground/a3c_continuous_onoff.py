@@ -422,7 +422,7 @@ class A3CAgent(hrl.tf_dependent.base.BaseDeepAgent):
 
     def act(self, state, evaluate=False, **kwargs):
         self.step_n += 1
-        action = self.net.get_action(np.asarray([state]))  # batch size 1
+        action = self.net.get_action(np.asarray([state]))[0]  # batch size 1
         return action
 
     def step(self, state, action, reward, next_state,
