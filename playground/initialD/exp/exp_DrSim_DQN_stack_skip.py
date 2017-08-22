@@ -14,7 +14,7 @@ from tensorflow import layers
 from tensorflow.contrib.layers import l2_regularizer
 
 from hobotrl.playback import BalancedMapPlayback
-from dqn import DQNSticky
+from hobotrl.algorithms.dqn import DQN
 from hobotrl.environments.environments import FrameStack
 
 from ros_environments import DrivingSimulatorEnv
@@ -48,7 +48,7 @@ def compile_reward_agent(rewards):
     rewards[3] = -20*(0.9+0.1*momentum_opp)*(momentum_opp>1.0)
     # ped
     momentum_ped = (rewards[4]>0.5)*(momentum_ped+rewards[4])
-    momentum_ped = min(momentum_ped, 10)
+    momentum_ped = min(momentum_ped, 12)
     rewards[4] = -40*(0.9+0.1*momentum_ped)*(momentum_ped>1.0)
 
     reward = np.sum(rewards)/100.0
@@ -134,8 +134,8 @@ def f_net(inputs, num_outputs, is_training):
         q = tf.squeeze(q, name='out_sqz')
     return q
 
-optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=1e-3)
-target_sync_rate = 1e-3
+optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=1e-4)
+target_sync_rate = 1e-4
 training_params = (optimizer_td, target_sync_rate, 10.0)
 # state_shape = (640, 640, 3*3)
 state_shape = env.observation_space.shape
@@ -145,11 +145,10 @@ global_step = tf.get_variable(
     initializer=tf.constant_initializer(0), trainable=False
 )
 
-agent = DQNSticky(
+agent = DQN(
     # EpsilonGreedyPolicyMixin params
     actions=range(len(ACTIONS)),
-    epsilon=0.05,
-    sticky_mass=3,
+    epsilon=0.2,
     # DeepQFuncMixin params
     dqn_param_dict={
         'gamma': 0.9,
@@ -174,10 +173,102 @@ agent = DQNSticky(
             'episode_done': () }},
     batch_size=8,
     # BaseDeepAgent
-    global_step=global_step
-)
+    global_step=global_step)
+
+def log_info(update_info):
+    global action_fraction
+    global action_td_loss
+    global agent
+    global next_state
+    global ACTIONS
+    global n_steps
+    global done
+    global cum_td_loss
+    global cum_reward
+    global n_ep
+    global exploration_off
+    global cnt_skip
+    global n_skip
+    summary_proto = tf.Summary()
+
+    if 'td_losses' in update_info:
+        prt_str = zip(
+            update_info['actions'], update_info['q_vals'],
+            update_info['td_target'], update_info['td_losses'],
+            update_info['rewards'], update_info['done'])
+        for s in prt_str:
+            action_fraction *= 0.9
+            action_fraction[s[0]] += 0.1
+            action_td_loss[s[0]] = 0.9*action_td_loss[s[0]] + 0.1*s[3]
+            # if cnt_skip==n_skip:
+            #    print ("{} "+"{:8.5f} "*4+"{}").format(*s)
+        # print action_fraction
+        # print action_td_loss
+    for tag in update_info:
+        summary_proto.value.add(
+            tag=tag, simple_value=np.mean(update_info[tag]))
+    if 'q_vals' in update_info and \
+       update_info['q_vals'] is not None:
+        q_vals = update_info['q_vals']
+        summary_proto.value.add(
+            tag='q_vals_max',
+            simple_value=np.max(q_vals))
+        summary_proto.value.add(
+            tag='q_vals_min',
+            simple_value=np.min(q_vals))
+    if cnt_skip == n_skip:
+        next_q_vals_nt = agent.get_value(next_state)
+        for i, ac in enumerate(ACTIONS):
+            summary_proto.value.add(
+                tag='next_q_vals_{}'.format(ac[0].data),
+                simple_value=next_q_vals_nt[i])
+            summary_proto.value.add(
+                tag='next_q_vals_{}'.format(ac[0].data),
+                simple_value=next_q_vals_nt[i])
+            summary_proto.value.add(
+                tag='action_td_loss_{}'.format(ac[0].data),
+                simple_value=action_td_loss[i])
+            summary_proto.value.add(
+                tag='action_fraction_{}'.format(ac[0].data),
+                simple_value=action_fraction[i])
+        p_dict = sorted(zip(
+            map(lambda x: x[0].data, ACTIONS), next_q_vals_nt))
+        max_idx = np.argmax([v for _, v in p_dict])
+        p_str = "({:.3f}) ({:3d})[Q_vals]: ".format(
+            time.time(), n_steps)
+        for i, (a, v) in enumerate(p_dict):
+            if a == ACTIONS[next_action][0].data:
+                sym = '|x|' if i==max_idx else ' x '
+            else:
+                sym = '| |' if i==max_idx else '   '
+            p_str += '{}{:3d}: {:.4f} '.format(sym, a, v)
+        print p_str
+
+    cum_td_loss += update_info['td_loss'] if 'td_loss' in update_info \
+        and update_info['td_loss'] is not None else 0
+    cum_reward += reward
+
+    if done:
+        print ("Episode {} done in {} steps, reward is {}, "
+               "average td_loss is {}. No exploration {}").format(
+                   n_ep, n_steps, cum_reward,
+                   cum_td_loss/n_steps, exploration_off)
+        if not exploration_off:
+            summary_proto.value.add(
+                tag='num_episode', simple_value=n_ep)
+            summary_proto.value.add(
+                tag='cum_reward', simple_value=cum_reward)
+        else:
+            summary_proto.value.add(
+                tag='num_episode_noexpolore', simple_value=n_ep)
+            summary_proto.value.add(
+                tag='cum_reward_noexpolore',
+                simple_value=cum_reward)
+
+    return summary_proto
 
 n_interactive = 0
+n_skip = 3
 n_ep = 0  # last ep in the last run, if restart use 0
 n_test = 10  # num of episode per test run (no exploration)
 
@@ -194,128 +285,48 @@ try:
 
     with sv.managed_session(config=config) as sess:
         agent.set_session(sess)
-        action_fraction = np.ones(3,) / 3.0
+        action_fraction = np.ones(3,) / (1.0*len(ACTIONS))
         action_td_loss = np.zeros(3,)
         momentum_opp = 0.0
         momentum_ped = 0.0
         while True:
             n_ep += 1
-            cum_reward = 0.0
-            n_steps = 0
-            cnt_done = 0
-            cum_td_loss = 0.0
-            exploration_off = (n_ep%n_test==0)
-            time.sleep(2.0)
             env.env.n_ep = n_ep
-            state = env.reset()
-            action = agent.act(state, exploration_off=exploration_off)
-            next_state, reward, done, info = env.step(ACTIONS[action])
-            reward = compile_reward_agent(reward)
-            queue = deque([(state, 0)]*1)
-            queue.append((state, action))
-            state, action = queue.popleft()
+            exploration_off = (n_ep%n_test==0)
+            n_steps = 0
+            cnt_skip = n_skip
+            skip_reward = 0
+            cum_td_loss = 0.0
+            cum_reward = 0.0
+            state, action  = env.reset(), 0
             while True:
                 n_steps += 1
-                # if n_steps < 35:
-                #    agent.set_epsilon(0.1)
-                # else:
-                #    agent.set_epsilon(0.3)
-                next_action, update_info = agent.step(
-                    sess=sess, state=state, action=action,
-                    reward=reward, next_state=next_state,
-                    episode_done=done,
-                    learning_off=exploration_off,
-                    exploration_off=exploration_off)
-                cum_td_loss += update_info['td_loss'] if 'td_loss' in update_info \
-                    and update_info['td_loss'] is not None else 0
-                cum_reward += reward
-                # print "[Delayed action] {}".format(ACTIONS[action])
-                if 'td_losses' in update_info:
-                    prt_str = zip(
-                        update_info['actions'],
-                        update_info['q_vals'],
-                        update_info['td_target'],
-                        update_info['td_losses'],
-                        update_info['rewards'],
-                        update_info['done'])
-                    for s in prt_str:
-                        action_fraction *= 0.9
-                        action_fraction[s[0]] += 0.1
-                        action_td_loss[s[0]] = \
-                            0.9*action_td_loss[s[0]] + 0.1*s[3]
-                        # print ("{} "+"{:8.5f} "*4+"{}").format(*s)
-                    #print action_fraction
-                    #print action_td_loss
-                summary_proto = tf.Summary()
-                for tag in update_info:
-                    summary_proto.value.add(
-                        tag=tag, simple_value=np.mean(update_info[tag]))
-                if 'q_vals' in update_info and \
-                   update_info['q_vals'] is not None:
-                    q_vals = update_info['q_vals']
-                    summary_proto.value.add(
-                        tag='q_vals_max',
-                        simple_value=np.max(q_vals))
-                    summary_proto.value.add(
-                        tag='q_vals_min',
-                        simple_value=np.min(q_vals))
-                next_q_vals_nt = agent.get_value(next_state)
-                for i, ac in enumerate(ACTIONS):
-                    summary_proto.value.add(
-                        tag='next_q_vals_{}'.format(ac[0].data),
-                        simple_value=next_q_vals_nt[i])
-                    summary_proto.value.add(
-                        tag='next_q_vals_{}'.format(ac[0].data),
-                        simple_value=next_q_vals_nt[i])
-                    summary_proto.value.add(
-                        tag='action_td_loss_{}'.format(ac[0].data),
-                        simple_value=action_td_loss[i])
-                    summary_proto.value.add(
-                        tag='action_fraction_{}'.format(ac[0].data),
-                        simple_value=action_fraction[i])
-                p_dict = sorted(zip(
-                    map(lambda x: x[0].data, ACTIONS), next_q_vals_nt))
-                max_idx = np.argmax([v for _, v in p_dict])
-                p_str = "({:.3f}) ({:3d})[Q_vals]: ".format(
-                    time.time(), n_steps)
-                for i, (a, v) in enumerate(p_dict):
-                    if a == ACTIONS[next_action][0].data:
-                        sym = '|x|' if i==max_idx else ' x '
-                    else:
-                        sym = '| |' if i==max_idx else '   '
-                    p_str += '{}{:3d}: {:.4f} '.format(sym, a, v)
-                print p_str
-                # print update_info
-                if done is True:
-                    print ("Episode {} done in {} steps, reward is {}, "
-                           "average td_loss is {}. No exploration {}").format(
-                               n_ep, n_steps, cum_reward,
-                               cum_td_loss/n_steps, exploration_off)
-                if done is True and last_done is True:
-                    if not exploration_off:
-                        summary_proto.value.add(
-                            tag='num_episode', simple_value=n_ep)
-                        summary_proto.value.add(
-                            tag='cum_reward', simple_value=cum_reward)
-                    else:
-                        summary_proto.value.add(
-                            tag='num_episode_noexpolore', simple_value=n_ep)
-                        summary_proto.value.add(
-                            tag='cum_reward_noexpolore',
-                            simple_value=cum_reward)
-                sv.summary_computed(sess, summary=summary_proto)
-                if done is True and last_done is True:
-                    break
-                state, action = next_state, next_action  # s',a' -> s,a
-                last_done = done
+                # Env step
                 next_state, reward, done, info = env.step(ACTIONS[action])
                 reward = compile_reward_agent(reward)
-                if done is True:
-                    last_done = True
-                elif last_done is True or reward < -0.9:
-                    done = True
-                queue.append((state, action))
-                state, action = queue.popleft()
+                skip_reward += reward
+                done = (reward < -0.9) or done
+                # agent step
+                cnt_skip -= 1
+                if cnt_skip==0 or done:
+                    skip_reward /= (n_skip - cnt_skip)
+                    next_action, update_info = agent.step(
+                        sess=sess, state=state, action=action,
+                        reward=skip_reward, next_state=next_state,
+                        episode_done=done,
+                        learning_off=exploration_off,
+                        exploration_off=exploration_off)
+                    cnt_skip = n_skip
+                    skip_reward = 0
+                    state, action = next_state, next_action  # s',a' -> s,a
+                else:
+                    update_info = agent.improve_value_(
+                        None, None, None, None, None)
+                    # update_info = {}
+                    next_action = action
+                sv.summary_computed(sess, summary=log_info(update_info))
+                if done:
+                    break
 except Exception as e:
     print e.message
     traceback.print_exc()
