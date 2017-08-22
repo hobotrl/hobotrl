@@ -11,7 +11,7 @@ import hobotrl.target_estimate as target_estimate
 import hobotrl.tf_dependent.distribution as distribution
 from hobotrl.tf_dependent.base import BaseDeepAgent
 from hobotrl.policy import StochasticPolicy
-from value_based import StateValueFunction
+from value_based import GreedyStateValueFunction
 
 
 class DiscreteActorCriticUpdater(network.NetworkUpdater):
@@ -270,7 +270,7 @@ class ActorCritic(sampling.TrajectoryBatchUpdate,
             if q is not None:
                 # network outputs q
                 self._q_function = network.NetworkFunction(q)
-                self._v_function = StateValueFunction(self._q_function)
+                self._v_function = GreedyStateValueFunction(self._q_function)
             else:
                 # network output v
                 self._v_function = network.NetworkFunction(self.network["v"])

@@ -12,9 +12,7 @@ class BaseDeepAgent(BaseAgent):
         self.sess, self.graph = sess, graph
         self.__sv = None
         self.__global_step = global_step
-        self.__global_step = global_step
         if self.__global_step is not None:
-            self.sess = None
             with tf.name_scope("update_global_step"):
                 # self.__step_input = tf.placeholder(tf.int32, shape=None, name="input_global_step")
                 # self.__op_update_step = tf.assign(self.__global_step, self.__step_input)
@@ -25,7 +23,9 @@ class BaseDeepAgent(BaseAgent):
     def init_network(self, *args, **kwargs):
         """
         should be overwritten by sub-classes.
-        implementation of
+        implementation of init_network should return an instance of network.Network,
+            to initialize self._network, which could be retrieved by self.network
+            Also used by network.DistributedOptimizer to determine local-global variable map.
         :param args:
         :param kwargs:
         :return: Network

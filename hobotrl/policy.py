@@ -35,7 +35,7 @@ class EpsilonGreedyPolicy(Policy):
         super(EpsilonGreedyPolicy, self).__init__()
         self.q_function, self._epsilon, self._num_actions = q_function, epsilon, num_actions
 
-    def act(self, state, exploration=False, **kwargs):
+    def act(self, state, exploration=True, **kwargs):
         if not exploration:
             q_values = self.q_function(np.asarray([state]))[0]
             action = np.argmax(q_values)
@@ -113,3 +113,30 @@ class GreedyStochasticPolicy(Policy):
         else:
             distribution = self._distribution.dist_run([state])[0]
             return np.argmax(distribution)
+
+
+class KeepEpsilonPolicy(Policy):
+
+    def __init__(self, n_distribution, q_function, epsilon, num_actions):
+        super(Policy, self).__init__(q_function, epsilon, num_actions)
+        self._q_function, self._epsilon, self._num_actions = q_function, epsilon, num_actions
+
+        self._last_action, self._countdown = None, 0
+
+    def act(self, state, exploration=True, **kwargs):
+        if not exploration:
+            q_values = self.q_function(np.asarray([state]))[0]
+            action = np.argmax(q_values)
+            return action
+        if np.random.rand() < self._epsilon:
+            # random
+            return np.random.randint(self._num_actions)
+        q_values = self.q_function(np.asarray([state]))[0]
+        action = np.argmax(q_values)
+
+        if self._countdown > 0:
+            self._countdown -= 1
+        else:
+            self._last_action = self._policy.act(state, **kwargs)
+            self._countdown = self._n - 1
+        return self._last_action
