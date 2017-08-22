@@ -94,10 +94,6 @@ def preprocess_image(input_image):
 
     return image
 
-def is_common_scene(img):
-
-    pass
-
 
 try:
     config = tf.ConfigProto()
@@ -139,21 +135,29 @@ try:
             # state = np.array(state, dtype=np.float32)
             # state /= 255.0
             # state = preprocess_image(state)
-            action = None
-            using_learning_agent = None
-            if is_common_scene(img):
-                env.step(ACTIONS[5])
-                using_learning_agent = True
-                action = pretrained_agent.act(img)
-            else:
-                # not sure '0' or '1'
-                # HOW TO USE SUBSCRIBER
-                env.step(ACTIONS[4])
-                using_learning_agent = False
-                action = rule_action
-                noval_scene_count += 1
-                replay_buffer.append([np.copy(img), action])
-                replay_buffer.pop(0)
+
+            using_learning_agent = True
+            action = pretrained_agent.act(img)
+            if action != rule_action:
+                if rule_action != 3:
+                    replay_buffer.append([np.copy(img), action])
+                    noval_scene_count += 1
+            # default using learning agent so three is no need to step('1')
+            # env.step(ACTIONS[5])
+
+            # if is_common_scene(img):
+            #     env.step(ACTIONS[5])
+            #     using_learning_agent = True
+            #     action = pretrained_agent.act(img)
+            # else:
+            #     # not sure '0' or '1'
+            #     # HOW TO USE SUBSCRIBER
+            #     env.step(ACTIONS[4])
+            #     using_learning_agent = False
+            #     action = rule_action
+            #     noval_scene_count += 1
+            #     replay_buffer.append([np.copy(img), action])
+                # replay_buffer.pop(0)
 
             print "action: {}".format(action)
             next_img, next_rule_action, reward, done, info = env.step(ACTIONS[action])
@@ -169,22 +173,14 @@ try:
                 # print "state type: {}".format(type(next_state))
                 next_img = sess.run(next_img)
                 # print "np state: {}".format(np_next_state)
-                if is_common_scene(next_img):
-                    if not using_learning_agent:
-                        env.step(ACTIONS[5])
-                        using_learning_agent = True
-                    next_action = pretrained_agent.act(next_img)
-                else:
-                    # not sure '0' or '1'
-                    # HOW TO USE SUBSCRIBER
-                    # checkout rule-based agent
-                    if using_learning_agent:
-                        env.step(ACTIONS[4])
-                        using_learning_agent = False
-                    noval_scene_count +=1
-                    next_action = next_rule_action
-                    replay_buffer.append([np.copy(next_img), next_action])
-                    replay_buffer.pop(0)
+                next_action = pretrained_agent.act(next_img)
+                # r
+                if next_action != next_rule_action:
+                    # fileter action 3
+                    if next_rule_action != 3:
+                        replay_buffer.append([np.copy(next_img), next_action])
+                        noval_scene_count += +1
+                    # replay_buffer.pop(0)
 
                 print "next_action: {}".format(next_action)
 
