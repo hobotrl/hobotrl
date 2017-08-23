@@ -1,29 +1,35 @@
+# -*- coding: utf-8 -*-
+"""Experiment script for DQN-based lane decision.
+
+Author: Jingchu Liu
+"""
+# Basics
 import os
 import signal
 import time
 import sys
 import traceback
 from collections import deque
-sys.path.append('../../..')
-sys.path.append('..')
-
 import numpy as np
-
+# Tensorflow
 import tensorflow as tf
 from tensorflow import layers
 from tensorflow.contrib.layers import l2_regularizer
-
+sys.path.append('../../..')
+sys.path.append('..')
+# Hobotrl
+import hobotrl as hrl
+from hobotrl.environments import FrameStack
+from hobotrl.sampling import TransitionSampler
 from hobotrl.playback import BalancedMapPlayback
-from hobotrl.algorithms.dqn import DQN
-from hobotrl.environments.environments import FrameStack
-
+# initialD
 from ros_environments import DrivingSimulatorEnv
-
+# from ros_environments import DrivingSimulatorEnvClient as DrivingSimulatorEnv
+# ROS
 import rospy
-import message_filters
 from std_msgs.msg import Char, Bool, Int16, Float32
 from sensor_msgs.msg import CompressedImage
-
+# Gym
 from gym.spaces import Discrete, Box
 
 # Environment
@@ -58,10 +64,10 @@ def compile_reward_agent(rewards):
 
 def compile_obs(obss):
     obs1 = obss[-1][0]
-    # obs = np.concatenate([obs1, obs2, obs3], axis=2)
     return obs1
 
 env = DrivingSimulatorEnv(
+    # address="yz-gpu031.hogpu.cc", port='22230',
     defs_obs=[('/training/image/compressed', CompressedImage)],
     func_compile_obs=compile_obs,
     defs_reward=[
@@ -75,8 +81,8 @@ env = DrivingSimulatorEnv(
     rate_action=10.0,
     window_sizes={'obs': 2, 'reward': 3},
     buffer_sizes={'obs': 2, 'reward': 3},
-    step_delay_target=0.5
-)
+    step_delay_target=0.5)
+# TODO: define these Gym related params insode DrivingSimulatorEnv
 env.observation_space = Box(low=0, high=255, shape=(640, 640, 3))
 env.action_space = Discrete(3)
 env.reward_range = (-np.inf, np.inf)
@@ -85,7 +91,8 @@ env = FrameStack(env, 3)
 ACTIONS = [(Char(ord(mode)),) for mode in ['s', 'd', 'a']]
 
 # Agent
-def f_net(inputs, num_outputs, is_training):
+def f_net(inputs):
+    inputs = inputs[0]
     inputs = inputs/128 - 1.0
     # (640, 640, 3*n) -> ()
     with tf.device('/gpu:0'):
@@ -129,51 +136,38 @@ def f_net(inputs, num_outputs, is_training):
             kernel_regularizer=l2_regularizer(scale=1e-2), name='hid2')
         print hid2.shape
         q = layers.dense(
-            inputs=hid2, units=num_outputs, activation=None,
+            inputs=hid2, units=len(ACTIONS), activation=None,
             kernel_regularizer=l2_regularizer(scale=1e-2), name='q')
-        q = tf.squeeze(q, name='out_sqz')
-    return q
+    return {"q": q}
 
-optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=1e-4)
-target_sync_rate = 1e-4
+optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=1e-3)
+target_sync_rate = 1e-3
 training_params = (optimizer_td, target_sync_rate, 10.0)
-# state_shape = (640, 640, 3*3)
 state_shape = env.observation_space.shape
 graph = tf.get_default_graph()
 global_step = tf.get_variable(
     'global_step', [], dtype=tf.int32,
-    initializer=tf.constant_initializer(0), trainable=False
-)
+    initializer=tf.constant_initializer(0), trainable=False)
 
-agent = DQN(
-    # EpsilonGreedyPolicyMixin params
-    actions=range(len(ACTIONS)),
-    epsilon=0.2,
-    # DeepQFuncMixin params
-    dqn_param_dict={
-        'gamma': 0.9,
-        'f_net': f_net,
-        'state_shape': state_shape,
-        'num_actions':len(ACTIONS),
-        'training_params':training_params,
-        'schedule':(1, 1),
-        'greedy_policy':True,
-        'ddqn': True,
-        'graph':graph},
-    # ReplayMixin params
-    buffer_class=BalancedMapPlayback,
-    buffer_param_dict={
-        "num_actions": len(ACTIONS),
-        "capacity": 5000,
-        "sample_shapes": {
-            'state': state_shape,
-            'action': (),
-            'reward': (),
-            'next_state': state_shape,
-            'episode_done': () }},
-    batch_size=8,
-    # BaseDeepAgent
+agent = hrl.DQN(
+    f_create_q=f_net, state_shape=state_shape,
+    # OneStepTD arguments
+    num_actions=len(ACTIONS), discount_factor=0.9, ddqn=False,
+    # target network sync arguments
+    target_sync_interval=1,
+    target_sync_rate=target_sync_rate,
+    # epsilon greeedy arguments
+    greedy_epsilon=0.2,
+    # optimizer arguments
+    network_optimizer=hrl.network.LocalOptimizer(optimizer_td, 10.0),
+    max_gradient=10.0,
+    # sampler arguments
+    sampler=TransitionSampler(BalancedMapPlayback(
+        num_actions=len(ACTIONS), capacity=5000),
+        batch_size=8, interval=1),
+    # checkpoint
     global_step=global_step)
+
 
 def log_info(update_info):
     global action_fraction
@@ -190,26 +184,33 @@ def log_info(update_info):
     global cnt_skip
     global n_skip
     summary_proto = tf.Summary()
-
+    # modify info dict keys
+    k_del = []
+    new_info = {}
+    for k, v in update_info.iteritems():
+        if 'FitTargetQ' in k:
+            new_info[k[14:]] = v  # strip "FitTargetQ\td\"
+            k_del.append(k)
+    update_info.update(new_info)
     if 'td_losses' in update_info:
         prt_str = zip(
-            update_info['actions'], update_info['q_vals'],
-            update_info['td_target'], update_info['td_losses'],
-            update_info['rewards'], update_info['done'])
+            update_info['action'], update_info['q'],
+            update_info['target_q'], update_info['td_losses'],
+            update_info['reward'], update_info['done'])
         for s in prt_str:
             action_fraction *= 0.9
             action_fraction[s[0]] += 0.1
             action_td_loss[s[0]] = 0.9*action_td_loss[s[0]] + 0.1*s[3]
-            # if cnt_skip==n_skip:
-            #    print ("{} "+"{:8.5f} "*4+"{}").format(*s)
+            if cnt_skip==n_skip:
+                print ("{} "+"{:8.5f} "*4+"{}").format(*s)
         # print action_fraction
         # print action_td_loss
     for tag in update_info:
         summary_proto.value.add(
             tag=tag, simple_value=np.mean(update_info[tag]))
-    if 'q_vals' in update_info and \
-       update_info['q_vals'] is not None:
-        q_vals = update_info['q_vals']
+    if 'q' in update_info and \
+       update_info['q'] is not None:
+        q_vals = update_info['q']
         summary_proto.value.add(
             tag='q_vals_max',
             simple_value=np.max(q_vals))
@@ -217,7 +218,7 @@ def log_info(update_info):
             tag='q_vals_min',
             simple_value=np.min(q_vals))
     if cnt_skip == n_skip:
-        next_q_vals_nt = agent.get_value(next_state)
+        next_q_vals_nt = agent.learn_q(np.asarray(next_state)[np.newaxis, :])[0]
         for i, ac in enumerate(ACTIONS):
             summary_proto.value.add(
                 tag='next_q_vals_{}'.format(ac[0].data),
@@ -291,7 +292,7 @@ try:
         momentum_ped = 0.0
         while True:
             n_ep += 1
-            env.env.n_ep = n_ep
+            env.env.n_ep = n_ep  # TODO: do this systematically
             exploration_off = (n_ep%n_test==0)
             n_steps = 0
             cnt_skip = n_skip
@@ -305,24 +306,24 @@ try:
                 next_state, reward, done, info = env.step(ACTIONS[action])
                 reward = compile_reward_agent(reward)
                 skip_reward += reward
-                done = (reward < -0.9) or done
+                done = (reward < -0.9) or done  # heuristic early stopping
                 # agent step
                 cnt_skip -= 1
+                update_info = {}
                 if cnt_skip==0 or done:
                     skip_reward /= (n_skip - cnt_skip)
-                    next_action, update_info = agent.step(
-                        sess=sess, state=state, action=action,
-                        reward=skip_reward, next_state=next_state,
-                        episode_done=done,
-                        learning_off=exploration_off,
-                        exploration_off=exploration_off)
+                    if not exploration_off:
+                        update_info = agent.step(
+                            sess=sess, state=state, action=action,
+                            reward=skip_reward, next_state=next_state,
+                            episode_done=done,
+                            learning_off=exploration_off,
+                            exploration_off=exploration_off)
+                    next_action = agent.act(next_state, exploration=not exploration_off)
                     cnt_skip = n_skip
                     skip_reward = 0
                     state, action = next_state, next_action  # s',a' -> s,a
                 else:
-                    update_info = agent.improve_value_(
-                        None, None, None, None, None)
-                    # update_info = {}
                     next_action = action
                 sv.summary_computed(sess, summary=log_info(update_info))
                 if done:
