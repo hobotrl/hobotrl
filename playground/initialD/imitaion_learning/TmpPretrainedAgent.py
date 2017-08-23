@@ -56,7 +56,6 @@ class TmpPretrainedAgent(BaseDeepAgent):
             self.evaluate(y_true, preds)
         self.evaluate(y_true, preds)
 
-
         replay_size = len(replay_buffer)
         batch_size = 128
         num_update = replay_size * 10 / batch_size

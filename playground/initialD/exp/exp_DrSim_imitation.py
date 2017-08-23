@@ -29,6 +29,8 @@ from sensor_msgs.msg import CompressedImage
 from gym.spaces import Discrete, Box
 import cv2
 
+from playground.initialD.imitaion_learning import initialD_input
+
 # Environment
 def compile_reward(rewards):
     rewards = map(
@@ -49,11 +51,10 @@ def compile_obs(obss):
     return obs1, rule_action
 
 
-
 # What is the result's name?? Need check
 env = DrivingSimulatorEnv(
     defs_obs=[('/training/image/compressed', CompressedImage),
-              ('/decision_results', Int16)],
+              ('/decision_result', Int16)],
     func_compile_obs=compile_obs,
     defs_reward=[
         ('/rl/has_obstacle_nearby', Bool),
@@ -73,7 +74,7 @@ env.action_space = Discrete(3)
 env.reward_range = (-np.inf, np.inf)
 env.metadata = {}
 # env = FrameStack(env, 1)
-ACTIONS = [(Char(ord(mode)),) for mode in ['s', 'd', 'a', '0', '1']]
+ACTIONS = [(Char(ord(mode)),) for mode in ['s', 'd', 'a']]
 
 
 state_shape = env.observation_space.shape
@@ -83,16 +84,10 @@ n_interactive = 0
 n_ep = 0  # last ep in the last run, if restart use 0
 n_test = 10  # num of episode per test run (no exploration)
 
-replay_buffer = []
+
+
+filename = "/home/pirate03/PycharmProjects/hobotrl/data/records_v1/filter_action3/train.tfrecords"
 noval_scene_count = 0
-
-
-def preprocess_image(input_image):
-    imagenet_mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
-    imagenet_std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
-    image = (input_image - imagenet_mean) / imagenet_std
-
-    return image
 
 
 try:
@@ -100,6 +95,7 @@ try:
     config.gpu_options.allow_growth = True
 
     with tf.Session() as sess:
+        replay_buffer = initialD_input.init_replay_buffer(filename, sess)
         # agent.set_session(sess)
         checkpoint_path = "/home/pirate03/PycharmProjects/resnet-18-tensorflow/log2_15/model.ckpt-9999"
         graph = tf.get_default_graph()
@@ -126,7 +122,7 @@ try:
 
             img = tf.image.resize_images(img, [224, 224])
             img = tf.image.convert_image_dtype(img, tf.float32)
-            img = preprocess_image(img)
+            img = initialD_input.preprocess_image(img)
             # print "state: {}".format(state)
             # print "state type: {}".format(type(state))
             img = sess.run(img)
@@ -141,6 +137,7 @@ try:
             if action != rule_action:
                 if rule_action != 3:
                     replay_buffer.append([np.copy(img), action])
+                    replay_buffer.pop(0)
                     noval_scene_count += 1
             # default using learning agent so three is no need to step('1')
             # env.step(ACTIONS[5])
@@ -168,7 +165,7 @@ try:
                 cum_reward += reward
                 next_img = tf.image.resize_images(next_img, [224, 224])
                 next_img = tf.image.convert_image_dtype(next_img, tf.float32)
-                next_img = preprocess_image(next_img)
+                next_img = initialD_input.preprocess_image(next_img)
                 # print "state: {}".format(next_state)
                 # print "state type: {}".format(type(next_state))
                 next_img = sess.run(next_img)
@@ -179,7 +176,8 @@ try:
                     # fileter action 3
                     if next_rule_action != 3:
                         replay_buffer.append([np.copy(next_img), next_action])
-                        noval_scene_count += +1
+                        replay_buffer.pop(0)
+                        noval_scene_count += 1
                     # replay_buffer.pop(0)
 
                 print "next_action: {}".format(next_action)
@@ -189,7 +187,7 @@ try:
                 img, action = next_img, next_action  # s',a' -> s,a
                 next_img, _, reward, done, info = env.step(ACTIONS[action])
 
-            if noval_scene_count > 50:
+            if noval_scene_count > 20:
                 pretrained_agent.learn(replay_buffer)
                 noval_scene_count = 0
 
