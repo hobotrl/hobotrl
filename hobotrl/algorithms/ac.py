@@ -79,7 +79,7 @@ class DiscreteActorCriticUpdater(network.NetworkUpdater):
 
 
 class ActorCriticUpdater(network.NetworkUpdater):
-    def __init__(self, policy_dist, v_function, target_estimator, entropy=1e-3, max_advantage=10.0):
+    def __init__(self, policy_dist, v_function, target_estimator, entropy=1e-3, actor_weight=1.0):
         """
         Actor Critic methods, for both continuous and discrete action spaces.
 
@@ -108,13 +108,12 @@ class ActorCriticUpdater(network.NetworkUpdater):
                 advantage = self._input_target_v - op_v
                 self._advantage = advantage
                 _mean, _var = tf.nn.moments(advantage, axes=[0])
-                print "_var shape:", _var
                 self._std_advantage = advantage / (tf.sqrt(_var) + 1.0)
                 # self._std_advantage = self._advantage
                 pi_loss = tf.reduce_mean(self._policy_dist.log_prob() * tf.stop_gradient(self._std_advantage))
                 entropy_loss = tf.reduce_mean(self._input_entropy * self._policy_dist.entropy())
                 self._pi_loss = pi_loss
-            self._op_loss = self._q_loss - (self._pi_loss + entropy_loss)
+            self._op_loss = self._q_loss - actor_weight * (self._pi_loss + entropy_loss)
             print "advantage, self._policy_dist.entropy(), self._policy_dist.log_prob()", advantage, self._policy_dist.entropy(), self._policy_dist.log_prob()
         self._update_operation = network.MinimizeLoss(self._op_loss,
                                                       var_list=self._v_function.variables +
