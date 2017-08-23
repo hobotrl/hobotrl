@@ -85,7 +85,6 @@ n_ep = 0  # last ep in the last run, if restart use 0
 n_test = 10  # num of episode per test run (no exploration)
 
 
-
 filename = "/home/pirate03/PycharmProjects/hobotrl/data/records_v1/filter_action3/train.tfrecords"
 noval_scene_count = 0
 
@@ -185,7 +184,7 @@ try:
                 if done is True:
                     break
                 img, action = next_img, next_action  # s',a' -> s,a
-                next_img, _, reward, done, info = env.step(ACTIONS[action])
+                next_img, next_rule_action, reward, done, info = env.step(ACTIONS[action])
 
             if noval_scene_count > 20:
                 pretrained_agent.learn(replay_buffer)
