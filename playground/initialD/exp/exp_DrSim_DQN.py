@@ -17,7 +17,6 @@ import hobotrl as hrl
 from ros_environments import DrivingSimulatorEnvClient as DrivingSimulatorEnv
 
 import rospy
-import message_filters
 from std_msgs.msg import Char, Bool, Int16, Float32
 from sensor_msgs.msg import CompressedImage
 
@@ -146,7 +145,7 @@ agent = hrl.DQN(
 )
 
 n_interactive = 0
-n_ep = 265  # last ep in the last run, if restart use 0
+n_ep = 0  # last ep in the last run, if restart use 0
 n_test = 10  # num of episode per test run (no exploration)
 
 try:

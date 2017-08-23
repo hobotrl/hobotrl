@@ -29,7 +29,7 @@ from cv_bridge import CvBridge, CvBridgeError
 import rospy
 from rospy.timer import Timer
 sys.path.append('.')
-import my_message_filters as message_filters
+import ros_utils.message_filters as message_filters
 from std_msgs.msg import Char, Bool, Float32
 
 

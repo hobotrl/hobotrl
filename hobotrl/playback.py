@@ -79,17 +79,19 @@ class Playback(object):
             # lazy creation
             print "initializing data with:", sample, ",type:", type(sample)
             sample_class = type(sample)
-            if sample_class == np.ndarray:
-                sample_shape = list(sample.shape)
-                sample_type = sample.dtype
-            elif sample_class in scalar_type:
+            if sample_class in scalar_type:
                 sample_shape = []  # scalar value
                 if sample_class in dtype_identitical:
                     sample_type = sample_class
                 else:
                     sample_type = dtype_mapping[sample_class]
-            else:  # unknown type:
-                raise NotImplementedError("unsupported sample type:" + str(sample))
+            else:  # try cast as ndarray
+                try:
+                    sample = np.asarray(sample)
+                    sample_shape = list(sample.shape)
+                    sample_type = sample.dtype
+                except:  # unknown type:
+                    raise NotImplementedError("unsupported sample type:" + str(sample))
 
             self.data = np.zeros(
                 shape=([self.capacity] + sample_shape), dtype=sample_type)

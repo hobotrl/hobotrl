@@ -35,16 +35,12 @@ class EpsilonGreedyPolicy(Policy):
         super(EpsilonGreedyPolicy, self).__init__()
         self.q_function, self._epsilon, self._num_actions = q_function, epsilon, num_actions
 
-    def act(self, state, exploration=False, **kwargs):
-        if not exploration:
-            q_values = self.q_function(np.asarray([state]))[0]
+    def act(self, state, exploration=True, **kwargs):
+        if exploration and np.random.rand() < self._epsilon:
+            action = np.random.randint(self._num_actions)
+        else:
+            q_values = self.q_function(np.asarray(state)[np.newaxis, :])[0]
             action = np.argmax(q_values)
-            return action
-        if np.random.rand() < self._epsilon:
-            # random
-            return np.random.randint(self._num_actions)
-        q_values = self.q_function(np.asarray([state]))[0]
-        action = np.argmax(q_values)
         return action
 
 
