@@ -7,7 +7,6 @@ from collections import deque
 sys.path.append('../../..')
 sys.path.append('..')
 
-from playground.initialD.imitaion_learning import resnet
 
 import numpy as np
 
@@ -19,7 +18,7 @@ from hobotrl.playback import MapPlayback
 from playground.initialD.imitaion_learning.TmpPretrainedAgent import TmpPretrainedAgent
 from hobotrl.environments.environments import FrameStack
 
-from ros_environments import DrivingSimulatorEnv
+from playground.initialD.ros_environments import DrivingSimulatorEnv
 
 import rospy
 import message_filters
@@ -86,16 +85,18 @@ n_test = 10  # num of episode per test run (no exploration)
 
 
 filename = "/home/pirate03/PycharmProjects/hobotrl/data/records_v1/filter_action3/train.tfrecords"
+print "~~~~~~~\n"*5
+replay_buffer = initialD_input.init_replay_buffer(filename)
+print "~~~~~~~\n"*5
+print "replay_buffer initialization done"
 noval_scene_count = 0
-
 
 try:
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
 
     with tf.Session() as sess:
-        replay_buffer = initialD_input.init_replay_buffer(filename, sess)
-        # agent.set_session(sess)
+
         checkpoint_path = "/home/pirate03/PycharmProjects/resnet-18-tensorflow/log2_15/model.ckpt-9999"
         graph = tf.get_default_graph()
         global_step = tf.get_variable(
@@ -104,9 +105,11 @@ try:
         )
         input_name = 'train_image/shuffle_batch:0'
         output_name = 'tower_0/ToInt32:0'
-        pretrained_agent = TmpPretrainedAgent(checkpoint_path, input_name, output_name,
+        print "agent initialization"
+        train_dir = "./tmp"
+        pretrained_agent = TmpPretrainedAgent(checkpoint_path, train_dir, input_name, output_name,
                                               sess, graph, global_step)
-
+        print "agent initialization done"
         # lr = graph.get_operation_by_name('lr').outputs[0]
         while True:
             n_ep += 1
@@ -134,10 +137,15 @@ try:
             using_learning_agent = True
             action = pretrained_agent.act(img)
             if action != rule_action:
+                print "not identical "
+                print "sl pred action: {}".format(action)
+                print "rule action: {}".format(rule_action)
                 if rule_action != 3:
                     replay_buffer.append([np.copy(img), action])
                     replay_buffer.pop(0)
                     noval_scene_count += 1
+            else:
+                print "identical"
             # default using learning agent so three is no need to step('1')
             # env.step(ACTIONS[5])
 
@@ -172,14 +180,17 @@ try:
                 next_action = pretrained_agent.act(next_img)
                 # r
                 if next_action != next_rule_action:
+                    print "not identical"
                     # fileter action 3
                     if next_rule_action != 3:
                         replay_buffer.append([np.copy(next_img), next_action])
                         replay_buffer.pop(0)
                         noval_scene_count += 1
                     # replay_buffer.pop(0)
+                else:
+                    print "identical"
 
-                print "next_action: {}".format(next_action)
+                print "action: {}".format(next_action)
 
                 if done is True:
                     break
@@ -187,7 +198,9 @@ try:
                 next_img, next_rule_action, reward, done, info = env.step(ACTIONS[action])
 
             if noval_scene_count > 20:
+                print "Trying to learn"
                 pretrained_agent.learn(replay_buffer)
+                print "Learning Done"
                 noval_scene_count = 0
 
 

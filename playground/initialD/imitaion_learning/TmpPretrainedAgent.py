@@ -49,21 +49,25 @@ class TmpPretrainedAgent(BaseDeepAgent):
         return action
 
     def learn(self, replay_buffer):
+        replay_size = len(replay_buffer)
+        batch_size = 256
+        num_update = replay_size * 10 / batch_size
+
         if self.update_n == 0:
-            preds = self.sess.run(self.outputs, feed_dict={self.inputs: replay_buffer, self.is_train: False})
+            batch = replay_buffer[np.random.randint(replay_size, size=batch_size)]
+            preds = self.sess.run(self.outputs, feed_dict={self.inputs: batch, self.is_train: False})
             y_true = np.array([y[1] for y in replay_buffer])
             print "update_n: {}".format(self.update_n)
             self.evaluate(y_true, preds)
         self.evaluate(y_true, preds)
 
-        replay_size = len(replay_buffer)
-        batch_size = 128
-        num_update = replay_size * 10 / batch_size
         for i in range(num_update):
             batch = replay_buffer[np.random.randint(replay_size, size=batch_size)]
             self.sess.run(self.trainop, feed_dict={self.inputs: batch, self.is_train: True})
+
         self.update_n += 1
-        preds = self.sess.run(self.outputs, feed_dict={self.inputs: replay_buffer, self.is_train: False})
+        batch = replay_buffer[np.random.randint(replay_size, size=batch_size)]
+        preds = self.sess.run(self.outputs, feed_dict={self.inputs: batch, self.is_train: False})
         y_true = np.array([y[1] for y in replay_buffer])
         print "update_n: {}".format(self.update_n)
         self.evaluate(y_true, preds)
