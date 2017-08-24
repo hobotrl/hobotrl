@@ -22,6 +22,7 @@ import hobotrl.algorithms.dqn as dqn
 import hobotrl.algorithms.dpg as dpg
 import hobotrl.algorithms.ot as ot
 import playground.a3c_onoff as a3coo
+import playground.a3c_continuous_onoff as a3ccoo
 
 
 class DQNExperiment(Experiment):
@@ -438,6 +439,103 @@ class ACOOExperiment(Experiment):
                 runner.episode(self.episode_n)
 
 
+
+class ACOOExperimentCon(Experiment):
+    def __init__(self, env,
+                 f_create_net,
+                 episode_n=10000,
+                 reward_decay=0.99,
+                 entropy_scale=1,
+                 on_batch_size=32,
+                 off_batch_size=32,
+                 off_interval=8,
+                 sync_interval=1000,
+                 replay_size=10000,
+                 prob_min=5e-3,
+                 entropy=hrl.utils.CappedLinear(4e5, 1e-2, 1e-3),
+                 l2=1e-8,
+                 optimizer_ctor=lambda: tf.train.AdamOptimizer(1e-4),
+                 ddqn=False,
+                 aux_r=False,
+                 aux_d=False,
+                 ):
+        super(ACOOExperimentCon, self).__init__()
+        self.env = env
+        self.f_create_net = f_create_net
+        self.episode_n = episode_n
+        self.reward_decay = reward_decay
+        self.entropy_scale = entropy_scale
+        self.on_batch_size = on_batch_size
+        self.off_batch_size = off_batch_size
+        self.off_interval = off_interval
+        self.sync_interval = sync_interval
+        self.replay_size = replay_size
+        self.prob_min = prob_min
+        self.entropy = entropy
+        self.l2 = l2
+        self.optimizer_ctor = optimizer_ctor
+        self.ddqn = ddqn
+        self.aux_r = aux_r
+        self.aux_d = aux_d
+
+    def run(self, args):
+        logging.warning("after run")
+        cluster = eval(args.cluster)
+        cluster_spec = tf.train.ClusterSpec(cluster)
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        server = tf.train.Server(cluster_spec,
+                                 job_name=args.job,
+                                 task_index=args.index,
+                                 config=config)
+        worker_n = len(cluster["worker"])
+        if args.job == "ps":
+            logging.warning("starting ps server")
+            server.join()
+        else:
+            kwargs = {"ddqn": self.ddqn, "aux_r": self.aux_r, "aux_d": self.aux_d, "reward_decay": self.reward_decay,
+                      "entropy_scale": self.entropy_scale}
+            env = self.env
+            state_shape = list(self.env.observation_space.shape)
+            with tf.device("/job:worker/task:0"):
+                global_step = tf.get_variable('global_step', [],
+                                              initializer=tf.constant_initializer(0),
+                                              trainable=False)
+                global_net = a3ccoo.ActorCritic(0, "global_net", state_shape, env.action_space.shape[0],
+                                               self.f_create_net, optimizer=self.optimizer_ctor(),
+                                               global_step=global_step, **kwargs)
+
+            for i in range(worker_n):
+                with tf.device("/job:worker/task:%d" % i):
+                    worker = a3ccoo.A3CAgent(
+                        index=i,
+                        parent_net=global_net,
+                        create_net=self.f_create_net,
+                        state_shape=state_shape,
+                        num_actions=env.action_space.shape[0],
+                        replay_capacity=self.replay_size,
+                        train_on_interval=self.on_batch_size,
+                        train_off_interval=self.off_interval,
+                        target_follow_interval=self.sync_interval,
+                        off_batch_size=self.off_batch_size,
+                        entropy=self.entropy,
+                        global_step=global_step,
+                        optimizer=self.optimizer_ctor(),
+                        **kwargs
+                    )
+                    if i == args.index:
+                        agent = worker
+
+            sv = agent.init_supervisor(graph=tf.get_default_graph(), worker_index=args.index,
+                                       init_op=tf.global_variables_initializer(), save_dir=args.logdir)
+            with sv.prepare_or_wait_for_session(server.target) as sess:
+                agent.set_session(sess)
+                runner = hrl.envs.EnvRunner(env, agent, reward_decay=self.reward_decay,
+                                            evaluate_interval=sys.maxint, render_interval=sys.maxint,
+                                            render_once=True,
+                                            logdir=args.logdir if args.index == 0 else None)
+                runner.episode(self.episode_n)
+                
 class ACExperiment(Experiment):
 
     def __init__(self,
