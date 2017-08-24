@@ -238,8 +238,8 @@ class PPO(sampling.TrajectoryBatchUpdate,
         info = {}
         for i in range(self._epoch_py_step):
             for mini_batch in BatchIterator(batch, self._batch_size):
-                self.network_optimizer.updater("ppo").update(self.sess, mini_batch)
-                self.network_optimizer.updater("l2").update(self.sess)
+                self.network_optimizer.update("ppo", self.sess, mini_batch)
+                self.network_optimizer.update("l2", self.sess)
                 info = self.network_optimizer.optimize_step(self.sess)
                 infos.append(info)
         self._old_network_syncer.sync(self.sess, 1.0)

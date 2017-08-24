@@ -490,25 +490,6 @@ class NetworkUpdater(object):
         raise NotImplementedError()
 
 
-class UpdaterWrapper(NetworkUpdater):
-
-    def __init__(self, updater, optimizer):
-        """
-        :param updater:
-        :type updater: NetworkUpdater
-        :param optimizer:
-        :type optimizer: NetworkOptimizer
-        """
-        super(UpdaterWrapper, self).__init__()
-        self._optimizer, self._updater = optimizer, updater
-
-    def update(self, sess, *args, **kwargs):
-        update_run = self._updater.update(sess, *args, **kwargs)
-        update_run._updater = self._updater
-        self._optimizer.collect_update_run(update_run, self._updater)
-        return update_run
-
-
 class NetworkOptimizer(object):
     """
     Perform optimize steps.
@@ -521,8 +502,8 @@ class NetworkOptimizer(object):
         network_optimizer.compile()
 
     running phase:
-        network_optimizer.updater("td").update(self.sess, batch)
-        network_optimizer.updater("l2").update(self.sess)
+        network_optimizer.update("td", self.sess, batch)
+        network_optimizer.update("l2", self.sess)
         network_optimizer.optimize_step()
 
     """
@@ -537,9 +518,9 @@ class NetworkOptimizer(object):
         """
         raise NotImplementedError()
 
-    def updater(self, updater_name=None):
+    def update(self, updater_name=None, *args, **kwargs):
         """
-        Retrieve named updater. Actually a UpdaterWrapper is returned.
+        call named updater. Actually a UpdaterWrapper is returned.
         :param updater_name:
         :return: NetworkUpdater
         """
@@ -585,25 +566,26 @@ class BaseNetworkOptimizer(NetworkOptimizer):
 
         self._updater_weights[updater] = weight
 
-    def updater(self, updater_name=None):
+    def update(self, updater_name=None, *args, **kwargs):
         updater = None
         if updater_name is None:
             assert(len(self._list_updater) + len(self._dict_updater) == 1)
             if len(self._list_updater) > 0:
                 updater = self._list_updater[0]
-                return UpdaterWrapper(updater, self)
             elif len(self._dict_updater) > 0:
                 for k in self._dict_updater:
                     updater = self._dict_updater[k]
-                    return UpdaterWrapper(updater, self)
+                    break
         else:
             updater = self._dict_updater[updater_name]
-            return UpdaterWrapper(updater, self)
+        update_run = updater.update(*args, **kwargs)
+        update_run._updater = updater
+        self.collect_update_run(update_run)
 
     def gen_updater_label_(self, updater, label):
         return updater.__class__.__name__ + "/" + label
 
-    def collect_update_run(self, update_run, updater):
+    def collect_update_run(self, update_run):
         self._update_runs.append(update_run)
 
     def compile(self):
@@ -642,10 +624,21 @@ class BaseNetworkOptimizer(NetworkOptimizer):
         up_grads = filter(lambda up: type(up) == ApplyGradient, updates)
         weighted_grads = []
 
+        # merge losses with same var_list
+        varlist_losses = {}
         for loss_update in up_losses:
-            grads_vars = self._default_optimizer.compute_gradients(
-                self._updater_weights[loss_update._updater] * loss_update._op_list,
-                var_list=loss_update._var_list)
+            key_list = utils.hashable_list(loss_update._var_list)
+            if key_list in varlist_losses:
+                losses = varlist_losses[key_list]
+            else:
+                losses = []
+                varlist_losses[key_list] = losses
+            losses.append(loss_update)
+
+        for varlist in varlist_losses:
+            losses = varlist_losses[varlist]
+            loss = tf.add_n([self._updater_weights[up_loss._updater] * up_loss._op_list for up_loss in losses])
+            grads_vars = self._default_optimizer.compute_gradients(loss, var_list=varlist)
             weighted_grads.extend(grads_vars)
 
         for grad_update in up_grads:
@@ -803,8 +796,8 @@ class OptimizerPlaceHolder(NetworkOptimizer):
         self._updaters = []
         self._compiled = False
 
-    def updater(self, updater_name=None):
-        return self._optimizer.updater(updater_name)
+    def update(self, updater_name=None, *args, **kwargs):
+        return self._optimizer.update(updater_name, *args, **kwargs)
 
     def optimize_step(self, sess):
         return self._optimizer.optimize_step(sess)
