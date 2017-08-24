@@ -29,7 +29,7 @@ import rospy
 from rospy.timer import Timer
 from std_msgs.msg import Bool
 sys.path.append('..')
-import playground.initialD.ros_utils.message_filters as message_filters
+import ros_utils.message_filters as message_filters
 
 
 class DrivingSimulatorEnv(object):
