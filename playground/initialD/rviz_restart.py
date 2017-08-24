@@ -17,7 +17,7 @@ from numpy import linalg as LA
 from std_msgs.msg import Char, Int16, Bool
 from autodrive_msgs.msg import CarStatus
 from collections import deque
-from timer import Timer
+from ros_utils.timer import Timer
 
 class restart_ros_launch:
     def __init__(self):

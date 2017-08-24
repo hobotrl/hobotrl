@@ -4,26 +4,38 @@
 import logging
 import numpy as np
 
+scalar_type = [
+    bool, int, float,
+    np.int8, np.int16, np.int32, np.int64,
+    np.uint8, np.uint16, np.uint32, np.uint64,
+    np.float, np.float16, np.float32, np.float64]
+
+dtype_identitical = [
+    np.int8, np.int16, np.int32, np.int64,
+    np.uint8, np.uint16, np.uint32, np.uint64,
+    np.float, np.float16, np.float32, np.float64]
+
+dtype_mapping = {
+    bool: np.bool,
+    int: np.int32,
+    float: np.float32}
+
 
 class Playback(object):
-    def __init__(self, capacity, sample_shape, push_policy="sequence", pop_policy="random",
-                 augment_offset=None, augment_scale=None, dtype=None):
+    def __init__(self, capacity, push_policy="sequence", pop_policy="random",
+                 augment_offset=None, augment_scale=None):
         """
-        stores ndarray.
+        Stores ndarray, optionally apply transformation:
+            (sample + offset) * scale
+        to samples before returning.
         :param capacity: total count of samples stored
-        :param sample_length: length of a single sample
         :param push_policy: sequence
         :param pop_policy: sequence/random
         :param augment_offset:
         :param augment_scale:
-                sample apply transformation: (sample + offset) * scale before returned by sample_batch()
-        :param dtype: np.float32 default
         """
         self.capacity = capacity
-        self.sample_shape = list(sample_shape)
-        print "capacity:", capacity, ", sample_len:", sample_shape
-        # self.data = np.ndarray(shape=([self.capacity] + self.sample_shape),
-        #                        dtype=dtype)
+        print "capacity:", capacity
         self.data = None
         self.push_policy = push_policy
         self.pop_policy = pop_policy
@@ -49,33 +61,49 @@ class Playback(object):
         return self.capacity
 
     def reset(self):
-        """
-        clear all samples
+        """Clear all samples
         :return:
         """
         self.count, self.push_index, self.pop_index = 0, 0, 0
 
     def add_sample(self, sample, index, sample_score=0):
         """
-        add sample to specified position
+        add sample to specified position and modify self.count.
         :param sample:
+        :type sample: np.ndarray
         :param index:
         :param sample_score:
         :return:
         """
         if self.data is None:
             # lazy creation
-            print "initializing data with:", sample
-            self.data = np.zeros(shape=([self.capacity] + self.sample_shape),
-                                   dtype=sample.dtype)
-            print "initializing data:", self.data.shape, ",", self.data.dtype
+
+            print "initializing data with:", sample, ",type:", type(sample)
+            sample_class = type(sample)
+            if sample_class in scalar_type:
+                sample_shape = []  # scalar value
+                if sample_class in dtype_identitical:
+                    sample_type = sample_class
+                else:
+                    sample_type = dtype_mapping[sample_class]
+            else:  # try cast as ndarray
+                try:
+                    sample = np.asarray(sample)
+                    sample_shape = list(sample.shape)
+                    sample_type = sample.dtype
+                except:  # unknown type:
+                    raise NotImplementedError("unsupported sample type:" + str(sample))
+
+            self.data = np.zeros(
+                shape=([self.capacity] + sample_shape), dtype=sample_type)
+
+
         self.data[index] = sample
         if self.count < self.capacity:
             self.count += 1
 
     def push_sample(self, sample, sample_score=0):
-        """
-        add sample into playback
+        """Put sample into buffer and increment push index by 1.
         :param sample:
         :param sample_score:
         :return:
@@ -84,14 +112,13 @@ class Playback(object):
         self.push_index = (self.push_index + 1) % self.capacity
 
     def next_batch_index(self, batch_size):
-        """
-        calculate index of next batch
+        """Generate sample index of the next batch.
         :param batch_size:
         :return:
         """
         if self.get_count() == 0:
             return np.asarray([], dtype=int)
-        if self.pop_policy == "random":
+        elif self.pop_policy == "random":
             index = np.random.randint(0, self.count, batch_size)
         elif self.pop_policy == "sequence":
             '''
@@ -109,16 +136,14 @@ class Playback(object):
         return index
 
     def get_batch(self, index):
-        """
-        get batch by index
+        """Get batch by index
         :param index:
         :return:
         """
         return (self.data[index] + self.augment_offset) * self.augment_scale
 
     def sample_batch(self, batch_size):
-        """
-        get batch by batch_size
+        """Sample a batch of samples from buffer.
         :param batch_size:
         :return:
         """
@@ -136,55 +161,63 @@ class Playback(object):
 
 class MapPlayback(Playback):
 
-    def __init__(self, capacity, sample_shapes, push_policy="sequence", pop_policy="random",
-                 augment_offset={}, augment_scale={}, dtype=None):
-        """
-        stores map of ndarray.
-        returns field '_index' as index of batch samples in sample_batch()
+    def __init__(self, *args, **kwargs):
+        """Stores map of ndarray.
+        Contains a dummy inherited Playback and a dict of Playbacks
         :param capacity:
-        :param sample_shapes:
         :param push_policy:
         :param pop_policy:
         :param dtype:
         """
-        # BUG: self.push index doesn't grow
-        super(MapPlayback, self).__init__(capacity, [1], push_policy, pop_policy, dtype)
-        self.data = dict([(i, Playback(capacity, sample_shapes[i], push_policy, pop_policy,
-                                       augment_offset=augment_offset.get(i), augment_scale=augment_scale.get(i),
-                                       dtype=dtype)) for i in sample_shapes])
+        super(MapPlayback, self).__init__(*args, **kwargs)
+        # overide initialized parameters of parent class
+        if self.augment_offset == 0:
+            self.augment_offset = {}
+        if self.augment_scale == 1:
+            self.augment_scale = {}
+
+    def init_data_(self, sample):
+        """Initialize a dict of {key: Playback} as data."""
+        self.data = dict(
+            [(key, Playback(
+                self.capacity, self.push_policy, self.pop_policy,
+                self.augment_offset[key] if key in self.augment_offset else None,
+                self.augment_scale[key] if key in self.augment_scale else None))
+             for key in sample])
 
     def push_sample(self, sample, sample_score=0):
-        for i in sample:
-            self.data[i].push_sample(sample[i], sample_score)
+        # init key->Playback map
+        if self.data is None:
+            self.init_data_(sample)
+        # push sample iteritively into Playbacks
+        for key in sample:
+             self.data[key].push_sample(sample[key], sample_score)
+        # increment ego count and push_index
+        self.add_sample(None, None, None)
+        self.push_index = (self.push_index + 1) % self.capacity
 
     def add_sample(self, sample, index, sample_score=0):
-        for i in sample:
-            self.data[i].add_sample(sample[i], index, sample_score)
-
-    def get_count(self):
-        # BUG: return self.data[0].get_count() is enough?
-        for i in self.data:
-            return self.data[i].get_count()
-
-    def get_capacity(self):
-        for i in self.data:
-            return self.data[i].get_capacity()
-
-    def reset(self):
-        for i in self.data:
-            self.data[i].reset()
-
-    def next_batch_index(self, batch_size):
-        for i in self.data:
-            return self.data[i].next_batch_index(batch_size)
+        if self.count < self.capacity:
+            self.count += 1
+        if sample is None:
+            # If caller is push_sample do nothing further.
+            return
+        else:
+            for key in self.data:
+                self.data[key].add_sample(sample[key], index, sample_score)
 
     def get_batch(self, index):
-        batch = dict([(i, self.data[i].get_batch(index)) for i in self.data])
+        batch = dict([(key, self.data[key].get_batch(index)) for key in self.data])
         batch["_index"] = index
-        # logging.warning("batch: %s", batch)
-        # logging.warning("batch[state]: %s", batch['state'])
-        # logging.warning("batch[next_state]: %s", batch['next_state'])
         return batch
+
+    def reset(self):
+        if self.data is None:
+            return
+        else:
+            for i in self.data:
+                self.data[i].reset()
+            self.count, self.push_index, self.pop_index = 0, 0, 0
 
     @staticmethod
     def to_rowwise(batch):
@@ -233,9 +266,9 @@ class MapPlayback(Playback):
         for i in range(batch_size):
             sample = batch[i]
             for field in sample:
-                column_batch[field].append(sample[i])
+                column_batch[field].append(sample[field])
         for field in column_batch:
-            column_batch[field] = np.asarray(column_batch)
+            column_batch[field] = np.asarray(column_batch[field])
         return column_batch
 
 
@@ -393,13 +426,12 @@ class NearPrioritizedPlayback(MapPlayback):
     using field '_weight' as priority probability when sample batch from this playback;
     using field '_index' as sample index when sample batch from this playback, for later update_score()
     """
-    def __init__(self, capacity, sample_shapes, augment_offset={}, augment_scale={},
+    def __init__(self, capacity, augment_offset={}, augment_scale={},
                  evict_policy="sequence", epsilon=1e-3,
-                 priority_bias=1.0, importance_weight=1.0, dtype=None):
+                 priority_bias=1.0, importance_weight=1.0):
         """
 
         :param capacity:
-        :param sample_shapes:
         :param evict_policy: how old sample is replaced if replay buffer reaches capacity limit.
             "sequence": old sample is replaced as FIFO style;
             "random": old sample is replaced with probability be inversely proportional to sample's 'score_'.
@@ -414,17 +446,16 @@ class NearPrioritizedPlayback(MapPlayback):
             1 for fully compensation for priority bias.
         :param dtype:
         """
-        sample_shapes["_score"] = []
-        super(NearPrioritizedPlayback, self).__init__(capacity, sample_shapes, "sequence", "random",
+        super(NearPrioritizedPlayback, self).__init__(capacity, "sequence", "random",
                                                       augment_offset=augment_offset,
                                                       augment_scale=augment_scale,
-                                                      dtype=dtype)
+                                                      )
         self.evict_policy = evict_policy
         self.epsilon, self.priority_bias, self.importance_weight = epsilon, priority_bias, importance_weight
 
     def push_sample(self, sample, sample_score=None):
         if sample_score is None:
-            if self.data["_score"].data is not None:
+            if self.data is not None and self.data["_score"].data is not None:
                 sample_score = np.max(self.data["_score"].data)
             else:
                 sample_score = 0.0
@@ -434,7 +465,7 @@ class NearPrioritizedPlayback(MapPlayback):
             super(NearPrioritizedPlayback, self).push_sample(sample, sample_score)
         else:
             if self.get_count() < self.get_capacity():
-                MapPlayback.push_sample(self, sample)
+                super(NearPrioritizedPlayback, self).push_sample(sample, sample_score)
             else:
                 # evict according to score; lower score evict first
                 score = self.data["_score"].data
@@ -497,20 +528,19 @@ class NearPrioritizedPlayback(MapPlayback):
 
 
 class NPPlayback(MapPlayback):
-    def __init__(self, capacity, sample_shapes, pn_ratio=1.0, push_policy="sequence", pop_policy="random", dtype=np.float32):
+    def __init__(self, capacity, pn_ratio=1.0, push_policy="sequence", pop_policy="random"):
         """
         divide MapPlayback into positive sample and negative sample.
 
         :param capacity:
-        :param sample_shapes:
         :param pn_ratio:
         :param push_policy:
         :param pop_policy:
         :param dtype:
         """
-        MapPlayback.__init__(self, 1, sample_shapes, push_policy, pop_policy, dtype)
-        self.minus_playback = MapPlayback(int(capacity / (1 + pn_ratio)), sample_shapes, push_policy, pop_policy, dtype)
-        self.plus_playback = MapPlayback(int(capacity * pn_ratio / (1 + pn_ratio)), sample_shapes, push_policy, pop_policy, dtype)
+        super(NPPlayback, self).__init__(1, push_policy, pop_policy)
+        self.minus_playback = MapPlayback(int(capacity / (1 + pn_ratio)), push_policy, pop_policy)
+        self.plus_playback = MapPlayback(int(capacity * pn_ratio / (1 + pn_ratio)), push_policy, pop_policy)
         self.data = None
 
     def get_count(self):
@@ -546,4 +576,82 @@ class NPPlayback(MapPlayback):
         self.plus_playback.reset()
 
 
+class BatchIterator(object):
+    def __init__(self, batch, mini_size=1):
+        """
+        Iterate over a batch of data.
+        :param batch: column-wise batch sample.
+        :param mini_size: mini batch size, >=1
+        """
+        super(BatchIterator, self).__init__()
+        self._data, self._batch_size = MapPlayback.to_rowwise(batch), mini_size
+        self._size = len(self._data)
+        self._batch_size = min(self._batch_size, self._size)
+        self._next_index = 0
 
+    def __iter__(self):
+        return self
+
+    def next(self):
+        if self._next_index >= self._size:
+            raise StopIteration
+
+        next_index = min(self._next_index, self._size - self._batch_size)
+        self._next_index += self._batch_size
+        return MapPlayback.to_columnwise(self._data[next_index:next_index+self._batch_size])
+
+
+class BalancedMapPlayback(MapPlayback):
+    """MapPlayback with rebalanced action and done distribution.
+    The current balancing method only support discrete action spaces.
+    """
+    def __init__(self, num_actions, *args, **kwargs):
+        super(BalancedMapPlayback, self).__init__(*args, **kwargs)
+        self.num_actions = num_actions
+        self.sample_prob =  num_actions * np.ones(self.capacity)
+        self.action_prob = 1.0/num_actions*np.ones(num_actions)
+        self.done_prob = 0.0
+
+    def next_batch_index(self, batch_size):
+        count = self.get_count()
+        if count == 0:
+            return super(
+                BalancedMapPlayback, self).next_batch_index(batch_size)
+        else:
+            p = self.sample_prob[:count] / np.sum(self.sample_prob[:count])
+            return np.random.choice(
+                np.arange(count), size=batch_size, replace=True, p=p)
+
+    def push_sample(self, sample, **kwargs):
+        index = self.push_index
+
+        # Calculate unnormalized resampling weight for sample
+        assert 'action' in sample and 'episode_done' in sample
+        action = sample['action']
+        done = sample['episode_done']
+        if done:
+            self.sample_prob[index] = self.num_actions
+            self.sample_prob[index] = 1/self.done_prob
+        else:
+            self.sample_prob[index] = 1/self.action_prob[action]
+            self.sample_prob[index] *= 1/(1-self.done_prob)
+
+        # Exponetial moving averaged action and doneprobability
+        delta = np.zeros(self.num_actions)
+        delta[action] = 1
+        self.action_prob = self.action_prob*0.95 + delta*0.05
+        cap = 1e-2
+        self.action_prob[self.action_prob<cap] = cap
+        self.action_prob /= np.sum(self.action_prob)
+
+        self.done_prob = self.done_prob*0.95 + float(done)*0.05
+        cap = 1e-1
+        if self.done_prob < cap:
+            self.done_prob = cap
+        if self.done_prob > 1-cap:
+            self.done_prob = 1 - cap
+        print ("[BalancedMapPlayback.push_sample()]: "
+               "action {}, done {:.3f}, sample {:.3f}").format(
+                   self.action_prob, self.done_prob, self.sample_prob[index])
+
+        super(BalancedMapPlayback, self).push_sample(sample, **kwargs)

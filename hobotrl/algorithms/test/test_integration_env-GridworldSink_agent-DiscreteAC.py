@@ -44,8 +44,9 @@ def f_net_value(inputs, num_outputs, is_training):
         kernel_regularizer=l2_regularizer(scale=1e-4),
         trainable=True, name='out',
     )
-    q = tf.squeeze(q, name='out_sqz')
+    q = tf.squeeze(q, name='out_sqz', axis=1)
     return q
+
 
 def f_net_policy(inputs, num_outputs):
     inputs = inputs[0]

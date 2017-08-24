@@ -58,7 +58,7 @@ class EnvRunner(object):
         )
         next_state, reward, done, info = self.env.step(self.action)
         self.total_reward = reward + self.reward_decay * self.total_reward
-        _, info = self.agent.step(
+        info = self.agent.step(
             state=self.state, action=self.action, reward=reward,
             next_state=next_state, episode_done=done
         )
@@ -107,7 +107,7 @@ class EnvRunner(object):
 class EnvRunner2(object):
     def __init__(self, env, agent,
                  n_episodes=-1, moving_average_window_size=50,
-                 no_reward_reset_interval=-1,
+                 no_reward_reset_interval=-1, no_reward_punishment=0,
                  checkpoint_save_interval=-1, log_dir=None, log_file_name=None,
                  render_env=False, render_interval=1, render_length=200, frame_time=0, render_options={},
                  show_frame_rate=False, show_frame_rate_interval=100):
@@ -119,6 +119,7 @@ class EnvRunner2(object):
         :param n_episodes: number of episodes before terminating, -1 means run forever.
         :param moving_average_window_size: window size for calculating moving average of rewards.
         :param no_reward_reset_interval: reset after this number of steps if no reward is received.
+        :param no_reward_punishment: punishment when being reset for no reward.
         :param checkpoint_save_interval: save checkpoint every this number of steps.
         :param log_dir: path to save log files.
         :param log_file_name: file name of the csv file.
@@ -141,6 +142,7 @@ class EnvRunner2(object):
         self.n_episodes = n_episodes
         self.moving_average_window_size = moving_average_window_size
         self.no_reward_reset_interval = no_reward_reset_interval
+        self.no_reward_punishment = no_reward_punishment
         self.checkpoint_save_interval = checkpoint_save_interval
         self.log_dir = log_dir
         self.render_env = render_env
@@ -153,7 +155,8 @@ class EnvRunner2(object):
 
         self.episode_count = 0  # Count episodes
         self.step_count = 0  # Count number of total steps
-        self.reward_history = [0.]  # Record the total reward of last a few episodes
+        self.current_episode_reward = 0.
+        self.reward_history = list()  # Record the total reward of last a few episodes
         self.last_reward_step = 0  # The step when the agent gets last reward
         self.current_episode_step_count = 0  # The step count of current episode
         self.loss_sum = 0.  # Sum of loss in current episode
@@ -203,15 +206,15 @@ class EnvRunner2(object):
                 # Save to csv
                 if self.log_file:
                     print "Episode %d Step %d:" % (self.episode_count, self.step_count),
-                    print "%7.2f/%.2f" % (self.reward_history[-2], self.reward_summary)
+                    print "%7.2f/%.2f" % (self.reward_history[-1], self.reward_summary)
 
-                    self.log_file.write("%d,%d,%f,%f\n" % (self.episode_count, self.step_count, self.reward_history[-2], self.reward_summary))
+                    self.log_file.write("%d,%d,%f,%f\n" % (self.episode_count, self.step_count, self.reward_history[-1], self.reward_summary))
 
                 # Save to summary writer
                 if self.summary_writer:
                     summary = tf.Summary()
                     summary.value.add(tag="step count", simple_value=self.step_count)
-                    summary.value.add(tag="reward", simple_value=self.reward_history[-2])
+                    summary.value.add(tag="reward", simple_value=self.reward_history[-1])
                     summary.value.add(tag="average reward", simple_value=self.reward_summary)
                     if str(self.loss_summary) != 'nan':
                         summary.value.add(tag="loss", simple_value=self.loss_summary)
@@ -250,6 +253,15 @@ class EnvRunner2(object):
         action = self.agent.act(state, show_action_values=self.render_env)
         next_state, reward, done, info = self.env.step(action)
 
+        # Reset if no reward is seen for last a few steps
+        if reward > 1e-6:
+            self.last_reward_step = self.step_count
+
+        if self.step_count - self.last_reward_step == self.no_reward_reset_interval:
+            print "Reset for no reward"
+            done = True
+            reward -= self.no_reward_punishment
+
         # Train the agent
         info = self.agent.reinforce_(state=state,
                                      action=action,
@@ -267,33 +279,25 @@ class EnvRunner2(object):
             print "%.1f" % reward
 
         # Record reward and loss
-        self.reward_history[-1] += reward
+        self.current_episode_reward += reward
         self.loss_sum += loss
-
-        # Reset if no reward is seen for last a few steps
-        if reward > 1e-6:
-            self.last_reward_step = self.step_count
-
-        if self.step_count - self.last_reward_step == self.no_reward_reset_interval:
-            print "Reset for no reward"
-            done = True
-
         # Episode done
         if done:
             next_state = self.env.reset()
 
-            self.add_reward()
+            self.save_reward_record()
             self.last_reward_step = self.step_count
 
             self.episode_count += 1
 
         return next_state, done
 
-    def add_reward(self):
+    def save_reward_record(self):
         """
-        Add a new record.
+        Save reward record for current episode.
         """
-        self.reward_history.append(0.)
+        self.reward_history.append(self.current_episode_reward)
+        self.current_episode_reward = 0.
 
         # Trim the history record if it's length is longer than moving_average_window_size
         if len(self.reward_history) > self.moving_average_window_size:
@@ -304,7 +308,7 @@ class EnvRunner2(object):
         """
         Get the average reward of last few episodes.
         """
-        return float(sum(self.reward_history[:-1]))/(len(self.reward_history)-1)
+        return float(sum(self.reward_history))/len(self.reward_history)
 
     @ property
     def loss_summary(self):
@@ -616,7 +620,7 @@ class InfoChange(RewardShaping):
         return reward
 
 
-class C2DEnvWrapper(object):
+class C2DEnvWrapper(gym.Wrapper):
     """
     wraps an continuous action env to discrete env.
     """
@@ -629,6 +633,7 @@ class C2DEnvWrapper(object):
         :param d2c_proc: function converting discrete action to continuous
         :param action_n: count of discrete actions, if d2c_proc is not None
         """
+        super(C2DEnvWrapper, self).__init__(env)
         self.env = env
         if quant_list is not None:
             self.quant_list = quant_list
@@ -645,14 +650,7 @@ class C2DEnvWrapper(object):
             self.action_space = gym.spaces.discrete.Discrete(self.action_n)
             self.d2c_proc = d2c_proc
 
-    def __getattr__(self, name):
-        if name == "action_space":
-            print("getattr: action_space:", name)
-            return self.action_space
-        else:
-            return getattr(self.env, name)
-
-    def step(self, *args, **kwargs):
+    def _step(self, *args, **kwargs):
         # lives_before = self.env.ale.lives()
         if len(args) > 0:
             action_i = args[0]

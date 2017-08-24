@@ -20,7 +20,7 @@ from ros_environments import DrivingSimulatorEnv
 import rospy
 import message_filters
 from std_msgs.msg import Char, Bool, Int16, Float32
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import CompressedImage
 
 # Environment
 def compile_reward(rewards):
@@ -36,7 +36,7 @@ def compile_obs(obss):
     return obs
 
 env = DrivingSimulatorEnv(
-    defs_obs=[('/training/image', Image)],
+    defs_obs=[('/training/image/compressed', CompressedImage)],
     func_compile_obs=compile_obs,
     defs_reward=[
         ('/rl/has_obstacle_nearby', Bool),
@@ -81,7 +81,7 @@ def f_net(inputs, num_outputs, is_training):
         kernel_regularizer=l2_regularizer(scale=1e-2), name='conv4'
     )
     pool4 = layers.max_pooling2d(
-        inputs=conv3, pool_size=3, strides=8, name='pool4'
+        inputs=conv4, pool_size=3, strides=8, name='pool4'
     )
     depth = pool4.get_shape()[1:].num_elements()
     inputs = tf.reshape(pool4, shape=[-1, depth])
@@ -109,7 +109,7 @@ graph = tf.get_default_graph()
 agent = DQN(
     # EpsilonGreedyPolicyMixin params
     actions=range(len(ACTIONS)),
-    epsilon=0.05,
+    epsilon=0.5,
     # DeepQFuncMixin params
     dqn_param_dict={
         'gamma': 0.9,
@@ -155,10 +155,10 @@ try:
             cum_reward += reward
             next_action, update_info = agent.step(
                 sess=sess,
-                state=map(lambda x: (x-2)/5.0, state),  # scale state to [-1, 1]
+                state=state,
                 action=action,
-                reward=float(reward>1.0),  # reward clipping
-                next_state=map(lambda x: (x-2)/5.0, next_state), # scle state
+                reward=reward,
+                next_state=next_state,
                 episode_done=done,
             )
             cum_td_loss += update_info['td_loss'] if 'td_loss' in update_info is not None else 0
