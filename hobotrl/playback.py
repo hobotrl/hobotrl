@@ -77,6 +77,7 @@ class Playback(object):
         """
         if self.data is None:
             # lazy creation
+
             print "initializing data with:", sample, ",type:", type(sample)
             sample_class = type(sample)
             if sample_class in scalar_type:
@@ -95,6 +96,7 @@ class Playback(object):
 
             self.data = np.zeros(
                 shape=([self.capacity] + sample_shape), dtype=sample_type)
+
 
         self.data[index] = sample
         if self.count < self.capacity:
