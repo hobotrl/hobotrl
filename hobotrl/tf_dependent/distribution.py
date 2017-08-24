@@ -44,10 +44,10 @@ class NNDistribution(object):
     def prob_run(self, inputs, sample):
         raise NotImplementedError()
 
-    def log_prob(self):
+    def log_prob(self, stable=False):
         """
         logged probability(density) of sample
-        :param sample:
+        :param stable: return stable form of log_prob if True. standard form otherwise.
         :return: operator calculating log_prob
         """
         raise NotImplementedError()
@@ -136,7 +136,7 @@ class DiscreteDistribution(NNDistribution):
         feed_dict.update({self._input_sample: sample})
         return self._sess.run(self._op_prob, feed_dict=feed_dict)
 
-    def log_prob(self):
+    def log_prob(self, stable=False):
         return self._op_log_prob
 
     def log_prob_run(self, inputs, sample):
@@ -155,7 +155,6 @@ class DiscreteDistribution(NNDistribution):
         for p in distribution:
             sample = np.random.choice(np.arange(self._dist_n), p=p)
             sample_i.append(sample)
-            logging.warning("distribution:%s, sample:%s", p, sample)
         sample_i = np.asarray(sample_i)
         return sample_i
 
@@ -186,6 +185,9 @@ class NormalDistribution(NNDistribution):
             self._op_entropy = tf.reduce_sum(tf.log(2 * np.pi * np.e * variance) / 2.0, axis=1)
             self._op_log_prob = tf.reduce_sum(-0.5 * tf.square(self._input_sample - self._op_mean) / variance \
                                 - 0.5 * tf.log(variance) - 0.5 * np.log(2.0 * np.pi), axis=1)
+            self._op_log_prob_stable = - tf.square(self._input_sample - self._op_mean) \
+                                       - network.Utils.clipped_square(variance - tf.stop_gradient(tf.square(self._input_sample - self._op_mean)))
+            self._op_log_prob_stable = tf.reduce_sum(self._op_log_prob_stable, axis=1)
             self._op_prob = tf.reduce_sum(1.0 / tf.sqrt(2 * np.pi * variance)
                                           * tf.exp(-0.5 * tf.square(self._input_sample - self._op_mean) / variance), axis=1)
 
@@ -213,7 +215,7 @@ class NormalDistribution(NNDistribution):
         return self._sess.run(self._op_prob, feed_dict=feed_dict)
 
     def log_prob(self, stable=False):
-        return self._op_log_prob
+        return self._op_log_prob_stable if stable else self._op_log_prob
 
     def log_prob_run(self, inputs, sample):
         feed_dict = self.dist_input(inputs)

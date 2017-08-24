@@ -542,3 +542,60 @@ class A3CExperiment(Experiment):
                                         render_once=True,
                                         logdir=args.logdir if args.index == 0 else None)
             runner.episode(self._episode_n)
+
+
+class PPOExperiment(Experiment):
+
+    def __init__(self,
+                 env, f_create_net, episode_n=1000,
+                 discount_factor=0.9,
+                 entropy=1e-2,
+                 clip_epsilon=0.2,
+                 epoch_per_step=4,
+                 network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3), grad_clip=10.0),
+                 batch_size=8,
+                 horizon=256
+                 ):
+        super(PPOExperiment, self).__init__()
+        self._env, self._f_create_net, self._episode_n, \
+            self._discount_factor, self._entropy, self._clip_epsilon, self._epoch_per_step, \
+            self._network_optimizer_ctor, self._batch_size, self._horizon = \
+            env, f_create_net, episode_n, \
+            discount_factor, entropy, clip_epsilon, epoch_per_step, \
+            network_optimizer_ctor, batch_size, horizon
+
+    def run(self, args):
+
+        state_shape = list(self._env.observation_space.shape)
+
+        global_step = tf.get_variable(
+            'global_step', [], dtype=tf.int32,
+            initializer=tf.constant_initializer(0), trainable=False
+        )
+        agent = hrl.PPO(
+            f_create_net=self._f_create_net,
+            state_shape=state_shape,
+            # ACUpdate arguments
+            discount_factor=self._discount_factor,
+            entropy=self._entropy,
+            clip_epsilon=self._clip_epsilon,
+            epoch_per_step=self._epoch_per_step,
+            # optimizer arguments
+            network_optimizer=self._network_optimizer_ctor(),
+            batch_size=self._batch_size,
+            horizon=self._horizon,
+            global_step=global_step,
+        )
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        sv = agent.init_supervisor(
+            graph=tf.get_default_graph(), worker_index=0,
+            init_op=tf.global_variables_initializer(), save_dir=args.logdir
+        )
+        with sv.managed_session(config=config) as sess:
+            agent.set_session(sess)
+            runner = hrl.envs.EnvRunner(
+                self._env, agent, evaluate_interval=sys.maxint,
+                render_interval=args.render_interval, logdir=args.logdir
+            )
+            runner.episode(self._episode_n)

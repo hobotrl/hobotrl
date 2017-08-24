@@ -574,6 +574,31 @@ class NPPlayback(MapPlayback):
         self.plus_playback.reset()
 
 
+class BatchIterator(object):
+    def __init__(self, batch, mini_size=1):
+        """
+        Iterate over a batch of data.
+        :param batch: column-wise batch sample.
+        :param mini_size: mini batch size, >=1
+        """
+        super(BatchIterator, self).__init__()
+        self._data, self._batch_size = MapPlayback.to_rowwise(batch), mini_size
+        self._size = len(self._data)
+        self._batch_size = min(self._batch_size, self._size)
+        self._next_index = 0
+
+    def __iter__(self):
+        return self
+
+    def next(self):
+        if self._next_index >= self._size:
+            raise StopIteration
+
+        next_index = min(self._next_index, self._size - self._batch_size)
+        self._next_index += self._batch_size
+        return MapPlayback.to_columnwise(self._data[next_index:next_index+self._batch_size])
+
+
 class BalancedMapPlayback(MapPlayback):
     """MapPlayback with rebalanced action and done distribution.
     The current balancing method only support discrete action spaces.
@@ -628,5 +653,3 @@ class BalancedMapPlayback(MapPlayback):
                    self.action_prob, self.done_prob, self.sample_prob[index])
 
         super(BalancedMapPlayback, self).push_sample(sample, **kwargs)
-
-

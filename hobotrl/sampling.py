@@ -119,6 +119,7 @@ class TrajectoryOnSampler(Sampler):
         self._step_n += 1
         self._replay.push_sample(self._sample_maker(state, action, reward, next_state, episode_done, **kwargs))
         if self._step_n % self._interval == 0 or episode_done:
+            self._step_n = 0
             batch = self._replay.sample_batch(self._replay.get_count())
             self._replay.reset()
             return batch

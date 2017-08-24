@@ -82,17 +82,31 @@ class ACContinuousPendulum(ACExperiment):
             env = hrl.envs.AugmentEnvWrapper(env, reward_decay=discount_factor, reward_scale=0.1)
         dim_action = env.action_space.shape[-1]
         if f_create_net is None:
+            def f_net_sigmoid(inputs):
+                l2 = 1e-4
+                state = inputs[0]
+                v = hrl.network.Utils.layer_fcs(state, [200, 100], 1, l2=l2, var_scope="v")
+                v = tf.squeeze(v, axis=1)
+                mean = hrl.network.Utils.layer_fcs(state, [200, 100], dim_action,
+                                                   activation_out=tf.tanh,
+                                                 l2=l2, var_scope="mean")
+                stddev = hrl.network.Utils.layer_fcs(state, [200, 100], dim_action,
+                                                     activation_out=lambda x: 2.0 * tf.sigmoid(x / 2.0),
+                                                     l2=l2, var_scope="stddev")
+                return {"v": v, "mean": mean, "stddev": stddev}
+
             def f_net(inputs):
                 l2 = 1e-4
                 state = inputs[0]
                 v = hrl.network.Utils.layer_fcs(state, [200, 100], 1, l2=l2, var_scope="v")
                 v = tf.squeeze(v, axis=1)
                 mean = hrl.network.Utils.layer_fcs(state, [200, 100], dim_action, activation_out=tf.tanh,
-                                                 l2=l2, var_scope="mean")
-                stddev = hrl.network.Utils.layer_fcs(state, [200, 100], dim_action, activation_out=tf.nn.softplus,
-                                                 l2=l2, var_scope="stddev")
+                                                   l2=l2, var_scope="mean")
+                stddev = hrl.network.Utils.layer_fcs(state, [200, 100], dim_action,
+                                                     activation_out=lambda x: tf.nn.softplus(x/8.0),
+                                                     l2=l2, var_scope="stddev")
                 return {"v": v, "mean": mean, "stddev": stddev}
-            f_create_net = f_net
+            f_create_net = f_net_sigmoid
 
         super(ACContinuousPendulum, self).__init__(env, f_create_net, episode_n, discount_factor, entropy,
                                                    network_optimizer_ctor, batch_size)
@@ -1102,6 +1116,42 @@ Experiment.register(CEMBootstrappedDQNIceHockey, "CEM Bootstrapped DQN for the I
 
 Experiment.register(demo_experiment_generator(CEMBootstrappedDQNBreakout, "20600000.ckpt", frame_time=0.01), "Demo for the Breakout")
 Experiment.register(demo_experiment_generator(CEMBootstrappedDQNIceHockey, "7000000.ckpt", frame_time=0.02), "Demo for the Breakout")
+
+
+class PPOPendulum(PPOExperiment):
+    def __init__(self, env=None, f_create_net=None, episode_n=2000,
+                 discount_factor=0.9, entropy=3e-3, clip_epsilon=0.2,
+                 epoch_per_step=1,
+                 network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(3e-4),
+                                                                           grad_clip=10.0),
+                 batch_size=16,
+                 horizon=256):
+        if env is None:
+            env = gym.make("Pendulum-v0")
+            env = hrl.envs.AugmentEnvWrapper(env, reward_decay=discount_factor, reward_scale=0.1)
+        if f_create_net is None:
+            dim_action = env.action_space.shape[-1]
+
+            def f_net(inputs):
+                l2 = 1e-4
+                state = inputs[0]
+                v = hrl.network.Utils.layer_fcs(state, [200, 100], 1, l2=l2, var_scope="v")
+                v = tf.squeeze(v, axis=1)
+                mean = hrl.network.Utils.layer_fcs(state, [200, 100], dim_action,
+                                                   # activation_out=None,
+                                                   activation_out=lambda x: tf.tanh(x / 4.0),
+                                                   l2=l2, var_scope="mean")
+                stddev = hrl.network.Utils.layer_fcs(state, [200, 100], dim_action,
+                                                     # activation_out=None,
+                                                     activation_out=lambda x: 4.0 * tf.sigmoid(x / 4.0),
+                                                     l2=l2, var_scope="stddev")
+                return {"v": v, "mean": mean, "stddev": stddev}
+            f_create_net = f_net
+
+        super(PPOPendulum, self).__init__(env, f_create_net, episode_n, discount_factor, entropy, clip_epsilon,
+                                          epoch_per_step, network_optimizer_ctor, batch_size, horizon)
+Experiment.register(PPOPendulum, "PPO for Pendulum")
+
 
 if __name__ == '__main__':
     Experiment.main()

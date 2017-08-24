@@ -18,7 +18,7 @@ class GreedyPolicy(Policy):
         self._num_actions = q_function.output().op.shape.as_list()[-1]
 
     def act(self, state, **kwargs):
-        q_values = self.q_function(np.asarray([state]))[0]
+        q_values = self.q_function(np.asarray(state)[np.newaxis, :])[0]
         action = np.argmax(q_values)
         return action
 
@@ -70,7 +70,7 @@ class OUExplorationPolicy(Policy):
         self._ou_noise = OUNoise(self._action_shape, mu, theta, sigma)
 
     def act(self, state, **kwargs):
-        action = self._action_function(np.asarray([state]))[0]
+        action = self._action_function(np.asarray(state)[np.newaxis, :])[0]
         return action + self._ou_noise.tick()
 
 
@@ -87,7 +87,7 @@ class StochasticPolicy(Policy):
         self._distribution = distribution
 
     def act(self, state, **kwargs):
-        return self._distribution.sample_run(np.asarray([state]))[0]
+        return self._distribution.sample_run(np.asarray(state)[np.newaxis, :])[0]
 
 
 class GreedyStochasticPolicy(Policy):
@@ -109,3 +109,40 @@ class GreedyStochasticPolicy(Policy):
         else:
             distribution = self._distribution.dist_run([state])[0]
             return np.argmax(distribution)
+
+
+class KeepEpsilonPolicy(Policy):
+
+    def __init__(self, n, n_distribution, q_function, epsilon, num_actions):
+        super(KeepEpsilonPolicy, self).__init__(q_function, epsilon, num_actions)
+        self._q_function, self._epsilon, self._num_actions = q_function, epsilon, num_actions
+        self._n = n
+        self._last_action, self._countdown = None, 0
+
+    def act(self, state, exploration=True, **kwargs):
+        """
+        if exploration=False, do not keep previous action. True otherwise.
+        :param state:
+        :param exploration:
+        :param kwargs:
+        :return:
+        """
+        if not exploration:
+            q_values = self._q_function(np.asarray(state)[np.newaxis, :])[0]
+            action = np.argmax(q_values)
+            return action
+
+        if self._countdown > 0:
+            self._countdown -= 1
+        else:
+            if np.random.rand() < self._epsilon:
+                # random
+                self._last_action = np.random.randint(self._num_actions)
+            else:
+                q_values = self._q_function(np.asarray(state)[np.newaxis, :])[0]
+                self._last_action = np.argmax(q_values)
+            self._countdown = self._n - 1
+        return self._last_action
+
+    def set_n(self, n):
+        self._n = n

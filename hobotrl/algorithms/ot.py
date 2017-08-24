@@ -11,7 +11,7 @@ from dqn import DQN
 from hobotrl.sampling import TruncateTrajectorySampler
 from hobotrl.playback import MapPlayback
 from hobotrl.target_estimate import OptimalityTighteningEstimator
-from value_based import StateValueFunction
+from value_based import GreedyStateValueFunction
 import hobotrl.network as network
 
 
@@ -66,7 +66,7 @@ class OTDQN(DQN):
                                     batch_size, sampler, *args, **kwargs)
 
     def init_updaters_(self):
-        self.target_v = StateValueFunction(self.target_q)
+        self.target_v = GreedyStateValueFunction(self.target_q)
         target_esitmator = OptimalityTighteningEstimator(self.target_v, self._upper_weight, self._lower_weight,
                                                          discount_factor=self._discount_factor)
 
