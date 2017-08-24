@@ -28,16 +28,33 @@ from gym.spaces import Discrete, Box
 
 # Environment
 def compile_reward(rewards):
-    rewards = map(
-        lambda reward: sum((
-            -100.0 * float(reward[0]),  # obstacle 0 or -0.04
-             -1.0 * float(reward[1])*(float(reward[1])>2.0),  # distance to 0.002 ~ 0.008
-             10.0 * float(reward[2]),  # car_velo 0 ~ 0.08
-            -20.0 * (1 - float(reward[3])),  # opposite 0 or -0.02
-            -70.0 * float(reward[4]),  # ped 0 ~ -0.07
-        )),
-        rewards)
-    return np.mean(rewards)/100.0
+    return rewards
+
+def compile_reward_agent(rewards):
+    global momentum_ped
+    global momentum_opp
+    rewards = np.mean(np.array(rewards), axis=0)
+    print (' '*80+'R: ['+'{:4.2f} '*len(rewards)+']').format(*rewards),
+
+    # obstacle
+    rewards[0] *= -100.0
+    # distance to
+    rewards[1] *= -1.0*(rewards[1]>2.0)
+    # velocity
+    rewards[2] *= 10
+    # opposite
+    momentum_opp = (rewards[3]<0.5)*(momentum_opp+(1-rewards[3]))
+    momentum_opp = min(momentum_opp, 20)
+    rewards[3] = -20*(0.9+0.1*momentum_opp)*(momentum_opp>1.0)
+    # ped
+    momentum_ped = (rewards[4]>0.5)*(momentum_ped+rewards[4])
+    momentum_ped = min(momentum_ped, 10)
+    rewards[4] = -40*(0.9+0.1*momentum_ped)*(momentum_ped>1.0)
+
+    reward = np.sum(rewards)/100.0
+    print '{:6.4f}, {:6.4f}'.format(momentum_opp, momentum_ped),
+    print ': {:7.4f}'.format(reward)
+    return reward
 
 def compile_obs(obss):
     obs1 = obss[-1][0]
@@ -117,8 +134,8 @@ def f_net(inputs, num_outputs, is_training):
         q = tf.squeeze(q, name='out_sqz')
     return q
 
-optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
-target_sync_rate = 0.001
+optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=1e-3)
+target_sync_rate = 1e-3
 training_params = (optimizer_td, target_sync_rate, 10.0)
 # state_shape = (640, 640, 3*3)
 state_shape = env.observation_space.shape
@@ -131,7 +148,7 @@ global_step = tf.get_variable(
 agent = DQNSticky(
     # EpsilonGreedyPolicyMixin params
     actions=range(len(ACTIONS)),
-    epsilon=0.1,
+    epsilon=0.05,
     sticky_mass=3,
     # DeepQFuncMixin params
     dqn_param_dict={
@@ -179,6 +196,8 @@ try:
         agent.set_session(sess)
         action_fraction = np.ones(3,) / 3.0
         action_td_loss = np.zeros(3,)
+        momentum_opp = 0.0
+        momentum_ped = 0.0
         while True:
             n_ep += 1
             cum_reward = 0.0
@@ -191,12 +210,12 @@ try:
             state = env.reset()
             action = agent.act(state, exploration_off=exploration_off)
             next_state, reward, done, info = env.step(ACTIONS[action])
+            reward = compile_reward_agent(reward)
             queue = deque([(state, 0)]*1)
             queue.append((state, action))
             state, action = queue.popleft()
             while True:
                 n_steps += 1
-                cum_reward += reward
                 # if n_steps < 35:
                 #    agent.set_epsilon(0.1)
                 # else:
@@ -209,7 +228,8 @@ try:
                     exploration_off=exploration_off)
                 cum_td_loss += update_info['td_loss'] if 'td_loss' in update_info \
                     and update_info['td_loss'] is not None else 0
-                print "[Delayed action] {}".format(ACTIONS[action])
+                cum_reward += reward
+                # print "[Delayed action] {}".format(ACTIONS[action])
                 if 'td_losses' in update_info:
                     prt_str = zip(
                         update_info['actions'],
@@ -263,7 +283,7 @@ try:
                         sym = '|x|' if i==max_idx else ' x '
                     else:
                         sym = '| |' if i==max_idx else '   '
-                    p_str += '{}{:3d}: {:.5f}  '.format(sym, a, v)
+                    p_str += '{}{:3d}: {:.4f} '.format(sym, a, v)
                 print p_str
                 # print update_info
                 if done is True:
@@ -289,6 +309,7 @@ try:
                 state, action = next_state, next_action  # s',a' -> s,a
                 last_done = done
                 next_state, reward, done, info = env.step(ACTIONS[action])
+                reward = compile_reward_agent(reward)
                 if done is True:
                     last_done = True
                 elif last_done is True or reward < -0.9:

@@ -14,14 +14,9 @@ from tensorflow.contrib.layers import l2_regularizer
 
 import hobotrl as hrl
 
-#from hobotrl.playback import MapPlayback
-# from hobotrl.algorithms.dqn import DQN
-#from dqn import DQNSticky
-
 from ros_environments import DrivingSimulatorEnvClient as DrivingSimulatorEnv
 
 import rospy
-import message_filters
 from std_msgs.msg import Char, Bool, Int16, Float32
 from sensor_msgs.msg import CompressedImage
 
@@ -36,18 +31,23 @@ def compile_reward(rewards):
             -70.0 * float(reward[4]),  # ped 0 ~ -0.07
         )),
         rewards)
-    return np.mean(rewards)/1000.0
+    return rewards
+
+def compile_reward_agent(rewards):
+    return np.mean(rewards)/100.0
 
 def compile_obs(obss):
     obs1 = obss[-1][0]
     obs2 = obss[-3][0]
     obs3 = obss[-5][0]
-    obs = np.concatenate([obs1, obs2, obs3], axis=2)
+    return [obs1, obs2, obs3]
+
+def compile_obs_agent(obss):
+    obs = np.concatenate(obss, axis=2)
     return obs
 
 env = DrivingSimulatorEnv(
-    address="localhost",
-    port="22230",
+    address="localhost", port="22230",
     defs_obs=[('/training/image/compressed', CompressedImage)],
     func_compile_obs=compile_obs,
     defs_reward=[
@@ -114,7 +114,6 @@ def f_net(inputs):
         q = layers.dense(
             inputs=hid2, units=len(ACTIONS), activation=None,
             kernel_regularizer=l2_regularizer(scale=1e-2), name='q')
-        q = tf.squeeze(q, name='out_sqz', axis=1)
     return {"q": q}
 
 optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
@@ -124,8 +123,7 @@ state_shape = (640, 640, 3*3)
 graph = tf.get_default_graph()
 global_step = tf.get_variable(
     'global_step', [], dtype=tf.int32,
-    initializer=tf.constant_initializer(0), trainable=False
-)
+    initializer=tf.constant_initializer(0), trainable=False)
 
 agent = hrl.DQN(
     f_create_q=f_net, state_shape=state_shape,
@@ -138,7 +136,7 @@ agent = hrl.DQN(
     # epsilon greeedy arguments
     greedy_epsilon=0.2,
     # optimizer arguments
-    network_optimizer=hrl.network.LocalOptimizer(tf.train.GradientDescentOptimizer(1e-3), 10.0),
+    network_optimizer=hrl.network.LocalOptimizer(optimizer_td, 10.0),
     max_gradient=10.0,
     # sampler arguments
     update_interval=1, replay_size=5000, batch_size=8,
@@ -147,7 +145,7 @@ agent = hrl.DQN(
 )
 
 n_interactive = 0
-n_ep = 265  # last ep in the last run, if restart use 0
+n_ep = 0  # last ep in the last run, if restart use 0
 n_test = 10  # num of episode per test run (no exploration)
 
 try:
@@ -170,8 +168,11 @@ try:
             cum_td_loss = 0.0
             exploration_off = (n_ep%n_test==0)
             state = env.reset()
+            state = compile_obs_agent(state)
             action = agent.act(state, exploration_off=exploration_off)
             next_state, reward, done, info = env.step(ACTIONS[action])
+            next_state = compile_obs_agent(next_state)
+            reward = compile_reward_agent(reward)
             while True:
                 n_steps += 1
                 cum_reward += reward
@@ -180,7 +181,6 @@ try:
                         sess=sess, state=state, action=action,
                         reward=reward, next_state=next_state,
                         episode_done=done,
-
                         learning_off=exploration_off,
                         exploration_off=exploration_off
                     )
@@ -202,7 +202,8 @@ try:
                     summary_proto.value.add(
                         tag='q_vals_min',
                         simple_value=np.min(q_vals))
-                next_q_vals_nt = agent.get_value(next_state)
+                next_q_vals_nt = agent.learn_q(next_state[np.newaxis, :])[0]
+                print next_q_vals_nt
                 for i, action in enumerate(ACTIONS):
                     summary_proto.value.add(
                         tag='next_q_vals_{}'.format(action[0].data),
@@ -238,6 +239,8 @@ try:
                     break
                 state, action = next_state, next_action
                 next_state, reward, done, info = env.step(ACTIONS[action])
+                next_state = compile_obs_agent(next_state)
+                reward = compile_reward_agent(reward)
 except Exception as e:
     print e.message
     traceback.print_exc()
