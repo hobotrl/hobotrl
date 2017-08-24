@@ -1,26 +1,31 @@
 # -*- coding: utf-8 -*-
 
+# TODO: semantically sampling is a management class of playback buffers. Is it
+# better to arrange it as a submodule in playback?
+
 import numpy as np
 import playback
 
 
 def default_make_sample(state, action, reward, next_state, episode_done, **kwargs):
-    return {
-        "state": state,
-        "action": action,
-        "reward": reward,
-        "next_state": next_state,
-        "episode_done": episode_done
-    }
+    """Default sample dict maker for Samplers."""
+    return {"state": state, "action": action, "reward": reward, "next_state": next_state,
+            "episode_done": episode_done}
 
 
 class Sampler(object):
+    """Transition data storage and sampling management class.
+
+    Sampler stores transition data (s, a, r, s') into replay memory and
+    provides sampled data batches in each step. Storage and sampling policies
+    can be customized, e.g. in the form of trajectories.
     """
-    Sampler accepts transitions, possibly in trajectories, and returns sampled batch of data.
-    """
+    def __init__(self):
+        pass
+
     def step(self, state, action, reward, next_state, episode_done, **kwargs):
-        """
-        accept transitions, return sampled data when necessary
+        """Accept transitions and return sampled data when necessary.
+
         :param state:
         :param action:
         :param reward:
@@ -68,7 +73,9 @@ class TransitionSampler(Sampler):
         :return: dictionary, column-wise batch of i.i.d. transitions randomly sampled from replay memory
         """
         self._step_n += 1
-        self._replay.push_sample(self._sample_maker(state, action, reward, next_state, episode_done, **kwargs))
+        if not (state is None or action is None or reward is None or
+                next_state is None or episode_done is None):
+            self._replay.push_sample(self._sample_maker(state, action, reward, next_state, episode_done, **kwargs))
         if self._step_n % self._interval == 0 and self._replay.get_count() >= self._minimum_count:
             return self._replay.sample_batch(self._batch_size)
         else:
@@ -120,9 +127,8 @@ class TrajectoryOnSampler(Sampler):
 
 
 class TruncateTrajectorySampler(Sampler):
-    """
-    sample {batch_size} trajectories of length {trajectory_length} in every {interval} steps.
-    """
+    """Sample {batch_size} trajectories of length {trajectory_length} in every
+    {interval} steps."""
     def __init__(self, replay_memory=None, batch_size=8, trajectory_length=8, interval=4, sample_maker=None):
         """
         sample  trajectories from replay memory
@@ -259,9 +265,10 @@ class TransitionBatchUpdate(SamplerAgentMixin):
         batch = self._sampler.step(state, action, reward, next_state, episode_done, **kwargs)
         if batch is None:
             return {}
-        info, sample_info = self.update_on_transition(batch)
-        self._sampler.post_step(batch, sample_info)
-        return info
+        else:
+            info, sample_info = self.update_on_transition(batch)
+            self._sampler.post_step(batch, sample_info)
+            return info
 
     def update_on_transition(self, batch):
         """

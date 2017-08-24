@@ -23,8 +23,8 @@ from hobotrl.environments import FrameStack
 from hobotrl.sampling import TransitionSampler
 from hobotrl.playback import BalancedMapPlayback
 # initialD
-from ros_environments import DrivingSimulatorEnv
-# from ros_environments import DrivingSimulatorEnvClient as DrivingSimulatorEnv
+# from ros_environments import DrivingSimulatorEnv
+from ros_environments import DrivingSimulatorEnvClient as DrivingSimulatorEnv
 # ROS
 import rospy
 from std_msgs.msg import Char, Bool, Int16, Float32
@@ -67,7 +67,7 @@ def compile_obs(obss):
     return obs1
 
 env = DrivingSimulatorEnv(
-    # address="yz-gpu031.hogpu.cc", port='22230',
+    address="localhost", port='22230',
     defs_obs=[('/training/image/compressed', CompressedImage)],
     func_compile_obs=compile_obs,
     defs_reward=[
@@ -142,7 +142,6 @@ def f_net(inputs):
 
 optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=1e-3)
 target_sync_rate = 1e-3
-training_params = (optimizer_td, target_sync_rate, 10.0)
 state_shape = env.observation_space.shape
 graph = tf.get_default_graph()
 global_step = tf.get_variable(
@@ -160,7 +159,7 @@ agent = hrl.DQN(
     greedy_epsilon=0.2,
     # optimizer arguments
     network_optimizer=hrl.network.LocalOptimizer(optimizer_td, 10.0),
-    max_gradient=10.0,
+    # max_gradient=10.0,
     # sampler arguments
     sampler=TransitionSampler(BalancedMapPlayback(
         num_actions=len(ACTIONS), capacity=5000),
@@ -201,8 +200,8 @@ def log_info(update_info):
             action_fraction *= 0.9
             action_fraction[s[0]] += 0.1
             action_td_loss[s[0]] = 0.9*action_td_loss[s[0]] + 0.1*s[3]
-            if cnt_skip==n_skip:
-                print ("{} "+"{:8.5f} "*4+"{}").format(*s)
+            #if cnt_skip==n_skip:
+            #    print ("{} "+"{:8.5f} "*4+"{}").format(*s)
         # print action_fraction
         # print action_td_loss
     for tag in update_info:
@@ -269,7 +268,7 @@ def log_info(update_info):
     return summary_proto
 
 n_interactive = 0
-n_skip = 3
+n_skip = 5
 n_ep = 0  # last ep in the last run, if restart use 0
 n_test = 10  # num of episode per test run (no exploration)
 
@@ -294,6 +293,7 @@ try:
             n_ep += 1
             env.env.n_ep = n_ep  # TODO: do this systematically
             exploration_off = (n_ep%n_test==0)
+            learning_off = exploration_off
             n_steps = 0
             cnt_skip = n_skip
             skip_reward = 0
@@ -312,18 +312,21 @@ try:
                 update_info = {}
                 if cnt_skip==0 or done:
                     skip_reward /= (n_skip - cnt_skip)
-                    if not exploration_off:
+                    if not learning_off:
                         update_info = agent.step(
                             sess=sess, state=state, action=action,
                             reward=skip_reward, next_state=next_state,
-                            episode_done=done,
-                            learning_off=exploration_off,
-                            exploration_off=exploration_off)
+                            episode_done=done)
                     next_action = agent.act(next_state, exploration=not exploration_off)
                     cnt_skip = n_skip
                     skip_reward = 0
                     state, action = next_state, next_action  # s',a' -> s,a
                 else:
+                    if not learning_off:
+                        update_info = agent.reinforce_(
+                            sess=sess, state=None, action=None,
+                            reward=None, next_state=None,
+                            episode_done=None)
                     next_action = action
                 sv.summary_computed(sess, summary=log_info(update_info))
                 if done:
