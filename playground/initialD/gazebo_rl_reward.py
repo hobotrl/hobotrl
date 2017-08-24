@@ -8,36 +8,45 @@ import sys
 import base64
 import rospy
 import rospkg
-from autodrive_msgs.msg import Control
-from autodrive_msgs.msg import Obstacles
-from autodrive_msgs.msg import CarStatus
+from autodrive_msgs.msg import Control, Obstacles, CarStatus
 from std_msgs.msg import Bool, Float32
 from nav_msgs.msg import Path
+from sensor_msgs.msg import CompressedImage
 import numpy as np
 from numpy import linalg as LA
+import cv2
+from cv_bridge import CvBridge, CvBridgeError
 
 class MyClass:
     def __init__(self):
-        rospy.init_node('gta5_rl_sender')
+        rospy.init_node('gazebo_rl_reward_fcn')
         self.car_pos_x = 0.0
         self.car_pos_y = 0.0
         self.min_path_dis = 0.0
-        self.detect_obstacle_range = 1
+        self.detect_obstacle_range = 5 + 1
         self.closest_distance = 10000.0 # initializer
 
-        self.pub_nearest_obs = rospy.Publisher('/rl/has_obstacle_nearby', Bool, queue_size=1000)
-        self.pub_closest_distance = rospy.Publisher('/rl/distance_to_longestpath', Float32, queue_size=1000)
-        self.pub_car_velocity = rospy.Publisher('/rl/car_velocity', Float32, queue_size=1000)
+        self.brg = CvBridge()
+
+        self.pub_nearest_obs = rospy.Publisher(
+            '/rl/has_obstacle_nearby', Bool, queue_size=1000)
+        self.pub_closest_distance = rospy.Publisher(
+            '/rl/distance_to_longestpath', Float32, queue_size=1000)
+        self.pub_car_velocity = rospy.Publisher(
+            '/rl/car_velocity', Float32, queue_size=1000)
+        self.pub_on_pedestrian = rospy.Publisher(
+            '/rl/on_pedestrian', Bool, queue_size=1000)
         rospy.Subscriber('/path/longest', Path, self.calc_nearest_distance_callback)
         rospy.Subscriber('/obstacles', Obstacles, self.calc_nearest_obs_callback)
         rospy.Subscriber('/car/status', CarStatus, self.get_status_callback)
+        rospy.Subscriber('/training/image/compressed',
+                         CompressedImage, self.trn_image_callback)
 
     def calc_dist(self, p):
         """Calculate the dist between p and car_position."""
         return LA.norm([
             (p.pose.position.x-self.car_pos_x),
-            (p.pose.position.y-self.car_pos_y)
-        ])
+            (p.pose.position.y-self.car_pos_y)])
 
     def find_minimum_distance(self, params):
         new_list = [self.calc_dist(x) for x in params]
@@ -73,6 +82,16 @@ class MyClass:
         self.closest_distance = min(new_list) if not len(new_list)==0 else 10000.0
         near_obs = True if self.closest_distance<self.detect_obstacle_range else False
         self.pub_nearest_obs.publish(near_obs)
+
+    def trn_image_callback(self, data):
+        img = self.brg.compressed_imgmsg_to_cv2(data, 'rgb8')
+        # Pedestrian factor
+        #   Since Ped lane is the outmost lane, if we take a 100x100 slice
+        #   centered around ego car, there will be considerable portions of
+        #   pixels being (0,0,0) if ego car is on the Ped lane. Thus the sum
+        #   lumanation will be lower compared with other cases. 
+        ped_factor = np.sum(img[650:750, 650:750, :])/(255*3*1e4)  # norm by max val
+        self.pub_on_pedestrian.publish(ped_factor<0.31)
 
     def sender(self):
         rospy.spin()

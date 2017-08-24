@@ -38,7 +38,7 @@ def init_global_var(now):
             video_wrt.release()
         video_wrt = cv2.VideoWriter(
                 video_file_fmt.format(ep_counter%20),
-                fourcc, 5.0, (1400, 1400)
+                fourcc, 10.0, (1400, 1400)
         )
         if video_info_file is not None:
             video_info_file.close()

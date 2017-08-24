@@ -252,6 +252,7 @@ class ApproximateTimeSynchronizer(TimeSynchronizer):
         else:
             stamp = msg.header.stamp
 
+
         self.lock.acquire()
         my_queue[stamp] = msg
         while len(my_queue) > self.queue_size:
