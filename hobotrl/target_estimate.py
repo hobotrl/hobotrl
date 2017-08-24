@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Estimators calculating target state value or target action value.
+Estimators for target values of action or state value functions.
+
+Modules include:
+    TargetEstimator, OneStepTD, DDQNOneStepTD, NStepTD, GAENStep
+    ContinuousActionEstimator, OptimalityTighteningEstimator
 """
 
 
@@ -19,7 +23,8 @@ class TargetEstimator(object):
 
     def estimate(self, state, action, reward, next_state, episode_done):
         """
-        estimate target state value (or action-value) from a batch of data.
+        Estimate target state value (or action-value) from a batch of data.
+
         :param state:
         :param action:
         :param reward:
@@ -31,6 +36,7 @@ class TargetEstimator(object):
 
 
 class OneStepTD(TargetEstimator):
+    # TODO: or more formally this should be name OneStepBootstrappedBackup?
     def __init__(self, q_function, discount_factor):
         super(OneStepTD, self).__init__(discount_factor)
         self._q_function = q_function

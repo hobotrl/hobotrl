@@ -666,13 +666,17 @@ class BaseNetworkOptimizer(NetworkOptimizer):
                 var_indices[var] = var_index
                 merged_grad_vars.append((grad, var))
 
-        # grad_clip
+        # Clip gradients 
+        # TODO: grad norm is also an useful piece of info. Should be able to
+        #       fetch it.
         if self._grad_clip is not None:
-            for i, (grad, var) in enumerate(merged_grad_vars):
-                if grad is not None:
-                    merged_grad_vars[i] = (tf.clip_by_norm(grad, self._grad_clip), var)
-
-        return merged_grad_vars
+            clipped_grads, _ = tf.clip_by_global_norm(
+                [g for g, v in merged_grad_vars], self._grad_clip)
+            clipped_grad_vars = [(clipped_grads[i], v) for i, (g, v) in
+                                 enumerate(merged_grad_vars) if g is not None]
+            return clipped_grad_vars
+        else:
+            return merged_grad_vars
 
     def run_(self, sess, op, update_runs):
         """
