@@ -76,8 +76,8 @@ class OTDQN(DQN):
 
     def update_on_transition(self, batch):
         self._update_count += 1
-        self.network_optimizer.updater("ot").update(self.sess, batch)
-        self.network_optimizer.updater("l2").update(self.sess)
+        self.network_optimizer.update("ot", self.sess, batch)
+        self.network_optimizer.update("l2", self.sess)
         info = self.network_optimizer.optimize_step(self.sess)
         if self._update_count % self._target_sync_interval == 0:
             self.network.sync_target(self.sess, self._target_sync_rate)

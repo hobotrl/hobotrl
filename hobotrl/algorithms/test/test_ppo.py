@@ -9,7 +9,7 @@ import gym
 import hobotrl as hrl
 
 
-class TestAC(unittest.TestCase):
+class TestPPO(unittest.TestCase):
     def test_run(self):
         tf.reset_default_graph()
         env = gym.make('Pendulum-v0')
@@ -33,7 +33,6 @@ class TestAC(unittest.TestCase):
         agent = hrl.PPO(
             f_create_net=f_net,
             state_shape=state_shape,
-            # ACUpdate arguments
             discount_factor=0.9,
             entropy=hrl.utils.CappedLinear(1e6, 1e-2, 1e-2),
             clip_epsilon=0.2,

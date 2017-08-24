@@ -308,8 +308,8 @@ class ActorCritic(sampling.TrajectoryBatchUpdate,
         return network.Network([input_state], f_create_net, var_scope="learn")
 
     def update_on_trajectory(self, batch):
-        self.network_optimizer.updater("ac").update(self.sess, batch)
-        self.network_optimizer.updater("l2").update(self.sess)
+        self.network_optimizer.update("ac", self.sess, batch)
+        self.network_optimizer.update("l2", self.sess)
         info = self.network_optimizer.optimize_step(self.sess)
         return info, {}
 

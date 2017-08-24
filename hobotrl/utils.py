@@ -272,14 +272,14 @@ class hashable_list(list):
         if len(self) == 0:
             return h
         for o in self:
-            h += o.__hash__()
+            h += hash(o)
         return h
 
     def __eq__(self, other):
         if other is None or len(self) != len(other):
             return False
         for i in range(len(other)):
-            if not self[i].__eq__(other[i]):
+            if not self[i] == other[i]:
                 return False
         return True
 
