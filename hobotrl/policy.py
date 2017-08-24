@@ -113,26 +113,36 @@ class GreedyStochasticPolicy(Policy):
 
 class KeepEpsilonPolicy(Policy):
 
-    def __init__(self, n_distribution, q_function, epsilon, num_actions):
+    def __init__(self, n, n_distribution, q_function, epsilon, num_actions):
         super(KeepEpsilonPolicy, self).__init__(q_function, epsilon, num_actions)
         self._q_function, self._epsilon, self._num_actions = q_function, epsilon, num_actions
-
+        self._n = n
         self._last_action, self._countdown = None, 0
 
     def act(self, state, exploration=True, **kwargs):
+        """
+        if exploration=False, do not keep previous action. True otherwise.
+        :param state:
+        :param exploration:
+        :param kwargs:
+        :return:
+        """
         if not exploration:
-            q_values = self.q_function(np.asarray(state)[np.newaxis, :])[0]
+            q_values = self._q_function(np.asarray(state)[np.newaxis, :])[0]
             action = np.argmax(q_values)
             return action
-        if np.random.rand() < self._epsilon:
-            # random
-            return np.random.randint(self._num_actions)
-        q_values = self.q_function(np.asarray(state)[np.newaxis, :])[0]
-        action = np.argmax(q_values)
 
         if self._countdown > 0:
             self._countdown -= 1
         else:
-            self._last_action = self._policy.act(state, **kwargs)
+            if np.random.rand() < self._epsilon:
+                # random
+                self._last_action = np.random.randint(self._num_actions)
+            else:
+                q_values = self._q_function(np.asarray(state)[np.newaxis, :])[0]
+                self._last_action = np.argmax(q_values)
             self._countdown = self._n - 1
         return self._last_action
+
+    def set_n(self, n):
+        self._n = n
