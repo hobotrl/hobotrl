@@ -18,7 +18,7 @@ class GreedyPolicy(Policy):
         self._num_actions = q_function.output().op.shape.as_list()[-1]
 
     def act(self, state, **kwargs):
-        q_values = self.q_function(np.asarray([state]))[0]
+        q_values = self.q_function(np.asarray(state)[np.newaxis, :])[0]
         action = np.argmax(q_values)
         return action
 
@@ -36,15 +36,10 @@ class EpsilonGreedyPolicy(Policy):
         self.q_function, self._epsilon, self._num_actions = q_function, epsilon, num_actions
 
     def act(self, state, exploration=True, **kwargs):
-<<<<<<< HEAD
-        if not exploration:
-            q_values = self.q_function(np.asarray([state]))[0]
-=======
         if exploration and np.random.rand() < self._epsilon:
             action = np.random.randint(self._num_actions)
         else:
             q_values = self.q_function(np.asarray(state)[np.newaxis, :])[0]
->>>>>>> 376855738da5403f435aeec9552d8aca9d57a656
             action = np.argmax(q_values)
         return action
 
@@ -75,7 +70,7 @@ class OUExplorationPolicy(Policy):
         self._ou_noise = OUNoise(self._action_shape, mu, theta, sigma)
 
     def act(self, state, **kwargs):
-        action = self._action_function(np.asarray([state]))[0]
+        action = self._action_function(np.asarray(state)[np.newaxis, :])[0]
         return action + self._ou_noise.tick()
 
 
@@ -92,7 +87,7 @@ class StochasticPolicy(Policy):
         self._distribution = distribution
 
     def act(self, state, **kwargs):
-        return self._distribution.sample_run(np.asarray([state]))[0]
+        return self._distribution.sample_run(np.asarray(state)[np.newaxis, :])[0]
 
 
 class GreedyStochasticPolicy(Policy):
@@ -126,13 +121,13 @@ class KeepEpsilonPolicy(Policy):
 
     def act(self, state, exploration=True, **kwargs):
         if not exploration:
-            q_values = self.q_function(np.asarray([state]))[0]
+            q_values = self.q_function(np.asarray(state)[np.newaxis, :])[0]
             action = np.argmax(q_values)
             return action
         if np.random.rand() < self._epsilon:
             # random
             return np.random.randint(self._num_actions)
-        q_values = self.q_function(np.asarray([state]))[0]
+        q_values = self.q_function(np.asarray(state)[np.newaxis, :])[0]
         action = np.argmax(q_values)
 
         if self._countdown > 0:
