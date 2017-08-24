@@ -25,10 +25,6 @@ from hobotrl.playback import BalancedMapPlayback
 # initialD
 # from ros_environments import DrivingSimulatorEnv
 from ros_environments import DrivingSimulatorEnvClient as DrivingSimulatorEnv
-# ROS
-import rospy
-from std_msgs.msg import Char, Bool, Int16, Float32
-from sensor_msgs.msg import CompressedImage
 # Gym
 from gym.spaces import Discrete, Box
 
@@ -64,20 +60,24 @@ def compile_reward_agent(rewards):
 
 def compile_obs(obss):
     obs1 = obss[-1][0]
+    print obss[-1][1]
     return obs1
 
 env = DrivingSimulatorEnv(
     address="localhost", port='22230',
-    defs_obs=[('/training/image/compressed', CompressedImage)],
+    defs_obs=[
+        ('/training/image/compressed', 'sensor_msgs.msg.CompressedImage'),
+        ('/decision_result', 'std_msgs.msg.Int16')
+    ],
     func_compile_obs=compile_obs,
     defs_reward=[
-        ('/rl/has_obstacle_nearby', Bool),
-        ('/rl/distance_to_longestpath', Float32),
-        ('/rl/car_velocity', Float32),
-        ('/rl/last_on_opposite_path', Int16),
-        ('/rl/on_pedestrian', Bool)],
+        ('/rl/has_obstacle_nearby', 'std_msgs.msg.Bool'),
+        ('/rl/distance_to_longestpath', 'std_msgs.msg.Float32'),
+        ('/rl/car_velocity', 'std_msgs.msg.Float32'),
+        ('/rl/last_on_opposite_path', 'std_msgs.msg.Int16'),
+        ('/rl/on_pedestrian', 'std_msgs.msg.Bool')],
     func_compile_reward=compile_reward,
-    defs_action=[('/autoDrive_KeyboardMode', Char)],
+    defs_action=[('/autoDrive_KeyboardMode', 'std_msgs.msg.Char')],
     rate_action=10.0,
     window_sizes={'obs': 2, 'reward': 3},
     buffer_sizes={'obs': 2, 'reward': 3},
@@ -88,7 +88,7 @@ env.action_space = Discrete(3)
 env.reward_range = (-np.inf, np.inf)
 env.metadata = {}
 env = FrameStack(env, 3)
-ACTIONS = [(Char(ord(mode)),) for mode in ['s', 'd', 'a']]
+ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']]
 
 # Agent
 def f_net(inputs):
@@ -220,24 +220,24 @@ def log_info(update_info):
         next_q_vals_nt = agent.learn_q(np.asarray(next_state)[np.newaxis, :])[0]
         for i, ac in enumerate(ACTIONS):
             summary_proto.value.add(
-                tag='next_q_vals_{}'.format(ac[0].data),
+                tag='next_q_vals_{}'.format(ac[0]),
                 simple_value=next_q_vals_nt[i])
             summary_proto.value.add(
-                tag='next_q_vals_{}'.format(ac[0].data),
+                tag='next_q_vals_{}'.format(ac[0]),
                 simple_value=next_q_vals_nt[i])
             summary_proto.value.add(
-                tag='action_td_loss_{}'.format(ac[0].data),
+                tag='action_td_loss_{}'.format(ac[0]),
                 simple_value=action_td_loss[i])
             summary_proto.value.add(
-                tag='action_fraction_{}'.format(ac[0].data),
+                tag='action_fraction_{}'.format(ac[0]),
                 simple_value=action_fraction[i])
         p_dict = sorted(zip(
-            map(lambda x: x[0].data, ACTIONS), next_q_vals_nt))
+            map(lambda x: x[0], ACTIONS), next_q_vals_nt))
         max_idx = np.argmax([v for _, v in p_dict])
         p_str = "({:.3f}) ({:3d})[Q_vals]: ".format(
             time.time(), n_steps)
         for i, (a, v) in enumerate(p_dict):
-            if a == ACTIONS[next_action][0].data:
+            if a == ACTIONS[next_action][0]:
                 sym = '|x|' if i==max_idx else ' x '
             else:
                 sym = '| |' if i==max_idx else '   '

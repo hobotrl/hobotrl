@@ -7,6 +7,7 @@ Last Modified: July 27, 2017
 """
 
 # Basic python
+import importlib
 import signal
 import time
 import sys
@@ -28,9 +29,9 @@ from cv_bridge import CvBridge, CvBridgeError
 # ROS
 import rospy
 from rospy.timer import Timer
+from std_msgs.msg import Bool
 sys.path.append('.')
 import ros_utils.message_filters as message_filters
-from std_msgs.msg import Char, Bool, Float32
 
 
 class DrivingSimulatorEnv(object):
@@ -55,23 +56,23 @@ class DrivingSimulatorEnv(object):
         action passed in during `step()`.
     """
     def __init__(self,
-                 defs_obs, func_compile_reward,
-                 defs_reward, func_compile_obs,
+                 defs_obs, func_compile_obs,
+                 defs_reward, func_compile_reward,
                  defs_action, rate_action,
                  window_sizes, buffer_sizes,
                  step_delay_target=None,
                  is_dummy_action=False):
         """Initialization."""
         # params
-        self.defs_obs = defs_obs
+        self.defs_obs = self.__import_defs(defs_obs)
         self.__compile_obs = lambda *args: func_compile_obs(*args)
         self.len_obs = window_sizes['obs']
 
-        self.defs_reward = defs_reward
+        self.defs_reward = self.__import_defs(defs_reward)
         self.__compile_reward = lambda *args: func_compile_reward(*args)
         self.len_reward = window_sizes['reward']
 
-        self.defs_action = defs_action
+        self.defs_action = self.__import_defs(defs_action)
         self.rate_action = rate_action
         self.is_dummy_action = is_dummy_action
 
@@ -91,6 +92,7 @@ class DrivingSimulatorEnv(object):
         self.is_envnode_resetting = Event()  # if env node is undergoing reset
         self.is_env_resetting = Event()  # if environment is undergoing reset
         self.is_env_done = Event()  # if environment is is done for this ep
+        self.is_env_done.set()
 
         self.n_ep = -1
 
@@ -136,6 +138,12 @@ class DrivingSimulatorEnv(object):
                 #           delay, self.STEP_DELAY_TARGET)
         self.last_step_t = time.time()
 
+        # build action msg, it is the uses duty to make sure the msg is
+        # initialisable with the action data passed in.
+        new_action = []
+        for i, (_, action_class) in enumerate(self.defs_action):
+            new_action.append(action_class(action[i]))
+        action = tuple(new_action)
         # do __step
         while True:
             ret = self.__step(action)
@@ -519,6 +527,28 @@ class DrivingSimulatorEnv(object):
         print '[DrSim]: backend initialized. PID: {}'.format(
             [p.pid for p in self.proc_backend])
 
+    def __import_defs(self, defs):
+        """Import class based on package and class names in defs.
+
+        To save environment clients from importing topic message classes,
+        this method inspects the class_or_name field of definition tuple.
+        If a string is found, we import the class and substitute the
+        original name string.
+
+        Examples:
+            `std_msgs.msg.Char` -> Char class
+        """
+        imported_defs = []
+        for topic, class_or_name in defs:
+            # substitute package_name.class_name with imported class
+            if type(class_or_name) is str:
+                package_name = '.'.join(class_or_name.split('.')[:-1])
+                class_name = class_or_name.split('.')[-1]
+                class_or_name = getattr(
+                    importlib.import_module(package_name), class_name)
+            imported_defs.append((topic, class_or_name))
+        return imported_defs
+
     def exit(self):
         self.is_exiting.set()
         self.is_envnode_terminatable.set()
@@ -582,8 +612,15 @@ class DrivingSimulatorNode(multiprocessing.Process):
                is_envnode_terminatable flag to terminate this process (i.e. poison pill).
         """
         print "[EnvNode]: started frontend process: {}".format(self.name)
-        self.list_prep_exp = [self.__prep_image] + \
-                [self.__prep_reward]*len(self.defs_reward)
+        # TODO: should be able to set how to process, this is only a
+        #        temporary hack.
+        self.list_prep_exp = []
+        for i in range(len(self.defs_obs)):
+            if i<1:
+                self.list_prep_exp.append(self.__prep_image)
+            else:
+                self.list_prep_exp.append(self.__prep_reward)
+        self.list_prep_exp += [self.__prep_reward]*len(self.defs_reward)
 
         # Setup sync events
         # self.is_envnode_up.clear()
