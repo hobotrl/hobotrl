@@ -302,7 +302,7 @@ def sorted_input(filename):
     return state, action
 
 
-def init_replay_buffer(filename, buffer_size=2000, batch_size=200):
+def init_replay_buffer(filename, replay_size=2000, batch_size=200):
     with tf.Session() as sess:
         replay_buffer = []
         imgs, acts = distorted_inputs(filename, batch_size, True, num_threads=6)
@@ -311,7 +311,7 @@ def init_replay_buffer(filename, buffer_size=2000, batch_size=200):
         coord = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(coord=coord)
         print("distorted inputs")
-        for i in range(int(buffer_size / batch_size)):
+        for i in range(int(replay_size / batch_size)):
             print(i)
             np_imgs, np_acts = sess.run([imgs[0], acts[0]])
             print("np_acts", np_acts)

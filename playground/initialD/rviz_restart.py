@@ -24,12 +24,12 @@ class restart_ros_launch:
         # process related
         self.process_list = list()
         self.process_names = [
-            ['roslaunch', 'planning', 'honda_S5-1.launch'],
+            ['roslaunch', 'planning', 'honda_S5-1_original.launch'],
             # ['python', '/home/lewis/Projects/hobotrl/playground/initialD/gazebo_rl_reward.py']
         ]
         # Simulator states
         self.is_running = False
-        self.last_pos = deque(maxlen=1000) # Approximately 20 secs @ 50Hz
+        self.last_pos = deque(maxlen=300) # Approximately 20 secs @ 50Hz
         self.last_on_opposite_path = 1
 
         # ROS node
