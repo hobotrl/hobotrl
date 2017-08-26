@@ -166,3 +166,128 @@ class InverseUpdater(network.NetworkUpdater):
         feed_dict.update(feed_more)
 
         return network.UpdateRun(feed_dict=feed_dict, fetch_dict={"inverse loss": self._inverse_loss})
+
+
+class ActorCriticWithICM(sampling.TrajectoryBatchUpdate,
+          BaseDeepAgent):
+    def __init__(self,
+                 f_create_net, state_shape,
+                 # ACUpdate arguments
+                 discount_factor, entropy=1e-3, target_estimator=None, max_advantage=10.0,
+                 # optimizer arguments
+                 network_optimizer=None, max_gradient=10.0,
+                 # sampler arguments
+                 sampler=None,
+                 batch_size=32,
+                 *args, **kwargs):
+        """
+        :param f_create_net: function: f_create_net(inputs) => {"pi": dist_pi, "q": q_values},
+                in which {inputs} is [input_state],
+                {dist_pi} is probability distribution of policy with shape [None, num_actions],
+                {q_values} is Q values with shape [None, num_actions];
+                or f_create_net(inputs) => {"mean": mean, "stddev": stddev, "v": v},
+                in which {mean} {stddev} is mean and stddev if normal distribution for continuous actions,
+                {v} is state value.
+        :param state_shape:
+        :param discount_factor:
+        :param entropy: entropy regulator weight.
+        :param target_estimator: optional, default to target_estimate.NStepTD
+        :type target_estimator.TargetEstimator
+        :param max_advantage: advantage regulation: max advantage value in policy gradient step
+        :param network_optimizer: optional, default to network.LocalNetworkOptimizer
+        :type network_optimizer: network.NetworkOptimizer
+        :param max_gradient: optional, max_gradient clip value
+        :param sampler: optional, default to sampling.TrajectoryOnSampler.
+                if None, a TrajectoryOnSampler will be created using batch_size.
+        :type sampler: sampling.Sampler
+        :param batch_size: optional, batch_size when creating sampler
+        :param args:
+        :param kwargs:
+        """
+        kwargs.update({
+            "f_create_net": f_create_net,
+            "state_shape": state_shape,
+            "discount_factor": discount_factor,
+            "entropy": entropy,
+            "target_estimator": target_estimator,
+            "max_advantage": max_advantage,
+            "max_gradient": max_gradient,
+            "batch_size": batch_size,
+        })
+        print "network_optimizer:", network_optimizer
+        if network_optimizer is None:
+            network_optimizer = network.LocalOptimizer(grad_clip=max_gradient)
+        if sampler is None:
+            sampler = sampling.TrajectoryOnSampler(interval=batch_size)
+            kwargs.update({"sampler": sampler})
+
+        super(ActorCriticWithICM, self).__init__(*args, **kwargs)
+        pi = self.network["pi"]
+        if pi is not None:
+            # discrete action: pi is categorical probability distribution
+            self._pi_function = network.NetworkFunction(self.network["pi"])
+            self._input_action = tf.placeholder(dtype=tf.uint8, shape=[None], name="input_action")
+
+            self._pi_distribution = distribution.DiscreteDistribution(self._pi_function, self._input_action)
+            q = self.network["q"]
+            if q is not None:
+                # network outputs q
+                self._q_function = network.NetworkFunction(q)
+                self._v_function = GreedyStateValueFunction(self._q_function)
+            else:
+                # network output v
+                self._v_function = network.NetworkFunction(self.network["v"])
+        else:
+            # continuous action: mean / stddev represents normal distribution
+            dim_action = self.network["mean"].op.shape.as_list()[-1]
+            self._input_action = tf.placeholder(dtype=tf.float32, shape=[None, dim_action], name="input_action")
+            self._pi_function = network.NetworkFunction(
+                outputs={"mean": self.network["mean"], "stddev": self.network["stddev"]},
+                inputs=self.network.inputs
+            )
+            self._pi_distribution = distribution.NormalDistribution(self._pi_function, self._input_action)
+            self._v_function = network.NetworkFunction(self.network["v"])
+            # continuous action: mean / stddev for normal distribution
+        if target_estimator is None:
+            # target_estimator = target_estimate.NStepTD(self._v_function, discount_factor)
+            target_estimator = target_estimate.GAENStep(self._v_function, discount_factor)
+        self.network_optimizer = network_optimizer
+        network_optimizer.add_updater(
+            ActorCriticUpdater(policy_dist=self._pi_distribution,
+                               v_function=self._v_function,
+                               target_estimator=target_estimator, entropy=entropy), name="ac"
+        )
+        network_optimizer.add_updater(network.L2(self.network), name="l2")
+        network_optimizer.add_updater(
+            ForwardUpdater(forward_function=None,
+                           feature_function=None,
+                           policy_dist=self._pi_distribution), name="forward"
+        )
+        network_optimizer.add_updater(
+            InverseUpdater(inverse_function=None,
+                           feature_function=None,
+                           policy_dist=self._pi_distribution), name="inverse"
+        )
+        network_optimizer.compile()
+
+        self._policy = StochasticPolicy(self._pi_distribution)
+
+    def init_network(self, f_create_net, state_shape, *args, **kwargs):
+        input_state = tf.placeholder(dtype=tf.float32, shape=[None] + list(state_shape), name="input_state")
+        return network.Network([input_state], f_create_net, var_scope="learn")
+
+    def update_on_trajectory(self, batch):
+        self.network_optimizer.update("ac", self.sess, batch)
+        self.network_optimizer.update("l2", self.sess)
+        self.network_optimizer.update("forward", self.sess, batch)
+        self.network_optimizer.update("inverse", self.sess, batch)
+        info = self.network_optimizer.optimize_step(self.sess)
+        return info, {}
+
+    def set_session(self, sess):
+        super(ActorCriticWithICM, self).set_session(sess)
+        self.network.set_session(sess)
+        self._pi_distribution.set_session(sess)
+
+    def act(self, state, **kwargs):
+        return self._policy.act(state, **kwargs)
