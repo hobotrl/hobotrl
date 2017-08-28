@@ -23,8 +23,8 @@ from hobotrl.environments import FrameStack
 from hobotrl.sampling import TransitionSampler
 from hobotrl.playback import BalancedMapPlayback
 # initialD
-# from ros_environments import DrivingSimulatorEnv
-from ros_environments import DrivingSimulatorEnvClient as DrivingSimulatorEnv
+from ros_environments.honda import DrivingSimulatorEnv
+# from ros_environments.clients import DrivingSimulatorEnvClient as DrivingSimulatorEnv
 # Gym
 from gym.spaces import Discrete, Box
 
@@ -36,7 +36,7 @@ def compile_reward_agent(rewards):
     global momentum_ped
     global momentum_opp
     rewards = np.mean(np.array(rewards), axis=0)
-    print (' '*80+'R: ['+'{:4.2f} '*len(rewards)+']').format(*rewards),
+    print (' '*10+'R: ['+'{:4.2f} '*len(rewards)+']').format(*rewards),
 
     # obstacle
     rewards[0] *= -100.0
@@ -64,7 +64,7 @@ def compile_obs(obss):
     return obs1
 
 env = DrivingSimulatorEnv(
-    address="localhost", port='22230',
+    # address="localhost", port='22230',
     defs_obs=[
         ('/training/image/compressed', 'sensor_msgs.msg.CompressedImage'),
         ('/decision_result', 'std_msgs.msg.Int16')

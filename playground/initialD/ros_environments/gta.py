@@ -7,14 +7,9 @@ Last Modified: July 27, 2017
 """
 
 # Basic python
-import importlib
 import signal
 import time
 import sys
-import traceback
-# Comms
-import zmq
-import dill
 # Threading and Multiprocessing
 import threading
 import subprocess
@@ -22,16 +17,14 @@ import multiprocessing
 from multiprocessing import JoinableQueue as Queue
 from multiprocessing import Value, Event, Pipe
 # Image
-import numpy as np
 from scipy.misc import imresize
-import cv2
 from cv_bridge import CvBridge, CvBridgeError
 # ROS
 import rospy
 from rospy.timer import Timer
-from std_msgs.msg import Bool
 sys.path.append('.')
-import ros_utils.message_filters as message_filters
+import my_message_filters as message_filters
+from std_msgs.msg import Bool
 
 
 class DrivingSimulatorEnv(object):
@@ -56,23 +49,23 @@ class DrivingSimulatorEnv(object):
         action passed in during `step()`.
     """
     def __init__(self,
-                 defs_obs, func_compile_obs,
-                 defs_reward, func_compile_reward,
+                 defs_obs, func_compile_reward,
+                 defs_reward, func_compile_obs,
                  defs_action, rate_action,
                  window_sizes, buffer_sizes,
                  step_delay_target=None,
                  is_dummy_action=False):
         """Initialization."""
         # params
-        self.defs_obs = self.__import_defs(defs_obs)
+        self.defs_obs = defs_obs
         self.__compile_obs = lambda *args: func_compile_obs(*args)
         self.len_obs = window_sizes['obs']
 
-        self.defs_reward = self.__import_defs(defs_reward)
+        self.defs_reward = defs_reward
         self.__compile_reward = lambda *args: func_compile_reward(*args)
         self.len_reward = window_sizes['reward']
 
-        self.defs_action = self.__import_defs(defs_action)
+        self.defs_action = defs_action
         self.rate_action = rate_action
         self.is_dummy_action = is_dummy_action
 
@@ -92,23 +85,20 @@ class DrivingSimulatorEnv(object):
         self.is_envnode_resetting = Event()  # if env node is undergoing reset
         self.is_env_resetting = Event()  # if environment is undergoing reset
         self.is_env_done = Event()  # if environment is is done for this ep
-        self.is_env_done.set()
-
-        self.n_ep = -1
 
         # backend specs
         self.backend_cmds = [
             # roscore
-            ['roscore'],
+            # ['roscore'],
             # reward function
             ['python', '/home/lewis/Projects/hobotrl/playground/initialD/gazebo_rl_reward.py'],
             # simulator backend [Recommend start separately]
             ['python',
-             '/home/lewis/Projects/hobotrl/playground/initialD/rviz_restart.py'],
+             '/home/lewis/Projects/hobotrl/playground/initialD/gta5_restart.py',
+             '2'],
             # video capture
-            ['python',
-             '/home/lewis/Projects/hobotrl/playground/initialD/non_stop_data_capture.py',
-             self.n_ep]
+            # ['python',
+            # '/home/lewis/Projects/hobotrl/playground/initialD/non_stop_data_capture.py']
         ]
         self.proc_backend = []
 
@@ -132,18 +122,11 @@ class DrivingSimulatorEnv(object):
             if delay < self.STEP_DELAY_TARGET:
                 time.sleep(self.STEP_DELAY_TARGET-delay)
             else:
-                pass
-                #print ("[step()]: delay {:.3f} >= target {:.3f}, if happen "
-                #       "regularly please conconsider increasing target.").format(
-                #           delay, self.STEP_DELAY_TARGET)
+                print ("[step()]: delay {:.3f} >= target {:.3f}, if happen "
+                       "regularly please conconsider increasing target.").format(
+                           delay, self.STEP_DELAY_TARGET)
         self.last_step_t = time.time()
 
-        # build action msg, it is the uses duty to make sure the msg is
-        # initialisable with the action data passed in.
-        new_action = []
-        for i, (_, action_class) in enumerate(self.defs_action):
-            new_action.append(action_class(action[i]))
-        action = tuple(new_action)
         # do __step
         while True:
             ret = self.__step(action)
@@ -151,8 +134,8 @@ class DrivingSimulatorEnv(object):
                 break
             time.sleep(1.0)
         next_state, reward, done, info = ret
-        #print "[step()]: action {}, reward {}, done {}.".format(
-        #    action, reward, done)
+        print "[step()]: action {}, reward {}, done {}.".format(
+            action, reward, done)
 
         # set done
         if done:
@@ -217,9 +200,9 @@ class DrivingSimulatorEnv(object):
                         if self.cnt_q_except.value>0:
                             self.cnt_q_except.value -= 1
                         else:
-                            return None
-                        #print "[__step()]: exception getting observation. {}.".format(
-                        #    self.cnt_q_except.value)
+                            return none
+                        print "[__step()]: exception getting observation. {}.".format(
+                            self.cnt_q_except.value)
                     time.sleep(0.1)
             obs_list.append(next_states)
         next_state = self.__compile_obs(obs_list)
@@ -238,17 +221,11 @@ class DrivingSimulatorEnv(object):
                             self.cnt_q_except.value -= 1
                         else:
                             return None
-                        #print "[__step()]: exception getting reward. {}.".format(
-                        #    self.cnt_q_except.value)
+                        print "[__step()]: exception getting reward. {}.".format(
+                            self.cnt_q_except.value)
                     time.sleep(0.1)
             reward_list.append(rewards)
-        # p_str = "[step()]: reward vector "
-        # fmt_dict = {float: '{:.4f},', bool: '{},', int: "{},"}
-        # for reward in reward_list:
-        #     slice_str = " ".join(
-        #         map(lambda ele: fmt_dict[type(ele)], reward)).format(*reward)
-        #     p_str += "\n    [" + slice_str + "],"
-        # print p_str
+        print "[step()]: reward vector {}".format(reward_list)
         reward = self.__compile_reward(reward_list)
 
         # done
@@ -279,7 +256,7 @@ class DrivingSimulatorEnv(object):
 
         return next_state, reward, done, info
 
-    def reset(self, **kwargs):
+    def reset(self):
         """Environment reset."""
         # Setting sync. events
         # 1. Setting env_resetting will block further call to step.
@@ -335,7 +312,7 @@ class DrivingSimulatorEnv(object):
                         if self.cnt_q_except.value>0:
                             self.cnt_q_except.value -= 1
                         else:
-                            return None
+                            return none
                         print "[reset()]: exception getting observation. {}.".format(
                             self.cnt_q_except.value)
                     time.sleep(0.1)
@@ -430,13 +407,6 @@ class DrivingSimulatorEnv(object):
         self.is_envnode_resetting.set()
         while not self.is_exiting.is_set():
             try:
-                # env done check loop
-                #   reset() should clear `is_env_done`  
-                while self.is_env_done.is_set():
-                    print ("[__node_monitor]: env is done, "
-                           "waiting for reset.")
-                    time.sleep(1.0)
-
                 # start simulation backend
                 #   __start_backend() should set `is_backend_up` if successful
                 self.__start_backend()
@@ -444,6 +414,12 @@ class DrivingSimulatorEnv(object):
                     print "[__node_monitor]: backend not up..."
                     time.sleep(1.0)
 
+                # env done check loop
+                #   reset() should clear `is_env_done`  
+                while self.is_env_done.is_set():
+                    print ("[__node_monitor]: env is done, "
+                           "waiting for reset.")
+                    time.sleep(1.0)
 
                 # set up inter-process queues and monitor
                 while not self.is_q_cleared.is_set():
@@ -482,7 +458,6 @@ class DrivingSimulatorEnv(object):
             except Exception as e:
                 print "[__node_monitor]: exception running node ({}).".format(
                     e.message)
-                traceback.print_exc()
                 time.sleep(1.0)
             finally:
                 print "[__node_monitor]: finished running node."
@@ -514,10 +489,7 @@ class DrivingSimulatorEnv(object):
     def __start_backend(self):
         print '[DrSim]: initializing backend...'
         self.is_backend_up.clear()
-        for i, cmd in enumerate(self.backend_cmds):
-            cmd = map(str, cmd)
-            if 'non_stop' in ' '.join(cmd):
-                cmd[-1] = str(self.n_ep)
+        for cmd in self.backend_cmds:
             proc = subprocess.Popen(cmd)
             self.proc_backend.append(proc)
             print '[DrSim]: cmd [{}] running with PID {}'.format(
@@ -526,28 +498,6 @@ class DrivingSimulatorEnv(object):
         self.is_backend_up.set()
         print '[DrSim]: backend initialized. PID: {}'.format(
             [p.pid for p in self.proc_backend])
-
-    def __import_defs(self, defs):
-        """Import class based on package and class names in defs.
-
-        To save environment clients from importing topic message classes,
-        this method inspects the class_or_name field of definition tuple.
-        If a string is found, we import the class and substitute the
-        original name string.
-
-        Examples:
-            `std_msgs.msg.Char` -> Char class
-        """
-        imported_defs = []
-        for topic, class_or_name in defs:
-            # substitute package_name.class_name with imported class
-            if type(class_or_name) is str:
-                package_name = '.'.join(class_or_name.split('.')[:-1])
-                class_name = class_or_name.split('.')[-1]
-                class_or_name = getattr(
-                    importlib.import_module(package_name), class_name)
-            imported_defs.append((topic, class_or_name))
-        return imported_defs
 
     def exit(self):
         self.is_exiting.set()
@@ -612,15 +562,8 @@ class DrivingSimulatorNode(multiprocessing.Process):
                is_envnode_terminatable flag to terminate this process (i.e. poison pill).
         """
         print "[EnvNode]: started frontend process: {}".format(self.name)
-        # TODO: should be able to set how to process, this is only a
-        #        temporary hack.
-        self.list_prep_exp = []
-        for i in range(len(self.defs_obs)):
-            if i<1:
-                self.list_prep_exp.append(self.__prep_image)
-            else:
-                self.list_prep_exp.append(self.__prep_reward)
-        self.list_prep_exp += [self.__prep_reward]*len(self.defs_reward)
+        self.list_prep_exp = [self.__prep_image] + \
+                [self.__prep_reward]*len(self.defs_reward)
 
         # Setup sync events
         # self.is_envnode_up.clear()
@@ -756,7 +699,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
                 self.q_obs.task_done()
             self.q_obs.put(obs, timeout=self.Q_TIMEOUT)
         except:
-            # print "[__enque_exp]: q_obs update exception!"
+            print "[__enque_exp]: q_obs update exception!"
             pass
         try:
             rewards = exp[num_obs:] if num_reward>1 else [exp[num_obs]]
@@ -765,7 +708,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
                 self.q_reward.task_done()
             self.q_reward.put(rewards, timeout=self.Q_TIMEOUT)
         except:
-            # print "[__enque_exp]: q_reward update exception!"
+            print "[__enque_exp]: q_reward update exception!"
             pass
         if not self.is_receiving_obs.is_set():
             print "[__enque_exp]: first observation received."
@@ -774,7 +717,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
 
     def __prep_image(self, img):
          return imresize(
-             self.brg.compressed_imgmsg_to_cv2(img, 'rgb8'),
+             self.brg.imgmsg_to_cv2(img, 'rgb8'),
              (640, 640))
 
     def __prep_reward(self, reward):
@@ -837,106 +780,5 @@ class DrivingSimulatorNode(multiprocessing.Process):
         if not data.data and not self.first_time.is_set():
             self.is_envnode_terminatable.set()
         self.first_time.clear()
-
-
-class DrivingSimulatorEnvServer(multiprocessing.Process):
-    def __init__(self, port):
-        self.port = port
-        self.context = None
-        self.socket = None
-        super(DrivingSimulatorEnvServer, self).__init__()
-
-    def run(self):
-        if self.socket is not None:
-           self.socket.close()
-        if self.context is not None:
-            self.context.term()
-        self.context = zmq.Context()
-        self.socket = self.context.socket(zmq.PAIR)
-        self.socket.bind("tcp://*:%s" % self.port)
-
-        try:
-            while True:
-                msg_type, msg_payload = self.socket.recv_pyobj()
-                print msg_payload
-                if msg_type == 'start':
-                    print msg_payload
-                    msg_payload['func_compile_obs'] = dill.loads(
-                        msg_payload['func_compile_obs'])
-                    msg_payload['func_compile_reward'] = dill.loads(
-                        msg_payload['func_compile_reward'])
-                    self.env = DrivingSimulatorEnv(**msg_payload)
-                    self.socket.send_pyobj(('start', None))
-                elif msg_type == 'reset':
-                    msg_rep = self.env.reset()
-                    self.socket.send_pyobj(('reset', msg_rep))
-                elif msg_type == 'step':
-                    msg_rep = self.env.step(*msg_payload)
-                    self.socket.send_pyobj(('step', msg_rep))
-                elif msg_type == 'exit':
-                    self.env.exit()
-                    self.env = None
-                    self.socket.send_pyobj(('exit', None))
-                else:
-                    raise ValueError(
-                        'EnvServer: unrecognized msg type {}.'.format(msg_type))
-
-        except:
-            traceback.print_exc()
-        finally:
-            self.socket.close()
-            self.context.term()
-
-    def exit(self):
-        try:
-            self.socket.close()
-        except:
-            pass
-        try:
-            self.context.term()
-        except:
-            pass
-        try:
-            self.env.exit()
-        except:
-            pass
-
-
-class DrivingSimulatorEnvClient(object):
-    def __init__(self, address, port, **kwargs):
-        self.context = zmq.Context()
-        self.socket = self.context.socket(zmq.PAIR)
-        self.socket.connect("tcp://{}:{}".format(address, port))
-        kwargs['func_compile_obs'] = dill.dumps(
-            kwargs['func_compile_obs'])
-        kwargs['func_compile_reward'] = dill.dumps(
-            kwargs['func_compile_reward'])
-        self.socket.send_pyobj(('start', kwargs))
-        msg_type, msg_payload = self.socket.recv_pyobj()
-        if not msg_type == 'start':
-            raise Exception('EnvClient: msg_type is not start.')
-
-    def reset(self):
-        self.socket.send_pyobj(('reset', None))
-        msg_type, msg_payload = self.socket.recv_pyobj()
-        if not msg_type == 'reset':
-            raise Exception('EnvClient: msg_type is not reset.')
-        return msg_payload
-
-    def step(self, action):
-        self.socket.send_pyobj(('step', (action,)))
-        msg_type, msg_payload = self.socket.recv_pyobj()
-        if not msg_type == 'step':
-            raise Exception('EnvClient: msg_type is not step.')
-        return msg_payload
-
-    def exit(self):
-        self.socket.send_pyobj(('exit', None))
-        msg_type, msg_payload = self.socket.recv_pyobj()
-        self.socket.close()
-        self.context.term()
-        if not msg_type == 'exit':
-            raise Exception('EnvClient: msg_type is not exit.')
-        return
 
 
