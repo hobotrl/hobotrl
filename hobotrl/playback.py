@@ -650,8 +650,8 @@ class BalancedMapPlayback(MapPlayback):
             self.done_prob = cap
         if self.done_prob > 1-cap:
             self.done_prob = 1 - cap
-        print ("[BalancedMapPlayback.push_sample()]: "
-               "action {}, done {:.3f}, sample {:.3f}").format(
-                   self.action_prob, self.done_prob, self.sample_prob[index])
+        # print ("[BalancedMapPlayback.push_sample()]: "
+        #        "action {}, done {:.3f}, sample {:.3f}").format(
+        #            self.action_prob, self.done_prob, self.sample_prob[index])
 
         super(BalancedMapPlayback, self).push_sample(sample, **kwargs)

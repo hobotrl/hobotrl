@@ -6,7 +6,7 @@ import traceback
 sys.path.append('../../..')
 sys.path.append('..')
 
-from ros_environments import DrivingSimulatorEnvServer as DrivingSimulatorEnv
+from ros_environments.honda import DrivingSimulatorEnvServer as DrivingSimulatorEnv
 
 import rospy
 import numpy as np
