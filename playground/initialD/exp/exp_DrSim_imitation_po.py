@@ -78,7 +78,7 @@ env = DrivingSimulatorEnv(
     rate_action=10.0,
     window_sizes={'obs': 2, 'reward': 3},
     buffer_sizes={'obs': 2, 'reward': 3},
-    step_delay_target=0.7
+    step_delay_target=0.3
 )
 env.observation_space = Box(low=0, high=255, shape=(640, 640, 3))
 env.action_space = Discrete(3)
@@ -101,20 +101,23 @@ replay_buffer = initialD_input.init_replay_buffer(filename, replay_size=2000, ba
 noval_scene_count = 0
 
 try:
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
+    # config = tf.ConfigProto()
+    config=tf.ConfigProto(
+        gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=0.5),
+        allow_soft_placement=True)
+    # config.gpu_options.allow_growth = True
 
     with tf.Session() as sess:
         train_dir = "./tmp"
-        checkpoint = "/home/pirate03/PycharmProjects/resnet-18-tensorflow/log2_15/model.ckpt-9999"
+        checkpoint = "/home/pirate03/PycharmProjects/resnet-18-tensorflow/log3_tmp/model.ckpt-10000"
         saver = tf.train.import_meta_graph(
-            '/home/pirate03/PycharmProjects/resnet-18-tensorflow/log2_15/model.ckpt-9999.meta',
+            '/home/pirate03/PycharmProjects/resnet-18-tensorflow/log3_tmp/model.ckpt-10000.meta',
             clear_devices=True)
         saver.restore(sess, checkpoint)
         graph = tf.get_default_graph()
 
-        tensor_imgs = graph.get_tensor_by_name('train_image/shuffle_batch:0')
-        tensor_acts = graph.get_tensor_by_name('train_image/shuffle_batch:1')
+        tensor_imgs = graph.get_tensor_by_name('images:0')
+        tensor_acts = graph.get_tensor_by_name('labels:0')
         preds = graph.get_tensor_by_name('tower_0/ToInt32:0')
         train_op = graph.get_operation_by_name("group_deps")
         is_train = graph.get_operation_by_name('is_train').outputs[0]
@@ -133,18 +136,14 @@ try:
             # print "state type: {}".format(type(state))
             # resize maybe different from tf.resize
             # tensor_state = tf.convert_to_tensor(state)
-
+            # img = np.array([img])
             img = tf.image.resize_images(img, [224, 224])
-            img = tf.image.convert_image_dtype(img, tf.float32)
+            # img = tf.image.convert_image_dtype(img, tf.float32)
             img = initialD_input.preprocess_image(img)
-            # print "state: {}".format(state)
-            # print "state type: {}".format(type(state))
             img = sess.run(img)
-            # print "np state: {}".format(np_state)
-            # state = cv2.resize(state, (224, 224))
-            # state = np.array(state, dtype=np.float32)
-            # state /= 255.0
-            # state = preprocess_image(state)
+
+            print "=========img shape: {}".format(img.shape)+"=========\n"
+
 
             using_learning_agent = True
 
@@ -152,7 +151,7 @@ try:
                 tensor_imgs: np.repeat(
                     img[np.newaxis, :, :, :],
                     axis=0,
-                    repeats=256),
+                    repeats=1),
                 is_train: False,
             })[0]
             # print "========\n" * 5
@@ -179,7 +178,7 @@ try:
                 n_steps += 1
                 cum_reward += reward
                 next_img = tf.image.resize_images(next_img, [224, 224])
-                next_img = tf.image.convert_image_dtype(next_img, tf.float32)
+                # next_img = tf.image.convert_image_dtype(next_img, tf.float32)
                 next_img = initialD_input.preprocess_image(next_img)
                 # print "state: {}".format(next_state)
                 # print "state type: {}".format(type(next_state))
@@ -187,9 +186,9 @@ try:
                 # print "np state: {}".format(np_next_state)
                 next_action = sess.run(preds, feed_dict={
                     tensor_imgs: np.repeat(
-                        next_img[np.newaxis, :, :, :],
-                        axis=0,
-                        repeats=256),
+                    next_img[np.newaxis, :, :, :],
+                    axis=0,
+                    repeats=1),
                     is_train: False,
                 })[0]
                 # r
@@ -227,6 +226,8 @@ try:
                 # batch = replay_buffer[np.random.randint(replay_size, size=batch_size)]
                 y_preds = sess.run(preds, feed_dict={tensor_imgs: batch_imgs,
                                                is_train: False})
+                print "y_true: ", batch_acts
+                print "y_preds: ", y_preds
                 evaluate(batch_acts, y_preds)
 
                 # y_true = np.array([y[1] for y in replay_buffer])
@@ -247,6 +248,8 @@ try:
                 batch_acts = np.array([batch[i][1] for i in range(batch_size)])
                 y_preds = sess.run(preds, feed_dict={tensor_imgs: batch_imgs,
                                                        is_train: False})
+                print "y_true: ", batch_acts
+                print "y_preds: ", y_preds
                 evaluate(batch_acts, y_preds)
 
                 save_path = os.path.join(train_dir, 'model.ckpt')
