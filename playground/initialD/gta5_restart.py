@@ -74,6 +74,13 @@ class MyClass:
         elif self.road_index is 2:
             rospy.set_param('/route', '3,5,1,15,10,14,12,17,16,28,27,45,39')
             rospy.set_param('/map/filename', rospack.get_path('gta5_interface')+'/data/lane2.xodr')
+        elif self.road_index is 3:
+            rospy.set_param('/route', '4,5,2')
+            rospy.set_param('/map/filename', rospack.get_path('gta5_interface')+'/data/lane3.xodr')
+        elif self.road_index is 4:
+            rospy.set_param('/route', '5,14,7,15,8,36,10,20,19')
+            # rospy.set_param('/route', '5,14,7,15,8,37,31')
+            rospy.set_param('/map/filename', rospack.get_path('gta5_interface')+'/data/lane4.xodr')
         else:
             rospy.logfatal("You didn't set right lane index! Program stop!")
 
