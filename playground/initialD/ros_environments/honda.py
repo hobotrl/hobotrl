@@ -95,7 +95,7 @@ class DrivingSimulatorEnv(object):
         self.n_ep = -1
 
         # backend specs
-        path =  '/home/lewis/Projects/hobotrl/playground/initialD/'
+        path =  '/Projects/initialD/'
         self.backend_cmds = [
             # roscore
             ['roscore'],
@@ -769,9 +769,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
         # print "[__enque_exp]: {}".format(args[num_obs:])
 
     def __prep_image(self, img):
-         return imresize(
-             self.brg.compressed_imgmsg_to_cv2(img, 'rgb8'),
-             (640, 640))
+         return self.brg.compressed_imgmsg_to_cv2(img, 'rgb8')
 
     def __prep_reward(self, reward):
         return reward.data

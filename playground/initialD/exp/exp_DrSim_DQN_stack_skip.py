@@ -23,8 +23,8 @@ from hobotrl.environments import FrameStack
 from hobotrl.sampling import TransitionSampler
 from hobotrl.playback import BalancedMapPlayback
 # initialD
-from ros_environments.honda import DrivingSimulatorEnv
-# from ros_environments.clients import DrivingSimulatorEnvClient as DrivingSimulatorEnv
+# from ros_environments.honda import DrivingSimulatorEnv
+from ros_environments.clients import DrivingSimulatorEnvClient as DrivingSimulatorEnv
 # Gym
 from gym.spaces import Discrete, Box
 
@@ -61,10 +61,11 @@ def compile_reward_agent(rewards):
 def compile_obs(obss):
     obs1 = obss[-1][0]
     print obss[-1][1]
+    print obs1.shape
     return obs1
 
 env = DrivingSimulatorEnv(
-    # address="localhost", port='22230',
+    address="localhost", port='22230',
     defs_obs=[
         ('/training/image/compressed', 'sensor_msgs.msg.CompressedImage'),
         ('/decision_result', 'std_msgs.msg.Int16')
@@ -83,7 +84,7 @@ env = DrivingSimulatorEnv(
     buffer_sizes={'obs': 2, 'reward': 3},
     step_delay_target=0.5)
 # TODO: define these Gym related params insode DrivingSimulatorEnv
-env.observation_space = Box(low=0, high=255, shape=(640, 640, 3))
+env.observation_space = Box(low=0, high=255, shape=(350, 350, 3))
 env.action_space = Discrete(3)
 env.reward_range = (-np.inf, np.inf)
 env.metadata = {}
@@ -98,34 +99,30 @@ def f_net(inputs):
     with tf.device('/gpu:0'):
         conv1 = layers.conv2d(
             inputs=inputs, filters=16, kernel_size=(8, 8), strides=1,
-            kernel_regularizer=l2_regularizer(scale=1e-2), name='conv1')
+            kernel_regularizer=l2_regularizer(scale=1e-2),
+            activation=tf.nn.relu, name='conv1')
         print conv1.shape
         pool1 = layers.max_pooling2d(
             inputs=conv1, pool_size=3, strides=4, name='pool1')
         print pool1.shape
         conv2 = layers.conv2d(
             inputs=pool1, filters=16, kernel_size=(5, 5), strides=1,
-            kernel_regularizer=l2_regularizer(scale=1e-2), name='conv2')
+            kernel_regularizer=l2_regularizer(scale=1e-2),
+            activation=tf.nn.relu, name='conv2')
         print conv2.shape
         pool2 = layers.max_pooling2d(
             inputs=conv2, pool_size=3, strides=3, name='pool2')
         print pool2.shape
         conv3 = layers.conv2d(
              inputs=pool2, filters=64, kernel_size=(3, 3), strides=1,
-             kernel_regularizer=l2_regularizer(scale=1e-2), name='conv3')
+             kernel_regularizer=l2_regularizer(scale=1e-2),
+             activation=tf.nn.relu, name='conv3')
         print conv3.shape
         pool3 = layers.max_pooling2d(
-            inputs=conv3, pool_size=3, strides=8, name='pool3',)
+            inputs=conv3, pool_size=3, strides=2, name='pool3',)
         print pool3.shape
-        conv4 = layers.conv2d(
-            inputs=pool3, filters=64, kernel_size=(3, 3), strides=1,
-            kernel_regularizer=l2_regularizer(scale=1e-2), name='conv4')
-        print conv4.shape
-        pool4 = layers.max_pooling2d(
-            inputs=conv4, pool_size=3, strides=8, name='pool4')
-        print pool4.shape
-        depth = pool4.get_shape()[1:].num_elements()
-        inputs = tf.reshape(pool4, shape=[-1, depth])
+        depth = pool3.get_shape()[1:].num_elements()
+        inputs = tf.reshape(pool3, shape=[-1, depth])
         print inputs.shape
         hid1 = layers.dense(
             inputs=inputs, units=256, activation=tf.nn.relu,
@@ -162,7 +159,7 @@ agent = hrl.DQN(
     # max_gradient=10.0,
     # sampler arguments
     sampler=TransitionSampler(BalancedMapPlayback(
-        num_actions=len(ACTIONS), capacity=5000),
+        num_actions=len(ACTIONS), capacity=15000),
         batch_size=8, interval=1),
     # checkpoint
     global_step=global_step)
@@ -182,6 +179,8 @@ def log_info(update_info):
     global exploration_off
     global cnt_skip
     global n_skip
+    global t_learn
+    global t_infer
     summary_proto = tf.Summary()
     # modify info dict keys
     k_del = []
@@ -268,7 +267,8 @@ def log_info(update_info):
     return summary_proto
 
 n_interactive = 0
-n_skip = 5
+n_skip = 3
+n_additional_learn = 4
 n_ep = 0  # last ep in the last run, if restart use 0
 n_test = 10  # num of episode per test run (no exploration)
 
@@ -310,25 +310,43 @@ try:
                 # agent step
                 cnt_skip -= 1
                 update_info = {}
+                t_learn, t_infer = 0, 0
                 if cnt_skip==0 or done:
                     skip_reward /= (n_skip - cnt_skip)
                     if not learning_off:
+                        t = time.time()
                         update_info = agent.step(
                             sess=sess, state=state, action=action,
                             reward=skip_reward, next_state=next_state,
                             episode_done=done)
+                        t_learn += time.time() - t
+                    t = time.time()
                     next_action = agent.act(next_state, exploration=not exploration_off)
+                    t_infer += time.time() - t
                     cnt_skip = n_skip
                     skip_reward = 0
                     state, action = next_state, next_action  # s',a' -> s,a
                 else:
                     if not learning_off:
+                        t = time.time()
                         update_info = agent.reinforce_(
                             sess=sess, state=None, action=None,
                             reward=None, next_state=None,
                             episode_done=None)
+                        t_learn += time.time() - t
                     next_action = action
                 sv.summary_computed(sess, summary=log_info(update_info))
+                # addtional learning steps
+                if not learning_off:
+                    t = time.time()
+                    for _ in range(n_additional_learn):
+                        update_info = agent.reinforce_(
+                            sess=sess, state=None, action=None,
+                            reward=None, next_state=None,
+                            episode_done=None)
+                        sv.summary_computed(sess, summary=log_info(update_info))
+                    t_learn += time.time() - t
+                # print "Agent step learn {} sec, infer {} sec".format(t_learn, t_infer)
                 if done:
                     break
 except Exception as e:
