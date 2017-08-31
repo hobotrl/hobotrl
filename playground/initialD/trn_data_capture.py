@@ -13,7 +13,7 @@ import time
 import shutil
 import numpy as np
 import matplotlib.pyplot as plt
-
+from scipy.misc import imresize
 # ========================================
 # CvBridge
 brg = CvBridge()
@@ -38,7 +38,7 @@ def init_global_var(now):
             video_wrt.release()
         video_wrt = cv2.VideoWriter(
                 video_file_fmt.format(ep_counter%20),
-                fourcc, 10.0, (1400, 1400)
+                fourcc, 30.0, (350, 350)
         )
         if video_info_file is not None:
             video_info_file.close()
@@ -66,6 +66,7 @@ def bdview_callback(data):
     seq = data.header.seq
     ts = data.header.stamp
     img = brg.imgmsg_to_cv2(data, 'bgr8')
+    img = imresize(img, (350, 350))
     video_wrt.write(img)
     print "[{}: Video    @ rostime {:.3f}s] seq # {}, delay {}ms".format(
         ep_counter, now.to_nsec()/1e9, seq, (now.to_nsec()-ts.to_nsec())/1e6)
@@ -119,7 +120,7 @@ if __name__ == '__main__':
                 continue
             break
     # Video codec, writer, & info file
-    fourcc = cv2.VideoWriter_fourcc(*'XVID')
+    fourcc = cv2.VideoWriter_fourcc(*'X264')
     video_wrt = None
     video_info_file = None
     video_file_fmt = folder+'video_ep_{}.avi'
