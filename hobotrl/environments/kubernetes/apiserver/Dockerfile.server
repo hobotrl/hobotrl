@@ -1,0 +1,16 @@
+# build api server image with:
+# docker build -f Dockerfile.server .
+
+FROM ubuntu:16.04
+
+RUN apt-get update && apt-get install -y python python-pip
+RUN mkdir -p /root/.pip/
+COPY pip.conf /root/.pip/
+RUN pip install --timeout 200 web.py kubernetes
+RUN mkdir -p /server
+COPY *.py pod.yaml svc.yaml *.sh /server/
+RUN mkdir -p /root/.kube
+COPY kube.config /root/.kube/config
+
+EXPOSE 8080
+ENTRYPOINT ["/server/start.sh"]
