@@ -64,6 +64,13 @@ def evaluate(y_true, preds):
     # print "val_f1: {}".format(f1)
     # print "val_conf_mat: {}".format(conf_mat)
 
+
+tf.app.flags.DEFINE_string("train_dir", "./log", """save tmp model""")
+tf.app.flags.DEFINE_string('checkpoint', None,
+                           """Model checkpoint to load""")
+
+FLAGS = tf.app.flags.FLAGS
+
 # What is the result's name?? Need check
 env = DrivingSimulatorEnv(
     defs_obs=[('/training/image/compressed', CompressedImage),
@@ -101,6 +108,7 @@ n_update = 0
 filename = "/home/pirate03/PycharmProjects/hobotrl/data/records_v1/filter_action3/train.tfrecords"
 replay_buffer = initialD_input.init_replay_buffer(filename, replay_size=10000, batch_size=200)
 noval_buffer = []
+noval_original_buffer = []
 noval_scene_count = 0
 batch_size = 256
 
@@ -108,12 +116,11 @@ batch_size = 256
 try:
     # config = tf.ConfigProto()
     config=tf.ConfigProto(
-        gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=0.9),
+        gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=0.9, allow_growth=True),
         allow_soft_placement=True,
         log_device_placement=False)
 
     with tf.Session(config=config) as sess:
-        train_dir = "./tmp"
         hp = resnet.HParams(batch_size=batch_size,
                             num_gpus=1,
                             num_classes=3,
@@ -127,9 +134,9 @@ try:
         init = tf.global_variables_initializer()
         sess.run(init)
         saver = tf.train.Saver(tf.global_variables(), max_to_keep=500)
-        checkpoint = "/home/pirate03/PycharmProjects/resnet-18-tensorflow/log3_tmp/model.ckpt-10000"
-        saver.restore(sess, checkpoint)
-
+        saver.restore(sess, FLAGS.checkpoint)
+        graph = tf.get_default_graph()
+        probs = graph.get_operation_by_name("tower_0/Softmax").outputs[0]
         # graph = tf.get_default_graph()
         # tensor_imgs = graph.get_tensor_by_name('images:0')
         # tensor_acts = graph.get_tensor_by_name('labels:0')
@@ -152,32 +159,31 @@ try:
             # resize maybe different from tf.resize
             # tensor_state = tf.convert_to_tensor(state)
             # img = np.array([img])
-            img = tf.image.resize_images(img, [224, 224])
+            tens_img = tf.image.resize_images(img, [224, 224])
             # img = tf.image.convert_image_dtype(img, tf.float32)
-            img = initialD_input.preprocess_image(img)
-            img = sess.run(img)
+            tens_img = initialD_input.preprocess_image(tens_img)
+            np_img = sess.run(tens_img)
 
             print "=========img shape: {}".format(img.shape)+"=========\n"
 
 
             using_learning_agent = True
 
-            action = sess.run(network_train.preds, feed_dict={
-                network_train._images:np.array([img]),
-                network_train.is_train:False})[0]
+            actions, np_probs = sess.run([network_train.preds, probs], feed_dict={
+                network_train._images:np.array([np_img]),
+                network_train.is_train:False})
+            action = actions[0]
 
             if action != rule_action:
-                print "not identical "
-                print "sl pred action: {}".format(action)
-                print "rule action: {}".format(rule_action)
-
-                if rule_action != 3:
-                    noval_buffer.append([np.copy(img), rule_action])
+                print "not equal, sl: ", action, " rule: ", rule_action
+                print "probs: ", np_probs
+                if rule_action < 3:
+                    noval_buffer.append([np.copy(np_img), rule_action])
+                    noval_original_buffer.append([np.copy(img), action, rule_action, np_probs])
                     # replay_buffer.pop(0)
                     noval_scene_count += 1
             else:
-                print "identical"
-                print "sl pred and rule action: {}".format(rule_action)
+                print "equal, sl&rule: ", rule_action
 
             # print "========\n" * 5
             next_state, reward, done, info = env.step(ACTIONS[action])
@@ -187,38 +193,44 @@ try:
                 # print "[Delayed action] {}".format(ACTIONS[action])
                 n_steps += 1
                 cum_reward += reward
-                next_img = tf.image.resize_images(next_img, [224, 224])
-                next_img = initialD_input.preprocess_image(next_img)
+                next_tens_img = tf.image.resize_images(next_img, [224, 224])
+                next_tens_img = initialD_input.preprocess_image(next_tens_img)
                 # print "state: {}".format(next_state)
                 # print "state type: {}".format(type(next_state))
-                next_img = sess.run(next_img)
+                next_np_img = sess.run(next_tens_img)
                 # print "np state: {}".format(np_next_state)
-                next_action = sess.run(network_train.preds, feed_dict={
-                    network_train._images: np.array([next_img]),
-                    network_train.is_train: False})[0]
+                next_actions, np_probs = sess.run([network_train.preds, probs], feed_dict={
+                    network_train._images: np.array([next_np_img]),
+                    network_train.is_train: False})
+                next_action = next_actions[0]
                 # r
                 if next_action != next_rule_action:
-                    print "not identical"
-                    print "sl pred action: {}".format(next_action)
-                    print "rule action: {}".format(next_rule_action)
-                    # fileter action 3
-                    if next_rule_action != 3:
-                        noval_buffer.append([np.copy(next_img), next_rule_action])
+                    print "not equal, sl: ", next_action, " rule: ", next_rule_action
+                    print "probs: ", np_probs
+                    # print "sl pred action: {}".format(next_action)
+                    # print "rule action: {}".format(next_rule_action)
+                    # fileter action 3 and 4
+                    if next_rule_action < 3:
+                        noval_buffer.append([np.copy(next_np_img), next_rule_action])
+                        noval_original_buffer.append([np.copy(next_img), next_action, next_rule_action, np_probs])
                         noval_scene_count += 1
                     # replay_buffer.pop(0)
                 else:
-                    print "identical"
-                    print "sl pred and rule action: {}".format(next_rule_action)
+                    print "equal, sl&rule: ", next_rule_action
+                    # print "sl pred and rule action: {}".format(next_rule_action)
 
                 if done is True:
                     print "========Run Done=======\n"*5
                     break
-                img, action = next_img, next_action  # s',a' -> s,a
+                action = next_action  # s',a' -> s,a
                 next_state, reward, done, info = env.step(ACTIONS[action])
                 next_img, next_rule_action = next_state
 
             if noval_scene_count > 10:
                 print "update_n: {}".format(n_update)
+                for i, ele in enumerate(noval_original_buffer):
+                    cv2.imwrite(FLAGS.train_dir+"/"+str(n_update)+"_"+
+                                str(i)+"_"+str(ele[1])+"_"+str(ele[2])+"_"+str(ele[3])+".jpg", ele[0])
                 print "========Trying to learn======\n"*5
                 replay_size = len(replay_buffer)
                 batch_size = 256
@@ -237,7 +249,8 @@ try:
                 # print "y_preds: ", y_preds
                 prec, rec, f1, conf_mat = evaluate(val_acts, y_preds)
                 print "before learning:  ", "prec: ", prec, "rec: ", rec
-                print "conf_mat: ", conf_mat
+                print "conf_mat: "
+                print conf_mat
                 # y_true = np.array([y[1] for y in replay_buffer])
 
                 train_num = 10
@@ -266,7 +279,7 @@ try:
                 print "rec: ", rec
                 print "conf_mat: ", conf_mat
 
-                save_path = os.path.join(train_dir, 'model.ckpt')
+                save_path = os.path.join(FLAGS.train_dir, 'model.ckpt')
                 saver.save(sess, save_path, global_step= n_update * train_num)
                 print "=======Learning Done======\n"*5
                 noval_scene_count = 0

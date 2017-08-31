@@ -97,8 +97,8 @@ class DrivingSimulatorEnv(object):
             ['python',
              '/home/pirate03/PycharmProjects/hobotrl/playground/initialD/rviz_restart.py'],
             # video capture
-            ['python',
-             '/home/pirate03/PycharmProjects/hobotrl/playground/initialD/non_stop_data_capture.py']
+            # ['python',
+            #  '/home/pirate03/PycharmProjects/hobotrl/playground/initialD/non_stop_data_capture.py']
         ]
         self.proc_backend = []
 

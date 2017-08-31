@@ -6,9 +6,9 @@ config=tf.ConfigProto(
             # allow_soft_placement=False,
             allow_soft_placement=True)
 sess = tf.Session(config=config)
-checkpoint = "/home/pirate03/PycharmProjects/resnet-18-tensorflow/log2_15/model.ckpt-9999"
+checkpoint = "/home/pirate03/PycharmProjects/resnet-18-tensorflow/log3_2/model.ckpt-10000"
 saver = tf.train.import_meta_graph(
-            '/home/pirate03/PycharmProjects/resnet-18-tensorflow/log2_15/model.ckpt-9999.meta',
+            '/home/pirate03/PycharmProjects/resnet-18-tensorflow/log3_2/model.ckpt-10000.meta',
             clear_devices=True)
 saver.restore(sess, checkpoint)
 graph = tf.get_default_graph()
