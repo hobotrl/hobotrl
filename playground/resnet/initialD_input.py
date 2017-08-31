@@ -218,16 +218,15 @@ def distorted_inputs(filename, batch_size, shuffle=True, num_threads=10):
     state = tf.reshape(state, [640, 640, 3])
     print("state name : ", state.name)
     state = tf.image.resize_images(state, [IMAGE_HEIGHT, IMAGE_WIDTH])
-    state = tf.image.convert_image_dtype(state, tf.float32)
-    # state = tf.cast(state, tf.float32) * (1. / 255) - 0.5
-    # state = tf.cast(state, tf.float32) * (1. / 255)
+    # state = state * (1. / 255) - 0.5
     state = preprocess_image(state)
     action = tf.cast(features['action'], tf.int32)
     min_queue_examples = batch_size * 10
     state_batch, action_batch = _generate_image_and_label_batch(
         state, action, min_queue_examples, batch_size, shuffle=shuffle, num_threads=num_threads)
     print("state_batch name: ", state_batch.name)
-    return [state_batch], [action_batch]
+    print("action_batch name: ", action_batch.name)
+    return state_batch, action_batch
 
 
 def inputs(filename, batch_size, shuffle=False, num_threads=10):
@@ -258,122 +257,11 @@ def inputs(filename, batch_size, shuffle=False, num_threads=10):
     state = tf.decode_raw(features['state'], tf.uint8)
     state = tf.reshape(state, [640, 640, 3])
     state = tf.image.resize_images(state, [IMAGE_HEIGHT, IMAGE_WIDTH])
-    state = tf.image.convert_image_dtype(state, tf.float32)
+    # state = tf.image.convert_image_dtype(state, tf.float32)
+    # state = state * (1. / 255) - 0.5
     state = preprocess_image(state)
     action = tf.cast(features['action'], tf.int32)
     min_queue_examples = batch_size * 10
     state_batch, action_batch = _generate_image_and_label_batch(
         state, action, min_queue_examples, batch_size, shuffle=shuffle, num_threads=num_threads)
-    return [state_batch], [action_batch]
-
-
-def sorted_input(filename):
-    """Construct distorted input for IMAGENET training using the Reader ops.
-
-    Args:
-      data_class: string, indicating if one should use the 'train' or 'eval' or 'test' data set.
-      batch_size: Number of images per batch.
-
-    Returns:
-      images: Images. 4D tensor of [batch_size, IMAGE_SIZE, IMAGE_SIZE, 3] size.
-      labels: Labels. 1D tensor of [batch_size] size.
-    """
-    filename_queue = tf.train.string_input_producer([filename])
-    reader = tf.TFRecordReader()
-    _, serialized_example = reader.read(filename_queue)
-
-    features = tf.parse_single_example(serialized_example,
-                                       features={
-                                           'eps': tf.FixedLenFeature([], tf.int64),
-                                           'step': tf.FixedLenFeature([], tf.int64),
-                                           'state': tf.FixedLenFeature([], tf.string),
-                                           'action' : tf.FixedLenFeature([], tf.int64),
-                                           'reward': tf.FixedLenFeature([], tf.float32)
-                                       })
-
-    state = tf.decode_raw(features['state'], tf.uint8)
-    state = tf.reshape(state, [640, 640, 3])
-    print("state name : ", state.name)
-    state = tf.image.resize_images(state, [IMAGE_HEIGHT, IMAGE_WIDTH])
-    state = tf.image.convert_image_dtype(state, tf.float32)
-    state = preprocess_image(state)
-    action = tf.cast(features['action'], tf.int32)
-
-    return state, action
-
-
-def init_replay_buffer(filename, replay_size=10000, batch_size=200):
-    with tf.Session() as sess:
-        replay_buffer = []
-        imgs, acts = distorted_inputs(filename, batch_size, True, num_threads=6)
-        init_op = tf.initialize_all_variables()
-        sess.run(init_op)
-        coord = tf.train.Coordinator()
-        threads = tf.train.start_queue_runners(coord=coord)
-        print("distorted inputs")
-        for i in range(int(replay_size / batch_size)):
-            print(i)
-            np_imgs, np_acts = sess.run([imgs[0], acts[0]])
-            print("acts: ", np_acts)
-            replay_buffer.extend([[np_imgs[j], np_acts[j]] for j in range(batch_size)])
-        coord.request_stop()
-        coord.join(threads)
-    return replay_buffer
-
-
-def test_sorted_input():
-    filename = "/home/pirate03/PycharmProjects/hobotrl/data/records_v1/filter_action3/train.tfrecords"
-    state, action = sorted_input(filename)
-    # init_op = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
-    with tf.Session() as sess:
-        # sess.run(init_op)
-        # coord = tf.train.Coordinator()
-        # threads = tf.train.start_queue_runners(coord=coord)
-        init_op = tf.initialize_all_variables()
-        sess.run(init_op)
-        coord = tf.train.Coordinator()
-        threads = tf.train.start_queue_runners(coord=coord)
-        for i in range(10):
-            print(i)
-            np_state, np_action = sess.run([state, action])
-            print("np_action: ", np_action)
-        coord.request_stop()
-        coord.join(threads)
-
-
-
-
-def test_init_replay_buffer():
-    # filename = "/home/pirate03/PycharmProjects/hobotrl/data/records_v1/filter_action3/train.tfrecords"
-    # with tf.Session() as sess:
-    #     replay_buffer = init_replay_buffer(filename, sess)
-    # for sa in replay_buffer:
-    #     print ("action: ", sa[1])
-    with tf.Session() as sess:
-        filename = "/home/pirate03/PycharmProjects/hobotrl/data/records_v1/filter_action3/train.tfrecords"
-        batch_size = 20
-        buffer_size = 200
-        replay_buffer = []
-        imgs, acts = distorted_inputs(filename, batch_size, True, num_threads=6)
-        init_op = tf.initialize_all_variables()
-        sess.run(init_op)
-        coord = tf.train.Coordinator()
-        threads = tf.train.start_queue_runners(coord=coord)
-        print("distorted inputs")
-        for i in range(int(buffer_size / batch_size)):
-            print(i)
-            np_imgs, np_acts = sess.run([imgs[0], acts[0]])
-            print("np_acts", np_acts)
-            replay_buffer.append([np_imgs[j], np_acts[j]] for j in range(batch_size))
-            print(imgs)
-
-        coord.request_stop()
-        coord.join(threads)
-
-
-if __name__ == '__main__':
-    test_init_replay_buffer()
-    # test_sorted_input()
-    # filename = "/home/pirate03/PycharmProjects/hobotrl/data/records_v1/filter_action3/train.tfrecords"
-    # replay_buffer = init_replay_buffer(filename)
-    # print (len(replay_buffer))
+    return state_batch, action_batch
