@@ -65,11 +65,18 @@ def evaluate(y_true, preds):
     # print "val_conf_mat: {}".format(conf_mat)
 
 
-tf.app.flags.DEFINE_string("train_dir", "./log_record_all_scene_orig_img", """save tmp model""")
-tf.app.flags.DEFINE_string('checkpoint', "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/exp/log/model.ckpt-10",
+tf.app.flags.DEFINE_string("train_dir", "./log_record_all_scene_orig_img_delay_1.5", """save tmp model""")
+tf.app.flags.DEFINE_string('checkpoint',
+    "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/exp/resnet_placeholder_ckpt_10000/model.ckpt-10",
                            """Model checkpoint to load""")
 
 FLAGS = tf.app.flags.FLAGS
+
+
+if not os.path.exists(FLAGS.train_dir):
+    os.mkdir(FLAGS.train_dir)
+else:
+    sys.exit(1)
 
 # What is the result's name?? Need check
 env = DrivingSimulatorEnv(
@@ -175,17 +182,7 @@ try:
                 network_train.is_train:False})
             action = actions[0]
 
-            all_scenes.append([np.copy(img),action,rule_action,np_probs])
-            if action != rule_action:
-                print "not equal, sl: ", action, " rule: ", rule_action
-                print "probs: ", np_probs
-                if rule_action < 3:
-                    noval_buffer.append([np.copy(np_img), rule_action])
-                    # noval_original_buffer.append([np.copy(img), action, rule_action, np_probs])
-                    noval_scene_count += 1
-            else:
-                print "equal, sl&rule: ", rule_action
-
+            all_scenes.append([np.copy(img), action, np_probs])
             next_state, reward, done, info = env.step(ACTIONS[action])
             next_img, next_rule_action = next_state
             while True:
@@ -198,27 +195,20 @@ try:
                     network_train._images: np.array([next_np_img]),
                     network_train.is_train: False})
                 next_action = next_actions[0]
-                all_scenes.append([np.copy(next_img), next_action, next_rule_action, np_probs])
-                if next_action != next_rule_action:
-                    print "not equal, sl: ", next_action, " rule: ", next_rule_action
-                    print "probs: ", np_probs
-                    if next_rule_action < 3:
-                        noval_buffer.append([np.copy(next_np_img), next_rule_action])
-                        # noval_original_buffer.append([np.copy(next_img), next_action, next_rule_action, np_probs])
-                        noval_scene_count += 1
-                else:
-                    print "equal, sl&rule: ", next_rule_action
-
+                print next_action
+                all_scenes.append([np.copy(next_img), next_action, np_probs])
                 if done is True:
                     print "========Run Done=======\n"*5
                     break
                 action = next_action  # s',a' -> s,a
                 next_state, reward, done, info = env.step(ACTIONS[action])
+                # next_state, reward, done, info = env.step(ACTIONS[action])
+                # next_state, reward, done, info = env.step(ACTIONS[action])
                 next_img, next_rule_action = next_state
 
             for i, ele in enumerate(all_scenes):
-                cv2.imwrite(FLAGS.train_dir + "/" + str(n_update) + "_" +
-                            str(i) + "_" + str(ele[1]) + "_" + str(ele[2]) + "_" + str(np.around(ele[3], 2)) + ".jpg", ele[0])
+                cv2.imwrite(FLAGS.train_dir + "/" + str(n_ep) + "_" +
+                            str(i) + "_" + str(ele[1]) + "_" + str(np.around(ele[2], 2)) + ".jpg", ele[0])
 
             # if noval_scene_count > 10:
             #     print "update_n: {}".format(n_update)
