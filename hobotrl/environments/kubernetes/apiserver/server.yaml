@@ -28,6 +28,6 @@ spec:
     spec:
       containers:
       - name: env-api-server
-        image: docker.hobot.cc/carsim/api:0.0.8
+        image: docker.hobot.cc/carsim/api:0.1.1
         ports:
         - containerPort: 8080

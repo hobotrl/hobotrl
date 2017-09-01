@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import logging
+import json
 
 import web
 from control import KubeUtil, EnvTracker, EvictThread
@@ -9,8 +10,9 @@ from control import KubeUtil, EnvTracker, EvictThread
 
 urls = (
     "/spawn", "Spawn",
-    "/ping", "Ping",
-    "/attach", "Attach"
+    "/stop/(.+)", "Stop",
+    "/ping/(.+)", "Ping",
+    "/attach/(.+)", "Attach"
 )
 
 app = web.application(urls, globals())
@@ -20,9 +22,14 @@ env_tracker = EnvTracker(kube)
 
 
 class Spawn(object):
-
     def GET(self):
-        return kube.spawn_new_env()
+        return json.dumps(kube.spawn_new_env())
+
+
+class Stop(object):
+    def GET(self, env_id):
+        env_tracker.terminate(env_id)
+        return json.dumps({"result": "ok"})
 
 
 class Ping(object):
@@ -32,7 +39,7 @@ class Ping(object):
     """
     def GET(self, env_id):
         env_tracker.keepalive(env_id)
-        return {"result": "ok"}
+        return json.dumps({"result": "ok"})
 
 if __name__ == '__main__':
     evictor = EvictThread(env_tracker)

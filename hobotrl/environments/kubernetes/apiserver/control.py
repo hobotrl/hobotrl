@@ -135,6 +135,11 @@ class EnvTracker(object):
     def keepalive(self, env_id):
         self.keep_alives[env_id] = monotonic_time()
 
+    def terminate(self, env_id):
+        if env_id in self.keep_alives:
+            self.keep_alives.pop(env_id)
+        self.kube.destroy_env(env_id)
+
     def evict(self):
         envs = self.kube.get_svc_list()
         env_ids = [e.metadata.name for e in envs.items]
@@ -166,11 +171,13 @@ class EvictThread(threading.Thread):
         super(EvictThread, self).__init__(group, target, name, args, kwargs, verbose)
         self.env_tracker = env_tracker
         self.stopped = False
+        self._sleeper = threading.Event()
 
     def run(self):
         while not self.stopped:
-            time.sleep(self.INTERVAL)
+            self._sleeper.wait(self.INTERVAL)
             self.env_tracker.evict()
 
     def stop(self):
         self.stopped = True
+        self._sleeper.set()

@@ -10,3 +10,5 @@ spec:
     image: docker.hobot.cc/carsim/test:0.0.2
     ports:
     - containerPort: 8000
+    securityContext:
+      privileged: true

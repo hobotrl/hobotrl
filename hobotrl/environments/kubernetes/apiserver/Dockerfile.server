@@ -8,7 +8,7 @@ RUN mkdir -p /root/.pip/
 COPY pip.conf /root/.pip/
 RUN pip install --timeout 200 web.py kubernetes
 RUN mkdir -p /server
-COPY *.py pod.yaml svc.yaml *.sh /server/
+COPY *.py pod.yaml svc.yaml start.sh /server/
 RUN mkdir -p /root/.kube
 COPY kube.config /root/.kube/config
 
