@@ -7,8 +7,8 @@ metadata:
 spec:
   type: NodePort
   ports:
-  - port: 8000
-    targetPort: 8000
+  - port: 22224
+    targetPort: 22224
     protocol: TCP
     name: websocket
   selector:
