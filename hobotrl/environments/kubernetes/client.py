@@ -53,8 +53,9 @@ class KubernetesEnv(object):
         return self._env.step(action)
 
     def exit(self):
+        result = self._env.exit()
         self._api_thread.stop()
-        return self._env.exit()
+        return result
 
 
 class ApiThread(threading.Thread):
