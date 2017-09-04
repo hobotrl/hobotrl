@@ -18,15 +18,20 @@ from std_msgs.msg import Char, Int16, Bool
 from autodrive_msgs.msg import CarStatus
 from collections import deque
 from ros_utils.timer import Timer
+import argparse
 
 class restart_ros_launch:
-    def __init__(self):
+    def __init__(self, launch_name):
+        """Initialization.
+
+        :param launch_name: name of the launch file for planning.
+        """
         # process related
+        self.launch_name = launch_name
+        print "[rviz_restart]: using launch file {}".format(self.launch_name)
         self.process_list = list()
         self.process_names = [
-            ['roslaunch', 'planning', 'honda_S5-1.launch'],
-            # ['python', '/home/lewis/Projects/hobotrl/playground/initialD/gazebo_rl_reward.py']
-        ]
+            ['roslaunch', 'planning', self.launch_name]]
         # Simulator states
         self.is_running = False
         self.last_pos = deque(maxlen=1000) # Approximately 20 secs @ 50Hz
@@ -143,8 +148,11 @@ class restart_ros_launch:
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser('rviz_restart.py')
+    parser.add_argument('launch_name', type=str)
+    args = parser.parse_args()
     try:
-        myobjectx = restart_ros_launch()
+        myobjectx = restart_ros_launch(args.launch_name)
         myobjectx.sender()
     except rospy.ROSInterruptException:
         pass

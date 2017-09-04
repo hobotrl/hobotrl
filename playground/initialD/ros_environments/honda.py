@@ -52,6 +52,8 @@ class DrivingSimulatorEnv(object):
         we are sampling the backend at a constant pace.
     :param is_dummy_action: if True use rule-based action and ignore the agent
         action passed in during `step()`.
+    :param backend_cmds: list of commands for setting up simulator backend.
+        Each command is a list of strings for a POpen() object.
     """
     def __init__(self,
                  defs_obs, func_compile_obs,
@@ -59,7 +61,8 @@ class DrivingSimulatorEnv(object):
                  defs_action, rate_action,
                  window_sizes, buffer_sizes,
                  step_delay_target=None,
-                 is_dummy_action=False):
+                 is_dummy_action=False,
+                 backend_cmds=None):
         """Initialization."""
         # params
         self.defs_obs = self.__import_defs(defs_obs)
@@ -95,17 +98,34 @@ class DrivingSimulatorEnv(object):
         self.n_ep = -1
 
         # backend specs
-        path =  '/Projects/initialD/'
-        self.backend_cmds = [
-            # roscore
-            ['roscore'],
-            # reward function
-            ['python',path+'gazebo_rl_reward.py'],
-            # simulator backend [Recommend start separately]
-            ['python', path+'rviz_restart.py'],
-            # video capture
-            ['python', path+'non_stop_data_capture.py', self.n_ep]
-        ]
+        if backend_cmds is None:
+            # path =  '/Projects/initialD/'
+            ws_path = '/home/lewis/Projects/catkin_ws_pirate03_lowres350/'
+            hobot_dir = '/home/lewis/Projects/hobotrl/'
+            path = hobot_dir + 'playground/initialD/'
+            self.backend_cmds = [
+                # Parse maps
+                ['python', hobot_dir+'playground/initialD/utils/parse_map.py',
+                 ws_path+'src/Map/src/map_api/data/honda_wider.xodr',
+                 hobot_dir+'playground/initialD/utils/road_segment_info.txt'],
+                # Generate obs and launch file
+                ['python',
+                 hobot_dir+'playground/initialD/utils/gen_launch_dynamic.py',
+                 hobot_dir+'playground/initialD/utils/road_segment_info.txt',
+                 ws_path,
+                 hobot_dir+'playground/initialD/utils/honda_dynamic_obs_template.launch',
+                 30],
+                # roscore
+                ['roscore'],
+                # reward function
+                ['python', path+'gazebo_rl_reward.py'],
+                # simulator backend [Recommend start separately]
+                ['python', path+'rviz_restart.py', 'honda_dynamic_obs.launch'],
+                # video capture
+                ['python', path+'non_stop_data_capture.py', self.n_ep]
+            ]
+        else:
+            self.backend_cmds = backend_cmds
         self.proc_backend = []
 
         # monitor threads 
@@ -140,7 +160,8 @@ class DrivingSimulatorEnv(object):
         for i, (_, action_class) in enumerate(self.defs_action):
             new_action.append(action_class(action[i]))
         action = tuple(new_action)
-        # do __step
+
+        # do __step(), try until get non-None result
         while True:
             ret = self.__step(action)
             if ret is not None:
@@ -168,6 +189,8 @@ class DrivingSimulatorEnv(object):
             there are too many exceptions. The exception counter is decreased
             by 1 per exception and increased per sucessful __step.
             2) return None for the unsuccessful interactions.
+
+        Return None if failed to grep data from backend.
         """
         # wait until envnode, q, and backend is up and running
         while True:
@@ -276,6 +299,14 @@ class DrivingSimulatorEnv(object):
         return next_state, reward, done, info
 
     def reset(self, **kwargs):
+        while True:
+            ret = self.__reset(**kwargs)
+            if ret is not None:
+                return ret
+            else:
+                time.sleep(1.0)
+
+    def __reset(self, **kwargs):
         """Environment reset."""
         # Setting sync. events
         # 1. Setting env_resetting will block further call to step.
