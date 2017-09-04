@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${id}
+  labels:
+    run: ${id}
+spec:
+  containers:
+  - name: ${id}
+    image: docker.hobot.cc/carsim/honda_simulator_kub:0.0.1
+    ports:
+    - containerPort: 22224
+    securityContext:
+      privileged: true
