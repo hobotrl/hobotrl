@@ -99,6 +99,7 @@ class DrivingSimulatorEnv(object):
 
         # backend specs
         if backend_cmds is None:
+            print "[__init__()]: using default backend cmds."
             # path =  '/Projects/initialD/'
             ws_path = '/home/lewis/Projects/catkin_ws_pirate03_lowres350/'
             hobot_dir = '/home/lewis/Projects/hobotrl/'
