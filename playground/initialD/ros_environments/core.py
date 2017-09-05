@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """Gym-like environment wrapper for Hobot Driving Simulator.
 
-File name: ros_environment.py
-Author: Jingchu Liu
-Last Modified: July 27, 2017
+:file_name: core.py
+:author: Jingchu Liu
+:data: 2017-09-05
 """
 
 # Basic python
@@ -12,9 +12,6 @@ import signal
 import time
 import sys
 import traceback
-# comms
-import zmq
-import dill
 # Threading and Multiprocessing
 import threading
 import subprocess
@@ -28,8 +25,7 @@ from cv_bridge import CvBridge, CvBridgeError
 import rospy
 from rospy.timer import Timer
 from std_msgs.msg import Bool
-sys.path.append('..')
-import ros_utils.message_filters as message_filters
+import utils.message_filters as message_filters
 
 
 class DrivingSimulatorEnv(object):
@@ -52,6 +48,8 @@ class DrivingSimulatorEnv(object):
         we are sampling the backend at a constant pace.
     :param is_dummy_action: if True use rule-based action and ignore the agent
         action passed in during `step()`.
+    :param backend_cmds: list of commands for setting up simulator backend.
+        Each command is a list of strings for a POpen() object.
     """
     def __init__(self,
                  defs_obs, func_compile_obs,
@@ -59,7 +57,8 @@ class DrivingSimulatorEnv(object):
                  defs_action, rate_action,
                  window_sizes, buffer_sizes,
                  step_delay_target=None,
-                 is_dummy_action=False):
+                 is_dummy_action=False,
+                 backend_cmds=None):
         """Initialization."""
         # params
         self.defs_obs = self.__import_defs(defs_obs)
@@ -92,25 +91,8 @@ class DrivingSimulatorEnv(object):
         self.is_env_done = Event()  # if environment is is done for this ep
         self.is_env_done.set()
 
-        self.n_ep = -1
-
-        # backend specs
-        path =  '/Projects/initialD/'
-        # path_gta = '/Projects/catkin_ws/src/gta5_interface/scripts/'
-        self.backend_cmds = [
-            # roscore
-            ['roscore'],
-            # reward function
-            ['python', path+'gazebo_rl_reward.py'],
-            # simulator backend [Recommend start separately]
-            # ['python', path+'rviz_restart.py'],
-            ['python', path+'gta5_restart.py',
-             '--ip', '10.31.40.215',
-             '--port_number',' 10000',
-              '1'],
-            # video capture
-            ['python', path+'non_stop_data_capture.py', self.n_ep]
-        ]
+        # backend
+        self.backend_cmds = backend_cmds if backend_cmds is not None else []
         self.proc_backend = []
 
         # monitor threads 
@@ -145,7 +127,8 @@ class DrivingSimulatorEnv(object):
         for i, (_, action_class) in enumerate(self.defs_action):
             new_action.append(action_class(action[i]))
         action = tuple(new_action)
-        # do __step
+
+        # do __step(), try until get non-None result
         while True:
             ret = self.__step(action)
             if ret is not None:
@@ -173,6 +156,8 @@ class DrivingSimulatorEnv(object):
             there are too many exceptions. The exception counter is decreased
             by 1 per exception and increased per sucessful __step.
             2) return None for the unsuccessful interactions.
+
+        Return None if failed to grep data from backend.
         """
         # wait until envnode, q, and backend is up and running
         while True:
@@ -281,6 +266,14 @@ class DrivingSimulatorEnv(object):
         return next_state, reward, done, info
 
     def reset(self, **kwargs):
+        while True:
+            ret = self.__reset(**kwargs)
+            if ret is not None:
+                return ret
+            else:
+                time.sleep(1.0)
+
+    def __reset(self, **kwargs):
         """Environment reset."""
         # Setting sync. events
         # 1. Setting env_resetting will block further call to step.
@@ -517,8 +510,6 @@ class DrivingSimulatorEnv(object):
         self.is_backend_up.clear()
         for i, cmd in enumerate(self.backend_cmds):
             cmd = map(str, cmd)
-            if 'non_stop' in ' '.join(cmd):
-                cmd[-1] = str(self.n_ep)
             proc = subprocess.Popen(cmd)
             self.proc_backend.append(proc)
             print '[DrSim]: cmd [{}] running with PID {}'.format(
@@ -837,66 +828,4 @@ class DrivingSimulatorNode(multiprocessing.Process):
             self.is_envnode_terminatable.set()
         self.first_time.clear()
 
-
-class DrivingSimulatorEnvServer(multiprocessing.Process):
-    def __init__(self, port):
-        self.port = port
-        self.context = None
-        self.socket = None
-        super(DrivingSimulatorEnvServer, self).__init__()
-
-    def run(self):
-        if self.socket is not None:
-           self.socket.close()
-        if self.context is not None:
-            self.context.term()
-        self.context = zmq.Context()
-        self.socket = self.context.socket(zmq.PAIR)
-        self.socket.bind("tcp://*:%s" % self.port)
-
-        try:
-            while True:
-                msg_type, msg_payload = self.socket.recv_pyobj()
-                print msg_payload
-                if msg_type == 'start':
-                    print msg_payload
-                    msg_payload['func_compile_obs'] = dill.loads(
-                        msg_payload['func_compile_obs'])
-                    msg_payload['func_compile_reward'] = dill.loads(
-                        msg_payload['func_compile_reward'])
-                    self.env = DrivingSimulatorEnv(**msg_payload)
-                    self.socket.send_pyobj(('start', None))
-                elif msg_type == 'reset':
-                    msg_rep = self.env.reset()
-                    self.socket.send_pyobj(('reset', msg_rep))
-                elif msg_type == 'step':
-                    msg_rep = self.env.step(*msg_payload)
-                    self.socket.send_pyobj(('step', msg_rep))
-                elif msg_type == 'exit':
-                    self.env.exit()
-                    self.env = None
-                    self.socket.send_pyobj(('exit', None))
-                else:
-                    raise ValueError(
-                        'EnvServer: unrecognized msg type {}.'.format(msg_type))
-
-        except:
-            traceback.print_exc()
-        finally:
-            self.socket.close()
-            self.context.term()
-
-    def exit(self):
-        try:
-            self.socket.close()
-        except:
-            pass
-        try:
-            self.context.term()
-        except:
-            pass
-        try:
-            self.env.exit()
-        except:
-            pass
 
