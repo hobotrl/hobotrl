@@ -42,8 +42,20 @@ class DrivingSimulatorEnv(object):
 
     Play action in queue with a fixed frequency to the backend.
 
-    :param window_sizes: number of samples to take for `obs` and `reward` in
-        each `step()` and `reset()`.
+    :param defs_obs:
+    :param defs_reward:
+    :param defs_action:
+    :param rate_action:
+    :param window_sizes: number of samples to take from buffer for observation
+        and reward in each `step()` and `reset()`.
+    :param buffer_sizes: number of samples to keep in buffer for observation
+        and reward.
+    :param func_compile_obs: function used to process observation taken from
+        buffer before returning to caller. Default do nothing.
+    :param func_compile_reward: function used to process reward taken from
+        buffer before returning to caller. Default do nothing.
+    :param func_compile_action: function used to process action before putting
+        into buffer. Default do nothing.
     :param step_delay_target: the desired delay for env steps. Used to ensure
         we are sampling the backend at a constant pace.
     :param is_dummy_action: if True use rule-based action and ignore the agent
@@ -52,24 +64,35 @@ class DrivingSimulatorEnv(object):
         Each command is a list of strings for a POpen() object.
     """
     def __init__(self,
-                 defs_obs, func_compile_obs,
-                 defs_reward, func_compile_reward,
-                 defs_action, rate_action,
+                 defs_obs, defs_reward, defs_action, rate_action,
                  window_sizes, buffer_sizes,
+                 func_compile_obs=None,
+                 func_compile_reward=None,
+                 func_compile_action=None,
                  step_delay_target=None,
                  is_dummy_action=False,
                  backend_cmds=None):
         """Initialization."""
         # params
         self.defs_obs = self.__import_defs(defs_obs)
-        self.__compile_obs = lambda *args: func_compile_obs(*args)
+        if func_compile_obs is not None:
+            self.__compile_obs = lambda *args: func_compile_obs(*args)
+        else:
+            self.__compile_obs = lambda x: x
         self.len_obs = window_sizes['obs']
 
         self.defs_reward = self.__import_defs(defs_reward)
-        self.__compile_reward = lambda *args: func_compile_reward(*args)
+        if func_compile_reward is not None:
+            self.__compile_reward = lambda *args: func_compile_reward(*args)
+        else:
+            self.__compile_reward = lambda x: x
         self.len_reward = window_sizes['reward']
 
         self.defs_action = self.__import_defs(defs_action)
+        if func_compile_action is not None:
+            self.__compile_action = lambda *args: func_compile_action(*args)
+        else:
+            self.__compile_action = lambda x: x
         self.rate_action = rate_action
         self.is_dummy_action = is_dummy_action
 
@@ -121,8 +144,10 @@ class DrivingSimulatorEnv(object):
                 #           delay, self.STEP_DELAY_TARGET)
         self.last_step_t = time.time()
 
-        # build action msg, it is the uses duty to make sure the msg is
-        # initialisable with the action data passed in.
+        # build action ROS msg
+        # Note: users need to make sure the ROS msg can be initialized with the
+        # data passed in.
+        action = self.__compile_action(action)
         new_action = []
         for i, (_, action_class) in enumerate(self.defs_action):
             new_action.append(action_class(action[i]))
