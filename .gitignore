@@ -20,7 +20,8 @@ summary/
 
 # compiled python (.pyc)
 *.pyc
-*.egg-info
+hobotrl.egg-info
+
 # log file
 *.log
 *.csv

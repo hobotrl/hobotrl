@@ -22,43 +22,76 @@ class L2(network.NetworkUpdater):
         return self._update_operation
 
     def update(self, sess, *args, **kwargs):
-        return network.UpdateRun()
+        return network.UpdateRun(fetch_dict={"l2_loss": self._l2_loss})
 
 
 class FitTargetQ(network.NetworkUpdater):
+    """Fit Q network using temporal difference (TD) method.
 
-    def __init__(self, learn_q, target_estimator):
-        """
-        perform 1-step td update to NetworkFunction learn_q according to NetworkFunction target_q
-        :param learn_q:
+    This class fits a symbolic Q network to estimated target values.
+    """
+    def __init__(self, learn_q, target_estimator, td_loss_fcn=None):
+        """Initialization.
+
+        Define the symbolic graph for calculating and minimizing loss.
+        :param learn_q: symbolic Q function.
         :type learn_q: network.NetworkFunction
-        :param target_estimator:
+        :param target_estimator: estimator for target Q values.
         :type target_estimator: target_estimate.TargetEstimator
+        :param td_loss_fcn: callable to map temporal difference to loss.
+            Default value is tf.square.
         """
         super(FitTargetQ, self).__init__()
+        # unpack params
         self._q, self._target_estimator = learn_q, target_estimator
-        self._num_actions = learn_q.output().op.shape.as_list()[-1]
-        self._input_target_q = tf.placeholder(dtype=tf.float32, shape=[None], name="input_target_q")
-        self._input_action = tf.placeholder(dtype=tf.uint8, shape=[None], name="input_action")
+        if td_loss_fcn is None:
+            td_loss_fcn = tf.square
+        # need computed target Q values and selected action as input
+        self._input_target_q = tf.placeholder(
+            dtype=tf.float32, shape=[None], name="input_target_q")
+        self._input_action = tf.placeholder(
+            dtype=tf.uint8, shape=[None], name="input_action")
         op_q = learn_q.output().op
-        one_hot = tf.one_hot(self._input_action, self._num_actions)
-        selected_q = tf.reduce_sum(one_hot * op_q, axis=1)
-        self._op_losses = network.Utils.clipped_square(
-                self._input_target_q - selected_q
-            )
-        self._sym_loss = tf.reduce_mean(
-            self._op_losses
-        )
-        self._update_operation = network.MinimizeLoss(self._sym_loss, var_list=self._q.variables)
+        num_actions = learn_q.output().op.shape.as_list()[-1]
+        self.selected_q = tf.reduce_sum(
+            tf.one_hot(self._input_action, num_actions) * op_q, axis=1)
+        self._op_losses = td_loss_fcn(
+            self._input_target_q - self.selected_q)
+        self._sym_loss = tf.reduce_mean(self._op_losses)
+        self._update_operation = network.MinimizeLoss(
+            self._sym_loss, var_list=self._q.variables)
 
     def declare_update(self):
         return self._update_operation
 
     def update(self, sess, batch, *args, **kwargs):
+        """Perform fitting on a batch of data.
+
+        Assumes the batch passed in contains (s, a, r, s', done)
+        transitions.
+
+        :param sess: TensorFlow session where variables are stored.
+        :param batch: data batch used to calculate loss and update netw.
+        :return: UpdateRun instance with feed and fetch specs.
+        """
+        # Calculated target Q values using target estimator
+        assert "state" in batch and "action" in batch and \
+               "reward" in batch and "next_state" in batch and \
+               "episode_done" in batch
         target_q_val = self._target_estimator.estimate(
-            batch["state"], batch["action"], batch["reward"], batch["next_state"], batch["episode_done"])
-        feed_dict = {self._input_target_q: target_q_val, self._input_action: batch["action"]}
+            batch["state"], batch["action"], batch["reward"],
+            batch["next_state"], batch["episode_done"])
+
+        # Prepare data and fit Q network
+        feed_dict = {self._input_target_q: target_q_val,
+                     self._input_action: batch["action"]}
         feed_dict.update(self._q.input_dict(batch["state"]))
-        return network.UpdateRun(feed_dict=feed_dict, fetch_dict={"target_q": target_q_val,
-                                                                  "td_loss": self._sym_loss,
-                                                                  "td_losses": self._op_losses})
+        fetch_dict = {
+            "action": batch["action"], "reward": batch["reward"],
+            "done": batch["episode_done"],
+            "q": self.selected_q, "target_q": target_q_val,
+            "td_loss": self._sym_loss, "td_losses": self._op_losses}
+        update_run = network.UpdateRun(feed_dict=feed_dict, fetch_dict=fetch_dict)
+
+        return update_run
+

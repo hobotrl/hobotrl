@@ -6,6 +6,7 @@ import tensorflow as tf
 from hobotrl.core import Agent
 from hobotrl.policy import EpsilonGreedyPolicy
 import hobotrl.network as network
+from hobotrl.tf_dependent.distribution import DiscreteDistribution
 
 
 class ValueBasedAgent(Agent):
@@ -34,14 +35,27 @@ class ValueBasedAgent(Agent):
         return self._policy.act(state, **kwargs)
 
 
-class StateValueFunction(network.NetworkFunction):
+class GreedyStateValueFunction(network.NetworkFunction):
     def __init__(self, q_function):
         """
         :param q_function: NetworkFunction calculating Q
         :type q_function: network.NetworkFunction
         """
         op_v = tf.reduce_max(q_function.output().op, axis=1)
-        super(StateValueFunction, self).__init__(network.NetworkSymbol(op_v, "v", q_function.network),
-                                                 q_function.inputs, q_function.variables)
+        super(GreedyStateValueFunction, self).__init__(network.NetworkSymbol(op_v, "v", q_function.network),
+                                                       q_function.inputs, q_function.variables)
 
 
+class StochasticStateValueFunction(network.NetworkFunction):
+    def __init__(self, q_function, action_distribution):
+        """
+        :param q_function:
+        :type q_function: network.NetworkFunction
+        :param action_distribution:
+        :type action_distribution: DiscreteDistribution
+        """
+        op_v = tf.reduce_sum(q_function.output().op * action_distribution.dist(), axis=1)
+
+        super(StochasticStateValueFunction, self).__init__(
+            network.NetworkSymbol(op_v, "v", q_function.network),
+            q_function.inputs, q_function.variables)
