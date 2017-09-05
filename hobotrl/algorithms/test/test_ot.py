@@ -44,19 +44,19 @@ class TestOTDQN(unittest.TestCase):
             # epsilon greedy arguments
             greedy_epsilon=hrl.utils.CappedLinear(1e5, 0.5, 0.1),
             global_step=global_step,
-            network_optmizer=hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3), grad_clip=10.0)
+            network_optimizer=hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3), grad_clip=10.0)
         )
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
         sv = agent.init_supervisor(
             graph=tf.get_default_graph(), worker_index=0,
-            init_op=tf.global_variables_initializer(), save_dir="dqn_new"
+            init_op=tf.global_variables_initializer(), save_dir=None
         )
         with sv.managed_session(config=config) as sess:
             agent.set_session(sess)
             runner = hrl.envs.EnvRunner(
                 env, agent, evaluate_interval=sys.maxint,
-                render_interval=sys.maxint, logdir="dqn_new"
+                render_interval=sys.maxint, logdir=None
             )
             runner.episode(50)
 

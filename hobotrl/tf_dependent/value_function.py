@@ -299,6 +299,9 @@ class DeepQFuncActionOut(object):
             self.countdown_td_ = self.__N_STEP_TD
             info.update({
                 "td_loss": td_loss, "td_losses": td_losses,
+                "actions": action,
+                "rewards": reward,
+                "done": episode_done,
                 "q_vals": q, "next_q_vals": next_q,
                 "td_target": td_target, 'td_grad_norm': td_grad_norm})
         if self.countdown_sync_ == 0:

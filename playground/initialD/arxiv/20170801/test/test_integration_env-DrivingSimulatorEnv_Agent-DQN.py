@@ -9,13 +9,11 @@ sys.path.append('..')
 import numpy as np
 
 import tensorflow as tf
-import hobotrl as hrl
-
 from tensorflow import layers
 from tensorflow.contrib.layers import l2_regularizer
 
-# from hobotrl.playback import MapPlayback
-# from hobotrl.algorithms.dqn import DQN
+from hobotrl.playback import MapPlayback
+from hobotrl.algorithms.dqn import DQN
 
 from ros_environments import DrivingSimulatorEnv
 
@@ -99,7 +97,7 @@ def f_net(inputs, num_outputs, is_training):
         inputs=hid2, units=num_outputs, activation=None,
         kernel_regularizer=l2_regularizer(scale=1e-2), name='q'
     )
-    q = tf.squeeze(q, axis=1, name='out_sqz')
+    q = tf.squeeze(q, name='out_sqz')
     return q
 
 optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
@@ -108,55 +106,35 @@ training_params = (optimizer_td, target_sync_rate, 10.0)
 state_shape = (640, 640, 3)
 graph = tf.get_default_graph()
 
-agent = hrl.DQN(
-    f_create_q=f_net,
-    state_shape=state_shape,
-    # OneStepTD arguments
-    num_actions=len(ACTIONS),
-    discount_factor=0.9,
-    ddqn=False,
-    # target network sync arguments
-    target_sync_interval=100,
-    target_sync_rate=1.0,
-    # sampler arguments
-    update_interval=4,
-    replay_size=1000,
-    batch_size=8,
-    # epsilon greedy arguments
-    greedy_epsilon=hrl.utils.CappedLinear(1e5, 0.5, 0.1),
-    network_optmizer=None,
-    global_step=None
+agent = DQN(
+    # EpsilonGreedyPolicyMixin params
+    actions=range(len(ACTIONS)),
+    epsilon=0.05,
+    # DeepQFuncMixin params
+    dqn_param_dict={
+        'gamma': 0.9,
+        'f_net': f_net,
+        'state_shape': state_shape,
+        'num_actions':len(ACTIONS),
+        'training_params':training_params,
+        'schedule':(1, 10),
+        'greedy_policy':True,
+        'ddqn': False,
+        'graph':graph
+    },
+    # ReplayMixin params
+    buffer_class=MapPlayback,
+    buffer_param_dict={
+        "capacity": 1000,
+        "sample_shapes": {
+            'state': state_shape,
+            'action': (),
+            'reward': (),
+            'next_state': state_shape,
+            'episode_done': ()
+         }},
+    batch_size=8
 )
-#
-# agent = hrl.DQN(
-#     # EpsilonGreedyPolicyMixin params
-#     actions=range(len(ACTIONS)),
-#     epsilon=0.05,
-#     # DeepQFuncMixin params
-#     dqn_param_dict={
-#         'gamma': 0.9,
-#         'f_net': f_net,
-#         'state_shape': state_shape,
-#         'num_actions':len(ACTIONS),
-#         'training_params':training_params,
-#         'schedule':(1, 10),
-#         'greedy_policy':True,
-#         'ddqn': False,
-#         'graph':graph
-#     },
-#     # ReplayMixin params
-#     buffer_class=MapPlayback,
-#     buffer_param_dict={
-#         "capacity": 1000,
-#         "sample_shapes": {
-#             'state': state_shape,
-#             'action': (),
-#             'reward': (),
-#             'next_state': state_shape,
-#             'episode_done': ()
-#          }},
-#     batch_size=8
-# )
 
 n_interactive = 0
 
@@ -175,7 +153,8 @@ try:
         while True:
             n_steps += 1
             cum_reward += reward
-            update_info = agent.step(
+            next_action, update_info = agent.step(
+                sess=sess,
                 state=map(lambda x: (x-2)/5.0, state),  # scale state to [-1, 1]
                 action=action,
                 reward=float(reward>1.0),  # reward clipping
@@ -190,7 +169,6 @@ try:
                 )
                 n_steps = 0
                 cum_reward = 0.0
-            next_action = agent.act(next_state)
             state, action = next_state, next_action
             next_state, reward, done, info = env.step(ACTIONS[action])
 except Exception as e:

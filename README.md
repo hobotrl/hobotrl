@@ -21,6 +21,7 @@ Common RL framework and utilities.
 * [v] Actor Critic
 * [v] Optimality Tightening
 * [v] A3C
+* [v] PPO
 * Bootstrap DQN
 
 
@@ -105,4 +106,4 @@ Note these steps are tentitive and subject to change.
 
 ## Developers Guide
 ### Sharing network parameters across modules
-~~See this [wiki entry](https://github.com/zaxliu/hobotrl/wiki#sharing-network-weights-across-modules) for a recommended way via global variable scope reuse.~~ [Setting global scope reference will break the creation of target ntework.]
+~~See this [wiki entry](https://github.com/zaxliu/hobotrl/wiki#sharing-network-weights-across-modules) for a recommended way via global variable scope reuse.~~ [Setting global scope reference will break the creation of target network.]

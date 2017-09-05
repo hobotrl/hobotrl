@@ -14,5 +14,6 @@ import async as async
 from algorithms.ac import ActorCritic
 from algorithms.dqn import DQN
 from algorithms.dpg import DPG
+from algorithms.ppo import PPO
 
 from environments import EnvRunner

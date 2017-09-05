@@ -11,11 +11,11 @@ import hobotrl.target_estimate as target_estimate
 import hobotrl.tf_dependent.distribution as distribution
 from hobotrl.tf_dependent.base import BaseDeepAgent
 from hobotrl.policy import StochasticPolicy
-from value_based import StateValueFunction
+from value_based import GreedyStateValueFunction
 
 
 class DiscreteActorCriticUpdater(network.NetworkUpdater):
-    def __init__(self, policy_dist, q_function, target_estimator, entropy=1e-3, max_advantage=10.0):
+    def __init__(self, policy_dist, q_function, target_estimator, entropy=1e-3, max_advantage=10.0, actor_weight=0.1):
         """
         :param policy_dist:
         :type policy_dist: distribution.DiscreteDistribution
@@ -48,7 +48,7 @@ class DiscreteActorCriticUpdater(network.NetworkUpdater):
                 pi_loss = tf.reduce_mean(self._policy_dist.log_prob() * tf.stop_gradient(advantage))
                 entropy_loss = tf.reduce_mean(self._input_entropy * self._policy_dist.entropy())
                 self._pi_loss = pi_loss
-            self._op_loss = self._q_loss - (self._pi_loss + entropy_loss)
+            self._op_loss = self._q_loss - actor_weight * (self._pi_loss + entropy_loss)
         self._update_operation = network.MinimizeLoss(self._op_loss,
                                                       var_list=self._q_function.variables +
                                                                self._policy_dist._dist_function.variables)
@@ -79,8 +79,10 @@ class DiscreteActorCriticUpdater(network.NetworkUpdater):
 
 
 class ActorCriticUpdater(network.NetworkUpdater):
-    def __init__(self, policy_dist, v_function, target_estimator, entropy=1e-3, max_advantage=10.0):
+    def __init__(self, policy_dist, v_function, target_estimator, entropy=1e-3, actor_weight=1.0):
         """
+        Actor Critic methods, for both continuous and discrete action spaces.
+
         :param policy_dist:
         :type policy_dist: distribution.NNDistribution
         :param v_function: Function calculating state value
@@ -103,13 +105,15 @@ class ActorCriticUpdater(network.NetworkUpdater):
                 td = self._input_target_v - op_v
                 self._q_loss = tf.reduce_mean(network.Utils.clipped_square(td))
             with tf.name_scope("policy"):
-                # v = tf.reduce_max(op_q, axis=1)  # state value for greedy policy
                 advantage = self._input_target_v - op_v
-                advantage = tf.clip_by_value(advantage, -max_advantage, max_advantage, name="advantage")
-                pi_loss = tf.reduce_mean(self._policy_dist.log_prob() * tf.stop_gradient(advantage))
+                self._advantage = advantage
+                _mean, _var = tf.nn.moments(advantage, axes=[0])
+                self._std_advantage = advantage / (tf.sqrt(_var) + 1.0)
+                # self._std_advantage = self._advantage
+                pi_loss = tf.reduce_mean(self._policy_dist.log_prob() * tf.stop_gradient(self._std_advantage))
                 entropy_loss = tf.reduce_mean(self._input_entropy * self._policy_dist.entropy())
                 self._pi_loss = pi_loss
-            self._op_loss = self._q_loss - (self._pi_loss + entropy_loss)
+            self._op_loss = self._q_loss - actor_weight * (self._pi_loss + entropy_loss)
             print "advantage, self._policy_dist.entropy(), self._policy_dist.log_prob()", advantage, self._policy_dist.entropy(), self._policy_dist.log_prob()
         self._update_operation = network.MinimizeLoss(self._op_loss,
                                                       var_list=self._v_function.variables +
@@ -134,6 +138,8 @@ class ActorCriticUpdater(network.NetworkUpdater):
         }
         feed_dict.update(feed_more)
         fetch_dict = {
+            "advantage": self._advantage,
+            "std_advantage": self._std_advantage,
             "target_value": target_value,
             "pi_loss": self._pi_loss,
             "q_loss": self._q_loss,
@@ -250,6 +256,7 @@ class ActorCritic(sampling.TrajectoryBatchUpdate,
             "max_gradient": max_gradient,
             "batch_size": batch_size,
         })
+        print "network_optimizer:", network_optimizer
         if network_optimizer is None:
             network_optimizer = network.LocalOptimizer(grad_clip=max_gradient)
         if sampler is None:
@@ -268,11 +275,12 @@ class ActorCritic(sampling.TrajectoryBatchUpdate,
             if q is not None:
                 # network outputs q
                 self._q_function = network.NetworkFunction(q)
-                self._v_function = StateValueFunction(self._q_function)
+                self._v_function = GreedyStateValueFunction(self._q_function)
             else:
                 # network output v
                 self._v_function = network.NetworkFunction(self.network["v"])
         else:
+            # continuous action: mean / stddev represents normal distribution
             dim_action = self.network["mean"].op.shape.as_list()[-1]
             self._input_action = tf.placeholder(dtype=tf.float32, shape=[None, dim_action], name="input_action")
             self._pi_function = network.NetworkFunction(
@@ -283,12 +291,13 @@ class ActorCritic(sampling.TrajectoryBatchUpdate,
             self._v_function = network.NetworkFunction(self.network["v"])
             # continuous action: mean / stddev for normal distribution
         if target_estimator is None:
-            target_estimator = target_estimate.NStepTD(self._v_function, discount_factor)
+            # target_estimator = target_estimate.NStepTD(self._v_function, discount_factor)
+            target_estimator = target_estimate.GAENStep(self._v_function, discount_factor)
         self.network_optimizer = network_optimizer
         network_optimizer.add_updater(
             ActorCriticUpdater(policy_dist=self._pi_distribution,
                                v_function=self._v_function,
-                                       target_estimator=target_estimator, entropy=entropy), name="ac")
+                               target_estimator=target_estimator, entropy=entropy), name="ac")
         network_optimizer.add_updater(network.L2(self.network), name="l2")
         network_optimizer.compile()
 
@@ -299,8 +308,8 @@ class ActorCritic(sampling.TrajectoryBatchUpdate,
         return network.Network([input_state], f_create_net, var_scope="learn")
 
     def update_on_trajectory(self, batch):
-        self.network_optimizer.updater("ac").update(self.sess, batch)
-        self.network_optimizer.updater("l2").update(self.sess)
+        self.network_optimizer.update("ac", self.sess, batch)
+        self.network_optimizer.update("l2", self.sess)
         info = self.network_optimizer.optimize_step(self.sess)
         return info, {}
 
