@@ -52,6 +52,7 @@ def compile_reward_agent(rewards):
     momentum_ped = (rewards[4]>0.5)*(momentum_ped+rewards[4])
     momentum_ped = min(momentum_ped, 12)
     rewards[4] = -40*(0.9+0.1*momentum_ped)*(momentum_ped>1.0)
+    rewards[4] = 0  # ignore ped lane on GTA scene
 
     reward = np.sum(rewards)/100.0
     print '{:6.4f}, {:6.4f}'.format(momentum_opp, momentum_ped),
@@ -64,36 +65,8 @@ def compile_obs(obss):
     print obs1.shape
     return obs1
 
-def gen_backend_cmds():
-    ws_path = '/Projects/catkin_ws'
-    initialD_path = '/Projects/initialD'
-    backend_cmds = [
-        # Parse maps
-        ['python', initialD_path+'/utils/parse_map.py',
-         ws_path+'/src/Map/src/map_api/data/honda_wider.xodr',
-         initialD_path+'/utils/road_segment_info.txt'
-        ],
-        # Generate obs and launch file
-        ['python', initialD_path+'/utils/gen_launch_dynamic.py',
-         initialD_path+'/utils/road_segment_info.txt',
-         ws_path,
-         initialD_path+'/utils/honda_dynamic_obs_template.launch',
-         30],
-        # roscore
-        ['roscore'],
-        # reward function
-        ['python', initialD_path+'/gazebo_rl_reward.py'],
-        # simulator backend [Recommend start separately]
-        ['python', initialD_path+'/rviz_restart.py', 'honda_dynamic_obs.launch'],
-        # video capture
-        ['python', initialD_path+'/non_stop_data_capture.py', 0]
-    ]
-    return backend_cmds
-
 env = DrivingSimulatorEnv(
-    # address="10.31.40.204", port='22224',
-    address='localhost', port='22230',
-    backend_cmds=gen_backend_cmds(),
+    address="10.31.0.86", port='22224',
     defs_obs=[
         ('/training/image/compressed', 'sensor_msgs.msg.CompressedImage'),
         ('/decision_result', 'std_msgs.msg.Int16')
@@ -113,11 +86,11 @@ env = DrivingSimulatorEnv(
     step_delay_target=0.5)
 # TODO: define these Gym related params insode DrivingSimulatorEnv
 env.observation_space = Box(low=0, high=255, shape=(350, 350, 3))
+env.action_space = Discrete(3)
 env.reward_range = (-np.inf, np.inf)
 env.metadata = {}
-ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0, )]
-env.action_space = Discrete(len(ACTIONS))
 env = FrameStack(env, 3)
+ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0, )]
 
 # Agent
 def f_net(inputs):
@@ -307,14 +280,14 @@ try:
         graph=tf.get_default_graph(),
         is_chief=True,
         init_op=tf.global_variables_initializer(),
-        logdir='./experiment',
+        logdir='./experiment_gta',
         save_summaries_secs=10,
         save_model_secs=600)
 
     with sv.managed_session(config=config) as sess:
         agent.set_session(sess)
-        action_fraction = np.ones(len(ACTIONS),) / (1.0*len(ACTIONS))
-        action_td_loss = np.zeros(len(ACTIONS),)
+        action_fraction = np.ones(4,) / (1.0*len(ACTIONS))
+        action_td_loss = np.zeros(4,)
         momentum_opp = 0.0
         momentum_ped = 0.0
         while True:
@@ -334,7 +307,6 @@ try:
                 next_state, reward, done, info = env.step(ACTIONS[action])
                 reward = compile_reward_agent(reward)
                 skip_reward += reward
-                # done = (reward < -0.9) or done  # heuristic early stopping
                 # agent step
                 cnt_skip -= 1
                 update_info = {}
@@ -372,6 +344,7 @@ try:
                             sess=sess, state=None, action=None,
                             reward=None, next_state=None,
                             episode_done=None)
+                        sv.summary_computed(sess, summary=log_info(update_info))
                     t_learn += time.time() - t
                 # print "Agent step learn {} sec, infer {} sec".format(t_learn, t_infer)
                 if done:
