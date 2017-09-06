@@ -1,3 +1,4 @@
+import argparse
 import traceback
 # ROS py
 import rospy
@@ -15,7 +16,7 @@ import time
 import shutil
 import numpy as np
 import matplotlib.pyplot as plt
-
+from scipy.misc import imresize
 # ========================================
 # CvBridge
 brg = CvBridge()
@@ -42,14 +43,14 @@ def init_global_var(now):
                 video_wrt.release()
             video_wrt = cv2.VideoWriter(
                     video_file_fmt.format(ep_counter),
-                    fourcc, 50.0, (1400, 1400))
+                    fourcc, 50.0, (320, 320))
             if video_info_file is not None:
                 video_info_file.close()
             video_info_file = open(
                 video_info_file_fmt.format(ep_counter), 'w')
         video_wrt_latest = cv2.VideoWriter(
             video_file_name_latest.format(ep_counter%n_latest),
-            fourcc, 50.0, (1400, 1400))
+            fourcc, 50.0, (320, 320))
         if dec_file is not None:
             dec_file.close()
         dec_file = open(
@@ -72,6 +73,7 @@ def bdview_callback(data):
     seq = data.header.seq
     ts = data.header.stamp
     img = brg.compressed_imgmsg_to_cv2(data, 'bgr8')
+    img = imresize(img, (320, 320))
     if not new_ep:
         if video_wrt is not None and video_info_file is not None:
             video_wrt.write(img)
@@ -156,6 +158,13 @@ if __name__ == '__main__':
     time_elapsed = 1e4*1e9  # 1e4 seconds 
     new_ep = True
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument("n_ep", help="Num of episode to recored", type=int)
+    args = parser.parse_args()
+    print "[VideoRecorder]: Parsed n_ep is {}".format(args.n_ep)
+    if args.n_ep > 0:
+        ep_counter = args.n_ep
+
     try:
         print "[VideoRecorder]: recording episode {}".format(ep_counter)
         rospy.init_node('training_data_capture')
@@ -176,4 +185,4 @@ if __name__ == '__main__':
             dec_file.close()
         if status_file is not None:
             status_file.close()
-    print "All files closed properlly."
+    print "All files closed properlly for episode {}.".format(ep_counter)

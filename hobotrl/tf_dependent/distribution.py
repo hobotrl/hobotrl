@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
 
+
+import logging
+
 import tensorflow as tf
 import numpy as np
 import hobotrl.network as network
@@ -41,10 +44,10 @@ class NNDistribution(object):
     def prob_run(self, inputs, sample):
         raise NotImplementedError()
 
-    def log_prob(self):
+    def log_prob(self, stable=False):
         """
         logged probability(density) of sample
-        :param sample:
+        :param stable: return stable form of log_prob if True. standard form otherwise.
         :return: operator calculating log_prob
         """
         raise NotImplementedError()
@@ -133,7 +136,7 @@ class DiscreteDistribution(NNDistribution):
         feed_dict.update({self._input_sample: sample})
         return self._sess.run(self._op_prob, feed_dict=feed_dict)
 
-    def log_prob(self):
+    def log_prob(self, stable=False):
         return self._op_log_prob
 
     def log_prob_run(self, inputs, sample):
@@ -182,6 +185,9 @@ class NormalDistribution(NNDistribution):
             self._op_entropy = tf.reduce_sum(tf.log(2 * np.pi * np.e * variance) / 2.0, axis=1)
             self._op_log_prob = tf.reduce_sum(-0.5 * tf.square(self._input_sample - self._op_mean) / variance \
                                 - 0.5 * tf.log(variance) - 0.5 * np.log(2.0 * np.pi), axis=1)
+            self._op_log_prob_stable = - tf.square(self._input_sample - self._op_mean) \
+                                       - network.Utils.clipped_square(variance - tf.stop_gradient(tf.square(self._input_sample - self._op_mean)))
+            self._op_log_prob_stable = tf.reduce_sum(self._op_log_prob_stable, axis=1)
             self._op_prob = tf.reduce_sum(1.0 / tf.sqrt(2 * np.pi * variance)
                                           * tf.exp(-0.5 * tf.square(self._input_sample - self._op_mean) / variance), axis=1)
 
@@ -209,7 +215,7 @@ class NormalDistribution(NNDistribution):
         return self._sess.run(self._op_prob, feed_dict=feed_dict)
 
     def log_prob(self, stable=False):
-        return self._op_log_prob
+        return self._op_log_prob_stable if stable else self._op_log_prob
 
     def log_prob_run(self, inputs, sample):
         feed_dict = self.dist_input(inputs)
@@ -232,16 +238,25 @@ class NormalDistribution(NNDistribution):
         # not implemented
         raise NotImplementedError()
 
-    def sample_run(self, inputs):
+    def sample_run(self, inputs, support=[-1.0, 1.0]):
         # distribution with shape [batch_size, dist_n]
         mean, stddev = self._sess.run(
             [self._op_mean, self._op_stddev],
             feed_dict=self.dist_input(inputs))
         sample_i = []
         stddev = np.sqrt(stddev)
+        size = support[1] - support[0]
+        half = size / 2
         for i in range(len(mean)):
             mu, sigma = mean[i], stddev[i]
-            sample_i.append(np.random.normal(mu, sigma))
+            sample = np.random.normal(mu, sigma)
+            overflow = sample > support[1]
+            underflow = sample < support[0]
+            sample = sample * (1 - (overflow + underflow)) + \
+                     (np.abs((sample - support[1]) % (2*size) - size) - half) * overflow + \
+                     (half - np.abs((support[0] - sample) % (2*size) - size)) * underflow
+            # sample = np.clip(sample, support[0], support[1])
+            sample_i.append(sample)
         sample_i = np.asarray(sample_i)
         return sample_i
 
@@ -250,6 +265,4 @@ class NormalDistribution(NNDistribution):
 
     def dist_function(self):
         return self._dist_function
-
-
 

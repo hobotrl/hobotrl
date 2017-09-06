@@ -40,6 +40,7 @@ class ClusterAgent(Agent):
                                        task_index=job_index,
                                        config=config)
         worker_n = len(cluster["worker"])
+        # global_device = "/job:ps/task:0"
         global_device = "/job:worker/task:0"
         if job == "ps":
             logging.warning("starting ps server")
@@ -62,14 +63,15 @@ class ClusterAgent(Agent):
                     with tf.variable_scope("worker%d" % i):
                         n_optimizer = network.OptimizerPlaceHolder()
                         worker = agent_creator(n_optimizer, global_step)
-                    if i == job_index:
-                        agent = worker
-                        local_network = agent.network
+                        local_network = worker.network
                         local_to_global = dict(zip(local_network.variables, global_network.variables))
                         n_optimizer.set_optimizer(
                             network.DistributedOptimizer(global_optimizer=global_optimizer,
                                                          local_global_var_map=local_to_global,
-                                                         name="distributed_variable"))
+                                                         name="distributed_variable")
+                        )
+                    if i == job_index:
+                        agent = worker
 
         self._agent = agent
 

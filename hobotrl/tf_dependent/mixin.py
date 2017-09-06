@@ -78,17 +78,15 @@ class DeepQFuncMixin(BaseValueMixin):
             next_state = batch['next_state']
             if 'next_action' not in batch:
                 if not self._GREEDY_POLICY:  # policy + exploration
-                    kwargs.update({
-                        'exploration_off': False,
-                        'use_target': True,
-                        'batch': True})
-                    next_action = self.act(next_state, **kwargs)
+                    next_action = self.act(
+                        next_state, exploration_off=False, use_target=True,
+                        batch=True, **kwargs
+                    )
                 else:  # pure policy, no exploration
-                    kwargs.update({
-                        'exploration_off': True,
-                        'use_target': True,
-                        'batch': True})
-                    next_action = self.act(next_state, **kwargs)
+                    next_action = self.act(
+                        next_state, exploration_off=True, use_target=True,
+                        batch=True, **kwargs
+                    )
                 batch['next_action'] = np.array(next_action)
 
             kwargs.update(batch)  # pass the batch in as kwargs

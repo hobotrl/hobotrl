@@ -23,7 +23,7 @@ class MyClass:
         self.car_pos_x = 0.0
         self.car_pos_y = 0.0
         self.min_path_dis = 0.0
-        self.detect_obstacle_range = 3
+        self.detect_obstacle_range = 5 + 1
         self.closest_distance = 10000.0 # initializer
 
         self.brg = CvBridge()
@@ -90,7 +90,10 @@ class MyClass:
         #   centered around ego car, there will be considerable portions of
         #   pixels being (0,0,0) if ego car is on the Ped lane. Thus the sum
         #   lumanation will be lower compared with other cases. 
-        ped_factor = np.sum(img[650:750, 650:750, :])/(255*3*1e4)  # norm by max val
+        low = int(np.floor(650.0/1400.0*img.shape[0]))
+        high = int(np.ceil(750.0/1400.0*img.shape[0]))
+        sum_sq = (high-low)**2
+        ped_factor = np.sum(img[low:high, low:high, :])/(255*3*sum_sq)  # norm by max val
         self.pub_on_pedestrian.publish(ped_factor<0.31)
 
     def sender(self):

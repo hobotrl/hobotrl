@@ -39,7 +39,7 @@ class TestAC(unittest.TestCase):
             target_estimator=None,
             max_advantage=100.0,
             # optimizer arguments
-            network_optmizer=hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3), grad_clip=10.0),
+            network_optimizer=hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3), grad_clip=10.0),
             max_gradient=10.0,
             # sampler arguments
             sampler=None,
