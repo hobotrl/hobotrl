@@ -47,7 +47,7 @@ class DrivingSimulatorEnvServer(multiprocessing.Process):
                     env_kwargs = {}
                     for key, value in msg_payload.iteritems():
                         env_kwargs[key] = dill.loads(value)
-                    if 'env_class_name' in kwargs:
+                    if 'env_class_name' in env_kwargs:
                         env_class_name = env_kwargs['env_class_name']
                         del env_kwargs['env_class_name']
                     else:
