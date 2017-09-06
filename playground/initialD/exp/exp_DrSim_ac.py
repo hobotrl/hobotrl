@@ -18,7 +18,8 @@ from hobotrl.playback import MapPlayback
 from playground.initialD.imitaion_learning.TmpPretrainedAgent import TmpPretrainedAgent
 from hobotrl.environments.environments import FrameStack
 
-from playground.initialD.ros_environments import DrivingSimulatorEnv
+
+from playground.initialD.ros_environments.core import DrivingSimulatorEnv
 
 import rospy
 import message_filters
@@ -34,6 +35,10 @@ import random
 from playground.resnet import resnet
 import hobotrl as hrl
 
+
+def func_compile_action(action):
+    ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']]
+    return ACTIONS[action]
 # Environment
 def compile_reward(rewards):
     # print "reward 0: ", rewards[0]
@@ -81,8 +86,33 @@ def evaluate(y_true, preds):
 # else:
 #     sys.exit(1)
 
+def gen_backend_cmds():
+    ws_path = '/home/lewis/Projects/catkin_ws_pirate03_lowres350_dynamic/'
+    initialD_path = '/home/pirate03/PycharmProjects/hobotrl/playground/initialD/'
+    backend_path = initialD_path + 'ros_environments/backend_scripts/'
+    utils_path = initialD_path + 'ros_environments/backend_scripts/utils/'
+    backend_cmds = [
+        # 1. Parse maps
+        ['python', utils_path+'parse_map.py',
+         ws_path+'src/Map/src/map_api/data/honda_wider.xodr',
+         utils_path+'road_segment_info.txt'],
+        # 2. Generate obs and launch file
+        ['python', utils_path+'gen_launch_dynamic.py',
+         utils_path+'road_segment_info.txt', ws_path,
+         utils_path+'honda_dynamic_obs_template.launch', 30],
+        # 3. start roscore
+        ['roscore'],
+        # 4. start reward function script
+        ['python', backend_path+'gazebo_rl_reward.py'],
+        # 5. start simulation restarter backend
+        ['python', backend_path+'rviz_restart.py', 'honda_dynamic_obs.launch'],
+        # 6. [optional] video capture
+        ['python', backend_path+'non_stop_data_capture.py', 0]
+    ]
+    return backend_cmds
 # What is the result's name?? Need check
 env = DrivingSimulatorEnv(
+    backend_cmds=gen_backend_cmds(),
     defs_obs=[('/training/image/compressed', CompressedImage)],
     func_compile_obs=compile_obs,
     defs_reward=[
@@ -92,6 +122,7 @@ env = DrivingSimulatorEnv(
         ('/rl/last_on_opposite_path', Int16),
         ('/rl/on_pedestrian', Bool)],
     func_compile_reward=compile_reward,
+    func_compile_action=func_compile_action,
     defs_action=[('/autoDrive_KeyboardMode', Char)],
     rate_action=10.0,
     window_sizes={'obs': 2, 'reward': 3},
@@ -159,9 +190,6 @@ agent = hrl.ActorCritic(
 # env.reward_range = (-np.inf, np.inf)
 # env.metadata = {}
 # env = FrameStack(env, 1)
-ACTIONS = [(Char(ord(mode)),) for mode in ['s', 'd', 'a']]
-
-
 # state_shape = env.observation_space.shape
 # graph = tf.get_default_graph()
 
@@ -209,12 +237,12 @@ try:
             while True:
                 # print "img shape: ", img.shape
                 action = agent.act(state=img, evaluate=False, sess=sess)
-                next_state, reward, done, info = env.step(ACTIONS[action])
+                next_state, reward, done, info = env.step(action)
                 next_img = cv2.resize(next_state, (224, 224)) / 255.0 - 0.5
                 n_steps += 1
                 cum_reward = reward + reward_decay * cum_reward
                 info = agent.step(state=img, action=action, reward=reward, next_state=next_img, episode_done=done)
-                # print "info: ", info
+                print "info: ", info
                 record(summary_writer, n_steps, info)
                 if done is True:
                     print "========Run Done=======\n"*5

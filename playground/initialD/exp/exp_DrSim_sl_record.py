@@ -18,7 +18,7 @@ from hobotrl.playback import MapPlayback
 from playground.initialD.imitaion_learning.TmpPretrainedAgent import TmpPretrainedAgent
 from hobotrl.environments.environments import FrameStack
 
-from playground.initialD.ros_environments import DrivingSimulatorEnv
+from playground.initialD.ros_environments.core import DrivingSimulatorEnv
 
 import rospy
 import message_filters
@@ -47,11 +47,40 @@ def compile_reward(rewards):
     # return np.mean(rewards)/1000.0
     return 1.0
 
+def func_compile_action(action):
+    ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']]
+    return ACTIONS[action]
+
 def compile_obs(obss):
     obs1 = obss[-1][0]
-    rule_action = obss[-1][1]
+    # rule_action = obss[-1][1]
     # obs = np.concatenate([obs1, obs2, obs3], axis=2)
-    return obs1, rule_action
+    return obs1
+
+def gen_backend_cmds():
+    ws_path = '/home/lewis/Projects/catkin_ws_pirate03_lowres350_dynamic/'
+    initialD_path = '/home/pirate03/PycharmProjects/hobotrl/playground/initialD/'
+    backend_path = initialD_path + 'ros_environments/backend_scripts/'
+    utils_path = initialD_path + 'ros_environments/backend_scripts/utils/'
+    backend_cmds = [
+        # 1. Parse maps
+        ['python', utils_path+'parse_map.py',
+         ws_path+'src/Map/src/map_api/data/honda_wider.xodr',
+         utils_path+'road_segment_info.txt'],
+        # 2. Generate obs and launch file
+        ['python', utils_path+'gen_launch_dynamic.py',
+         utils_path+'road_segment_info.txt', ws_path,
+         utils_path+'honda_dynamic_obs_template.launch', 30],
+        # 3. start roscore
+        ['roscore'],
+        # 4. start reward function script
+        ['python', backend_path+'gazebo_rl_reward.py'],
+        # 5. start simulation restarter backend
+        ['python', backend_path+'rviz_restart.py', 'honda_dynamic_obs.launch'],
+        # 6. [optional] video capture
+        ['python', backend_path+'non_stop_data_capture.py', 0]
+    ]
+    return backend_cmds
 
 def evaluate(y_true, preds):
     prec = sklearn.metrics.precision_score(y_true, preds, average=None)
@@ -65,7 +94,7 @@ def evaluate(y_true, preds):
     # print "val_conf_mat: {}".format(conf_mat)
 
 
-tf.app.flags.DEFINE_string("train_dir", "./log_train_mix_all_and_s5_test_s5-1_2", """save tmp model""")
+tf.app.flags.DEFINE_string("train_dir", "./log_train_mix_all_and_s5_test_s5-1_2_tmp_for_merge", """save tmp model""")
 tf.app.flags.DEFINE_string('checkpoint',
     "/home/pirate03/PycharmProjects/resnet-18-tensorflow/log_mix_all_and_s5/model.ckpt-11999",
                            """Model checkpoint to load""")
@@ -78,10 +107,9 @@ if not os.path.exists(FLAGS.train_dir):
 else:
     sys.exit(1)
 
-# What is the result's name?? Need check
 env = DrivingSimulatorEnv(
-    defs_obs=[('/training/image/compressed', CompressedImage),
-              ('/decision_result', Int16)],
+    backend_cmds=gen_backend_cmds(),
+    defs_obs=[('/training/image/compressed', CompressedImage)],
     func_compile_obs=compile_obs,
     defs_reward=[
         ('/rl/has_obstacle_nearby', Bool),
@@ -90,12 +118,14 @@ env = DrivingSimulatorEnv(
         ('/rl/last_on_opposite_path', Int16),
         ('/rl/on_pedestrian', Bool)],
     func_compile_reward=compile_reward,
+    func_compile_action=func_compile_action,
     defs_action=[('/autoDrive_KeyboardMode', Char)],
     rate_action=10.0,
     window_sizes={'obs': 2, 'reward': 3},
     buffer_sizes={'obs': 2, 'reward': 3},
     step_delay_target=0.4
 )
+
 env.observation_space = Box(low=0, high=255, shape=(640, 640, 3))
 env.action_space = Discrete(3)
 env.reward_range = (-np.inf, np.inf)
@@ -162,7 +192,7 @@ try:
             cum_reward = 0.0
             n_steps = 0
             cum_td_loss = 0.0
-            img, rule_action = env.reset()
+            img = env.reset()
             # print "state shape: {}".format(state.shape)
             # print "state type: {}".format(type(state))
             # resize maybe different from tf.resize
@@ -185,8 +215,8 @@ try:
             ib_np_probs = np_probs * imbalance_factor
             action = np.argmax(ib_np_probs)
             all_scenes.append([np.copy(img), action, np_probs, ib_np_probs])
-            next_state, reward, done, info = env.step(ACTIONS[action])
-            next_img, next_rule_action = next_state
+            next_state, reward, done, info = env.step(action)
+            next_img = next_state
             while True:
                 n_steps += 1
                 cum_reward += reward
@@ -205,10 +235,10 @@ try:
                     print "========Run Done=======\n"*5
                     break
                 action = next_action  # s',a' -> s,a
-                next_state, reward, done, info = env.step(ACTIONS[action])
+                next_state, reward, done, info = env.step(action)
                 # next_state, reward, done, info = env.step(ACTIONS[action])
                 # next_state, reward, done, info = env.step(ACTIONS[action])
-                next_img, next_rule_action = next_state
+                next_img = next_state
 
             for i, ele in enumerate(all_scenes):
                 cv2.imwrite(FLAGS.train_dir + "/" + str(n_ep) + "_" +

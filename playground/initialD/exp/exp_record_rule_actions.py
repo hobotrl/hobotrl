@@ -65,9 +65,9 @@ def evaluate(y_true, preds):
     # print "val_conf_mat: {}".format(conf_mat)
 
 
-tf.app.flags.DEFINE_string("train_dir", "./log_record_all_scene_orig_img_delay_1.5", """save tmp model""")
+tf.app.flags.DEFINE_string("train_dir", "./log_train_s5_imbalance_test_s5-1", """save tmp model""")
 tf.app.flags.DEFINE_string('checkpoint',
-    "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/exp/resnet_placeholder_ckpt_10000/model.ckpt-10",
+    "/home/pirate03/PycharmProjects/resnet-18-tensorflow/log_S5_no_val_imbalance/model.ckpt-2999",
                            """Model checkpoint to load""")
 
 FLAGS = tf.app.flags.FLAGS
@@ -94,14 +94,14 @@ env = DrivingSimulatorEnv(
     rate_action=10.0,
     window_sizes={'obs': 2, 'reward': 3},
     buffer_sizes={'obs': 2, 'reward': 3},
-    step_delay_target=0.5
+    step_delay_target=0.4
 )
 env.observation_space = Box(low=0, high=255, shape=(640, 640, 3))
 env.action_space = Discrete(3)
 env.reward_range = (-np.inf, np.inf)
 env.metadata = {}
 # env = FrameStack(env, 1)
-ACTIONS = [(Char(ord(mode)),) for mode in ['s', 'd', 'a']]
+ACTIONS = [(Char(ord(mode)),) for mode in ['s', 'd', 'a', '1']]
 
 
 state_shape = env.observation_space.shape
@@ -112,13 +112,14 @@ n_ep = 0  # last ep in the last run, if restart use 0
 n_test = 10  # num of episode per test run (no exploration)
 n_update = 0
 
-filename = "/home/pirate03/PycharmProjects/hobotrl/data/records_v1/filter_action3/train.tfrecords"
+# filename = "/home/pirate03/PycharmProjects/hobotrl/data/records_v1/filter_action3/train.tfrecords"
 # replay_buffer = initialD_input.init_replay_buffer(filename, replay_size=10000, batch_size=200)
 all_scenes = []
 noval_buffer = []
 noval_original_buffer = []
 noval_scene_count = 0
 batch_size = 256
+imbalance_factor = np.array([1.0, 1.0, 1.0])
 
 
 try:
@@ -169,7 +170,8 @@ try:
             # img = np.array([img])
             tens_img = tf.image.resize_images(img, [224, 224])
             # img = tf.image.convert_image_dtype(img, tf.float32)
-            tens_img = initialD_input.preprocess_image(tens_img)
+            # tens_img = initialD_input.preprocess_image(tens_img)
+            tens_img = tens_img * (1. / 255) -0.5
             np_img = sess.run(tens_img)
 
             print "=========img shape: {}".format(img.shape)+"=========\n"
@@ -177,26 +179,28 @@ try:
 
             using_learning_agent = True
 
-            actions, np_probs = sess.run([network_train.preds, probs], feed_dict={
+            _, np_probs = sess.run([network_train.preds, probs], feed_dict={
                 network_train._images:np.array([np_img]),
                 network_train.is_train:False})
-            action = actions[0]
-
-            all_scenes.append([np.copy(img), action, np_probs])
+            ib_np_probs = np_probs * imbalance_factor
+            action = np.argmax(ib_np_probs)
+            all_scenes.append([np.copy(img), action, np_probs, ib_np_probs])
             next_state, reward, done, info = env.step(ACTIONS[action])
             next_img, next_rule_action = next_state
             while True:
                 n_steps += 1
                 cum_reward += reward
                 next_tens_img = tf.image.resize_images(next_img, [224, 224])
-                next_tens_img = initialD_input.preprocess_image(next_tens_img)
+                next_tens_img = next_tens_img * (1. / 255) -0.5
+                # next_tens_img = initialD_input.preprocess_image(next_tens_img)
                 next_np_img = sess.run(next_tens_img)
-                next_actions, np_probs = sess.run([network_train.preds, probs], feed_dict={
+                _, np_probs = sess.run([network_train.preds, probs], feed_dict={
                     network_train._images: np.array([next_np_img]),
                     network_train.is_train: False})
-                next_action = next_actions[0]
+                ib_np_probs = np_probs * imbalance_factor
+                next_action = np.argmax(ib_np_probs)
                 print next_action
-                all_scenes.append([np.copy(next_img), next_action, np_probs])
+                all_scenes.append([np.copy(next_img), next_action, np_probs, ib_np_probs])
                 if done is True:
                     print "========Run Done=======\n"*5
                     break
@@ -208,7 +212,8 @@ try:
 
             for i, ele in enumerate(all_scenes):
                 cv2.imwrite(FLAGS.train_dir + "/" + str(n_ep) + "_" +
-                            str(i) + "_" + str(ele[1]) + "_" + str(np.around(ele[2], 2)) + ".jpg", ele[0])
+                            str(i) + "_" + str(ele[1]) + "_" + str(np.around(ele[2], 2)) +
+                            "_"+ str(np.around(ele[3], 2)) + ".jpg", ele[0])
 
             # if noval_scene_count > 10:
             #     print "update_n: {}".format(n_update)

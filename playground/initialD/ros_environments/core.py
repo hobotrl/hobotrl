@@ -1,15 +1,17 @@
 # -*- coding: utf-8 -*-
 """Gym-like environment wrapper for Hobot Driving Simulator.
 
-File name: ros_environment.py
-Author: Jingchu Liu
-Last Modified: July 27, 2017
+:file_name: core.py
+:author: Jingchu Liu
+:data: 2017-09-05
 """
 
 # Basic python
+import importlib
 import signal
 import time
 import sys
+import traceback
 # Threading and Multiprocessing
 import threading
 import subprocess
@@ -18,15 +20,12 @@ from multiprocessing import JoinableQueue as Queue
 from multiprocessing import Value, Event, Pipe
 # Image
 from scipy.misc import imresize
-import cv2
 from cv_bridge import CvBridge, CvBridgeError
 # ROS
 import rospy
 from rospy.timer import Timer
-sys.path.append('.')
-import my_message_filters as message_filters
-from std_msgs.msg import Char, Bool, Float32
-from sensor_msgs.msg import Image
+from std_msgs.msg import Bool
+import utils.message_filters as message_filters
 
 
 class DrivingSimulatorEnv(object):
@@ -43,31 +42,57 @@ class DrivingSimulatorEnv(object):
 
     Play action in queue with a fixed frequency to the backend.
 
-    :param window_sizes: number of samples to take for `obs` and `reward` in
-        each `step()` and `reset()`.
+    :param defs_obs:
+    :param defs_reward:
+    :param defs_action:
+    :param rate_action:
+    :param window_sizes: number of samples to take from buffer for observation
+        and reward in each `step()` and `reset()`.
+    :param buffer_sizes: number of samples to keep in buffer for observation
+        and reward.
+    :param func_compile_obs: function used to process observation taken from
+        buffer before returning to caller. Default do nothing.
+    :param func_compile_reward: function used to process reward taken from
+        buffer before returning to caller. Default do nothing.
+    :param func_compile_action: function used to process action before putting
+        into buffer. Default do nothing.
     :param step_delay_target: the desired delay for env steps. Used to ensure
         we are sampling the backend at a constant pace.
     :param is_dummy_action: if True use rule-based action and ignore the agent
         action passed in during `step()`.
+    :param backend_cmds: list of commands for setting up simulator backend.
+        Each command is a list of strings for a POpen() object.
     """
     def __init__(self,
-                 defs_obs, func_compile_reward,
-                 defs_reward, func_compile_obs,
-                 defs_action, rate_action,
+                 defs_obs, defs_reward, defs_action, rate_action,
                  window_sizes, buffer_sizes,
+                 func_compile_obs=None,
+                 func_compile_reward=None,
+                 func_compile_action=None,
                  step_delay_target=None,
-                 is_dummy_action=False):
+                 is_dummy_action=False,
+                 backend_cmds=None):
         """Initialization."""
         # params
-        self.defs_obs = defs_obs
-        self.__compile_obs = lambda *args: func_compile_obs(*args)
+        self.defs_obs = self.__import_defs(defs_obs)
+        if func_compile_obs is not None:
+            self.__compile_obs = lambda *args: func_compile_obs(*args)
+        else:
+            self.__compile_obs = lambda x: x
         self.len_obs = window_sizes['obs']
 
-        self.defs_reward = defs_reward
-        self.__compile_reward = lambda *args: func_compile_reward(*args)
+        self.defs_reward = self.__import_defs(defs_reward)
+        if func_compile_reward is not None:
+            self.__compile_reward = lambda *args: func_compile_reward(*args)
+        else:
+            self.__compile_reward = lambda x: x
         self.len_reward = window_sizes['reward']
 
-        self.defs_action = defs_action
+        self.defs_action = self.__import_defs(defs_action)
+        if func_compile_action is not None:
+            self.__compile_action = lambda *args: func_compile_action(*args)
+        else:
+            self.__compile_action = lambda x: x
         self.rate_action = rate_action
         self.is_dummy_action = is_dummy_action
 
@@ -87,21 +112,11 @@ class DrivingSimulatorEnv(object):
         self.is_envnode_resetting = Event()  # if env node is undergoing reset
         self.is_env_resetting = Event()  # if environment is undergoing reset
         self.is_env_done = Event()  # if environment is is done for this ep
+        self.is_env_done.set()
 
-        # backend specs
-        self.backend_cmds = [
-            # roscore
-            # ['roscore'],
-            # reward function
-            ['python', '/home/lewis/Projects/hobotrl/playground/initialD/gazebo_rl_reward.py'],
-            # simulator backend [Recommend start separately]
-            ['python',
-             '/home/lewis/Projects/hobotrl/playground/initialD/gta5_restart.py',
-             '2'],
-            # video capture
-            # ['python',
-            # '/home/lewis/Projects/hobotrl/playground/initialD/non_stop_data_capture.py']
-        ]
+
+        # backend
+        self.backend_cmds = backend_cmds if backend_cmds is not None else []
         self.proc_backend = []
 
         # monitor threads 
@@ -124,20 +139,30 @@ class DrivingSimulatorEnv(object):
             if delay < self.STEP_DELAY_TARGET:
                 time.sleep(self.STEP_DELAY_TARGET-delay)
             else:
-                print ("[step()]: delay {:.3f} >= target {:.3f}, if happen "
-                       "regularly please conconsider increasing target.").format(
-                           delay, self.STEP_DELAY_TARGET)
+                pass
+                #print ("[step()]: delay {:.3f} >= target {:.3f}, if happen "
+                #       "regularly please conconsider increasing target.").format(
+                #           delay, self.STEP_DELAY_TARGET)
         self.last_step_t = time.time()
 
-        # do __step
+        # build action ROS msg
+        # Note: users need to make sure the ROS msg can be initialized with the
+        # data passed in.
+        action = self.__compile_action(action)
+        new_action = []
+        for i, (_, action_class) in enumerate(self.defs_action):
+            new_action.append(action_class(action[i]))
+        action = tuple(new_action)
+
+        # do __step(), try until get non-None result
         while True:
             ret = self.__step(action)
             if ret is not None:
                 break
             time.sleep(1.0)
         next_state, reward, done, info = ret
-        print "[step()]: action {}, reward {}, done {}.".format(
-            action, reward, done)
+        #print "[step()]: action {}, reward {}, done {}.".format(
+        #    action, reward, done)
 
         # set done
         if done:
@@ -157,6 +182,8 @@ class DrivingSimulatorEnv(object):
             there are too many exceptions. The exception counter is decreased
             by 1 per exception and increased per sucessful __step.
             2) return None for the unsuccessful interactions.
+
+        Return None if failed to grep data from backend.
         """
         # wait until envnode, q, and backend is up and running
         while True:
@@ -202,9 +229,9 @@ class DrivingSimulatorEnv(object):
                         if self.cnt_q_except.value>0:
                             self.cnt_q_except.value -= 1
                         else:
-                            return none
-                        print "[__step()]: exception getting observation. {}.".format(
-                            self.cnt_q_except.value)
+                            return None
+                        #print "[__step()]: exception getting observation. {}.".format(
+                        #    self.cnt_q_except.value)
                     time.sleep(0.1)
             obs_list.append(next_states)
         next_state = self.__compile_obs(obs_list)
@@ -223,11 +250,17 @@ class DrivingSimulatorEnv(object):
                             self.cnt_q_except.value -= 1
                         else:
                             return None
-                        print "[__step()]: exception getting reward. {}.".format(
-                            self.cnt_q_except.value)
+                        #print "[__step()]: exception getting reward. {}.".format(
+                        #    self.cnt_q_except.value)
                     time.sleep(0.1)
             reward_list.append(rewards)
-        print "[step()]: reward vector {}".format(reward_list)
+        # p_str = "[step()]: reward vector "
+        # fmt_dict = {float: '{:.4f},', bool: '{},', int: "{},"}
+        # for reward in reward_list:
+        #     slice_str = " ".join(
+        #         map(lambda ele: fmt_dict[type(ele)], reward)).format(*reward)
+        #     p_str += "\n    [" + slice_str + "],"
+        # print p_str
         reward = self.__compile_reward(reward_list)
 
         # done
@@ -258,7 +291,15 @@ class DrivingSimulatorEnv(object):
 
         return next_state, reward, done, info
 
-    def reset(self):
+    def reset(self, **kwargs):
+        while True:
+            ret = self.__reset(**kwargs)
+            if ret is not None:
+                return ret
+            else:
+                time.sleep(1.0)
+
+    def __reset(self, **kwargs):
         """Environment reset."""
         # Setting sync. events
         # 1. Setting env_resetting will block further call to step.
@@ -284,6 +325,7 @@ class DrivingSimulatorEnv(object):
         # 3. Clearing env_done event means a green light for node_monitor
         #    process to set up a new front-end node
         self.is_env_done.clear()
+
 
         # wait until backend is up
         while True:
@@ -314,7 +356,7 @@ class DrivingSimulatorEnv(object):
                         if self.cnt_q_except.value>0:
                             self.cnt_q_except.value -= 1
                         else:
-                            return none
+                            return None
                         print "[reset()]: exception getting observation. {}.".format(
                             self.cnt_q_except.value)
                     time.sleep(0.1)
@@ -407,8 +449,19 @@ class DrivingSimulatorEnv(object):
         self.is_envnode_up.clear()    # default to node_down
         self.is_envnode_terminatable.clear()  # prevents q monitor from turning down
         self.is_envnode_resetting.set()
+
         while not self.is_exiting.is_set():
+            while not self.is_env_resetting.is_set():
+                time.sleep(1.0)
+                print "Waiting reset."
             try:
+                # env done check loop
+                #   reset() should clear `is_env_done`  
+                while self.is_env_done.is_set():
+                    print ("[__node_monitor]: env is done, "
+                           "waiting for reset.")
+                    time.sleep(1.0)
+
                 # start simulation backend
                 #   __start_backend() should set `is_backend_up` if successful
                 self.__start_backend()
@@ -416,12 +469,6 @@ class DrivingSimulatorEnv(object):
                     print "[__node_monitor]: backend not up..."
                     time.sleep(1.0)
 
-                # env done check loop
-                #   reset() should clear `is_env_done`  
-                while self.is_env_done.is_set():
-                    print ("[__node_monitor]: env is done, "
-                           "waiting for reset.")
-                    time.sleep(1.0)
 
                 # set up inter-process queues and monitor
                 while not self.is_q_cleared.is_set():
@@ -460,6 +507,7 @@ class DrivingSimulatorEnv(object):
             except Exception as e:
                 print "[__node_monitor]: exception running node ({}).".format(
                     e.message)
+                traceback.print_exc()
                 time.sleep(1.0)
             finally:
                 print "[__node_monitor]: finished running node."
@@ -491,7 +539,8 @@ class DrivingSimulatorEnv(object):
     def __start_backend(self):
         print '[DrSim]: initializing backend...'
         self.is_backend_up.clear()
-        for cmd in self.backend_cmds:
+        for i, cmd in enumerate(self.backend_cmds):
+            cmd = map(str, cmd)
             proc = subprocess.Popen(cmd)
             self.proc_backend.append(proc)
             print '[DrSim]: cmd [{}] running with PID {}'.format(
@@ -500,6 +549,28 @@ class DrivingSimulatorEnv(object):
         self.is_backend_up.set()
         print '[DrSim]: backend initialized. PID: {}'.format(
             [p.pid for p in self.proc_backend])
+
+    def __import_defs(self, defs):
+        """Import class based on package and class names in defs.
+
+        To save environment clients from importing topic message classes,
+        this method inspects the class_or_name field of definition tuple.
+        If a string is found, we import the class and substitute the
+        original name string.
+
+        Examples:
+            `std_msgs.msg.Char` -> Char class
+        """
+        imported_defs = []
+        for topic, class_or_name in defs:
+            # substitute package_name.class_name with imported class
+            if type(class_or_name) is str:
+                package_name = '.'.join(class_or_name.split('.')[:-1])
+                class_name = class_or_name.split('.')[-1]
+                class_or_name = getattr(
+                    importlib.import_module(package_name), class_name)
+            imported_defs.append((topic, class_or_name))
+        return imported_defs
 
     def exit(self):
         self.is_exiting.set()
@@ -564,8 +635,15 @@ class DrivingSimulatorNode(multiprocessing.Process):
                is_envnode_terminatable flag to terminate this process (i.e. poison pill).
         """
         print "[EnvNode]: started frontend process: {}".format(self.name)
-        self.list_prep_exp = [self.__prep_image] + \
-                [self.__prep_reward]*len(self.defs_reward)
+        # TODO: should be able to set how to process, this is only a
+        #        temporary hack.
+        self.list_prep_exp = []
+        for i in range(len(self.defs_obs)):
+            if i<1:
+                self.list_prep_exp.append(self.__prep_image)
+            else:
+                self.list_prep_exp.append(self.__prep_reward)
+        self.list_prep_exp += [self.__prep_reward]*len(self.defs_reward)
 
         # Setup sync events
         # self.is_envnode_up.clear()
@@ -701,7 +779,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
                 self.q_obs.task_done()
             self.q_obs.put(obs, timeout=self.Q_TIMEOUT)
         except:
-            print "[__enque_exp]: q_obs update exception!"
+            # print "[__enque_exp]: q_obs update exception!"
             pass
         try:
             rewards = exp[num_obs:] if num_reward>1 else [exp[num_obs]]
@@ -710,7 +788,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
                 self.q_reward.task_done()
             self.q_reward.put(rewards, timeout=self.Q_TIMEOUT)
         except:
-            print "[__enque_exp]: q_reward update exception!"
+            # print "[__enque_exp]: q_reward update exception!"
             pass
         if not self.is_receiving_obs.is_set():
             print "[__enque_exp]: first observation received."
@@ -718,9 +796,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
         # print "[__enque_exp]: {}".format(args[num_obs:])
 
     def __prep_image(self, img):
-         return imresize(
-             self.brg.imgmsg_to_cv2(img, 'rgb8'),
-             (640, 640))
+         return self.brg.compressed_imgmsg_to_cv2(img, 'rgb8')
 
     def __prep_reward(self, reward):
         return reward.data

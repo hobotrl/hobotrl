@@ -12,7 +12,7 @@ both mixin-style and non-... usages.
 import math
 import numpy as np
 from numpy import max
-from numpy.random import rand, randint, poisson
+from numpy.random import rand, randint
 import tensorflow.contrib.layers as layers
 import tensorflow as tf
 
@@ -170,52 +170,6 @@ class EpsilonGreedyPolicy(object):
         return self.__ACTIONS[idx_action]
 
 
-class EpsilonGreedyStickyPolicy(object):
-    """Epsilon sticky policy."""
-    def __init__(self, actions, f_get_value,
-                 epsilon, sticky_mass, tol=1e-10, **kwargs):
-        """Initialization"""
-        self.__ACTIONS = actions
-        self.__get_value = f_get_value
-        self.__EPSILON = epsilon
-        self.__STICKY_MASS = sticky_mass
-        self.__sticky_cnt = 0
-        self.__repeat_idx_action = None
-        self.__TOL = tol
-
-    def act_single_(self, state, **kwargs):
-        """Epsilon greedy action selection.
-
-        Repeat random action with `epsilon` prob.
-        """
-        exploration_off = kwargs['exploration_off'] \
-            if 'exploration_off' in kwargs else False
-        if state is None:
-            idx_action = randint(0, len(self.__ACTIONS))
-        elif not exploration_off and \
-            (rand() < self.__EPSILON or self.__sticky_cnt>0):
-            if self.__sticky_cnt > 0:
-                idx_action = self.__repeat_idx_action
-                self.__sticky_cnt -= 1
-            else:
-                self.__sticky_cnt = poisson(self.__STICKY_MASS)
-                idx_action = randint(0, len(self.__ACTIONS))
-                self.__repeat_idx_action = idx_action
-        else:
-            # Follow greedy policy with 1-epsilon prob.
-            # break tie randomly
-            q_vals = np.asarray(
-                self.__get_value(state=state, **kwargs)
-            ).flatten()
-            max_q_val = max(q_vals)
-            idx_best_actions = [
-                i for i in range(len(q_vals))
-                if (q_vals[i] - max_q_val)**2 < self.__TOL
-            ]
-            idx_action = idx_best_actions[randint(0, len(idx_best_actions))]
-        return self.__ACTIONS[idx_action]
-
-
 class Network(object):
 
     @staticmethod
@@ -318,14 +272,14 @@ class hashable_list(list):
         if len(self) == 0:
             return h
         for o in self:
-            h += o.__hash__()
+            h += hash(o)
         return h
 
     def __eq__(self, other):
         if other is None or len(self) != len(other):
             return False
         for i in range(len(other)):
-            if not self[i].__eq__(other[i]):
+            if not self[i] == other[i]:
                 return False
         return True
 
@@ -594,6 +548,11 @@ class Stepper(IntHandle):
         self._n += 1
 
 
+def clone_params(*params):
+    params = [p.clone() if isinstance(p, ScheduledParam) else p for p in params]
+    return params[0] if len(params) == 1 else params
+
+
 class ScheduledParam(FloatParam):
 
     @staticmethod
@@ -612,11 +571,17 @@ class ScheduledParam(FloatParam):
         x = schedule(0)
         super(ScheduledParam, self).__init__(x)
 
+    def clone(self):
+        return ScheduledParam(self._schedule, self._n)
+
     @property
     def value(self):
         if self._schedule is not None and self._n is not None:
             self._value = self._schedule(self._n.value())
         return super(ScheduledParam, self).value
+
+    def __str__(self):
+        return "[%d]%f" % (self._n.value(), self._value)
 
     def set_int_handle(self, int_handle):
         self._n = int_handle
