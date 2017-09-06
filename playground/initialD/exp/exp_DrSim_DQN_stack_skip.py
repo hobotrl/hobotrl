@@ -29,10 +29,21 @@ from ros_environments.clients import DrivingSimulatorEnvClient as DrivingSimulat
 from gym.spaces import Discrete, Box
 
 # Environment
-def compile_reward(rewards):
+def func_compile_reward(rewards):
     return rewards
 
-def compile_reward_agent(rewards):
+def func_compile_obs(obss):
+    obs1 = obss[-1][0]
+    print obss[-1][1]
+    print obs1.shape
+    return obs1
+
+ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0, )]
+def func_compile_action(action):
+    ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0, )]
+    return ACTIONS[action]
+
+def func_compile_reward_agent(rewards):
     global momentum_ped
     global momentum_opp
     rewards = np.mean(np.array(rewards), axis=0)
@@ -58,64 +69,57 @@ def compile_reward_agent(rewards):
     print ': {:7.4f}'.format(reward)
     return reward
 
-def compile_obs(obss):
-    obs1 = obss[-1][0]
-    print obss[-1][1]
-    print obs1.shape
-    return obs1
-
 def gen_backend_cmds():
-    ws_path = '/Projects/catkin_ws'
-    initialD_path = '/Projects/initialD'
+    ws_path = '/home/lewis/Projects/catkin_ws_pirate03_lowres350/'
+    initialD_path = '/home/lewis/Projects/hobotrl/playground/initialD/'
+    backend_path = initialD_path + 'ros_environments/backend_scripts/'
+    utils_path = initialD_path + 'ros_environments/backend_scripts/utils/'
     backend_cmds = [
-        # Parse maps
-        ['python', initialD_path+'/utils/parse_map.py',
-         ws_path+'/src/Map/src/map_api/data/honda_wider.xodr',
-         initialD_path+'/utils/road_segment_info.txt'
-        ],
-        # Generate obs and launch file
-        ['python', initialD_path+'/utils/gen_launch_dynamic.py',
-         initialD_path+'/utils/road_segment_info.txt',
-         ws_path,
-         initialD_path+'/utils/honda_dynamic_obs_template.launch',
-         30],
-        # roscore
+        # 1. Parse maps
+        ['python', utils_path+'parse_map.py',
+         ws_path+'src/Map/src/map_api/data/honda_wider.xodr',
+         utils_path+'road_segment_info.txt'],
+        # 2. Generate obs and launch file
+        ['python', utils_path+'gen_launch_dynamic.py',
+         utils_path+'road_segment_info.txt', ws_path,
+         utils_path+'honda_dynamic_obs_template.launch', 30],
+        # 3. start roscore
         ['roscore'],
-        # reward function
-        ['python', initialD_path+'/gazebo_rl_reward.py'],
-        # simulator backend [Recommend start separately]
-        ['python', initialD_path+'/rviz_restart.py', 'honda_dynamic_obs.launch'],
-        # video capture
-        ['python', initialD_path+'/non_stop_data_capture.py', 0]
+        # 4. start reward function script
+        ['python', backend_path+'gazebo_rl_reward.py'],
+        # 5. start simulation restarter backend
+        ['python', backend_path+'rviz_restart.py', 'honda_dynamic_obs.launch'],
+        # 6. [optional] video capture
+        # ['python', backend_path+'non_stop_data_capture.py', 0]
     ]
     return backend_cmds
 
 env = DrivingSimulatorEnv(
-    # address="10.31.40.204", port='22224',
-    address='localhost', port='22230',
+    address="10.31.40.204", port='22224',
+    # address='localhost', port='22230',
     backend_cmds=gen_backend_cmds(),
     defs_obs=[
         ('/training/image/compressed', 'sensor_msgs.msg.CompressedImage'),
         ('/decision_result', 'std_msgs.msg.Int16')
     ],
-    func_compile_obs=compile_obs,
     defs_reward=[
         ('/rl/has_obstacle_nearby', 'std_msgs.msg.Bool'),
         ('/rl/distance_to_longestpath', 'std_msgs.msg.Float32'),
         ('/rl/car_velocity', 'std_msgs.msg.Float32'),
         ('/rl/last_on_opposite_path', 'std_msgs.msg.Int16'),
         ('/rl/on_pedestrian', 'std_msgs.msg.Bool')],
-    func_compile_reward=compile_reward,
     defs_action=[('/autoDrive_KeyboardMode', 'std_msgs.msg.Char')],
     rate_action=10.0,
     window_sizes={'obs': 2, 'reward': 3},
     buffer_sizes={'obs': 2, 'reward': 3},
+    func_compile_obs=func_compile_obs,
+    func_compile_reward=func_compile_reward,
+    func_compile_action=func_compile_action,
     step_delay_target=0.5)
 # TODO: define these Gym related params insode DrivingSimulatorEnv
 env.observation_space = Box(low=0, high=255, shape=(350, 350, 3))
 env.reward_range = (-np.inf, np.inf)
 env.metadata = {}
-ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0, )]
 env.action_space = Discrete(len(ACTIONS))
 env = FrameStack(env, 3)
 
@@ -331,8 +335,8 @@ try:
             while True:
                 n_steps += 1
                 # Env step
-                next_state, reward, done, info = env.step(ACTIONS[action])
-                reward = compile_reward_agent(reward)
+                next_state, reward, done, info = env.step(action)
+                reward = func_compile_reward_agent(reward)
                 skip_reward += reward
                 # done = (reward < -0.9) or done  # heuristic early stopping
                 # agent step
