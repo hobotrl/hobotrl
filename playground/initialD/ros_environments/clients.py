@@ -9,11 +9,10 @@ class DrivingSimulatorEnvClient(object):
         self.context = zmq.Context()
         self.socket = self.context.socket(zmq.PAIR)
         self.socket.connect("tcp://{}:{}".format(address, port))
-        kwargs['func_compile_obs'] = dill.dumps(
-            kwargs['func_compile_obs'])
-        kwargs['func_compile_reward'] = dill.dumps(
-            kwargs['func_compile_reward'])
-        self.socket.send_pyobj(('start', kwargs))
+        kwargs_send = {}
+        for key, value in kwargs.iteritems():
+            kwargs_send[key] = dill.dumps(value)
+        self.socket.send_pyobj(('start', kwargs_send))
         msg_type, msg_payload = self.socket.recv_pyobj()
         if not msg_type == 'start':
             raise Exception('EnvClient: msg_type is not start.')
