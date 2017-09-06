@@ -24,7 +24,6 @@ from std_msgs.msg import Char, Int16, Bool
 from autodrive_msgs.msg import CarStatus
 # append initialD path to PATH
 sys.path.append(dirname(dirname(dirname(realpath(__file__)))))
-print sys.path
 from ros_environments.utils.timer import Timer
 
 class restart_ros_launch:
