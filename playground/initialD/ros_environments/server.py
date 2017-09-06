@@ -11,12 +11,15 @@ import importlib
 import signal
 import time
 import sys
+import os
 import traceback
 # comms
 import zmq
 import dill
 # Multiprocessing
 import multiprocessing
+# To find env packages
+sys.path.append(os.path.dirname(os.path.realpath(__file__)))
 
 
 class DrivingSimulatorEnvServer(multiprocessing.Process):
@@ -41,20 +44,19 @@ class DrivingSimulatorEnvServer(multiprocessing.Process):
                 print msg_payload
                 if msg_type == 'start':
                     print msg_payload
-                    msg_payload['func_compile_obs'] = dill.loads(
-                        msg_payload['func_compile_obs'])
-                    msg_payload['func_compile_reward'] = dill.loads(
-                        msg_payload['func_compile_reward'])
-                    if 'env_class_name' in msg_payload:
-                        env_class_name = dill.loads(
-                            msg_payload['env_class_name'])
+                    env_kwargs = {}
+                    for key, value in msg_payload.iteritems():
+                        env_kwargs[key] = dill.loads(value)
+                    if 'env_class_name' in kwargs:
+                        env_class_name = env_kwargs['env_class_name']
+                        del env_kwargs['env_class_name']
                     else:
                         env_class_name = 'core.DrivingSimulatorEnv'
                     package_name = '.'.join(env_class_name.split('.')[:-1])
                     class_name = env_class_name.split('.')[-1]
                     DrivingSimulatorEnv = getattr(
                         importlib.import_module(package_name), class_name)
-                    self.env = DrivingSimulatorEnv(**msg_payload)
+                    self.env = DrivingSimulatorEnv(**env_kwargs)
                     self.socket.send_pyobj(('start', None))
                 elif msg_type == 'reset':
                     msg_rep = self.env.reset()
