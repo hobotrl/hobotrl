@@ -1,4 +1,4 @@
-from ros_environments import DrivingSimulatorEnv
+from ros_environments.honda import DrivingSimulatorEnv
 
 import rospy
 import message_filters

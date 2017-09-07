@@ -631,10 +631,10 @@ class BalancedMapPlayback(MapPlayback):
         done = sample['episode_done']
         if done:
             self.sample_prob[index] = self.num_actions
-            self.sample_prob[index] = 1/self.done_prob
+            self.sample_prob[index] = 1/(self.done_prob+1e-5)
         else:
             self.sample_prob[index] = 1/self.action_prob[action]
-            self.sample_prob[index] *= 1/(1-self.done_prob)
+            self.sample_prob[index] *= 1/(1-self.done_prob+1e-5)
 
         # Exponetial moving averaged action and doneprobability
         delta = np.zeros(self.num_actions)
@@ -650,8 +650,8 @@ class BalancedMapPlayback(MapPlayback):
             self.done_prob = cap
         if self.done_prob > 1-cap:
             self.done_prob = 1 - cap
-        print ("[BalancedMapPlayback.push_sample()]: "
-               "action {}, done {:.3f}, sample {:.3f}").format(
-                   self.action_prob, self.done_prob, self.sample_prob[index])
+        # print ("[BalancedMapPlayback.push_sample()]: "
+        #        "action {}, done {:.3f}, sample {:.3f}").format(
+        #            self.action_prob, self.done_prob, self.sample_prob[index])
 
         super(BalancedMapPlayback, self).push_sample(sample, **kwargs)

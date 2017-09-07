@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${id}
+  labels:
+    run: ${id}
+spec:
+  type: NodePort
+  ports:
+  - port: 22224
+    targetPort: 22224
+    protocol: TCP
+    name: websocket
+  selector:
+    run: ${id}
