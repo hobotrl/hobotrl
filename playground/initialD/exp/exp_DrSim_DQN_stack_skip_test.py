@@ -23,8 +23,8 @@ from hobotrl.environments import FrameStack
 from hobotrl.sampling import TransitionSampler
 from hobotrl.playback import BalancedMapPlayback
 # initialD
-# from ros_environments.honda import DrivingSimulatorEnv
-from ros_environments.clients import DrivingSimulatorEnvClient as DrivingSimulatorEnv
+from ros_environments.core import DrivingSimulatorEnv
+# from ros_environments.clients import DrivingSimulatorEnvClient as DrivingSimulatorEnv
 # Gym
 from gym.spaces import Discrete, Box
 
@@ -70,8 +70,8 @@ def func_compile_reward_agent(rewards):
     return reward
 
 def gen_backend_cmds():
-    ws_path = '/home/lewis/Projects/catkin_ws_pirate03_lowres350/'
-    initialD_path = '/home/lewis/Projects/hobotrl/playground/initialD/'
+    ws_path = '/home/lewis/Projects/catkin_ws_pirate03_lowres350_dynamic/'
+    initialD_path = '/home/pirate03/PycharmProjects/hobotrl/playground/initialD/'
     backend_path = initialD_path + 'ros_environments/backend_scripts/'
     utils_path = initialD_path + 'ros_environments/backend_scripts/utils/'
     backend_cmds = [
@@ -90,12 +90,12 @@ def gen_backend_cmds():
         # 5. start simulation restarter backend
         ['python', backend_path+'rviz_restart.py', 'honda_dynamic_obs.launch'],
         # 6. [optional] video capture
-        # ['python', backend_path+'non_stop_data_capture.py', 0]
+        ['python', backend_path+'non_stop_data_capture.py', 0]
     ]
     return backend_cmds
 
 env = DrivingSimulatorEnv(
-    address="10.31.40.204", port='22224',
+    # address="10.31.40.204", port='22224',
     # address='localhost', port='22230',
     backend_cmds=gen_backend_cmds(),
     defs_obs=[
