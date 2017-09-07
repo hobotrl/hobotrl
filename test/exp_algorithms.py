@@ -644,7 +644,7 @@ class A3CExperiment(Experiment):
 
 class A3CExperimentWithICM(Experiment):
     def __init__(self,
-                 env, f_se, f_pi, f_v, f_forward, f_inverse,
+                 env, f_se, f_ac, f_forward, f_inverse,
                  episode_n=1000,
                  learning_rate=1e-4,
                  discount_factor=0.9,
@@ -652,10 +652,10 @@ class A3CExperimentWithICM(Experiment):
                  batch_size=8
                  ):
         super(A3CExperimentWithICM, self).__init__()
-        self._env, self._f_se, self._f_pi, self._f_v, \
+        self._env, self._f_se, self._f_ac, \
             self._f_forward, self._f_inverse, self._episode_n, self._learning_rate, \
             self._discount_factor, self._entropy, self._batch_size = \
-            env, f_se, f_pi, f_v, f_forward, f_inverse, episode_n, learning_rate, \
+            env, f_se, f_ac, f_forward, f_inverse, episode_n, learning_rate, \
             discount_factor, entropy, batch_size
 
     def run(self, args):
@@ -670,8 +670,7 @@ class A3CExperimentWithICM(Experiment):
             entropy = hrl.utils.clone_params(self._entropy)
             agent = hrl.ActorCriticWithICM(
                 f_se=self._f_se,
-                f_pi=self._f_pi,
-                f_v=self._f_v,
+                f_ac=self._f_ac,
                 f_forward=self._f_forward,
                 f_inverse=self._f_inverse,
                 state_shape=state_shape,

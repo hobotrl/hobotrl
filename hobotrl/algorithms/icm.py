@@ -171,7 +171,7 @@ class InverseUpdater(network.NetworkUpdater):
 class ActorCriticWithICM(sampling.TrajectoryBatchUpdate,
           BaseDeepAgent):
     def __init__(self,
-                 f_se, f_pi, f_v, f_forward, f_inverse, state_shape,
+                 f_se, f_ac, f_forward, f_inverse, state_shape,
                  # ACUpdate arguments
                  discount_factor, entropy=1e-3, target_estimator=None, max_advantage=10.0,
                  # optimizer arguments
@@ -206,8 +206,7 @@ class ActorCriticWithICM(sampling.TrajectoryBatchUpdate,
         """
         kwargs.update({
             "f_se": f_se,
-            "f_pi": f_pi,
-            "f_v": f_v,
+            "f_ac": f_ac,
             "f_forward": f_forward,
             "f_inverse": f_inverse,
             "state_shape": state_shape,
@@ -226,7 +225,30 @@ class ActorCriticWithICM(sampling.TrajectoryBatchUpdate,
             kwargs.update({"sampler": sampler})
 
         super(ActorCriticWithICM, self).__init__(*args, **kwargs)
+
+        def f_icm():
+            self._f_se1 = network.Network([self._input_state], f_se, var_scope='learn_se1')
+            self._f_se1 = network.NetworkFunction(self._f_se1["se"]).output()
+            self._f_se2 = network.Network([self._input_next_state], f_se, var_scope='learn_se2')
+            self._f_se2 = network.NetworkFunction(self._f_se2["se"]).output()
+
+            self._f_ac = network.Network([self._f_se1], f_ac, var_scope='learn_ac')
+            self._v = network.NetworkFunction(self._f_ac["v"]).output()
+            self._pi = network.NetworkFunction(self._f_ac["pi"]).output()
+
+            self._f_forward = network.Network([self._input_action, self._f_se1], f_forward, var_scope='learn_forward')
+            self._phi2_hat = network.NetworkFunction(self._f_forward["phi2_hat"]).output()
+
+            self._f_inverse = network.Network([self._f_se1, self._f_se2], f_inverse, var_scope='learn_inverse')
+            self._logits = network.NetworkFunction(self._f_inverse["logits"]).output()
+
+            return {"pi": self._pi, "v": self._v},{"logits": self._logits, "phi1": self._f_se1, "phi2": self._f_se2,
+                                                   "phi2_hat": self._phi2_hat}
+
         pi = self.network["pi"]
+        self._input_state = tf.placeholder(dtype=tf.float32, shape=[None] + state_shape, name="input_state")
+        self._input_next_state = tf.placeholder(dtype=tf.float32, shape=[None] + state_shape, name="input_next_state")
+
         if pi is not None:
             # discrete action: pi is categorical probability distribution
             self._pi_function = network.NetworkFunction(self.network["pi"])
