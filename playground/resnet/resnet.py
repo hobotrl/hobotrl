@@ -11,10 +11,12 @@ HParams = namedtuple('HParams',
                      'momentum, finetune')
 
 class ResNet(object):
-    def __init__(self, hp, images, labels, global_step, name=None, reuse_weights=False):
+    def __init__(self, hp, global_step, name=None, reuse_weights=False):
         self._hp = hp # Hyperparameters
-        self._images = images # Input images
-        self._labels = labels # Input labels
+        self._images = tf.placeholder(tf.float32, [None, 224, 224, 3], name="images")
+        print "images name: ", self._images.name
+        self._labels = tf.placeholder(tf.int32, [None], name="labels")
+        print "labels name: ", self._labels.name
         self._global_step = global_step
         self._name = name
         self._reuse_weights = reuse_weights
@@ -60,6 +62,7 @@ class ResNet(object):
         with tf.variable_scope('logits') as scope:
             print('\tBuilding unit: %s' % scope.name)
             x = tf.reduce_mean(x, [1, 2])
+            # x = tf.reduce_mean(x, [0, 1])
             x = self._fc(x, self._hp.num_classes)
 
         logits = x
@@ -71,11 +74,12 @@ class ResNet(object):
         probs = tf.nn.softmax(x)
         # preds = tf.to_int32(tf.argmax(tf.divide(probs, class_weights), 1))
         preds = tf.to_int32(tf.argmax(probs, 1))
-        ones = tf.constant(np.ones([self._hp.batch_size]), dtype=tf.float32)
-        zeros = tf.constant(np.zeros([self._hp.batch_size]), dtype=tf.float32)
-        correct = tf.where(tf.equal(preds, labels), ones, zeros)
-        acc = tf.reduce_mean(correct)
-
+        print "preds name {}".format(preds.name)
+        # ones = tf.constant(np.ones([self._hp.batch_size]), dtype=tf.float32)
+        # zeros = tf.constant(np.zeros([self._hp.batch_size]), dtype=tf.float32)
+        # correct = tf.where(tf.equal(preds, labels), ones, zeros)
+        # acc = tf.reduce_mean(correct)
+        acc = tf.reduce_mean(tf.cast(tf.equal(preds, labels), "float"))
         # precision-recall
         # prec = precision_score(labels, preds)
 
@@ -108,7 +112,7 @@ class ResNet(object):
                     if self._reuse_weights or i > 0:
                         tf.get_variable_scope().reuse_variables()
 
-                    logits, preds, loss, acc = self.build_tower(self._images[i], self._labels[i])
+                    logits, preds, loss, acc = self.build_tower(self._images, self._labels)
                     self._logits_list.append(logits)
                     self._preds_list.append(preds)
                     self._loss_list.append(loss)
@@ -180,6 +184,7 @@ class ResNet(object):
             # Batch normalization moving average update
             update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
             self.train_op = tf.group(*(update_ops+[apply_grad_op]))
+            print "train_op name: {}".format(self.train_op.name)
 
 
     def _residual_block_first(self, x, out_channel, strides, name="unit"):
