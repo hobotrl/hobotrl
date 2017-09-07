@@ -3,27 +3,27 @@
 # this python script send useful data to rl network including speed, obstacle reward and closest distance towards longest path.
 # data source is from honda simulator directly
 
-import zmq
 import sys
-import base64
+import zmq
+import numpy as np
+from numpy import linalg as LA
+import cv2
+# ROS
 import rospy
 import rospkg
 from autodrive_msgs.msg import Control, Obstacles, CarStatus
 from std_msgs.msg import Bool, Float32
 from nav_msgs.msg import Path
 from sensor_msgs.msg import CompressedImage
-import numpy as np
-from numpy import linalg as LA
-import cv2
 from cv_bridge import CvBridge, CvBridgeError
 
-class MyClass:
+class RewardFunction:
     def __init__(self):
-        rospy.init_node('gta_rl_reward_fcn')
+        rospy.init_node('gazebo_rl_reward_fcn')
         self.car_pos_x = 0.0
         self.car_pos_y = 0.0
         self.min_path_dis = 0.0
-        self.detect_obstacle_range = 5 + 1
+        self.detect_obstacle_range = 3
         self.closest_distance = 10000.0 # initializer
 
         self.brg = CvBridge()
@@ -90,17 +90,20 @@ class MyClass:
         #   centered around ego car, there will be considerable portions of
         #   pixels being (0,0,0) if ego car is on the Ped lane. Thus the sum
         #   lumanation will be lower compared with other cases. 
-        ped_factor = np.sum(img[650:750, 650:750, :])/(255*3*1e4)  # norm by max val
+        low = int(np.floor(650.0/1400.0*img.shape[0]))
+        high = int(np.ceil(750.0/1400.0*img.shape[0]))
+        sum_sq = (high-low)**2
+        ped_factor = np.sum(img[low:high, low:high, :])/(255*3*sum_sq)  # norm by max val
         self.pub_on_pedestrian.publish(ped_factor<0.31)
 
-    def sender(self):
+    def spin(self):
         rospy.spin()
 
 if __name__ == '__main__':
     print "[gazebo_rl_reward]: inside file."
     try:
-        myobjectx = MyClass()
-        myobjectx.sender()
+        rewardfunc = RewardFunction()
+        rewardfunc.spin()
     except rospy.ROSInterruptException:
         pass
     print "[gazebo_rl_reward]: out."
