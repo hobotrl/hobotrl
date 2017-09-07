@@ -48,7 +48,7 @@ class A3CPendulumWithICM(A3CExperimentWithICM):
                                                  var_scope="se")
                 return {"se": se}
 
-            def create_pi(se):
+            def create_ac(se):
                 l2 = 1e-7
 
                 # actor
@@ -57,10 +57,6 @@ class A3CPendulumWithICM(A3CExperimentWithICM):
                                                  activation_out=tf.nn.softmax,
                                                  l2=l2,
                                                  var_scope="pi")
-                return {"pi": pi}
-
-            def create_v(se):
-                l2 = 1e-7
 
                 # critic
                 v = hrl.utils.Network.layer_fcs(se, [256], 1,
@@ -69,19 +65,19 @@ class A3CPendulumWithICM(A3CExperimentWithICM):
                                                 var_scope="v")
                 v = tf.squeeze(v, axis=1)
 
-                return {"v": v}
+                return {"pi": pi, "v": v}
 
-            def create_forward(action_sample, phi):
+            def create_forward(action_sample, phi1):
                 l2 = 1e-7
 
                 # forward model
-                f = tf.concat([phi, action_sample], 1)
-                phi2 = hrl.utils.Network.layer_fcs(f, [200], 200,
+                f = tf.concat([phi1, action_sample], 1)
+                phi2_hat = hrl.utils.Network.layer_fcs(f, [200], 200,
                                                      activation_hidden=tf.nn.relu,
                                                      activation_out=tf.nn.relu,
                                                      l2=l2,
                                                      var_scope="next state predict")
-                return {"phi2": phi2}
+                return {"phi2_hat": phi2_hat}
 
             def create_inverse(phi1, phi2):
                 l2 = 1e-7
@@ -96,13 +92,12 @@ class A3CPendulumWithICM(A3CExperimentWithICM):
 
                 return {"logits": logits}
 
-            f_v = create_v
+            f_ac = create_ac
             f_se = create_se
-            f_pi = create_pi
             f_inverse = create_inverse
             f_forward = create_forward
 
-        super(A3CPendulumWithICM, self).__init__(env, f_se, f_pi, f_v, f_forward, f_inverse, episode_n, learning_rate,
+        super(A3CPendulumWithICM, self).__init__(env, f_se, f_ac, f_forward, f_inverse, episode_n, learning_rate,
                                                  discount_factor, entropy, batch_size)
 
 Experiment.register(A3CPendulumWithICM, "continuous A3C for CarRacing")
