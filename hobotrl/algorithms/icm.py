@@ -171,7 +171,7 @@ class InverseUpdater(network.NetworkUpdater):
 class ActorCriticWithICM(sampling.TrajectoryBatchUpdate,
           BaseDeepAgent):
     def __init__(self,
-                 f_create_net, state_shape,
+                 f_se, f_pi, f_v, f_forward, f_inverse, state_shape,
                  # ACUpdate arguments
                  discount_factor, entropy=1e-3, target_estimator=None, max_advantage=10.0,
                  # optimizer arguments
@@ -205,7 +205,11 @@ class ActorCriticWithICM(sampling.TrajectoryBatchUpdate,
         :param kwargs:
         """
         kwargs.update({
-            "f_create_net": f_create_net,
+            "f_se": f_se,
+            "f_pi": f_pi,
+            "f_v": f_v,
+            "f_forward": f_forward,
+            "f_inverse": f_inverse,
             "state_shape": state_shape,
             "discount_factor": discount_factor,
             "entropy": entropy,
@@ -259,13 +263,13 @@ class ActorCriticWithICM(sampling.TrajectoryBatchUpdate,
         )
         network_optimizer.add_updater(network.L2(self.network), name="l2")
         network_optimizer.add_updater(
-            ForwardUpdater(forward_function=None,
-                           feature_function=None,
+            ForwardUpdater(forward_function=forward_net,
+                           feature_function=feature_net,
                            policy_dist=self._pi_distribution), name="forward"
         )
         network_optimizer.add_updater(
-            InverseUpdater(inverse_function=None,
-                           feature_function=None,
+            InverseUpdater(inverse_function=inverse_net,
+                           feature_function=feature_net,
                            policy_dist=self._pi_distribution), name="inverse"
         )
         network_optimizer.compile()
