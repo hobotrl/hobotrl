@@ -114,6 +114,7 @@ class DrivingSimulatorEnv(object):
         self.is_env_done = Event()  # if environment is is done for this ep
         self.is_env_done.set()
 
+
         # backend
         self.backend_cmds = backend_cmds if backend_cmds is not None else []
         self.proc_backend = []
@@ -325,6 +326,7 @@ class DrivingSimulatorEnv(object):
         #    process to set up a new front-end node
         self.is_env_done.clear()
 
+
         # wait until backend is up
         while True:
             if self.is_backend_up.is_set() and \
@@ -447,7 +449,11 @@ class DrivingSimulatorEnv(object):
         self.is_envnode_up.clear()    # default to node_down
         self.is_envnode_terminatable.clear()  # prevents q monitor from turning down
         self.is_envnode_resetting.set()
+
         while not self.is_exiting.is_set():
+            while not self.is_env_resetting.is_set():
+                time.sleep(1.0)
+                print "Waiting reset."
             try:
                 # env done check loop
                 #   reset() should clear `is_env_done`  
