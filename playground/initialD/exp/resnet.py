@@ -113,7 +113,7 @@ class ResNet(object):
 
     def __call__(self, input, **kwargs):
         with tf.device('/GPU:0'),  tf.variable_scope(tf.get_variable_scope()):
-            with tf.name_scope('tower_0') as scope:
+            with tf.name_scope('tower_0'+'_'+self._name) as scope:
                 print('Build a tower: %s' % scope)
                 probs = self.build_tower(input)
                 return probs
