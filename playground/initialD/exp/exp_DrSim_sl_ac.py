@@ -197,8 +197,6 @@ agent = hrl.ActorCritic(
 # env.reward_range = (-np.inf, np.inf)
 # env.metadata = {}
 # env = FrameStack(env, 1)
-
-
 # state_shape = env.observation_space.shape
 # graph = tf.get_default_graph()
 
