@@ -642,6 +642,64 @@ class A3CExperiment(Experiment):
             runner.episode(self._episode_n)
 
 
+class A3CExperimentWithICM(Experiment):
+    def __init__(self,
+                 env, f_se, f_pi, f_v, f_forward, f_inverse,
+                 episode_n=1000,
+                 learning_rate=1e-4,
+                 discount_factor=0.9,
+                 entropy=1e-2,
+                 batch_size=8
+                 ):
+        super(A3CExperimentWithICM, self).__init__()
+        self._env, self._f_se, self._f_pi, self._f_v, \
+            self._f_forward, self._f_inverse, self._episode_n, self._learning_rate, \
+            self._discount_factor, self._entropy, self._batch_size = \
+            env, f_se, f_pi, f_v, f_forward, f_inverse, episode_n, learning_rate, \
+            discount_factor, entropy, batch_size
+
+    def run(self, args):
+        state_shape = list(self._env.observation_space.shape)
+
+        def create_optimizer():
+            return tf.train.AdamOptimizer(self._learning_rate)
+
+        def create_agent(n_optimizer, global_step):
+            # all ScheduledParam hyper parameters are mutable objects.
+            # so we will not want to use same object for different Agent instances.
+            entropy = hrl.utils.clone_params(self._entropy)
+            agent = hrl.ActorCriticWithICM(
+                f_se=self._f_se,
+                f_pi=self._f_pi,
+                f_v=self._f_v,
+                f_forward=self._f_forward,
+                f_inverse=self._f_inverse,
+                state_shape=state_shape,
+                # ACUpdate arguments
+                discount_factor=self._discount_factor,
+                entropy=entropy,
+                target_estimator=None,
+                max_advantage=100.0,
+                # optimizer arguments
+                network_optimizer=n_optimizer,
+                # sampler arguments
+                sampler=None,
+                batch_size=self._batch_size,
+
+                global_step=global_step,
+            )
+            return agent
+
+        agent = hrl.async.ClusterAgent(create_agent, create_optimizer, args.cluster, args.job, args.index, args.logdir)
+        with agent.wait_for_session() as sess:
+            agent.set_session(sess)
+            runner = hrl.envs.EnvRunner(self._env, agent, reward_decay=self._discount_factor,
+                                        evaluate_interval=sys.maxint, render_interval=args.render_interval,
+                                        render_once=True,
+                                        logdir=args.logdir if args.index == 0 else None)
+            runner.episode(self._episode_n)
+
+
 class PPOExperiment(Experiment):
 
     def __init__(self,
