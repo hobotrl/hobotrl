@@ -51,13 +51,15 @@ class A3CCartPoleWithICM(A3CExperimentWithICM):
                                                  activation_out=tf.nn.softmax,
                                                  l2=l2,
                                                  var_scope="pi")
+                pi = tf.squeeze(pi, axis=0)
 
                 # critic
                 v = hrl.utils.Network.layer_fcs(se, [256], 1,
                                                 activation_hidden=tf.nn.relu,
                                                 l2=l2,
                                                 var_scope="v")
-                v = tf.squeeze(v, axis=1)
+                v = tf.squeeze(v, axis=2)
+                v = tf.squeeze(v, axis=0)
 
                 return {"pi": pi, "v": v}
 
