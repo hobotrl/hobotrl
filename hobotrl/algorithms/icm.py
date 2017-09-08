@@ -129,10 +129,9 @@ class ForwardUpdater(network.NetworkUpdater):
 
 
 class InverseUpdater(network.NetworkUpdater):
-    def __init__(self, inverse_function, feature_function, policy_dist):
+    def __init__(self, inverse_function, policy_dist):
         super(InverseUpdater, self).__init__()
-        self._inverse_function, self._feature_function, self._policy_dist = \
-            inverse_function, feature_function, policy_dist
+        self._inverse_function, self._policy_dist = inverse_function, policy_dist
 
         with tf.name_scope("InverseUpdater"):
             with tf.name_scope("input"):
@@ -149,7 +148,8 @@ class InverseUpdater(network.NetworkUpdater):
             self._op_loss = self._inverse_loss
 
         self._update_operation = network.MinimizeLoss(self._op_loss, var_list=self._inverse_function.variables +
-                                        self._feature_function.variables + self._policy_dist._dist_function.variables)
+                                         self._policy_dist._dist_function.variables)
+
     def declare_update(self):
         return self._update_operation
 
@@ -159,9 +159,8 @@ class InverseUpdater(network.NetworkUpdater):
                                                           batch["reward"], \
                                                           batch["next_state"], \
                                                           batch["episode_done"]
-        feed_dict = self._feature_function.input_dict(state)
-        feed_dict.update(self._feature_function.input_dict(next_state))
-        feed_dict.update(self._policy_dist.dist_function().input_dict(state))
+
+        feed_dict = self._policy_dist.dist_function().input_dict(state)
         feed_more = {self._input_action: action}
         feed_dict.update(feed_more)
 
@@ -204,11 +203,28 @@ class ActorCriticWithICM(sampling.TrajectoryBatchUpdate,
         :param args:
         :param kwargs:
         """
+
+        def f_icm(inputs):
+            f_se1 = network.Network(inputs[0], f_se, var_scope='learn_se1')
+            f_se1 = network.NetworkFunction(f_se1["se"]).output()
+            f_se2 = network.Network(inputs[1], f_se, var_scope='learn_se2')
+            f_se2 = network.NetworkFunction(f_se2["se"]).output()
+
+            f_ac_out = network.Network([f_se1], f_ac, var_scope='learn_ac')
+            v = network.NetworkFunction(f_ac_out["v"]).output()
+            pi_dist = network.NetworkFunction(f_ac_out["pi"]).output()
+
+            f_forward_out = network.Network([inputs[2], f_se1], f_forward, var_scope='learn_forward')
+            phi2_hat = network.NetworkFunction(f_forward_out["phi2_hat"]).output()
+
+            f_inverse_out = network.Network([f_se1, f_se2], f_inverse, var_scope='learn_inverse')
+            logits = network.NetworkFunction(f_inverse_out["logits"]).output()
+
+            return {"pi": pi_dist, "v": v}, {"logits": logits, "phi1": f_se1, "phi2": f_se2,
+                                             "phi2_hat": phi2_hat}
+
         kwargs.update({
-            "f_se": f_se,
-            "f_ac": f_ac,
-            "f_forward": f_forward,
-            "f_inverse": f_inverse,
+            "f_icm": f_icm,
             "state_shape": state_shape,
             "discount_factor": discount_factor,
             "entropy": entropy,
@@ -226,28 +242,7 @@ class ActorCriticWithICM(sampling.TrajectoryBatchUpdate,
 
         super(ActorCriticWithICM, self).__init__(*args, **kwargs)
 
-        def f_icm():
-            self._f_se1 = network.Network([self._input_state], f_se, var_scope='learn_se1')
-            self._f_se1 = network.NetworkFunction(self._f_se1["se"]).output()
-            self._f_se2 = network.Network([self._input_next_state], f_se, var_scope='learn_se2')
-            self._f_se2 = network.NetworkFunction(self._f_se2["se"]).output()
-
-            self._f_ac = network.Network([self._f_se1], f_ac, var_scope='learn_ac')
-            self._v = network.NetworkFunction(self._f_ac["v"]).output()
-            self._pi = network.NetworkFunction(self._f_ac["pi"]).output()
-
-            self._f_forward = network.Network([self._input_action, self._f_se1], f_forward, var_scope='learn_forward')
-            self._phi2_hat = network.NetworkFunction(self._f_forward["phi2_hat"]).output()
-
-            self._f_inverse = network.Network([self._f_se1, self._f_se2], f_inverse, var_scope='learn_inverse')
-            self._logits = network.NetworkFunction(self._f_inverse["logits"]).output()
-
-            return {"pi": self._pi, "v": self._v},{"logits": self._logits, "phi1": self._f_se1, "phi2": self._f_se2,
-                                                   "phi2_hat": self._phi2_hat}
-
         pi = self.network["pi"]
-        self._input_state = tf.placeholder(dtype=tf.float32, shape=[None] + state_shape, name="input_state")
-        self._input_next_state = tf.placeholder(dtype=tf.float32, shape=[None] + state_shape, name="input_next_state")
 
         if pi is not None:
             # discrete action: pi is categorical probability distribution
@@ -274,6 +269,9 @@ class ActorCriticWithICM(sampling.TrajectoryBatchUpdate,
             self._pi_distribution = distribution.NormalDistribution(self._pi_function, self._input_action)
             self._v_function = network.NetworkFunction(self.network["v"])
             # continuous action: mean / stddev for normal distribution
+        self._phi2_hat_function = network.NetworkFunction(self.network.sub_net["phi2_hat"])
+        self._phi2_function = network.NetworkFunction(self.network.sub_net["phi2"])
+        self._logits = network.NetworkFunction(self.network.sub_net["logits"])
         if target_estimator is None:
             # target_estimator = target_estimate.NStepTD(self._v_function, discount_factor)
             target_estimator = target_estimate.GAENStep(self._v_function, discount_factor)
@@ -285,22 +283,22 @@ class ActorCriticWithICM(sampling.TrajectoryBatchUpdate,
         )
         network_optimizer.add_updater(network.L2(self.network), name="l2")
         network_optimizer.add_updater(
-            ForwardUpdater(forward_function=forward_net,
-                           feature_function=feature_net,
+            ForwardUpdater(forward_function=self._phi2_hat_function,
+                           feature_function=self._phi2_function,
                            policy_dist=self._pi_distribution), name="forward"
         )
         network_optimizer.add_updater(
-            InverseUpdater(inverse_function=inverse_net,
-                           feature_function=feature_net,
+            InverseUpdater(inverse_function=self._logits,
                            policy_dist=self._pi_distribution), name="inverse"
         )
         network_optimizer.compile()
 
         self._policy = StochasticPolicy(self._pi_distribution)
 
-    def init_network(self, f_create_net, state_shape, *args, **kwargs):
+    def init_network(self, f_icm, state_shape, *args, **kwargs):
         input_state = tf.placeholder(dtype=tf.float32, shape=[None] + list(state_shape), name="input_state")
-        return network.Network([input_state], f_create_net, var_scope="learn")
+        input_next_state = tf.placeholder(dtype=tf.float32, shape=[None] + list(state_shape), name="input_next_state")
+        return network.Network([input_state, input_next_state, self._input_action], f_icm, var_scope="learn")
 
     def update_on_trajectory(self, batch):
         self.network_optimizer.update("ac", self.sess, batch)

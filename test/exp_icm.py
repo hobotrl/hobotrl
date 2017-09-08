@@ -18,14 +18,14 @@ class RewardSparsePendulum(gym.Wrapper):
         observation, reward, done, info = self.env.step(action)
         pass
 
-SE = Network(s_t,f_se)
-
-pi = Network(se.output(), f_pi)
-SE_t = SE(s_t)
-SE_t_1 = SE(s_t1)
-im = Network([SE_t.outptu(),SE_t1.outptu()], f_im)
-fm = Network([SE_t.output(), action], f_fm)
-Function
+# SE = Network(s_t,f_se)
+#
+# pi = Network(se.output(), f_pi)
+# SE_t = SE(s_t)
+# SE_t_1 = SE(s_t1)
+# im = Network([SE_t.outptu(),SE_t1.outptu()], f_im)
+# fm = Network([SE_t.output(), action], f_fm)
+# Function
 
 class A3CPendulumWithICM(A3CExperimentWithICM):
     def __init__(self, env=None, f_se=None, f_pi=None, f_v=None, f_forward=None, f_inverse=None, episode_n=1000,
@@ -67,20 +67,24 @@ class A3CPendulumWithICM(A3CExperimentWithICM):
 
                 return {"pi": pi, "v": v}
 
-            def create_forward(action_sample, phi1):
+            def create_forward(inputs):
                 l2 = 1e-7
+                action_sample = inputs[0]
+                phi1 = inputs[1]
 
                 # forward model
                 f = tf.concat([phi1, action_sample], 1)
                 phi2_hat = hrl.utils.Network.layer_fcs(f, [200], 200,
-                                                     activation_hidden=tf.nn.relu,
-                                                     activation_out=tf.nn.relu,
-                                                     l2=l2,
-                                                     var_scope="next state predict")
+                                                       activation_hidden=tf.nn.relu,
+                                                       activation_out=tf.nn.relu,
+                                                       l2=l2,
+                                                       var_scope="next state predict")
                 return {"phi2_hat": phi2_hat}
 
-            def create_inverse(phi1, phi2):
+            def create_inverse(inputs):
                 l2 = 1e-7
+                phi1 = inputs[0]
+                phi2 = inputs[1]
 
                 # inverse model
                 g = tf.concat([phi1, phi2], 1)
