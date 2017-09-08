@@ -78,7 +78,7 @@ class restart_ros_launch:
     def terminate(self):
         # flush heartbeat = False for 1 sec
         self.is_running = False
-        secs = 1
+        secs = 3
         while secs != 0:
             print "[rviz_restart.terminate]: Shutdown simulator nodes in {} secs".format(secs)
             secs -= 1
@@ -149,7 +149,6 @@ class restart_ros_launch:
 
     def __assign_last_op_callback(self, data):
         self.last_on_opposite_path = data.data
-
 
 
 if __name__ == '__main__':
