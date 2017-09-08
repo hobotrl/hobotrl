@@ -206,22 +206,21 @@ class ActorCriticWithICM(sampling.TrajectoryBatchUpdate,
 
         def f_icm(inputs):
             f_se1 = network.Network(inputs[0], f_se, var_scope='learn_se1')
-            f_se1 = network.NetworkFunction(f_se1["se"]).output()
+            f_se1 = network.NetworkFunction(f_se1["se"]).output().op
             f_se2 = network.Network(inputs[1], f_se, var_scope='learn_se2')
-            f_se2 = network.NetworkFunction(f_se2["se"]).output()
+            f_se2 = network.NetworkFunction(f_se2["se"]).output().op
 
             f_ac_out = network.Network([f_se1], f_ac, var_scope='learn_ac')
-            v = network.NetworkFunction(f_ac_out["v"]).output()
-            pi_dist = network.NetworkFunction(f_ac_out["pi"]).output()
+            v = network.NetworkFunction(f_ac_out["v"]).output().op
+            pi_dist = network.NetworkFunction(f_ac_out["pi"]).output().op
 
             f_forward_out = network.Network([inputs[2], f_se1], f_forward, var_scope='learn_forward')
-            phi2_hat = network.NetworkFunction(f_forward_out["phi2_hat"]).output()
+            phi2_hat = network.NetworkFunction(f_forward_out["phi2_hat"]).output().op
 
             f_inverse_out = network.Network([f_se1, f_se2], f_inverse, var_scope='learn_inverse')
-            logits = network.NetworkFunction(f_inverse_out["logits"]).output()
+            logits = network.NetworkFunction(f_inverse_out["logits"]).output().op
 
-            return {"pi": pi_dist, "v": v}, {"logits": logits, "phi1": f_se1, "phi2": f_se2,
-                                             "phi2_hat": phi2_hat}
+            return {"pi": pi_dist, "v": v, "logits": logits, "phi1": f_se1, "phi2": f_se2, "phi2_hat": phi2_hat}
 
         kwargs.update({
             "f_icm": f_icm,
@@ -269,9 +268,9 @@ class ActorCriticWithICM(sampling.TrajectoryBatchUpdate,
             self._pi_distribution = distribution.NormalDistribution(self._pi_function, self._input_action)
             self._v_function = network.NetworkFunction(self.network["v"])
             # continuous action: mean / stddev for normal distribution
-        self._phi2_hat_function = network.NetworkFunction(self.network.sub_net["phi2_hat"])
-        self._phi2_function = network.NetworkFunction(self.network.sub_net["phi2"])
-        self._logits = network.NetworkFunction(self.network.sub_net["logits"])
+        self._phi2_hat_function = network.NetworkFunction(self.network["phi2_hat"])
+        self._phi2_function = network.NetworkFunction(self.network["phi2"])
+        self._logits = network.NetworkFunction(self.network["logits"])
         if target_estimator is None:
             # target_estimator = target_estimate.NStepTD(self._v_function, discount_factor)
             target_estimator = target_estimate.GAENStep(self._v_function, discount_factor)
@@ -298,6 +297,7 @@ class ActorCriticWithICM(sampling.TrajectoryBatchUpdate,
     def init_network(self, f_icm, state_shape, *args, **kwargs):
         input_state = tf.placeholder(dtype=tf.float32, shape=[None] + list(state_shape), name="input_state")
         input_next_state = tf.placeholder(dtype=tf.float32, shape=[None] + list(state_shape), name="input_next_state")
+        self._input_action = tf.placeholder(dtype=tf.float32, shape=[None, 2], name="input_action")
         return network.Network([input_state, input_next_state, self._input_action], f_icm, var_scope="learn")
 
     def update_on_trajectory(self, batch):
