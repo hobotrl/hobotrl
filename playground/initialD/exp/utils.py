@@ -177,12 +177,6 @@ def _bn(x, is_train, global_step=None, name='bn'):
     # moving_average_decay_init = 0.99
     with tf.variable_scope(name):
         decay = moving_average_decay
-        # if global_step is None:
-            # decay = moving_average_decay
-        # else:
-            # decay = tf.cond(tf.greater(global_step, 100)
-                            # , lambda: tf.constant(moving_average_decay, tf.float32)
-                            # , lambda: tf.constant(moving_average_decay_init, tf.float32))
         batch_mean, batch_var = tf.nn.moments(x, [0, 1, 2])
         with tf.device('/CPU:0'):
             mu = tf.get_variable('mu', batch_mean.get_shape(), tf.float32,

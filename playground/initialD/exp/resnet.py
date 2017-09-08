@@ -13,69 +13,166 @@ HParams = namedtuple('HParams',
 class ResNet(object):
     def __init__(self, hp, global_step, name=None, reuse_weights=False):
         self._hp = hp # Hyperparameters
-        self._images = tf.placeholder(tf.float32, [None, 224, 224, 3], name="images")
-        print "images name: ", self._images.name
-        self._labels = tf.placeholder(tf.int32, [None], name="labels")
-        print "labels name: ", self._labels.name
+        # self._images = tf.placeholder(tf.float32, [None, 224, 224, 3], name="images")
+        # print "images name: ", self._images.name
+        # self._labels = tf.placeholder(tf.int32, [None], name="labels")
+        # print "labels name: ", self._labels.name
         self._global_step = global_step
         self._name = name
         self._reuse_weights = reuse_weights
         self.lr = tf.placeholder(tf.float32, name="lr")
-        self.is_train = tf.placeholder(tf.bool, name="is_train")
+        # self.is_train = tf.placeholder(tf.bool, name="is_train")
+        self.is_train = tf.constant(True, dtype=tf.bool, name="is_train")
         self._counted_scope = []
         self._flops = 0
         self._weights = 0
 
 
-    def build_tower(self, images):
-        print('Building model')
-        # filters = [128, 128, 256, 512, 1024]
-        filters = [64, 64, 128, 256, 512]
-        kernels = [7, 3, 3, 3, 3]
-        strides = [2, 0, 2, 2, 2]
+    def build_origin_tower(self, images):
+        with tf.name_scope('tower_0') as scope:
+            print('Building model')
+            # filters = [128, 128, 256, 512, 1024]
+            filters = [64, 64, 128, 256, 512]
+            kernels = [7, 3, 3, 3, 3]
+            strides = [2, 0, 2, 2, 2]
+            # conv1
+            print('\tBuilding unit: conv1')
+            with tf.variable_scope('conv1'):
+                x = self._conv(images, kernels[0], filters[0], strides[0])
+                x = self._bn(x)
+                x = self._relu(x)
+                x = tf.nn.max_pool(x, [1, 3, 3, 1], [1, 2, 2, 1], 'SAME')
 
-        # conv1
-        print('\tBuilding unit: conv1')
-        with tf.variable_scope('conv1'):
-            x = self._conv(images, kernels[0], filters[0], strides[0])
-            x = self._bn(x)
-            x = self._relu(x)
-            x = tf.nn.max_pool(x, [1, 3, 3, 1], [1, 2, 2, 1], 'SAME')
+            # conv2_x
+            x = self._residual_block(x, name='conv2_1')
+            x = self._residual_block(x, name='conv2_2')
 
-        # conv2_x
-        x = self._residual_block(x, name='conv2_1')
-        x = self._residual_block(x, name='conv2_2')
+            # conv3_x
+            x = self._residual_block_first(x, filters[2], strides[2], name='conv3_1')
+            x = self._residual_block(x, name='conv3_2')
 
-        # conv3_x
-        x = self._residual_block_first(x, filters[2], strides[2], name='conv3_1')
-        x = self._residual_block(x, name='conv3_2')
+            # conv4_x
+            x = self._residual_block_first(x, filters[3], strides[3], name='conv4_1')
+            x = self._residual_block(x, name='conv4_2')
 
-        # conv4_x
-        x = self._residual_block_first(x, filters[3], strides[3], name='conv4_1')
-        x = self._residual_block(x, name='conv4_2')
+            # conv5_x
+            x = self._residual_block_first(x, filters[4], strides[4], name='conv5_1')
+            x = self._residual_block(x, name='conv5_2')
 
-        # conv5_x
-        x = self._residual_block_first(x, filters[4], strides[4], name='conv5_1')
-        x = self._residual_block(x, name='conv5_2')
+            # Logit
+            with tf.variable_scope('logits') as scope:
+                print('\tBuilding unit: %s' % scope.name)
+                x = tf.reduce_mean(x, [1, 2])
+                x = self._fc(x, self._hp.num_classes)
 
-        # Logit
-        with tf.variable_scope('logits') as scope:
+            logits = x
+            # Probs & preds & acc
+            probs = tf.nn.softmax(x)
+            return probs
+
+    def build_new_tower(self, images):
+        # with tf.variable_scope('learn'):
+        with tf.name_scope('tower_0') as scope:
+            with tf.variable_scope(tf.get_variable_scope()) as scope:
+                tf.get_variable_scope().reuse_variables()
+                print "reuse: ", tf.get_variable_scope().reuse
+                print "scope: ", tf.get_variable_scope().name
+                print('Building model')
+                # filters = [128, 128, 256, 512, 1024]
+                filters = [64, 64, 128, 256, 512]
+                kernels = [7, 3, 3, 3, 3]
+                strides = [2, 0, 2, 2, 2]
+                # conv1
+                print('\tBuilding unit: conv1')
+                with tf.variable_scope('conv1'):
+                    x = self._conv(images, kernels[0], filters[0], strides[0])
+                    x = self._bn(x)
+                    x = self._relu(x)
+                    x = tf.nn.max_pool(x, [1, 3, 3, 1], [1, 2, 2, 1], 'SAME')
+
+                # conv2_x
+                x = self._residual_block(x, name='conv2_1')
+                x = self._residual_block(x, name='conv2_2')
+
+                # conv3_x
+                x = self._residual_block_first(x, filters[2], strides[2], name='conv3_1')
+                x = self._residual_block(x, name='conv3_2')
+
+                # conv4_x
+                x = self._residual_block_first(x, filters[3], strides[3], name='conv4_1')
+                x = self._residual_block(x, name='conv4_2')
+
+                # conv5_x
+                x = self._residual_block_first(x, filters[4], strides[4], name='conv5_1')
+                x = self._residual_block(x, name='conv5_2')
+
+
+        # with tf.variable_scope(tf.get_variable_scope(), reuse=False):
+        #     print('\tBuilding unit: %s' % scope.name)
+        tf.stop_gradient(x)
+
+        print "reuse: ", tf.get_variable_scope().reuse
+        print "scope: ", tf.get_variable_scope().name
+        with tf.variable_scope('q_logits') as scope:
             print('\tBuilding unit: %s' % scope.name)
             x = tf.reduce_mean(x, [1, 2])
-            # x = tf.reduce_mean(x, [0, 1])
             x = self._fc(x, self._hp.num_classes)
+            logits = x
 
-        logits = x
-
-        # class imbalance
-        # class_weights = tf.constant([[0.94, 0.03, 0.03]] * self._hp.batch_size)
+        # Logit
+        # with tf.variable_scope('q_logits') as scope:
+        #     print('\tBuilding unit: %s' % scope.name)
+        #     x = tf.reduce_mean(x, [1, 2])
+        #     x = self._fc(x, self._hp.num_classes)
+        #     logits = x
 
         # Probs & preds & acc
-        probs = tf.nn.softmax(x)
-        # preds = tf.to_int32(tf.argmax(tf.divide(probs, class_weights), 1))
-        preds = tf.to_int32(tf.argmax(probs, 1))
-        print "preds name {}".format(preds.name)
         return logits
+
+    # def build_tower(self, images):
+    #     print('Building model')
+    #     # filters = [128, 128, 256, 512, 1024]
+    #     filters = [64, 64, 128, 256, 512]
+    #     kernels = [7, 3, 3, 3, 3]
+    #     strides = [2, 0, 2, 2, 2]
+    #
+    #     # conv1
+    #     if self._reuse_weights:
+    #         tf.get_variable_scope().reuse_variables()
+    #
+    #     print('\tBuilding unit: conv1')
+    #     with tf.variable_scope(self._name+'_'+'_conv1'):
+    #         x = self._conv(images, kernels[0], filters[0], strides[0])
+    #         x = self._bn(x)
+    #         x = self._relu(x)
+    #         x = tf.nn.max_pool(x, [1, 3, 3, 1], [1, 2, 2, 1], 'SAME')
+    #
+    #     # conv2_x
+    #     x = self._residual_block(x, name='conv2_1')
+    #     x = self._residual_block(x, name='conv2_2')
+    #
+    #     # conv3_x
+    #     x = self._residual_block_first(x, filters[2], strides[2], name='conv3_1')
+    #     x = self._residual_block(x, name='conv3_2')
+    #
+    #     # conv4_x
+    #     x = self._residual_block_first(x, filters[3], strides[3], name='conv4_1')
+    #     x = self._residual_block(x, name='conv4_2')
+    #
+    #     # conv5_x
+    #     x = self._residual_block_first(x, filters[4], strides[4], name='conv5_1')
+    #     x = self._residual_block(x, name='conv5_2')
+    #
+    #     # Logit
+    #     with tf.variable_scope('logits') as scope:
+    #         print('\tBuilding unit: %s' % scope.name)
+    #         x = tf.reduce_mean(x, [1, 2])
+    #         # x = tf.reduce_mean(x, [0, 1])
+    #         x = self._fc(x, self._hp.num_classes)
+    #
+    #     logits = x
+    #
+    #     return logits
 
 
     def build_model(self):
@@ -113,10 +210,10 @@ class ResNet(object):
 
     def __call__(self, input, **kwargs):
         with tf.device('/GPU:0'),  tf.variable_scope(tf.get_variable_scope()):
-            with tf.name_scope('tower_0'+'_'+self._name) as scope:
+            with tf.name_scope('tower'+'_'+self._name) as scope:
                 print('Build a tower: %s' % scope)
-                probs = self.build_tower(input)
-                return probs
+                logits = self.build_tower(input)
+                return logits
 
     def _residual_block_first(self, x, out_channel, strides, name="unit"):
         in_channel = x.get_shape().as_list()[-1]
