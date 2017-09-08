@@ -148,7 +148,7 @@ class InverseUpdater(network.NetworkUpdater):
             self._op_loss = self._inverse_loss
 
         self._update_operation = network.MinimizeLoss(self._op_loss, var_list=self._inverse_function.variables +
-                                         self._policy_dist._dist_function.variables)
+                                                      self._policy_dist._dist_function.variables)
 
     def declare_update(self):
         return self._update_operation
