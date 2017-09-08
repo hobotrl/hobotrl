@@ -113,6 +113,7 @@ class DrivingSimulatorEnv(object):
         self.is_env_resetting = Event()  # if environment is undergoing reset
         self.is_env_done = Event()  # if environment is is done for this ep
         self.is_env_done.set()
+        self.cnt_q_except = Value('i', self.MAX_EXCEPTION)
 
 
         # backend
@@ -392,9 +393,10 @@ class DrivingSimulatorEnv(object):
             'reward': self.q_reward,
             'action': self.q_action,
             'done': self.q_done}
-        self.cnt_q_except = Value('i', self.MAX_EXCEPTION)
         self.is_q_ready.set()
         self.is_q_cleared.clear()
+        with self.cnt_q_except.get_lock():
+            self.cnt_q_except.value = self.MAX_EXCEPTION
 
     def __queue_monitor(self):
         """Monitors queue exceptions and empty queues necessary.
