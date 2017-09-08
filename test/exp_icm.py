@@ -9,33 +9,27 @@ from exp_algorithms import *
 import hobotrl.environments as envs
 
 
-class RewardSparsePendulum(gym.Wrapper):
+class RewardSparseCartPole(gym.Wrapper):
 
     def __init__(self, env):
-        super(RewardSparsePendulum, self).__init__(env)
+        super(RewardSparseCartPole, self).__init__(env)
 
     def _step(self, action):
         observation, reward, done, info = self.env.step(action)
-        pass
+        if not -0.1 < observation[2] < 0.1:
+            reward = 0
+            return observation, reward, done, info
 
-# SE = Network(s_t,f_se)
-#
-# pi = Network(se.output(), f_pi)
-# SE_t = SE(s_t)
-# SE_t_1 = SE(s_t1)
-# im = Network([SE_t.outptu(),SE_t1.outptu()], f_im)
-# fm = Network([SE_t.output(), action], f_fm)
-# Function
 
-class A3CPendulumWithICM(A3CExperimentWithICM):
-    def __init__(self, env=None, f_se=None, f_pi=None, f_v=None, f_forward=None, f_inverse=None, episode_n=1000,
+class A3CCartPoleWithICM(A3CExperimentWithICM):
+    def __init__(self, env=None, f_se=None, f_ac=None, f_forward=None, f_inverse=None, episode_n=1000,
                  learning_rate=5e-5, discount_factor=0.99, entropy=hrl.utils.CappedLinear(1e6, 1e-4, 1e-4),
                  batch_size=32):
         if env is None:
-            env = gym.make('Pendulum-v0')
-            env = RewardSparsePendulum(env)
+            env = gym.make('CartPole-v0')
+            env = RewardSparseCartPole(env)
 
-        if f_forward and f_inverse and f_pi and f_se and f_v is None:
+        if f_forward is None:
             dim_action = env.action_space.n
 
             def create_se(input_state):
@@ -78,7 +72,7 @@ class A3CPendulumWithICM(A3CExperimentWithICM):
                                                        activation_hidden=tf.nn.relu,
                                                        activation_out=tf.nn.relu,
                                                        l2=l2,
-                                                       var_scope="next state predict")
+                                                       var_scope="next_state_predict")
                 return {"phi2_hat": phi2_hat}
 
             def create_inverse(inputs):
@@ -92,7 +86,7 @@ class A3CPendulumWithICM(A3CExperimentWithICM):
                                                      activation_hidden=tf.nn.relu,
                                                      activation_out=tf.nn.relu,
                                                      l2=l2,
-                                                     var_scope="action predict")
+                                                     var_scope="action_predict")
 
                 return {"logits": logits}
 
@@ -101,7 +95,13 @@ class A3CPendulumWithICM(A3CExperimentWithICM):
             f_inverse = create_inverse
             f_forward = create_forward
 
-        super(A3CPendulumWithICM, self).__init__(env, f_se, f_ac, f_forward, f_inverse, episode_n, learning_rate,
+        super(A3CCartPoleWithICM, self).__init__(env, f_se, f_ac, f_forward, f_inverse, episode_n, learning_rate,
                                                  discount_factor, entropy, batch_size)
 
-Experiment.register(A3CPendulumWithICM, "continuous A3C for CarRacing")
+
+
+Experiment.register(A3CCartPoleWithICM, "A3C with ICM for CartPole")
+
+
+if __name__ == '__main__':
+    Experiment.main()
