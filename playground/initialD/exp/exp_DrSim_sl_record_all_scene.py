@@ -67,7 +67,7 @@ def evaluate(y_true, preds):
 
 tf.app.flags.DEFINE_string("train_dir", "./log_record_all_scene_orig_img_delay_1.5", """save tmp model""")
 tf.app.flags.DEFINE_string('checkpoint',
-    "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/exp/resnet_placeholder_ckpt_10000/model.ckpt-10",
+    "/home/pirate03/PycharmProjects/resnet-18-tensorflow/log3_2/model.ckpt-10000",
                            """Model checkpoint to load""")
 
 FLAGS = tf.app.flags.FLAGS
@@ -149,7 +149,7 @@ try:
         # tensor_imgs = graph.get_tensor_by_name('images:0')
         # tensor_acts = graph.get_tensor_by_name('labels:0')
         # preds = graph.get_tensor_by_name('tower_0/ToInt32:0')
-        # train_op = graph.get_operation_by_name("group_deps")
+        train_op = graph.get_operation_by_name("group_deps")
         # is_train = graph.get_operation_by_name('is_train').outputs[0]
         # lr = graph.get_operation_by_name('lr').outputs[0]
         # print "========\n"*5
@@ -167,11 +167,12 @@ try:
             # resize maybe different from tf.resize
             # tensor_state = tf.convert_to_tensor(state)
             # img = np.array([img])
-            tens_img = tf.image.resize_images(img, [224, 224])
+            # tens_img = tf.image.resize_images(img, [224, 224])
             # img = tf.image.convert_image_dtype(img, tf.float32)
-            tens_img = initialD_input.preprocess_image(tens_img)
-            np_img = sess.run(tens_img)
-
+            # tens_img = initialD_input.preprocess_image(tens_img)
+            # np_img = sess.run(tens_img)
+            img = cv2.resize(img, (224, 224))
+            np_img = initialD_input.preprocess_image(img)
             print "=========img shape: {}".format(img.shape)+"=========\n"
 
 
@@ -188,9 +189,11 @@ try:
             while True:
                 n_steps += 1
                 cum_reward += reward
-                next_tens_img = tf.image.resize_images(next_img, [224, 224])
-                next_tens_img = initialD_input.preprocess_image(next_tens_img)
-                next_np_img = sess.run(next_tens_img)
+                # next_tens_img = tf.image.resize_images(next_img, [224, 224])
+                # next_tens_img = initialD_input.preprocess_image(next_tens_img)
+                # next_np_img = sess.run(next_tens_img)
+                next_img = cv2.resize(next_img, (224, 224))
+                next_np_img = initialD_input.preprocess_image(next_img)
                 next_actions, np_probs = sess.run([network_train.preds, probs], feed_dict={
                     network_train._images: np.array([next_np_img]),
                     network_train.is_train: False})

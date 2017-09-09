@@ -18,8 +18,6 @@ from hobotrl.playback import MapPlayback
 from playground.initialD.imitaion_learning.TmpPretrainedAgent import TmpPretrainedAgent
 from hobotrl.environments.environments import FrameStack
 
-from playground.initialD.ros_environments import DrivingSimulatorEnv
-
 import rospy
 import message_filters
 from std_msgs.msg import Char, Bool, Int16, Float32
@@ -33,6 +31,9 @@ from playground.initialD.imitaion_learning import initialD_input
 import random
 import resnet
 import hobotrl as hrl
+import playground
+print playground.__file__
+from playground.initialD.ros_environments import DrivingSimulatorEnv
 
 
 # Environment
@@ -112,11 +113,11 @@ env = DrivingSimulatorEnv(
 
 batch_size = 1
 hp = resnet.HParams(batch_size=batch_size,
-                            num_gpus=1,
-                            num_classes=3,
-                            weight_decay=0.001,
-                            momentum=0.9,
-                            finetune=True)
+                          num_gpus=1,
+                          num_classes=3,
+                          weight_decay=0.001,
+                          momentum=0.9,
+                          finetune=True)
 
 
 
@@ -125,12 +126,24 @@ def f_net(inputs):
     # saver = tf.train.Saver(tf.global_variables(), max_to_keep=500)
     # saver.restore(sess, checkpoint)
     state = inputs[0]
-    pi_res = resnet.ResNet(hp, global_step, name="pi")
-    pi = pi_res(state)
-    pi = tf.nn.softmax(pi)
-    q_res = resnet.ResNet(hp, global_step, name="q")
-    q = q_res(state)
+    res = resnet.ResNet(hp, global_step, name="train")
+    pi = res.build_origin_tower(state)
+    saver = tf.train.Saver(tf.global_variables(), max_to_keep=12000)
+    checkpoint = "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/exp/rename_net/resnet_log3_2"
+    with tf.Session() as sess:
+        saver.restore(sess, checkpoint)
+    print "pi type: ", type(pi)
+    # pi = tf.nn.softmax(pi)
+    q = res.build_new_tower(state)
+    print "q type: ", type(q)
     return {"q":q, "pi": pi}
+
+
+def preprocess_image(input_image):
+    imagenet_mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+    imagenet_std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+    image = (input_image - imagenet_mean) / imagenet_std
+    return image
 
 
 def record(summary_writer, step_n, info):
@@ -143,7 +156,7 @@ def record(summary_writer, step_n, info):
 state_shape = (224, 224, 3)
 
 global_step = tf.get_variable(
-            'global_step', [], dtype=tf.int32,
+            'learn/global_step', [], dtype=tf.int32,
             initializer=tf.constant_initializer(0), trainable=False
         )
 
@@ -214,13 +227,18 @@ try:
             # print state[320,:,:]
             # print "resize imag: "
             # print cv2.resize(state, (224, 224))[112,:,:]
-            img = cv2.resize(state, (224, 224)) / 255.0 - 0.5
+            # img = cv2.resize(state, (224, 224)) / 255.0 - 0.5
+            img = cv2.resize(state, (224, 224))
+            img = preprocess_image(img)
             # print "preprocess img: ", img[112,:,:]
             while True:
                 # print "img shape: ", img.shape
                 action = agent.act(state=img, evaluate=False, sess=sess)
+                print "action: ", action
                 next_state, reward, done, info = env.step(ACTIONS[action])
-                next_img = cv2.resize(next_state, (224, 224)) / 255.0 - 0.5
+                next_img = cv2.resize(next_state, (224, 224))
+                next_img = preprocess_image(next_img)
+                # next_img = cv2.resize(next_state, (224, 224)) / 255.0 - 0.5
                 n_steps += 1
                 cum_reward = reward + reward_decay * cum_reward
                 info = agent.step(state=img, action=action, reward=reward, next_state=next_img, episode_done=done)

@@ -48,7 +48,8 @@ class DiscreteActorCriticUpdater(network.NetworkUpdater):
                 pi_loss = tf.reduce_mean(self._policy_dist.log_prob() * tf.stop_gradient(advantage))
                 entropy_loss = tf.reduce_mean(self._input_entropy * self._policy_dist.entropy())
                 self._pi_loss = pi_loss
-            self._op_loss = self._q_loss - (self._pi_loss + entropy_loss)
+            # self._op_loss = self._q_loss - (self._pi_loss + entropy_loss)
+            self._op_loss = self._q_loss
         self._update_operation = network.MinimizeLoss(self._op_loss,
                                                       var_list=self._q_function.variables +
                                                                self._policy_dist._dist_function.variables)
@@ -109,7 +110,8 @@ class ActorCriticUpdater(network.NetworkUpdater):
                 pi_loss = tf.reduce_mean(self._policy_dist.log_prob() * tf.stop_gradient(advantage))
                 entropy_loss = tf.reduce_mean(self._input_entropy * self._policy_dist.entropy())
                 self._pi_loss = pi_loss
-            self._op_loss = self._q_loss - (self._pi_loss + entropy_loss)
+            # self._op_loss = self._q_loss - (self._pi_loss + entropy_loss)
+            self._op_loss = self._q_loss
             print "advantage, self._policy_dist.entropy(), self._policy_dist.log_prob()", advantage, self._policy_dist.entropy(), self._policy_dist.log_prob()
         self._update_operation = network.MinimizeLoss(self._op_loss,
                                                       var_list=self._v_function.variables +
@@ -289,7 +291,7 @@ class ActorCritic(sampling.TrajectoryBatchUpdate,
             ActorCriticUpdater(policy_dist=self._pi_distribution,
                                v_function=self._v_function,
                                        target_estimator=target_estimator, entropy=entropy), name="ac")
-        network_optimizer.add_updater(network.L2(self.network), name="l2")
+        # network_optimizer.add_updater(network.L2(self.network), name="l2")
         network_optimizer.compile()
 
         self._policy = StochasticPolicy(self._pi_distribution)
@@ -300,7 +302,7 @@ class ActorCritic(sampling.TrajectoryBatchUpdate,
 
     def update_on_trajectory(self, batch):
         self.network_optimizer.updater("ac").update(self.sess, batch)
-        self.network_optimizer.updater("l2").update(self.sess)
+        # self.network_optimizer.updater("l2").update(self.sess)
         info = self.network_optimizer.optimize_step(self.sess)
         return info, {}
 
