@@ -130,50 +130,6 @@ class ResNet(object):
         # Probs & preds & acc
         return logits
 
-    # def build_tower(self, images):
-    #     print('Building model')
-    #     # filters = [128, 128, 256, 512, 1024]
-    #     filters = [64, 64, 128, 256, 512]
-    #     kernels = [7, 3, 3, 3, 3]
-    #     strides = [2, 0, 2, 2, 2]
-    #
-    #     # conv1
-    #     if self._reuse_weights:
-    #         tf.get_variable_scope().reuse_variables()
-    #
-    #     print('\tBuilding unit: conv1')
-    #     with tf.variable_scope(self._name+'_'+'_conv1'):
-    #         x = self._conv(images, kernels[0], filters[0], strides[0])
-    #         x = self._bn(x)
-    #         x = self._relu(x)
-    #         x = tf.nn.max_pool(x, [1, 3, 3, 1], [1, 2, 2, 1], 'SAME')
-    #
-    #     # conv2_x
-    #     x = self._residual_block(x, name='conv2_1')
-    #     x = self._residual_block(x, name='conv2_2')
-    #
-    #     # conv3_x
-    #     x = self._residual_block_first(x, filters[2], strides[2], name='conv3_1')
-    #     x = self._residual_block(x, name='conv3_2')
-    #
-    #     # conv4_x
-    #     x = self._residual_block_first(x, filters[3], strides[3], name='conv4_1')
-    #     x = self._residual_block(x, name='conv4_2')
-    #
-    #     # conv5_x
-    #     x = self._residual_block_first(x, filters[4], strides[4], name='conv5_1')
-    #     x = self._residual_block(x, name='conv5_2')
-    #
-    #     # Logit
-    #     with tf.variable_scope('logits') as scope:
-    #         print('\tBuilding unit: %s' % scope.name)
-    #         x = tf.reduce_mean(x, [1, 2])
-    #         # x = tf.reduce_mean(x, [0, 1])
-    #         x = self._fc(x, self._hp.num_classes)
-    #
-    #     logits = x
-    #
-    #     return logits
 
 
     def build_model(self):

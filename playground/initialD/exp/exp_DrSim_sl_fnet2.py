@@ -68,12 +68,22 @@ def f_net(inputs):
     # saver = tf.train.Saver(tf.global_variables(), max_to_keep=500)
     # saver.restore(sess, checkpoint)
     state = inputs[0]
+    print "global varibles: ", tf.global_variables()
+    print "========\n"*5
     res = resnet.ResNet(hp, global_step, name="train")
     pi = res.build_origin_tower(state)
     saver = tf.train.Saver(tf.global_variables(), max_to_keep=12000)
+    print "global varibles: ", tf.global_variables()
+    print "========\n"*5
+    init = tf.global_variables_initializer()
     checkpoint = "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/exp/rename_net/resnet_log3_2"
     with tf.Session() as sess:
+        sess.run(init)
         saver.restore(sess, checkpoint)
+
+    print "global varibles: ", tf.global_variables()
+    print "========\n"*5
+
     print "pi type: ", type(pi)
     # pi = tf.nn.softmax(pi)
     # q = res.build_new_tower(state)
@@ -159,9 +169,8 @@ try:
 
         images = tf.placeholder(tf.float32, [None, 224, 224, 3])
         with tf.variable_scope("learn"):
+            print "======= construct net ======\n"*5
             pi = f_net([images])
-        init = tf.global_variables_initializer()
-        sess.run(init)
         # saver = tf.train.Saver(tf.global_variables(), max_to_keep=12000)
         # saver.restore(sess, FLAGS.checkpoint)
         # graph = tf.get_default_graph()
@@ -237,63 +246,6 @@ try:
                 cv2.imwrite(FLAGS.train_dir + "/" + str(n_ep) + "_" +
                             str(i) + "_" + str(ele[1]) + "_" + str(np.around(ele[2], 2)) + ".jpg", ele[0])
 
-            # if noval_scene_count > 10:
-            #     print "update_n: {}".format(n_update)
-            #     for i, ele in enumerate(noval_original_buffer):
-            #         cv2.imwrite(FLAGS.train_dir+"/"+str(n_update)+"_"+
-            #                     str(i)+"_"+str(ele[1])+"_"+str(ele[2])+"_"+str(ele[3])+".jpg", ele[0])
-            #     print "========Trying to learn======\n"*5
-            #     replay_size = len(replay_buffer)
-            #     batch_size = 256
-            #     # num_ = replay_size * 10 / batch_size
-            #     val_replay_num = 500
-            #     val_noval_num = 12
-            #     val_set = [random.choice(replay_buffer) for i in range(val_replay_num)]
-            #     val_set.extend([random.choice(noval_buffer) for i in range(val_noval_num)])
-            #     val_imgs = np.array([val_set[i][0] for i in range(val_replay_num+val_noval_num)])
-            #     val_acts = np.array([val_set[i][1] for i in range(val_replay_num+val_noval_num)])
-            #     # batch = replay_buffer[np.random.randint(replay_size, size=batch_size)]
-            #     y_preds = sess.run(network_train.preds,
-            #                        feed_dict={network_train._images: val_imgs,
-            #                                 network_train.is_train: False})
-            #     # print "y_true: ", batch_acts
-            #     # print "y_preds: ", y_preds
-            #     prec, rec, f1, conf_mat = evaluate(val_acts, y_preds)
-            #     print "before learning:  ", "prec: ", prec, "rec: ", rec
-            #     print "conf_mat: "
-            #     print conf_mat
-            #     # y_true = np.array([y[1] for y in replay_buffer])
-            #
-            #     train_num = 10
-            #     noval_cent = 5
-            #     for i in range(train_num):
-            #         print "learning timestep.... {}".format(i)
-            #         print "noval buffer size: ", len(noval_buffer)
-            #         batch = [random.choice(replay_buffer) for j in range(batch_size-noval_cent)]
-            #         batch.extend([random.choice(noval_buffer) for j in range(noval_cent)])
-            #         batch_imgs = np.array([batch[j][0] for j in range(batch_size)])
-            #         batch_acts = np.array([batch[j][1] for j in range(batch_size)])
-            #         sess.run(network_train.train_op, feed_dict={network_train._images: batch_imgs,
-            #                                         network_train._labels: batch_acts,
-            #                                         network_train.is_train: True,
-            #                                         network_train.lr: 0.001})
-            #     n_update += 1
-            #
-            #     # batch = replay_buffer[np.random.randint(replay_size, size=batch_size)]
-            #     y_preds = sess.run(network_train.preds,
-            #                        feed_dict={network_train._images: val_imgs,
-            #                                   network_train.is_train: False})
-            #     # print "y_true: ", batch_acts
-            #     # print "y_preds: ", y_preds
-            #     prec, rec, f1, conf_mat = evaluate(val_acts, y_preds)
-            #     print "prec: ", prec
-            #     print "rec: ", rec
-            #     print "conf_mat: ", conf_mat
-            #
-            #     save_path = os.path.join(FLAGS.train_dir, 'model.ckpt')
-            #     saver.save(sess, save_path, global_step= n_update * train_num)
-            #     print "=======Learning Done======\n"*5
-            #     noval_scene_count = 0
 
 
 except Exception as e:
