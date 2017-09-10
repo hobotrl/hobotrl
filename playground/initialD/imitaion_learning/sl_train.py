@@ -105,15 +105,29 @@ with sv.managed_session(config=config) as sess:
     for step in xrange(0, max_step):
         if step % val_interval == 0:
             print "==========val %d=========" %step
+            ave_val_loss, ave_val_acc, ave_val_prec, ave_val_rec, ave_val_f1, ave_conf_mat\
+                = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
             for i in range(val_itr):
                 np_val_images, np_val_labels = sess.run([val_images, val_labels])
                 val_preds, val_loss, val_acc = sess.run([preds, cross_entropy, acc], feed_dict={x: np_val_images, y_: np_val_labels})
                 prec, rec, f1, conf_mat = evaluate(np_val_labels, val_preds)
-                print "loss: ", val_loss, "acc: ", val_acc
-                print "prec: ", prec
-                print "rec:  ", rec
-                print "conf_mat: "
-                print conf_mat
+                ave_val_loss += val_loss
+                ave_val_acc += val_acc
+                ave_val_prec += prec
+                ave_val_rec += rec
+                ave_val_f1 += f1
+                ave_conf_mat += conf_mat
+            ave_val_loss /= val_itr
+            ave_val_acc /= val_itr
+            ave_val_prec /= val_itr
+            ave_val_rec /= val_itr
+            ave_val_f1 /= val_itr
+            ave_conf_mat /= val_itr
+            print "loss: ", ave_val_loss, "acc: ", ave_val_acc
+            print "prec: ", ave_val_prec
+            print "rec:  ", ave_val_rec
+            print "conf_mat: "
+            print ave_conf_mat
         # lr_value = get_lr(initial_lr, lr_decay, lr_decay_steps, global_step)
         np_train_images, np_train_labels = sess.run([train_images, train_labels])
         _, train_preds, train_loss, train_acc  = sess.run([train_op, preds, cross_entropy, acc], feed_dict={x:np_train_images, y_:np_train_labels})
