@@ -209,12 +209,6 @@ class ResNet(object):
             self.acc = tf.reduce_mean(self._acc_list, name="accuracy")
             tf.summary.scalar((self._name+"/" if self._name else "") + "accuracy", self.acc)
 
-    def __call__(self, input, **kwargs):
-        with tf.device('/GPU:0'),  tf.variable_scope(tf.get_variable_scope()):
-            with tf.name_scope('tower'+'_'+self._name) as scope:
-                print('Build a tower: %s' % scope)
-                logits = self.build_tower(input)
-                return logits
 
     def _residual_block_first(self, x, out_channel, strides, name="unit"):
         in_channel = x.get_shape().as_list()[-1]

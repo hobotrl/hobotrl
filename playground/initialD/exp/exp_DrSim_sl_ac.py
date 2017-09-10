@@ -203,7 +203,7 @@ try:
         allow_soft_placement=True,
         log_device_placement=False)
 
-    config = tf.ConfigProto()
+    # config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
     sv = agent.init_supervisor(
         graph=tf.get_default_graph(), worker_index=0,
