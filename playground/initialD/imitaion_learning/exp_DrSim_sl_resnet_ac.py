@@ -29,7 +29,7 @@ import cv2
 
 from playground.initialD.imitaion_learning import initialD_input
 import random
-import resnet
+import playground.initialD.exp.resnet
 import hobotrl as hrl
 import playground
 print playground.__file__
@@ -112,12 +112,12 @@ env = DrivingSimulatorEnv(
 #     return {"q": q, "pi": pi}
 
 batch_size = 1
-hp = resnet.HParams(batch_size=batch_size,
-                          num_gpus=1,
-                          num_classes=3,
-                          weight_decay=0.001,
-                          momentum=0.9,
-                          finetune=True)
+hp = playground.initialD.exp.resnet.HParams(batch_size=batch_size,
+                                            num_gpus=1,
+                                            num_classes=3,
+                                            weight_decay=0.001,
+                                            momentum=0.9,
+                                            finetune=True)
 
 
 
@@ -126,7 +126,7 @@ def f_net(inputs):
     # saver = tf.train.Saver(tf.global_variables(), max_to_keep=500)
     # saver.restore(sess, checkpoint)
     state = inputs[0]
-    res = resnet.ResNet(hp, global_step, name="train")
+    res = playground.initialD.exp.resnet.ResNet(hp, global_step, name="train")
     pi = res.build_origin_tower(state)
     saver = tf.train.Saver(tf.global_variables(), max_to_keep=12000)
     checkpoint = "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/exp/rename_net/resnet_log3_2"

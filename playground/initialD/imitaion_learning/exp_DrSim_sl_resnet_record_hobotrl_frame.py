@@ -32,7 +32,7 @@ import cv2
 from playground.initialD.imitaion_learning import initialD_input
 import random
 # from playground.resnet import resnet
-import resnet
+import playground.initialD.exp.resnet
 # Environment
 def compile_reward(rewards):
     # rewards = map(
@@ -130,20 +130,20 @@ try:
         log_device_placement=False)
 
     with tf.Session(config=config) as sess:
-        hp = resnet.HParams(batch_size=batch_size,
-                            num_gpus=1,
-                            num_classes=3,
-                            weight_decay=0.001,
-                            momentum=0.9,
-                            finetune=True)
+        hp = playground.initialD.exp.resnet.HParams(batch_size=batch_size,
+                                                    num_gpus=1,
+                                                    num_classes=3,
+                                                    weight_decay=0.001,
+                                                    momentum=0.9,
+                                                    finetune=True)
         global_step = tf.Variable(0, trainable=False, name='global_step')
-        network_train = resnet.ResNet(hp, global_step, name="train")
+        network_train = playground.initialD.exp.resnet.ResNet(hp, global_step, name="train")
         # network_train.build_model()
         # network_train.build_train_op()
         # init = tf.global_variables_initializer()
         # sess.run(init)
 
-        res = resnet.ResNet(hp, global_step, name="train")
+        res = playground.initialD.exp.resnet.ResNet(hp, global_step, name="train")
         input_state = tf.placeholder(tf.float32, [None, 224, 224, 3], name="images")
         pi = res.build_origin_tower(input_state)
         saver = tf.train.Saver(tf.global_variables(), max_to_keep=10000)
