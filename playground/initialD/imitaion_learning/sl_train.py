@@ -100,7 +100,7 @@ config=tf.ConfigProto(
 with sv.managed_session(config=config) as sess:
 
     # =============== problem==============
-    # init_step = global_step.eval(sess=sess)
+    init_step = global_step.eval(sess=sess)
     tf.train.start_queue_runners(sess)
     for step in xrange(0, max_step):
         if step % val_interval == 0:
