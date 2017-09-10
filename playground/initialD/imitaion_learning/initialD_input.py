@@ -227,7 +227,7 @@ def distorted_inputs(filename, batch_size, shuffle=True, num_threads=10):
     state_batch, action_batch = _generate_image_and_label_batch(
         state, action, min_queue_examples, batch_size, shuffle=shuffle, num_threads=num_threads)
     print("state_batch name: ", state_batch.name)
-    return [state_batch], [action_batch]
+    return state_batch, action_batch
 
 
 def inputs(filename, batch_size, shuffle=False, num_threads=10):
