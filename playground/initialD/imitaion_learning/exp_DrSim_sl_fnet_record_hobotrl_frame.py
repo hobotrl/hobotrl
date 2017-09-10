@@ -72,10 +72,10 @@ def f_net(inputs):
     return {"q": q, "pi": pi}
 
 
-tf.app.flags.DEFINE_string("train_dir", "./log_fnet_sl", """save tmp model""")
-tf.app.flags.DEFINE_string('checkpoint',
-    "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/imitaion_learning/DrSim_fnet_sl/model.ckpt-0",
-                           """Model checkpoint to load""")
+tf.app.flags.DEFINE_string("train_dir", "./DrSim_fnet_sl", """save tmp model""")
+# tf.app.flags.DEFINE_string('checkpoint',
+#     "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/imitaion_learning/DrSim_fnet_sl/model.ckpt-0",
+#                            """Model checkpoint to load""")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -125,7 +125,7 @@ global_step = tf.get_variable(
             initializer=tf.constant_initializer(0), trainable=False
         )
 input_state = tf.placeholder(tf.float32, [None, 224, 224, 3], name="images")
-pi = f_net([input_state])
+pi = f_net([input_state])['pi']
 
 
 try:
