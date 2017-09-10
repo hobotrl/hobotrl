@@ -8,7 +8,7 @@ from initialD_input import distorted_inputs
 sys.path.append("/home/pirate03/anaconda2/lib/python2.7/site-packages")
 
 import sklearn.metrics
-
+import os
 
 def f_net(inputs):
     l2 = 1e-3
@@ -59,7 +59,7 @@ acc = tf.reduce_mean(tf.cast(tf.equal(preds, y_), "float"))
 train_op = tf.train.AdadeltaOptimizer(1e-3).minimize(cross_entropy)
 
 # set hyper parameters
-logdir = "./sl_fnet_train"
+logdir = "./sl_fnet_train4"
 train_dataset = "/home/pirate03/PycharmProjects/hobotrl/data/records_v1/filter_action3/train.tfrecords"
 val_dataset = "/home/pirate03/PycharmProjects/hobotrl/data/records_v1/filter_action3/val.tfrecords"
 val_interval = 200
@@ -76,15 +76,15 @@ train_images, train_labels = distorted_inputs(train_dataset, batch_size, num_thr
 val_images, val_labels = distorted_inputs(val_dataset, batch_size, num_threads=4)
 
 # set session parameters
-init_op = tf.global_variables_initializer()
 graph = tf.get_default_graph()
-# global_step = tf.get_variable(
-#             'global_step', [], dtype=tf.int32,
-#             initializer=tf.constant_initializer(0), trainable=False
-#         )
+global_step = tf.get_variable(
+            'global_step', [], dtype=tf.int32,
+            initializer=tf.constant_initializer(0), trainable=False
+        )
+init_op = tf.global_variables_initializer()
 
 sv = tf.train.Supervisor(graph=graph,
-                        # global_step=global_step,
+                        global_step=global_step,
                         init_op=init_op,
                         summary_op=None,
                         summary_writer=None,
@@ -126,5 +126,6 @@ with sv.managed_session(config=config) as sess:
             print "conf_mat: "
             print conf_mat
 
-        if step % 500 == 0:
-            sv.saver.save(sess, logdir, global_step=step)
+        # if step % 500 == 0:
+        #     checkpoint_path = os.path.join(logdir, 'model.ckpt')
+        #     sv.saver.save(sess, checkpoint_path, global_step=step)
