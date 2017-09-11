@@ -124,7 +124,6 @@ class ForwardUpdater(network.NetworkUpdater):
         feed_dict = self._feature_function.input_dict(state)
         feed_dict.update(self._feature_function.input_dict(next_state))
         feed_dict.update(self._forward_function.input_dict(action))
-
         return network.UpdateRun(feed_dict=feed_dict, fetch_dict={"forward loss": self._forward_loss})
 
 
@@ -301,10 +300,14 @@ class ActorCriticWithICM(sampling.TrajectoryBatchUpdate,
         return network.Network([input_state, input_next_state, self._input_action], f_icm, var_scope="learn")
 
     def update_on_trajectory(self, batch):
+        # self.network_optimizer.update("ac", self.sess, batch)
+        # self.network_optimizer.update("l2", self.sess)
+        print "------------------------------", batch["reward"]
+        self.network_optimizer.update("forward", self.sess, batch)
+        print batch["reward"]
+        self.network_optimizer.update("inverse", self.sess, batch)
         self.network_optimizer.update("ac", self.sess, batch)
         self.network_optimizer.update("l2", self.sess)
-        self.network_optimizer.update("forward", self.sess, batch)
-        self.network_optimizer.update("inverse", self.sess, batch)
         info = self.network_optimizer.optimize_step(self.sess)
         return info, {}
 
