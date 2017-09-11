@@ -1,6 +1,7 @@
 import sys
 sys.path.append(".")
 import logging
+import math
 import numpy as np
 import gym
 import cv2
@@ -13,12 +14,24 @@ class RewardSparseCartPole(gym.Wrapper):
 
     def __init__(self, env):
         super(RewardSparseCartPole, self).__init__(env)
+        self.observation_space.high[2] = 3 * 2 * math.pi / 360
+        self.observation_space.low[2] = -3 * 2 * math.pi / 360
 
     def _step(self, action):
+        self.step_count = 0
         observation, reward, done, info = self.env.step(action)
-        if not -0.1 < observation[2] < 0.1:
+        if not done:
+            self.step_count += 1
+        if done:
+            self.step_count = 0
+        # if not -0.1 < observation[2] < 0.:
+        #     reward = 0
+        if self.step_count == 8:
+            reward = 1
+        else:
             reward = 0
-            return observation, reward, done, info
+        print "-----------------reward: %s, step count: %s", reward, self.step_count
+        return observation, reward, done, info
 
 
 class A3CCartPoleWithICM(A3CExperimentWithICM):
@@ -27,7 +40,7 @@ class A3CCartPoleWithICM(A3CExperimentWithICM):
                  batch_size=32):
         if env is None:
             env = gym.make('CartPole-v0')
-            env = RewardSparseCartPole(env)
+            # env = RewardSparseCartPole(env)
 
         if f_forward is None:
             dim_action = env.action_space.n
@@ -51,6 +64,7 @@ class A3CCartPoleWithICM(A3CExperimentWithICM):
                                                  activation_out=tf.nn.softmax,
                                                  l2=l2,
                                                  var_scope="pi")
+                print "-------------dim action: %s, \npi: %s", dim_action, pi
                 pi = tf.squeeze(pi, axis=0)
 
                 # critic
