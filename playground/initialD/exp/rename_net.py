@@ -1,6 +1,7 @@
 import sys, getopt
 
 import tensorflow as tf
+import os
 
 usage_str = 'python tensorflow_rename_variables.py --checkpoint_dir=path/to/dir/ ' \
             '--replace_from=substr --replace_to=substr --add_prefix=abc --dry_run'
@@ -31,12 +32,13 @@ def rename(checkpoint_dir, replace_from, replace_to, add_prefix, dry_run):
             # Save the variables
             saver = tf.train.Saver()
             sess.run(tf.global_variables_initializer())
+            checkpoint_path = "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/imitaion_learning/DrSim_resnet_rename/model.ckpt"
             # print checkpoint.model_checkpoint_path
-            saver.save(sess, "./rename_net/resnet_log3_2")
+            saver.save(sess, checkpoint_path)
 
 
 def main(argv):
-    checkpoint_dir = "/home/pirate03/PycharmProjects/resnet-18-tensorflow/log3_2/model.ckpt-10000"
+    checkpoint_dir = "/home/pirate03/PycharmProjects/resnet-18-tensorflow/log_resnet_use_placeholder/model.ckpt-10000"
     replace_from = None
     replace_to = None
     add_prefix = 'learn/'

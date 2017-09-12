@@ -64,6 +64,13 @@ def evaluate(y_true, preds):
     # print "val_f1: {}".format(f1)
     # print "val_conf_mat: {}".format(conf_mat)
 
+hp = resnet.HParams(batch_size=64,
+                            num_gpus=1,
+                            num_classes=3,
+                            weight_decay=0.001,
+                            momentum=0.9,
+                            finetune=True)
+
 def f_net(inputs):
     # saver = tf.train.Saver(tf.global_variables(), max_to_keep=500)
     # saver.restore(sess, checkpoint)
@@ -72,14 +79,7 @@ def f_net(inputs):
     print "========\n"*5
     res = resnet.ResNet(hp, global_step, name="train")
     pi = res.build_origin_tower(state)
-    saver = tf.train.Saver(tf.global_variables(), max_to_keep=12000)
-    print "global varibles: ", tf.global_variables()
-    print "========\n"*5
-    init = tf.global_variables_initializer()
-    checkpoint = "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/exp/rename_net/resnet_log3_2"
-    with tf.Session() as sess:
-        sess.run(init)
-        saver.restore(sess, checkpoint)
+
 
     print "global varibles: ", tf.global_variables()
     print "========\n"*5
@@ -92,9 +92,9 @@ def f_net(inputs):
     return pi
 
 
-tf.app.flags.DEFINE_string("train_dir", "./log_test_fnet2", """save tmp model""")
+tf.app.flags.DEFINE_string("train_dir", "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/imitaion_learning/DrSim_resnet_sl_ac_rename_log", """save tmp model""")
 tf.app.flags.DEFINE_string('checkpoint',
-    "/home/pirate03/PycharmProjects/resnet-18-tensorflow/log3_2/model.ckpt-10000",
+    "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/imitaion_learning/DrSim_resnet_sl_ac_rename/model",
                            """Model checkpoint to load""")
 
 FLAGS = tf.app.flags.FLAGS
@@ -155,34 +155,21 @@ try:
         allow_soft_placement=True,
         log_device_placement=False)
 
-    with tf.Session(config=config) as sess:
-        hp = resnet.HParams(batch_size=batch_size,
-                            num_gpus=1,
-                            num_classes=3,
-                            weight_decay=0.001,
-                            momentum=0.9,
-                            finetune=True)
-        global_step = tf.Variable(0, trainable=False, name='learn/global_step')
-        # network_train = resnet.ResNet(hp, global_step, name="train")
-        # network_train.build_model()
-        # network_train.build_train_op()
+    images = tf.placeholder(tf.float32, [None, 224, 224, 3])
+    with tf.variable_scope("learn"):
+        global_step = tf.Variable(0, trainable=False, name='global_step')
+        print "======= construct net ======\n" * 5
+        pi = f_net([images])
 
-        images = tf.placeholder(tf.float32, [None, 224, 224, 3])
-        with tf.variable_scope("learn"):
-            print "======= construct net ======\n"*5
-            pi = f_net([images])
-        # saver = tf.train.Saver(tf.global_variables(), max_to_keep=12000)
-        # saver.restore(sess, FLAGS.checkpoint)
-        # graph = tf.get_default_graph()
-        # probs = graph.get_operation_by_name("tower_0/Softmax").outputs[0]
-        # graph = tf.get_default_graph()
-        # tensor_imgs = graph.get_tensor_by_name('images:0')
-        # tensor_acts = graph.get_tensor_by_name('labels:0')
-        # preds = graph.get_tensor_by_name('tower_0/ToInt32:0')
-        # train_op = graph.get_operation_by_name("group_deps")
-        # is_train = graph.get_operation_by_name('is_train').outputs[0]
-        # lr = graph.get_operation_by_name('lr').outputs[0]
-        # print "========\n"*5
+    saver = tf.train.Saver(tf.global_variables(), max_to_keep=12000)
+    print "global varibles: ", tf.global_variables()
+    print "========\n" * 5
+    init = tf.global_variables_initializer()
+    checkpoint = "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/imitaion_learning/DrSim_resnet_sl_ac_rename/model"
+
+    with tf.Session(config=config) as sess:
+        sess.run(init)
+        saver.restore(sess, checkpoint)
         print "agent initialization done"
         # print "========\n"*5
         # lr = graph.get_operation_by_name('lr').outputs[0]

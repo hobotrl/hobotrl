@@ -101,7 +101,6 @@ env = DrivingSimulatorEnv(
     step_delay_target=0.4
 )
 
-
 # def f_net(inputs):
 #     l2 = 1e-4
 #     state = inputs[0]
@@ -120,16 +119,21 @@ hp = playground.initialD.exp.resnet.HParams(batch_size=batch_size,
                                             finetune=True)
 
 def f_net(inputs):
-    l2 = 1e-4
+    # saver = tf.train.Saver(tf.global_variables(), max_to_keep=500)
+    # saver.restore(sess, checkpoint)
     state = inputs[0]
-    conv = hrl.utils.Network.conv2ds(state, shape=[(32, 4, 4), (64, 4, 4), (64, 2, 2)], out_flatten=True,
-                                     activation=tf.nn.relu,
-                                     l2=l2, var_scope="convolution")
-    q = hrl.network.Utils.layer_fcs(conv, [200, 100], 3,
-                                    l2=l2, var_scope="q")
-    pi = hrl.network.Utils.layer_fcs(conv, [200, 100], 3,
-                                     activation_out=tf.nn.softmax, l2=l2, var_scope="pi")
-    return {"q": q, "pi": pi}
+    res = playground.initialD.exp.resnet.ResNet(hp, global_step, name="train")
+    pi = res.build_origin_tower(state)
+    saver = tf.train.Saver(tf.global_variables(), max_to_keep=12000)
+    checkpoint = "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/exp/rename_net/resnet_log3_2"
+    with tf.Session() as sess:
+        saver.restore(sess, checkpoint)
+    print "pi type: ", type(pi)
+    # pi = tf.nn.softmax(pi)
+    q = res.build_new_tower(state)
+    print "q type: ", type(q)
+    return {"q":q, "pi": pi}
+
 
 def preprocess_image(input_image):
     imagenet_mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
@@ -169,12 +173,24 @@ agent = hrl.ActorCritic(
             global_step=global_step,
         )
 
+# env.observation_space = Box(low=0, high=255, shape=(640, 640, 3))
+# env.action_space = Discrete(3)
+# env.reward_range = (-np.inf, np.inf)
+# env.metadata = {}
+# env = FrameStack(env, 1)
 ACTIONS = [(Char(ord(mode)),) for mode in ['s', 'd', 'a']]
+
+
+# state_shape = env.observation_space.shape
+# graph = tf.get_default_graph()
+
 n_interactive = 0
 n_ep = 0  # last ep in the last run, if restart use 0
 n_test = 10  # num of episode per test run (no exploration)
 reward_decay = 0.7
-logdir = "./DrSim_fnet_sl_ac"
+# filename = "/home/pirate03/PycharmProjects/hobotrl/data/records_v1/filter_action3/train.tfrecords"
+# replay_buffer = initialD_input.init_replay_buffer(filename, replay_size=10000, batch_size=200)
+logdir = "./tmp_DrSim_sl_ac"
 
 try:
     # config = tf.ConfigProto()
@@ -193,6 +209,8 @@ try:
 
     with sv.managed_session(config=config) as sess:
         agent.set_session(sess)
+        # print "========\n"*5
+        # lr = graph.get_operation_by_name('lr').outputs[0]
         n_steps = 0
         while True:
             n_ep += 1
@@ -201,15 +219,26 @@ try:
             cum_spg_loss = 0.0
             state = env.reset()
             print "========reset======\n"*5
+            # print "orig imag: "
+            # print state[320,:,:]
+            # print "resize imag: "
+            # print cv2.resize(state, (224, 224))[112,:,:]
+            # img = cv2.resize(state, (224, 224)) / 255.0 - 0.5
             img = cv2.resize(state, (224, 224))
+            img = preprocess_image(img)
+            # print "preprocess img: ", img[112,:,:]
             while True:
+                # print "img shape: ", img.shape
                 action = agent.act(state=img, evaluate=False, sess=sess)
                 print "action: ", action
                 next_state, reward, done, info = env.step(ACTIONS[action])
                 next_img = cv2.resize(next_state, (224, 224))
+                next_img = preprocess_image(next_img)
+                # next_img = cv2.resize(next_state, (224, 224)) / 255.0 - 0.5
                 n_steps += 1
                 cum_reward = reward + reward_decay * cum_reward
                 info = agent.step(state=img, action=action, reward=reward, next_state=next_img, episode_done=done)
+                # print "info: ", info
                 record(summary_writer, n_steps, info)
                 if done is True:
                     print "========Run Done=======\n"*5

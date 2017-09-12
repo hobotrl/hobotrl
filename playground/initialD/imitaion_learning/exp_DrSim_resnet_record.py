@@ -31,8 +31,8 @@ import cv2
 
 from playground.initialD.imitaion_learning import initialD_input
 import random
+# from playground.resnet import resnet
 import resnet
-
 # Environment
 def compile_reward(rewards):
     # rewards = map(
@@ -64,26 +64,38 @@ def evaluate(y_true, preds):
     # print "val_f1: {}".format(f1)
     # print "val_conf_mat: {}".format(conf_mat)
 
+hp = resnet.HParams(batch_size=64,
+                            num_gpus=1,
+                            num_classes=3,
+                            weight_decay=0.001,
+                            momentum=0.9,
+                            finetune=True)
 
 def f_net(inputs):
     # saver = tf.train.Saver(tf.global_variables(), max_to_keep=500)
     # saver.restore(sess, checkpoint)
     state = inputs[0]
+    print "global varibles: ", tf.global_variables()
+    print "========\n"*5
     res = resnet.ResNet(hp, global_step, name="train")
     pi = res.build_origin_tower(state)
-    saver = tf.train.Saver(tf.global_variables(), max_to_keep=12000)
-    checkpoint = "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/exp/rename_net/resnet_log3_2"
-    with tf.Session() as sess:
-        saver.restore(sess, checkpoint)
+
+
+    print "global varibles: ", tf.global_variables()
+    print "========\n"*5
+
     print "pi type: ", type(pi)
-    pi = tf.nn.softmax(pi)
+    # pi = tf.nn.softmax(pi)
     # q = res.build_new_tower(state)
     # print "q type: ", type(q)
     # return {"q":q, "pi": pi}
     return pi
 
-tf.app.flags.DEFINE_string("train_dir", "./log_test_fnet", """save tmp model""")
 
+tf.app.flags.DEFINE_string("train_dir", "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/imitaion_learning/DrSim_resnet_sl_ac_rename_log", """save tmp model""")
+tf.app.flags.DEFINE_string('checkpoint',
+    "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/imitaion_learning/DrSim_resnet_sl_ac_rename/model",
+                           """Model checkpoint to load""")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -127,7 +139,7 @@ n_ep = 0  # last ep in the last run, if restart use 0
 n_test = 10  # num of episode per test run (no exploration)
 n_update = 0
 
-# filename = "/home/pirate03/PycharmProjects/hobotrl/data/records_v1/filter_action3/train.tfrecords"
+filename = "/home/pirate03/PycharmProjects/hobotrl/data/records_v1/filter_action3/train.tfrecords"
 # replay_buffer = initialD_input.init_replay_buffer(filename, replay_size=10000, batch_size=200)
 all_scenes = []
 noval_buffer = []
@@ -143,24 +155,21 @@ try:
         allow_soft_placement=True,
         log_device_placement=False)
 
-    with tf.Session(config=config) as sess:
-        hp = resnet.HParams(batch_size=batch_size,
-                            num_gpus=1,
-                            num_classes=3,
-                            weight_decay=0.001,
-                            momentum=0.9,
-                            finetune=True)
-        global_step = tf.Variable(0, trainable=False, name='learn/global_step')
-        network_train = resnet.ResNet(hp, global_step, name="train")
-        images = tf.placeholder(tf.float32, [None, 224, 224, 3])
-        pi = network_train.build_origin_tower(images)
-        # network_train.build_train_op()
-        init = tf.global_variables_initializer()
-        sess.run(init)
-        # graph = tf.get_default_graph()
-        # probs = graph.get_operation_by_name("learn/tower_0/Softmax").outputs[0]
-        # graph = tf.get_default_graph()
+    images = tf.placeholder(tf.float32, [None, 224, 224, 3])
+    with tf.variable_scope("learn"):
+        global_step = tf.Variable(0, trainable=False, name='global_step')
+        print "======= construct net ======\n" * 5
+        pi = f_net([images])
 
+    saver = tf.train.Saver(tf.global_variables(), max_to_keep=12000)
+    print "global varibles: ", tf.global_variables()
+    print "========\n" * 5
+    init = tf.global_variables_initializer()
+    checkpoint = "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/imitaion_learning/DrSim_resnet_sl_ac_rename/model"
+
+    with tf.Session(config=config) as sess:
+        sess.run(init)
+        saver.restore(sess, checkpoint)
         print "agent initialization done"
         # print "========\n"*5
         # lr = graph.get_operation_by_name('lr').outputs[0]
@@ -183,14 +192,16 @@ try:
             np_img = initialD_input.preprocess_image(img)
             print "=========img shape: {}".format(img.shape)+"=========\n"
 
+
+            using_learning_agent = True
+
             # actions, np_probs = sess.run([network_train.preds, probs], feed_dict={
             #     network_train._images:np.array([np_img]),
             #     network_train.is_train:False})
             # action = actions[0]
-
-            probs = sess.run(pi, feed_dict={images:np.array([np_img])})
-            action = np.argmax(probs)
-            all_scenes.append([np.copy(img), action, probs])
+            np_probs = sess.run(pi, feed_dict={images:np.array([np_img])})
+            action = np.argmax(np_probs)
+            all_scenes.append([np.copy(img), action, np_probs])
             next_state, reward, done, info = env.step(ACTIONS[action])
             next_img, next_rule_action = next_state
             while True:
@@ -205,10 +216,10 @@ try:
                 #     network_train._images: np.array([next_np_img]),
                 #     network_train.is_train: False})
                 # next_action = next_actions[0]
-                probs = sess.run(pi, feed_dict={images:np.array([next_np_img])})
-                next_action = np.argmax(probs)
+                np_probs = sess.run(pi, feed_dict={images:np.array([next_np_img])})
+                next_action = np.argmax(np_probs)
                 print next_action
-                all_scenes.append([np.copy(next_img), next_action, probs])
+                all_scenes.append([np.copy(next_img), next_action, np_probs])
                 if done is True:
                     print "========Run Done=======\n"*5
                     break
@@ -221,6 +232,7 @@ try:
             for i, ele in enumerate(all_scenes):
                 cv2.imwrite(FLAGS.train_dir + "/" + str(n_ep) + "_" +
                             str(i) + "_" + str(ele[1]) + "_" + str(np.around(ele[2], 2)) + ".jpg", ele[0])
+
 
 
 except Exception as e:
