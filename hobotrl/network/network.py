@@ -493,7 +493,7 @@ class NetworkUpdater(object):
     """
     Updater defines update method for a parameterized Function or Network.
     the ctor should construct symbols for calculating updates.
-    the `update` method should return an instance of NetworkUpdate
+    the `update` method should return an instance of UpdateRun
     """
 
     def __init__(self):
