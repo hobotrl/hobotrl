@@ -14,22 +14,23 @@ class RewardSparseCartPole(gym.Wrapper):
 
     def __init__(self, env):
         super(RewardSparseCartPole, self).__init__(env)
-        self.observation_space.high[2] = 3 * 2 * math.pi / 360
-        self.observation_space.low[2] = -3 * 2 * math.pi / 360
+        # self.observation_space.high[2] = 3 * 2 * math.pi / 360
+        # self.observation_space.low[2] = -3 * 2 * math.pi / 360
+        self.step_count = 0
 
     def _step(self, action):
-        self.step_count = 0
         observation, reward, done, info = self.env.step(action)
-        if not done:
+        if self.step_count == 20:
+            reward = 1
+            self.step_count = 0
+        else:
+            reward = 0
             self.step_count += 1
+
         if done:
             self.step_count = 0
         # if not -0.1 < observation[2] < 0.:
         #     reward = 0
-        if self.step_count == 8:
-            reward = 1
-        else:
-            reward = 0
         print "-----------------reward: %s, step count: %s", reward, self.step_count
         return observation, reward, done, info
 
@@ -64,16 +65,14 @@ class A3CCartPoleWithICM(A3CExperimentWithICM):
                                                  activation_out=tf.nn.softmax,
                                                  l2=l2,
                                                  var_scope="pi")
-                print "-------------dim action: %s, \npi: %s", dim_action, pi
-                pi = tf.squeeze(pi, axis=0)
+                pi = tf.squeeze(pi, 0)
 
                 # critic
                 v = hrl.utils.Network.layer_fcs(se, [256], 1,
                                                 activation_hidden=tf.nn.relu,
                                                 l2=l2,
                                                 var_scope="v")
-                v = tf.squeeze(v, axis=2)
-                v = tf.squeeze(v, axis=0)
+                v = tf.squeeze(v)
 
                 return {"pi": pi, "v": v}
 
@@ -103,7 +102,6 @@ class A3CCartPoleWithICM(A3CExperimentWithICM):
                                                      activation_out=tf.nn.relu,
                                                      l2=l2,
                                                      var_scope="action_predict")
-
                 return {"logits": logits}
 
             f_ac = create_ac
@@ -113,7 +111,6 @@ class A3CCartPoleWithICM(A3CExperimentWithICM):
 
         super(A3CCartPoleWithICM, self).__init__(env, f_se, f_ac, f_forward, f_inverse, episode_n, learning_rate,
                                                  discount_factor, entropy, batch_size)
-
 
 
 Experiment.register(A3CCartPoleWithICM, "A3C with ICM for CartPole")
