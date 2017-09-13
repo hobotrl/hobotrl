@@ -108,4 +108,5 @@ class GreedyStochasticPolicy(Policy):
             return self._distribution.mean_run([state])[0]
         else:
             distribution = self._distribution.dist_run([state])[0]
+            print "distribution: ", distribution
             return np.argmax(distribution)

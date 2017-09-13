@@ -92,9 +92,9 @@ def f_net(inputs):
     return pi
 
 
-tf.app.flags.DEFINE_string("train_dir", "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/imitaion_learning/DrSim_resnet_sl_ac_rename_log", """save tmp model""")
+tf.app.flags.DEFINE_string("train_dir", "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/imitaion_learning/DrSim_resnet_rename_pi_q_opt_record", """save tmp model""")
 tf.app.flags.DEFINE_string('checkpoint',
-    "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/imitaion_learning/DrSim_resnet_sl_ac_rename/model",
+    "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/imitaion_learning/DrSim_resnet_rename_pi_q_opt/model.ckpt",
                            """Model checkpoint to load""")
 
 FLAGS = tf.app.flags.FLAGS
@@ -165,7 +165,7 @@ try:
     print "global varibles: ", tf.global_variables()
     print "========\n" * 5
     init = tf.global_variables_initializer()
-    checkpoint = "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/imitaion_learning/DrSim_resnet_sl_ac_rename/model"
+    checkpoint = "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/imitaion_learning/DrSim_resnet_rename_pi_q_opt/model.ckpt-0"
 
     with tf.Session(config=config) as sess:
         sess.run(init)

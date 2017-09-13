@@ -61,12 +61,16 @@ with tf.variable_scope("learn"):
     q = res.build_new_tower(images)
     cross_entropy = -tf.reduce_mean(tf.to_float(y_one_hot) * tf.log(pi))
 
-adam = tf.train.AdamOptimizer(1e-3)
-opt = adam.minimize(cross_entropy)
+with tf.name_scope("optimizers"):
+    adam = tf.train.AdamOptimizer(1e-3)
+    # opt = adam.minimize(coss_entropy)
+    opt1 = adam.minimize(pi)
+    opt2 = adam.minimize(q)
+
 glov = tf.global_variables()
 # print "global varibles: "
-# for v in glov:
-#     print "v.name: ", v.name
+for v in glov:
+    print "v.name: ", v.name
 
 print "============\n"*5
 
@@ -84,8 +88,8 @@ for v in glov:
         variables_to_restore.append(v)
 
 saver = tf.train.Saver(variables_to_restore)
-checkpoint = "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/imitaion_learning/DrSim_resnet_rename/model.ckpt"
-new_checkpoint = "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/imitaion_learning/DrSim_resnet_rename_new/model.ckpt"
+checkpoint = "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/imitaion_learning/DrSim_resnet_rename_pi/model.ckpt"
+new_checkpoint = "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/imitaion_learning/DrSim_resnet_rename_pi_q_opt/model.ckpt"
 new_saver = tf.train.Saver(glov)
 
 

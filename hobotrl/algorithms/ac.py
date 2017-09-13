@@ -10,7 +10,7 @@ import hobotrl.sampling as sampling
 import hobotrl.target_estimate as target_estimate
 import hobotrl.tf_dependent.distribution as distribution
 from hobotrl.tf_dependent.base import BaseDeepAgent
-from hobotrl.policy import StochasticPolicy
+from hobotrl.policy import StochasticPolicy, GreedyStochasticPolicy
 from value_based import StateValueFunction
 
 
@@ -49,7 +49,8 @@ class DiscreteActorCriticUpdater(network.NetworkUpdater):
                 entropy_loss = tf.reduce_mean(self._input_entropy * self._policy_dist.entropy())
                 self._pi_loss = pi_loss
             # self._op_loss = self._q_loss - (self._pi_loss + entropy_loss)
-            self._op_loss = self._q_loss
+            self._op_loss = tf.stop_gradient(self._q_loss)
+            # tf.stop_gradient(self._op_loss)
         self._update_operation = network.MinimizeLoss(self._op_loss,
                                                       var_list=self._q_function.variables +
                                                                self._policy_dist._dist_function.variables)
@@ -260,6 +261,7 @@ class ActorCritic(sampling.TrajectoryBatchUpdate,
 
         super(ActorCritic, self).__init__(*args, **kwargs)
         pi = self.network["pi"]
+        # tf.stop_gradient(pi.op)
         if pi is not None:
             # discrete action: pi is categorical probability distribution
             self._pi_function = network.NetworkFunction(self.network["pi"])
@@ -295,6 +297,8 @@ class ActorCritic(sampling.TrajectoryBatchUpdate,
         network_optimizer.compile()
 
         self._policy = StochasticPolicy(self._pi_distribution)
+        # self._policy = GreedyStochasticPolicy(self._pi_distribution)
+
 
     def init_network(self, f_create_net, state_shape, *args, **kwargs):
         input_state = tf.placeholder(dtype=tf.float32, shape=[None] + list(state_shape), name="input_state")
