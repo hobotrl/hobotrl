@@ -22,34 +22,13 @@ hp = resnet.HParams(batch_size=64,
                             momentum=0.9,
                             finetune=True)
 
-def f_net(inputs):
-    # saver = tf.train.Saver(tf.global_variables(), max_to_keep=500)
-    # saver.restore(sess, checkpoint)
-    state = inputs[0]
-    print "global varibles: ", tf.global_variables()
-    print "========\n"*5
-    res = resnet.ResNet(hp, global_step, name="train")
-    pi = res.build_origin_tower(state)
-    print "global varibles: ", tf.global_variables()
-    print "========\n"*5
-    print "pi type: ", type(pi)
-    return pi
-
-
-tf.app.flags.DEFINE_string('checkpoint',
-    "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/imitaion_learning/DrSim_resnet_sl_ac_rename/model",
-                           """Model checkpoint to load""")
-
-FLAGS = tf.app.flags.FLAGS
-
-
 config=tf.ConfigProto(
     gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=0.9, allow_growth=True),
     allow_soft_placement=True,
     log_device_placement=False)
 
-images = tf.placeholder(tf.float32, [None, 224, 224, 3], name="images")
-y_one_hot = tf.placeholder(tf.float32, [None, 3], name="one_hot")
+images = tf.placeholder(tf.float32, [None, 224, 224, 3], name="imghh")
+y_one_hot = tf.placeholder(tf.float32, [None, 3], name="onehothh")
 
 print "========\n" * 5
 

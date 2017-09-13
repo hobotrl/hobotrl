@@ -85,7 +85,7 @@ def f_net(inputs):
     return {"pi":pi, "q":q}
 
 tf.app.flags.DEFINE_string("logdir",
-                           "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/imitaion_learning/DrSim_resnet_rename_pi_q_opt_ac/",
+                           "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/imitaion_learning/DrSim_resnet_rename_pi_q_opt_learn_q/",
                            """save tmp model""")
 
 
@@ -171,24 +171,27 @@ try:
             state = env.reset()
             print "========reset======\n" * 5
             img = cv2.resize(state, (224, 224))
-            img = initialD_input.preprocess_image(img)
+            pr_img = initialD_input.preprocess_image(img)
             while True:
-                action = agent.act(state=img, evaluate=False, sess=sess)
+                action = agent.act(state=pr_img, evaluate=False, sess=sess)
                 print "action: ", action
                 all_scenes.append([np.copy(img), action])
                 next_state, reward, done, info = env.step(ACTIONS[action])
                 next_img = cv2.resize(next_state, (224, 224))
-                next_img = initialD_input.preprocess_image(next_img)
-                # info = agent.step(state=np.copy(img), action=action, reward=reward, next_state=np.copy(next_img), episode_done=done)
-                # record(summary_writer, n_steps, info)
+                pr_next_img = initialD_input.preprocess_image(next_img)
+                info = agent.step(state=pr_img, action=action, reward=reward, next_state=pr_next_img, episode_done=done)
+                record(summary_writer, n_steps, info)
                 n_steps += 1
                 if done is True:
                     print "========Run Done=======\n" * 5
                     break
                 img = next_img
+                pr_img = pr_next_img
 
             for i, ele in enumerate(all_scenes):
-                cv2.imwrite(FLAGS.logdir + "/" + str(n_ep) + "_" +
+                cv2.imwrite(FLAGS.logdir + "/"
+                            + "learn_q/"
+                            + str(n_ep) + "_" +
                                 str(i) + "_" + str(ele[1]) + ".jpg", ele[0])
 
 except Exception as e:

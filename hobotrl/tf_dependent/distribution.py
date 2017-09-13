@@ -150,10 +150,10 @@ class DiscreteDistribution(NNDistribution):
         distribution = self._sess.run(self._op_dist, feed_dict=self.dist_input(inputs))
         sample_i = []
         for p in distribution:
-            # sample = np.random.choice(np.arange(self._dist_n), p=p)
-            # sample_i.append(sample)
+            sample = np.random.choice(np.arange(self._dist_n), p=p)
+            sample_i.append(sample)
             print "distribution: ", p
-            sample_i.append(np.argmax(p))
+            # sample_i.append(np.argmax(p))
         sample_i = np.asarray(sample_i)
         return sample_i
 
