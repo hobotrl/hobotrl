@@ -71,7 +71,14 @@ class DDQNOneStepTD(TargetEstimator):
 
 
 class NStepTD(TargetEstimator):
-    def __init__(self, v_function, discount_factor=0.99):
+    def __init__(self, v_function, discount_factor=0.99, bonus=None):
+        print "-------------------------------"
+        print bonus.inputs
+        self._bonus = not bonus
+        if self._bonus:
+            print "----------------------------"
+            print self._bonus
+            self.intrinsic_reward = 0
         super(NStepTD, self).__init__(discount_factor)
         self._v = v_function
 
@@ -81,13 +88,21 @@ class NStepTD(TargetEstimator):
         R = np.zeros(shape=[batch_size], dtype=float)
         if episode_done[-1]:
             r = 0.0
-        else:
+        elif not self._bonus:
             # calculate from q_function(next_state)
-            r = self._v([next_state[-1]])[0]
+            r = self._v([next_state[-1]])
+        else:
+            r = self._v([next_state[-1]])
+            self.intrinsic_reward = self._bonus([state[-1]])
         for i in range(batch_size):
             index = batch_size - i - 1
             r = reward[index] + self._discount_factor * r * (1.0 - episode_done[index])
+            if self._bonus and not episode_done[-1]:
+                r += self.intrinsic_reward
+                self.intrinsic_reward = 0
             R[index] = r
+            # print "--------re: ", reward[index], "--------icm: ", self.intrinsic_reward, "------v: ", r
+        # print "--------estimate called-----------"
         return R
 
 
