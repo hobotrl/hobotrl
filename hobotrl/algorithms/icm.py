@@ -141,7 +141,8 @@ class InverseUpdater(network.NetworkUpdater):
             # inverse loss calculation
             with tf.name_scope("inverse"):
                 inverse_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
-                    labels=tf.one_hot(indices=self._input_action, depth=2, on_value=1, off_value=0, axis=-1),
+                    labels=tf.one_hot(indices=self._input_action, depth=np.shape(op_action_hat)[1], on_value=1,
+                                      off_value=0, axis=-1),
                     logits=op_action_hat)
                 )
                 self._inverse_loss = inverse_loss
@@ -224,7 +225,10 @@ class ActorCriticWithICM(sampling.TrajectoryBatchUpdate,
             f_inverse_out = network.Network([f_se1, f_se2], f_inverse, var_scope='learn_inverse')
             logits = network.NetworkFunction(f_inverse_out["logits"]).output().op
 
-            return {"pi": pi_dist, "v": v, "logits": logits, "phi1": f_se1, "phi2": f_se2, "phi2_hat": phi2_hat}
+            bonus = f_se2 - phi2_hat
+
+            return {"pi": pi_dist, "v": v, "logits": logits, "phi1": f_se1, "phi2": f_se2, "phi2_hat": phi2_hat,
+                    "bonus": bonus}
 
         kwargs.update({
             "f_icm": f_icm,
@@ -275,9 +279,11 @@ class ActorCriticWithICM(sampling.TrajectoryBatchUpdate,
         self._phi2_hat_function = network.NetworkFunction(self.network["phi2_hat"])
         self._phi2_function = network.NetworkFunction(self.network["phi2"])
         self._logits = network.NetworkFunction(self.network["logits"])
+        self._bonus = network.NetworkFunction(self.network["bonus"])
+
         if target_estimator is None:
-            # target_estimator = target_estimate.NStepTD(self._v_function, discount_factor)
-            target_estimator = target_estimate.GAENStep(self._v_function, discount_factor)
+            target_estimator = target_estimate.NStepTD(self._v_function, discount_factor, self._bonus)
+            # target_estimator = target_estimate.GAENStep(self._v_function, discount_factor)
         self.network_optimizer = network_optimizer
         network_optimizer.add_updater(
             ActorCriticUpdater(policy_dist=self._pi_distribution,
@@ -309,11 +315,13 @@ class ActorCriticWithICM(sampling.TrajectoryBatchUpdate,
         # self.network_optimizer.update("ac", self.sess, batch)
         # self.network_optimizer.update("l2", self.sess)
         self.network_optimizer.update("forward", self.sess, batch)
+        # self.bonus = self.network_optimizer.optimize_step(self.sess)
+        # print "--------------bonus---------------", self.bonus
         self.network_optimizer.update("inverse", self.sess, batch)
         self.network_optimizer.update("ac", self.sess, batch)
         self.network_optimizer.update("l2", self.sess)
         info = self.network_optimizer.optimize_step(self.sess)
-        print "----------------info-------------", info
+        # print "----------------info-------------", info
         return info, {}
 
     def set_session(self, sess):

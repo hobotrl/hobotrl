@@ -14,28 +14,19 @@ class RewardSparseCartPole(gym.Wrapper):
 
     def __init__(self, env):
         super(RewardSparseCartPole, self).__init__(env)
-        # self.observation_space.high[2] = 3 * 2 * math.pi / 360
-        # self.observation_space.low[2] = -3 * 2 * math.pi / 360
+        self.observation_space.high[2] = 0.2 * math.pi / 360
+        self.observation_space.low[2] = -0.2 * math.pi / 360
         self.step_count = 0
 
     def _step(self, action):
         observation, reward, done, info = self.env.step(action)
-        if self.step_count == 20:
-            reward = 1
-            self.step_count = 0
-        else:
-            reward = 0
-            self.step_count += 1
-
-        if done:
-            self.step_count = 0
-        # if not -0.1 < observation[2] < 0.:
+        # if not -0.2 * math.pi / 360 < observation[2] < 0.2 * math.pi / 360:
         #     reward = 0
-        print "-----------------reward: %s, step count: %s", reward, self.step_count
+        print "-----------------reward: ", reward
         return observation, reward, done, info
 
 
-class A3CCartPoleWithICM(A3CExperimentWithICM):
+class A3CCartPoleSparse(A3CExperimentWithICM):
     def __init__(self, env=None, f_se=None, f_ac=None, f_forward=None, f_inverse=None, episode_n=1000,
                  learning_rate=5e-5, discount_factor=0.99, entropy=hrl.utils.CappedLinear(1e6, 1e-4, 1e-4),
                  batch_size=32):
@@ -109,11 +100,11 @@ class A3CCartPoleWithICM(A3CExperimentWithICM):
             f_inverse = create_inverse
             f_forward = create_forward
 
-        super(A3CCartPoleWithICM, self).__init__(env, f_se, f_ac, f_forward, f_inverse, episode_n, learning_rate,
+        super(A3CCartPoleSparse, self).__init__(env, f_se, f_ac, f_forward, f_inverse, episode_n, learning_rate,
                                                  discount_factor, entropy, batch_size)
 
 
-Experiment.register(A3CCartPoleWithICM, "A3C with ICM for CartPole")
+Experiment.register(A3CCartPoleSparse, "A3C with ICM for CartPole")
 
 
 if __name__ == '__main__':

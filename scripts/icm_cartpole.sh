@@ -3,8 +3,8 @@
 #
 
 exp_file=./test/exp_icm.py
-exp_name=A3CCartPoleWithICM
-log_dir=./log/$exp_name
+exp_name=A3CCartPoleSparse
+log_dir=./log/A3CCartPoleOriginWithICM
 # cluster="{'ps':['localhost:2232'], 'worker':['localhost:2233', 'localhost:2234', 'localhost:2235']}"
 cluster="{'ps':['localhost:2242'], 'worker':['localhost:2243']}"
 worker_n=1
