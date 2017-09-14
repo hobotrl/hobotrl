@@ -1,109 +1,215 @@
 #!/usr/bin/env python
+"""Reward calculator and publisher.
+This scrips calculates components of RL reward based on ROS topics published by
+the simulator. The calculated reward components are published again as ROS
+topics.
 
-# this python script send useful data to rl network including speed, obstacle reward and closest distance towards longest path.
-# data source is from honda simulator directly
-
-import zmq
+Reward components:
+    1. '/rl/has_obstacle_nearby': whether there's obstacle cars near by.
+    2. '/rl/distance_to_longestpath': perpendicular distance to the closest
+        point from ego car to '/path/longest'.
+    3. '/rl/car_velocity': car speed.
+    3. '/rl/last_on_opposite_path': whether car is on opposite lane.
+    4. '/rl/on_pedestrian': whether ego car is on pedestrian lane.
+    5. '/rl/obs_factor': directional obstacle risk factor.
+:author: Gang XU, Jingchu LIU
+:date: 2017-09-06
+"""
+import os
+from os.path import dirname, realpath
 import sys
-import base64
-import rospy
-import rospkg
-from autodrive_msgs.msg import Control, Obstacles, CarStatus
-from std_msgs.msg import Bool, Float32
-from nav_msgs.msg import Path
-from sensor_msgs.msg import CompressedImage
+import zmq
 import numpy as np
 from numpy import linalg as LA
 import cv2
+# ROS
+import rospy
+import rospkg
+from tf.transformations import euler_from_quaternion
+from autodrive_msgs.msg import Control, Obstacles, CarStatus
+from std_msgs.msg import Bool, Int16, Float32
+from nav_msgs.msg import Path
+from sensor_msgs.msg import CompressedImage
 from cv_bridge import CvBridge, CvBridgeError
+sys.path.append(dirname(dirname(dirname(realpath(__file__)))))
+from ros_environments.utils.timer import Timer
 
-class MyClass:
+class RewardFunction:
     def __init__(self):
-        rospy.init_node('gazebo_rl_reward_fcn')
-        self.car_pos_x = 0.0
-        self.car_pos_y = 0.0
-        self.min_path_dis = 0.0
+        """Initialization."""
+        # Latched status info
+        # 1. x,y,z coord. of ego car 
+        self.car_pos = np.zeros((3,))
+        # 2. roll, pitch, yaw of ego car
+        self.car_euler = np.zeros((3,))
+        # 3. distance to longest_path
+        self.last_dist_longestpath = 0.0
+        # 4. obstacle related
+        # distance threshold to be considered as collision
+        # note: distance is calculated with geometric center, so has to take
+        # the diameter of objects. Diameters of car models are roughly 5
+        # meters.
         self.detect_obstacle_range = 5 + 1
-        self.closest_distance = 10000.0 # initializer
+        self.min_obs_dist = 0.0
+        self.obs_risk = 0.0
+        # 5. opposite path
+        self.last_on_opp = 1
 
         self.brg = CvBridge()
 
+        # ROS related
+        rospy.init_node('rl_reward_fcn')
         self.pub_nearest_obs = rospy.Publisher(
-            '/rl/has_obstacle_nearby', Bool, queue_size=1000)
-        self.pub_closest_distance = rospy.Publisher(
-            '/rl/distance_to_longestpath', Float32, queue_size=1000)
+            '/rl/has_obstacle_nearby', Bool, queue_size=100)
+        self.pub_obs_risk = rospy.Publisher(
+            '/rl/obs_factor', Float32, queue_size=100)
+        self.pub_closest_dist_longestpath = rospy.Publisher(
+            '/rl/distance_to_longestpath', Float32, queue_size=100)
         self.pub_car_velocity = rospy.Publisher(
-            '/rl/car_velocity', Float32, queue_size=1000)
+            '/rl/car_velocity', Float32, queue_size=100)
+        self.pub_on_opp = rospy.Publisher(
+            "/rl/last_on_opposite_path", Int16, queue_size=100)
         self.pub_on_pedestrian = rospy.Publisher(
-            '/rl/on_pedestrian', Bool, queue_size=1000)
-        rospy.Subscriber('/path/longest', Path, self.calc_nearest_distance_callback)
-        rospy.Subscriber('/obstacles', Obstacles, self.calc_nearest_obs_callback)
-        rospy.Subscriber('/car/status', CarStatus, self.get_status_callback)
-        rospy.Subscriber('/training/image/compressed',
-                         CompressedImage, self.trn_image_callback)
+            '/rl/on_pedestrian', Bool, queue_size=100)
+        rospy.Subscriber('/path/longest', Path, self.longest_path_callback)
+        rospy.Subscriber('/obstacles', Obstacles, self.obstacles_callback)
+        rospy.Subscriber('/car/status', CarStatus, self.car_statuc_callback)
+        rospy.Subscriber(
+            '/training/image/compressed', CompressedImage, self.trn_image_callback)
+        rospy.Subscriber('/rl/on_opposite_path', Int16, self.on_opp_callback)
+        Timer(
+            rospy.Duration(1/20.0),
+            lambda *args: self.pub_on_opp.publish(self.last_on_opp))
 
-    def calc_dist(self, p):
-        """Calculate the dist between p and car_position."""
-        return LA.norm([
-            (p.pose.position.x-self.car_pos_x),
-            (p.pose.position.y-self.car_pos_y)])
-
-    def find_minimum_distance(self, params):
-        new_list = [self.calc_dist(x) for x in params]
-        if len(new_list) is 0:
-            idx = None
-        else:
-            # sort by distance value, break tie with smaller index
-            val, idx = min((val, idx) for (idx, val) in enumerate(new_list))
-        return idx
-
-    def get_status_callback(self, data):
-        self.car_pos_x = data.position.x
-        self.car_pos_y = data.position.y
+    def car_statuc_callback(self, data):
+        """Callback for '/car/status'."""
+        self.car_pos = np.array(
+            [data.position.x, data.position.y, data.position.z])
+        self.car_euler = euler_from_quaternion(
+            (data.orientation.x, data.orientation.y,
+             data.orientation.z, data.orientation.w))
         self.pub_car_velocity.publish(data.speed)
 
-    def calc_nearest_distance_callback(self, data):
-        aaa = list()
-        min_idx = self.find_minimum_distance(data.poses)
+    def longest_path_callback(self, data):
+        """Callback for '/path/longest'
+
+        Calculate the minimum perpendicular distance from ego car to the
+        longest path.
+
+        SVD is used to find the approximate tangent direction around the
+        closest point.
+        """
+        min_idx = self.find_minimum_distance(data.poses)  # closest point index
         if min_idx is None:
             return
         else:
-            # A,B is two closest points to the car along longest path
-            aaa.append(np.array([(data.poses[min_idx].pose.position.x-self.car_pos_x), (data.poses[min_idx].pose.position.y-self.car_pos_y)], dtype=np.float64))
-            aaa.append(np.array([(data.poses[min_idx+1].pose.position.x-self.car_pos_x), (data.poses[min_idx+1].pose.position.y-self.car_pos_y)], dtype=np.float64))
-            vec_AB = aaa[0] - aaa[1]
-            sine_val = np.abs(np.cross(aaa[0], vec_AB))/LA.norm(aaa[0])/LA.norm(vec_AB)
-            self.min_path_dis = LA.norm(aaa[0]) * sine_val
-            self.pub_closest_distance.publish(self.min_path_dis)
-            self.closest_distance = 10000.0
+            # extract 20 points along the closest point
+            # use z position of ego car since z displacement doesn't matter
+            # truncate if encounter head or tail
+            path_points = np.array([
+                (pose.pose.position.x, pose.pose.position.y, self.car_pos[2])
+                for pose in data.poses[max(min_idx-10, 0):min_idx+10]]
+            )
+            # use svd to find the approximate tangent direction of longest path
+            approx_dir = np.linalg.svd(path_points-np.mean(path_points,axis=0))[2][0]
+            # perpendicular distance is then the norm of vector
+            #   (car_pos - pos_point) x approx_dir, x is cross product
+            self.last_dist_longestpath = np.linalg.norm(
+                np.cross(path_points[0,:] - self.car_pos, approx_dir)
+            )
+            # publish
+            self.pub_closest_dist_longestpath.publish(self.last_dist_longestpath)
 
-    def calc_nearest_obs_callback(self, data):
-        new_list = [LA.norm([i.ObsPosition.x-self.car_pos_x, i.ObsPosition.y-self.car_pos_y]) for i in data.obs]
-        self.closest_distance = min(new_list) if not len(new_list)==0 else 10000.0
-        near_obs = True if self.closest_distance<self.detect_obstacle_range else False
+    def obstacles_callback(self, data):
+        """Callback for '/obstacles'.
+
+        Calculates directional obstacle risk factor and indicator for
+        obstacles.
+        """
+        obs_pos = [(obs.ObsPosition.x, obs.ObsPosition.y, obs.ObsPosition.z)
+                   for obs in data.obs]
+        if len(obs_pos)==0:
+            self.obs_risk = 0.0
+            self.min_obs_dist = self.detect_obstacle_range + 100.0
+        else:
+            disp_vec = np.array(obs_pos) - self.car_pos  # displacement
+            dist_obs = np.linalg.norm(disp_vec, axis=1)  # obstacle distance
+            # ego heading unit vector
+            ego_hdg = (np.cos(self.car_euler[2]), np.sin(self.car_euler[2]), 0)
+            # cosine of ego heading and obs displacment
+            obs_cosine = np.dot(disp_vec, ego_hdg)/dist_obs
+            # angle of obs displacement w.r.t ego heading
+            obs_angle = np.arccos(obs_cosine)
+            # raised cosine, 1.0 within a narrow angle ahead, quickly rolloff
+            # to 0.0 as angle increases 
+            obs_rcos = self.raised_cosine(obs_angle, np.pi/24, np.pi/48)
+            # distance risk is Laplacian normalized by detection rangei
+            risk_dist = np.exp(-0.1*(dist_obs-self.detect_obstacle_range))
+            # total directional obs risk is distance risk multiplied by
+            # raised-cosied directional weight.
+            self.obs_risk = np.sum(risk_dist * obs_rcos)
+            idx = np.argsort(dist_obs)[::]
+            # minimum obs distance
+            self.min_obs_dist = min(dist_obs)
+        near_obs = True if self.min_obs_dist<self.detect_obstacle_range else False
+        self.pub_obs_risk.publish(self.obs_risk)
         self.pub_nearest_obs.publish(near_obs)
 
     def trn_image_callback(self, data):
+        """Callback for '/training/image/*'."""
         img = self.brg.compressed_imgmsg_to_cv2(data, 'rgb8')
         # Pedestrian factor
-        #   Since Ped lane is the outmost lane, if we take a 100x100 slice
-        #   centered around ego car, there will be considerable portions of
-        #   pixels being (0,0,0) if ego car is on the Ped lane. Thus the sum
-        #   lumanation will be lower compared with other cases. 
+        #   Since Ped lane is the outmost lane, if we take a patch of image
+        #   centered around ego car, then there will a considerable portions
+        #   of black pixels, i.e. RGB =(0,0,0). Thus the sum lumanation will
+        #   be significantely lower compared with other cases. 
         low = int(np.floor(650.0/1400.0*img.shape[0]))
         high = int(np.ceil(750.0/1400.0*img.shape[0]))
         sum_sq = (high-low)**2
         ped_factor = np.sum(img[low:high, low:high, :])/(255*3*sum_sq)  # norm by max val
         self.pub_on_pedestrian.publish(ped_factor<0.31)
 
-    def sender(self):
+    def on_opp_callback(self, data):
+        self.last_on_opp = data.data
+
+    def raised_cosine(self, x, offset, rolloff):
+        """Raised cosine function.
+
+        A piecewise function defined of (-pi, +pi):
+            1.0, if |x| < offset - rolloff
+            0.0, if |x| > offset + rolloff
+            \frac{1}{2}(1+cos(...)), otherwise
+        """
+        x = np.abs(x)
+        cutoff_1, cutoff_0 = offset-rolloff, offset+rolloff
+        ind_1, ind_0= x < cutoff_1, x > cutoff_0
+        rcos = 0.5*(1+np.cos((x-cutoff_1)/(2*rolloff)*np.pi))
+        return ind_1*np.ones_like(x) + \
+               ind_0*np.zeros_like(x) + \
+               (1-np.logical_or(ind_1, ind_0))*rcos
+
+    def calc_dist(self, p):
+        """Calculate the dist between p and car_position."""
+        p = np.array((p.x, p.y, p.z))
+        return LA.norm(p - self.car_pos)
+
+    def find_minimum_distance(self, poses):
+        dist_list = [self.calc_dist(pose.pose.position) for pose in poses]
+        if len(dist_list) is 0:
+            idx = None
+        else:
+            # sort by distance value, break tie with smaller index
+            val, idx = min((val, idx) for (idx, val) in enumerate(dist_list))
+        return idx
+
+    def spin(self):
         rospy.spin()
 
 if __name__ == '__main__':
-    print "[gazebo_rl_reward]: inside file."
+    print "[rl_reward_function]: inside file."
     try:
-        myobjectx = MyClass()
-        myobjectx.sender()
+        rewardfunc = RewardFunction()
+        rewardfunc.spin()
     except rospy.ROSInterruptException:
         pass
-    print "[gazebo_rl_reward]: out."
+    print "[rl_reward_function]: out."
