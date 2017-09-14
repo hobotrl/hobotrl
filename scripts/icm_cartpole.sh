@@ -6,9 +6,9 @@ exp_file=./test/exp_icm.py
 exp_name=A3CCartPoleSparse
 log_dir=./log/A3CCartPoleOriginWithICM
 # cluster="{'ps':['localhost:2232'], 'worker':['localhost:2233', 'localhost:2234', 'localhost:2235']}"
-cluster="{'ps':['localhost:2242'], 'worker':['localhost:2243']}"
-worker_n=1
-device_n=1
+cluster="{'ps':['localhost:2242'], 'worker':['localhost:2243', 'localhost:2244', 'localhost:2245', 'localhost:2246']}"
+worker_n=4
+device_n=4
 mkdir -p $log_dir
 python $exp_file run --name $exp_name --cluster "$cluster" --job ps --logdir $log_dir > $log_dir/ps.txt 2>&1 &
 end_i=$(expr $worker_n - 1)

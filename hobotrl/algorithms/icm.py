@@ -225,7 +225,7 @@ class ActorCriticWithICM(sampling.TrajectoryBatchUpdate,
             f_inverse_out = network.Network([f_se1, f_se2], f_inverse, var_scope='learn_inverse')
             logits = network.NetworkFunction(f_inverse_out["logits"]).output().op
 
-            bonus = f_se2 - phi2_hat
+            bonus = tf.reduce_sum(tf.square(f_se2 - phi2_hat))
 
             return {"pi": pi_dist, "v": v, "logits": logits, "phi1": f_se1, "phi2": f_se2, "phi2_hat": phi2_hat,
                     "bonus": bonus}
