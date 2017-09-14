@@ -176,7 +176,20 @@ class Network(object):
         """
 
         :param inputs:
-        :param network_creator:
+        :param network_creator: function: network_creator(inputs) => dict_outputs [, dict_sub_networks]
+            example:
+                network_creator() => {"q": op_q, "pi": op_pi}
+
+                indicates that the network has 2 output operators,
+                namely "q" and "pi", which can be referenced by name via network[${name}].
+
+                network_creator() => {"q": op_q, "pi": op_pi}, {"se", net_se}
+
+                indicates that the network has 2 output operators,
+                namely "q" and "pi", which can be referenced by name via network[${name}];
+                and that the network has one sub_network, namely "se",
+                which can be referenced by name via network.subnet[${name}].
+
         :param var_scope: string variable scope. derives absolute variable scope,
             for later variable sharing & retrieving
         :param name_scope:
@@ -190,9 +203,15 @@ class Network(object):
                     net = network_creator(inputs)
             else:
                 net = network_creator(inputs)
+        if type(net) == dict:
+            net, sub_nets = net, {}
+            pass
+        else:
+            net, sub_nets = net[0], net[1]
         self._symbols = dict([(k, NetworkSymbol(net[k], k, self)) for k in net])
         self._variables = Utils.scope_vars(self._abs_var_scope)
         self._sess = None
+        self._sub_nets = sub_nets
         logging.warning("Network[vs=%s,abs_vs=%s,var=%s,symbols=%s]",
                         self._var_scope, self.abs_var_scope,self.variables, self._symbols)
 
@@ -205,6 +224,16 @@ class Network(object):
         :rtype: NetworkSymbol
         """
         return self._symbols.get(item)
+
+    def sub_net(self, name):
+        """
+        return Network instance as sub net, which is defined in this network, by network_creator
+        :param name: name of sub net
+        :type name: str
+        :return: Network
+        :rtype: Network
+        """
+        return self._sub_nets[name]
 
     def __call__(self, inputs, name_scope="", *args, **kwargs):
         """
