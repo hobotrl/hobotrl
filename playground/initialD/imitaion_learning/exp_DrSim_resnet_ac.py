@@ -85,7 +85,7 @@ def f_net(inputs):
     return {"pi":pi, "q":q}
 
 tf.app.flags.DEFINE_string("logdir",
-                           "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/imitaion_learning/DrSim_resnet_rename_pi_q_opt_learn_q/",
+                           "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/imitaion_learning/DrSim_resnet_rename_pi_q_opt_add_logitsadam",
                            """save tmp model""")
 
 
@@ -190,7 +190,7 @@ try:
 
             for i, ele in enumerate(all_scenes):
                 cv2.imwrite(FLAGS.logdir + "/"
-                            + "learn_q/"
+                            + "ac/"
                             + str(n_ep) + "_" +
                                 str(i) + "_" + str(ele[1]) + ".jpg", ele[0])
 
