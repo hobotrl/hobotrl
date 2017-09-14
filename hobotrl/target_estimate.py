@@ -92,11 +92,6 @@ class NStepTD(TargetEstimator):
         else:
             r = self._v([next_state[-1]])
             self.intrinsic_reward = self._bonus([state[-1]], [next_state[-1]], [action[-1]])
-            print "-----------------r---------------"
-            print np.shape(r)
-            print r
-            print "-----------------intrinsic---------------"
-            print np.shape(self.intrinsic_reward)
             print self.intrinsic_reward
         for i in range(batch_size):
             index = batch_size - i - 1
