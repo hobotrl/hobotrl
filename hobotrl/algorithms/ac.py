@@ -291,8 +291,8 @@ class ActorCritic(sampling.TrajectoryBatchUpdate,
             self._v_function = network.NetworkFunction(self.network["v"])
             # continuous action: mean / stddev for normal distribution
         if target_estimator is None:
-            # target_estimator = target_estimate.NStepTD(self._v_function, discount_factor)
-            target_estimator = target_estimate.GAENStep(self._v_function, discount_factor)
+            target_estimator = target_estimate.NStepTD(self._v_function, discount_factor)
+            # target_estimator = target_estimate.GAENStep(self._v_function, discount_factor)
         self.network_optimizer = network_optimizer
         network_optimizer.add_updater(
             ActorCriticUpdater(policy_dist=self._pi_distribution,
