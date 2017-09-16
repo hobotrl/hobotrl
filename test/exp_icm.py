@@ -77,18 +77,19 @@ class PendulumDiscreteWrapper(gym.Wrapper):
 
 
 class A3CICM(A3CExperimentWithICM):
-    def __init__(self, env=None, f_se=None, f_ac=None, f_forward=None, f_inverse=None, episode_n=1000,
+    def __init__(self, env=None, f_se=None, f_ac=None, f_forward=None, f_inverse=None, episode_n=10000,
                  learning_rate=5e-5, discount_factor=0.99, entropy=hrl.utils.CappedLinear(1e6, 1e-4, 1e-4),
                  batch_size=32):
         if env is None:
-            env = gym.make('MountainCar-v0')
-            env = PendulumDiscreteWrapper(env, 20)
+            env = gym.make('CartPole-v0')
+            # env = PendulumDiscreteWrapper(env, 20)
 
-        if f_forward is None:
+        if (f_forward and f_se and f_inverse and f_ac) is None:
             dim_action = env.action_space.n
 
-            def create_se(input_state):
+            def create_se(inputs):
                 l2 = 1e-7
+                input_state = inputs[0]
 
                 se = hrl.utils.Network.layer_fcs(input_state, [200], 200,
                                                  activation_hidden=tf.nn.relu,
@@ -97,8 +98,9 @@ class A3CICM(A3CExperimentWithICM):
                                                  var_scope="se")
                 return {"se": se}
 
-            def create_ac(se):
+            def create_ac(inputs):
                 l2 = 1e-7
+                se = inputs[0]
 
                 # actor
                 pi = hrl.utils.Network.layer_fcs(se, [256], dim_action,
@@ -106,15 +108,13 @@ class A3CICM(A3CExperimentWithICM):
                                                  activation_out=tf.nn.softmax,
                                                  l2=l2,
                                                  var_scope="pi")
-                pi = tf.squeeze(pi, 0)
 
                 # critic
                 v = hrl.utils.Network.layer_fcs(se, [256], 1,
                                                 activation_hidden=tf.nn.relu,
                                                 l2=l2,
                                                 var_scope="v")
-                v = tf.squeeze(v)
-
+                v = tf.squeeze(v, axis=1)
                 return {"pi": pi, "v": v}
 
             def create_forward(inputs):
