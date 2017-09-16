@@ -73,45 +73,33 @@ class DDQNOneStepTD(TargetEstimator):
 class NStepTD(TargetEstimator):
     def __init__(self, v_function, discount_factor=0.99, bonus=None):
         self._bonus = bonus
-        print "----------self._bonus-------------"
-        print self._bonus
         if self._bonus is not None:
-            print "----------------------------"
-            print self._bonus
-            self.intrinsic_reward = 0
+            self.intrinsic_reward = 0.0
         super(NStepTD, self).__init__(discount_factor)
         self._v = v_function
 
     def estimate(self, state, action, reward, next_state, episode_done):
         batch_size = len(state)
-        print "---------------------------------"
-        print "estimate called"
 
         R = np.zeros(shape=[batch_size], dtype=float)
 
-        print "---episode--------------", episode_done
+        if self._bonus:
+            self.intrinsic_reward = self._bonus(state, next_state, action)
+            print "--------------------------------------------"
+            print self.intrinsic_reward
+            reward += self.intrinsic_reward
 
         if episode_done[-1]:
-            print "---------done and come here-------------"
             r = 0.0
-        elif self._bonus is None:
-            # calculate from q_function(next_state)
-            print "--------come here for external-----------------"
-            r = self._v([next_state[-1]])[0]
         else:
-            print "--------come here for intrinsic---------------"
+            # calculate from q_function(next_state)
             r = self._v([next_state[-1]])[0]
-            self.intrinsic_reward = self._bonus([state[-1]], [next_state[-1]], [action[-1]])[0]
-            print self.intrinsic_reward
+
         for i in range(batch_size):
             index = batch_size - i - 1
             r = reward[index] + self._discount_factor * r * (1.0 - episode_done[index])
-            if (self._bonus) and (not episode_done[-1]):
-                r += self.intrinsic_reward
-                self.intrinsic_reward = 0
+
             R[index] = r
-            # print "--------re: ", reward[index], "--------icm: ", self.intrinsic_reward, "------v: ", r
-        # print "--------estimate called-----------"
         return R
 
 
