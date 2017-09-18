@@ -47,7 +47,7 @@ class BalanceRewardAcrobot(gym.Wrapper):
 
     def _step(self, action):
         observation, reward, done, info = self.env.step(action)
-        self.rewardx = (-np.cos(s[0]) - np.cos(s[1] + s[0]))  ##Swung height is calculated
+        self.rewardx = (-np.cos(observation[0]) - np.cos(observation[1] + observation[0]))  ##Swung height is calculated
         if self.rewardx < .5:
             reward = -1.
             self.steps_beyond_done = 0
@@ -66,6 +66,8 @@ class BalanceRewardAcrobot(gym.Wrapper):
         if self.steps_beyond_done > 12:
             reward = 0.
 
+        return observation, reward, self.steps_beyond_done > 20, info
+
 
 class ICMLinear(A3CExperimentWithICM):
     def __init__(self, env=None, f_se=None, f_ac=None, f_forward=None, f_inverse=None, episode_n=10000,
@@ -73,8 +75,8 @@ class ICMLinear(A3CExperimentWithICM):
                  batch_size=32):
         if env is None:
             env = gym.make('Acrobot-v1')
-            env = gym.wrappers.Monitor(env, "/home/qrh/hobotrl/log/Acrobot/AcrobotNewWithICM/")
-            # env = RewardSparseAcrobot(env)
+            env = BalanceRewardAcrobot(env)
+            env = gym.wrappers.Monitor(env, "/mnt/d/hobotrl/log/Acrobot/AcrobotNewWithICM/")
 
         if (f_forward and f_se and f_inverse and f_ac) is None:
             dim_action = env.action_space.n
