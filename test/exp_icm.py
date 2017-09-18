@@ -76,7 +76,8 @@ class ICMLinear(A3CExperimentWithICM):
         if env is None:
             env = gym.make('Acrobot-v1')
             env = BalanceRewardAcrobot(env)
-            env = gym.wrappers.Monitor(env, "/mnt/d/hobotrl/log/Acrobot/AcrobotNewWithICM/")
+            env = envs.ScaledRewards(env, 0.1)
+            # env = gym.wrappers.Monitor(env, "/mnt/d/hobotrl/log/Acrobot/AcrobotNewWithICM/")
 
         if (f_forward and f_se and f_inverse and f_ac) is None:
             dim_action = env.action_space.n
