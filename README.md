@@ -23,7 +23,7 @@ Common RL framework and utilities.
 * [v] A3C
 * [v] PPO
 * [v] Bootstrap DQN
-* [v] ICM
+* [v] [ICM](https://arxiv.org/abs/1705.05363)
 
 
 ## Getting started
