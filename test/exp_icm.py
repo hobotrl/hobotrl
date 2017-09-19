@@ -12,12 +12,14 @@ import hobotrl.environments as envs
 
 class ICMLinear(A3CExperimentWithICM):
     def __init__(self, env=None, f_se=None, f_ac=None, f_forward=None, f_inverse=None, episode_n=10000,
-                 learning_rate=5e-5, discount_factor=0.99, entropy=hrl.utils.CappedLinear(1e6, 1e-4, 1e-4),
+                 learning_rate=1e-5, discount_factor=0.99, entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4),
                  batch_size=32):
         if env is None:
-            env = gym.make('Pendulum-v0')
+            env = gym.make('MountainCar-v0')
+            env._max_episode_steps = 10000
+            # env = envs.AugmentEnvWrapper(env, reward_scale=0.01)
             # env = BalanceRewardAcrobot(env)
-            env = gym.wrappers.Monitor(env, "./log/Pendulum/PendulumWithICM/", force=True)
+            # env = gym.wrappers.Monitor(env, "./log/AcrobotNew/ICMMaxlen200", force=True)
 
         if (f_forward and f_se and f_inverse and f_ac) is None:
             dim_action = env.action_space.n
@@ -94,11 +96,12 @@ Experiment.register(ICMLinear, "A3C with ICM for simple observation state experi
 
 class A3C(A3CExperiment):
      def __init__(self, env=None, f_create_net=None, episode_n=50000,
-                  learning_rate=5e-5, discount_factor=0.99, entropy=hrl.utils.CappedLinear(1e6, 1e-4, 1e-4),
+                  learning_rate=1e-4, discount_factor=0.99, entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4),
                   batch_size=32):
          if env is None:
-             env = gym.make('MountainCar-v0')
-             env = gym.wrappers.Monitor(env, "/home/qrh/hobotrl/log/MountainCar/MountainCarA3C")
+             env = gym.make('Acrobot-v1')
+             env._max_episode_steps = 3000
+             # env = gym.wrappers.Monitor(env, "/home/qrh/hobotrl/log/AcrobotNew/Maxlen200")
 
          if f_create_net is None:
              dim_action = env.action_space.n

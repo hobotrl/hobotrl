@@ -635,7 +635,7 @@ class A3CExperiment(Experiment):
         agent = hrl.async.ClusterAgent(create_agent, create_optimizer, args.cluster, args.job, args.index, args.logdir)
         with agent.wait_for_session() as sess:
             agent.set_session(sess)
-            runner = hrl.envs.EnvRunner(self._env, agent, reward_decay=self._discount_factor,
+            runner = hrl.envs.EnvRunner(self._env, agent, reward_decay=self._discount_factor,  max_episode_len=1000,
                                         evaluate_interval=sys.maxint, render_interval=args.render_interval,
                                         render_once=True,
                                         logdir=args.logdir if args.index == 0 else None)
@@ -692,7 +692,7 @@ class A3CExperimentWithICM(Experiment):
         agent = hrl.async.ClusterAgent(create_agent, create_optimizer, args.cluster, args.job, args.index, args.logdir)
         with agent.wait_for_session() as sess:
             agent.set_session(sess)
-            runner = hrl.envs.EnvRunner(self._env, agent, reward_decay=self._discount_factor,
+            runner = hrl.envs.EnvRunner(self._env, agent, reward_decay=self._discount_factor, max_episode_len=10000,
                                         evaluate_interval=sys.maxint, render_interval=args.render_interval,
                                         render_once=True,
                                         logdir=args.logdir if args.index == 0 else None)
