@@ -43,16 +43,18 @@ def func_compile_action(action):
     ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0, )]
     return ACTIONS[action]
 
-def func_compile_reward_agent(rewards):
+def func_compile_reward_agent(rewards, action=0):
     global momentum_ped
     global momentum_opp
     rewards = np.mean(np.array(rewards), axis=0)
+    rewards = rewards.tolist()
+    rewards.append(np.logical_or(action==1, action==2))
     print (' '*10+'R: ['+'{:4.2f} '*len(rewards)+']').format(*rewards),
 
     # obstacle
-    rewards[0] *= -100.0
+    rewards[0] *= 0.0
     # distance to
-    rewards[1] *= -1.0*(rewards[1]>2.0)
+    rewards[1] *= -10.0*(rewards[1]>2.0)
     # velocity
     rewards[2] *= 10
     # opposite
@@ -63,15 +65,20 @@ def func_compile_reward_agent(rewards):
     momentum_ped = (rewards[4]>0.5)*(momentum_ped+rewards[4])
     momentum_ped = min(momentum_ped, 12)
     rewards[4] = -40*(0.9+0.1*momentum_ped)*(momentum_ped>1.0)
-
+    # obs factor
+    rewards[5] *= -100.0
+    # steering
+    rewards[6] *= -10.0
     reward = np.sum(rewards)/100.0
     print '{:6.4f}, {:6.4f}'.format(momentum_opp, momentum_ped),
     print ': {:7.4f}'.format(reward)
     return reward
 
 def gen_backend_cmds():
-    ws_path = '/home/lewis/Projects/catkin_ws_pirate03_lowres350/'
-    initialD_path = '/home/lewis/Projects/hobotrl/playground/initialD/'
+    # ws_path = '/home/lewis/Projects/catkin_ws_pirate03_lowres350/'
+    ws_path = '/Projects/catkin_ws/'
+    # initialD_path = '/home/lewis/Projects/hobotrl/playground/initialD/'
+    initialD_path = '/Projects/hobotrl/playground/initialD/'
     backend_path = initialD_path + 'ros_environments/backend_scripts/'
     utils_path = initialD_path + 'ros_environments/backend_scripts/utils/'
     backend_cmds = [
@@ -87,16 +94,17 @@ def gen_backend_cmds():
         ['roscore'],
         # 4. start reward function script
         ['python', backend_path+'gazebo_rl_reward.py'],
+        # ['python', backend_path+'rl_reward_function.py'],
         # 5. start simulation restarter backend
         ['python', backend_path+'rviz_restart.py', 'honda_dynamic_obs.launch'],
         # 6. [optional] video capture
-        # ['python', backend_path+'non_stop_data_capture.py', 0]
+        ['python', backend_path+'non_stop_data_capture.py', 0]
     ]
     return backend_cmds
 
 env = DrivingSimulatorEnv(
-    address="10.31.40.204", port='22224',
-    # address='localhost', port='22230',
+    # address="10.31.40.204", port='22224',
+    address='localhost', port='22230',
     backend_cmds=gen_backend_cmds(),
     defs_obs=[
         ('/training/image/compressed', 'sensor_msgs.msg.CompressedImage'),
@@ -107,7 +115,9 @@ env = DrivingSimulatorEnv(
         ('/rl/distance_to_longestpath', 'std_msgs.msg.Float32'),
         ('/rl/car_velocity', 'std_msgs.msg.Float32'),
         ('/rl/last_on_opposite_path', 'std_msgs.msg.Int16'),
-        ('/rl/on_pedestrian', 'std_msgs.msg.Bool')],
+        ('/rl/on_pedestrian', 'std_msgs.msg.Bool'),
+        ('/rl/obs_factor', 'std_msgs.msg.Float32'),
+    ],
     defs_action=[('/autoDrive_KeyboardMode', 'std_msgs.msg.Char')],
     rate_action=10.0,
     window_sizes={'obs': 2, 'reward': 3},
@@ -336,7 +346,7 @@ try:
                 n_steps += 1
                 # Env step
                 next_state, reward, done, info = env.step(action)
-                reward = func_compile_reward_agent(reward)
+                reward = func_compile_reward_agent(reward, action)
                 skip_reward += reward
                 # done = (reward < -0.9) or done  # heuristic early stopping
                 # agent step
