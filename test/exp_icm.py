@@ -12,7 +12,7 @@ import hobotrl.environments as envs
 
 class ICMLinear(A3CExperimentWithICM):
     def __init__(self, env=None, f_se=None, f_ac=None, f_forward=None, f_inverse=None, episode_n=10000,
-                 learning_rate=1e-5, discount_factor=0.99, entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4),
+                 learning_rate=1e-4, discount_factor=0.99, entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4),
                  batch_size=32):
         if env is None:
             env = gym.make('MountainCar-v0')
@@ -29,8 +29,8 @@ class ICMLinear(A3CExperimentWithICM):
                 input_state = inputs[0]
 
                 se = hrl.utils.Network.layer_fcs(input_state, [200], 200,
-                                                 activation_hidden=tf.nn.relu,
-                                                 activation_out=tf.nn.relu,
+                                                 activation_hidden=tf.nn.elu,
+                                                 activation_out=tf.nn.elu,
                                                  l2=l2,
                                                  var_scope="se")
                 return {"se": se}
@@ -41,14 +41,14 @@ class ICMLinear(A3CExperimentWithICM):
 
                 # actor
                 pi = hrl.utils.Network.layer_fcs(se, [256], dim_action,
-                                                 activation_hidden=tf.nn.relu,
+                                                 activation_hidden=tf.nn.elu,
                                                  activation_out=tf.nn.softmax,
                                                  l2=l2,
                                                  var_scope="pi")
 
                 # critic
                 v = hrl.utils.Network.layer_fcs(se, [256], 1,
-                                                activation_hidden=tf.nn.relu,
+                                                activation_hidden=tf.nn.elu,
                                                 l2=l2,
                                                 var_scope="v")
                 v = tf.squeeze(v, axis=1)
@@ -62,8 +62,8 @@ class ICMLinear(A3CExperimentWithICM):
                 # forward model
                 f = tf.concat([phi1, action_sample], 1)
                 phi2_hat = hrl.utils.Network.layer_fcs(f, [200], 200,
-                                                       activation_hidden=tf.nn.relu,
-                                                       activation_out=tf.nn.relu,
+                                                       activation_hidden=tf.nn.elu,
+                                                       activation_out=tf.nn.elu,
                                                        l2=l2,
                                                        var_scope="next_state_predict")
                 return {"phi2_hat": phi2_hat}
@@ -76,8 +76,8 @@ class ICMLinear(A3CExperimentWithICM):
                 # inverse model
                 g = tf.concat([phi1, phi2], 1)
                 logits = hrl.utils.Network.layer_fcs(g, [200], dim_action,
-                                                     activation_hidden=tf.nn.relu,
-                                                     activation_out=tf.nn.relu,
+                                                     activation_hidden=tf.nn.elu,
+                                                     # activation_out=tf.nn.relu,
                                                      l2=l2,
                                                      var_scope="action_predict")
                 return {"logits": logits}

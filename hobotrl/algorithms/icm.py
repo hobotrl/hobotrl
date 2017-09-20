@@ -140,11 +140,16 @@ class InverseUpdater(network.NetworkUpdater):
 
             # inverse loss calculation
             with tf.name_scope("inverse"):
+                depth = np.shape(op_action_hat)[1]
                 inverse_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
-                    labels=tf.one_hot(indices=self._input_action, depth=np.shape(op_action_hat)[1], on_value=1,
+                    labels=tf.one_hot(indices=self._input_action, depth=depth, on_value=1,
                                       off_value=0, axis=-1),
-                    logits=op_action_hat)
-                )
+                    logits=op_action_hat))
+                # inverse_loss = tf.reduce_mean(
+                #     tf.square(
+                #         op_action_hat -
+                #         tf.one_hot(indices=self._input_action, depth=depth, on_value=1.0, off_value=0.0, axis=-1))
+                #     )
                 self._inverse_loss = inverse_loss
 
             self._op_loss = self._inverse_loss
@@ -217,7 +222,7 @@ class ActorCriticWithICM(sampling.TrajectoryBatchUpdate,
             v = network.NetworkFunction(f_ac_out["v"]).output().op
             pi_dist = network.NetworkFunction(f_ac_out["pi"]).output().op
 
-            one_hot_action = tf.one_hot(indices=inputs[2], depth=2, on_value=1, off_value=0, axis=-1)
+            one_hot_action = tf.one_hot(indices=inputs[2], depth=3, on_value=1, off_value=0, axis=-1)
             one_hot_action = tf.cast(one_hot_action, tf.float32)
             f_forward_out = network.Network([one_hot_action, f_se1], f_forward, var_scope='learn_forward')
             phi2_hat = network.NetworkFunction(f_forward_out["phi2_hat"]).output().op
@@ -278,11 +283,14 @@ class ActorCriticWithICM(sampling.TrajectoryBatchUpdate,
             # continuous action: mean / stddev for normal distribution
         self._phi2_hat_function = network.NetworkFunction(self.network["phi2_hat"])
         self._phi2_function = network.NetworkFunction(self.network["phi2"])
+        self._phi1_function = network.NetworkFunction(self.network["phi1"])
         self._logits = network.NetworkFunction(self.network["logits"])
         self._bonus = network.NetworkFunction(self.network["bonus"])
 
         if target_estimator is None:
-            target_estimator = target_estimate.NStepTD(self._v_function, discount_factor, bonus=self._bonus)
+            target_estimator = target_estimate.NStepTD(self._v_function, discount_factor, bonus=self._bonus,
+                                                       phi1=self._phi1_function, phi2=self._phi2_function,
+                                                       logits=self._logits)
             # target_estimator = target_estimate.GAENStep(self._v_function, discount_factor)
         self.network_optimizer = network_optimizer
         network_optimizer.add_updater(
