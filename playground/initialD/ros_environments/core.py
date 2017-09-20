@@ -113,6 +113,7 @@ class DrivingSimulatorEnv(object):
         self.is_env_resetting = Event()  # if environment is undergoing reset
         self.is_env_done = Event()  # if environment is is done for this ep
         self.is_env_done.set()
+        self.cnt_q_except = Value('i', self.MAX_EXCEPTION)
 
 
         # backend
@@ -154,12 +155,18 @@ class DrivingSimulatorEnv(object):
             new_action.append(action_class(action[i]))
         action = tuple(new_action)
 
-        # do __step(), try until get non-None result
+        # do __step(), every 10 fails try reset
+        num_fail = 10
         while True:
             ret = self.__step(action)
             if ret is not None:
                 break
-            time.sleep(1.0)
+            else:
+                num_fail -= 1
+                if num_fail == 0:
+                    self.reset()
+                    num_fail = 10
+            time.sleep(0.5)
         next_state, reward, done, info = ret
         #print "[step()]: action {}, reward {}, done {}.".format(
         #    action, reward, done)
@@ -196,6 +203,9 @@ class DrivingSimulatorEnv(object):
                    self.is_backend_up.is_set(),
                    self.is_envnode_up.is_set(),
                    self.is_q_ready.is_set())
+                with self.cnt_q_except.get_lock():
+                    if self.cnt_q_except.value<=0:
+                        return None
                 time.sleep(0.5)
 
         # action
@@ -338,6 +348,9 @@ class DrivingSimulatorEnv(object):
                     self.is_backend_up.is_set(),
                     self.is_envnode_up.is_set(),
                     self.is_q_ready.is_set())
+                with self.cnt_q_except.get_lock():
+                    if self.cnt_q_except.value<=0:
+                        return None
                 time.sleep(0.5)
 
         # start step delay clock
@@ -380,9 +393,10 @@ class DrivingSimulatorEnv(object):
             'reward': self.q_reward,
             'action': self.q_action,
             'done': self.q_done}
-        self.cnt_q_except = Value('i', self.MAX_EXCEPTION)
         self.is_q_ready.set()
         self.is_q_cleared.clear()
+        with self.cnt_q_except.get_lock():
+            self.cnt_q_except.value = self.MAX_EXCEPTION
 
     def __queue_monitor(self):
         """Monitors queue exceptions and empty queues necessary.
