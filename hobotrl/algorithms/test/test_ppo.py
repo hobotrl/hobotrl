@@ -42,12 +42,7 @@ class TestPPO(unittest.TestCase):
         )
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
-        sv = agent.init_supervisor(
-            graph=tf.get_default_graph(), worker_index=0,
-            init_op=tf.global_variables_initializer(), save_dir=None
-        )
-        with sv.managed_session(config=config) as sess:
-            agent.set_session(sess)
+        with agent.create_session(config=config) as sess:
             runner = hrl.EnvRunner(
                 env, agent, evaluate_interval=sys.maxint,
                 render_interval=sys.maxint, logdir=None

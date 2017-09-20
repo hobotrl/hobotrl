@@ -326,9 +326,7 @@ class OTDQNPendulum(Experiment):
         )
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
-        sv = agent.init_supervisor(graph=tf.get_default_graph(), worker_index=0,
-                                   init_op=tf.global_variables_initializer(), save_dir=args.logdir)
-        with sv.managed_session(config=config) as sess:
+        with agent.create_session(config=config, save_dir=args.logdir) as sess:
             agent.set_session(sess)
             runner = hrl.envs.EnvRunner(env, agent, reward_decay=discount_factor,
                                         evaluate_interval=sys.maxint, render_interval=args.render_interval,
@@ -388,10 +386,7 @@ class AOTDQNPendulum(Experiment):
         )
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
-        sv = agent.init_supervisor(graph=tf.get_default_graph(), worker_index=0,
-                                   init_op=tf.global_variables_initializer(), save_dir=args.logdir)
-        with sv.managed_session(config=config) as sess:
-            agent.set_session(sess)
+        with agent.create_session(config=config, save_dir=args.logdir) as sess:
             runner = hrl.envs.EnvRunner(env, agent, reward_decay=reward_decay,
                                         evaluate_interval=sys.maxint, render_interval=args.render_interval,
                                         logdir=args.logdir)
@@ -475,10 +470,7 @@ class AOTDQNBreakout(Experiment):
         )
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
-        sv = agent.init_supervisor(graph=tf.get_default_graph(), worker_index=0,
-                                   init_op=tf.global_variables_initializer(), save_dir=args.logdir)
-        with sv.managed_session(config=config) as sess:
-            agent.set_session(sess)
+        with agent.create_session(config=config, save_dir=args.logdir) as sess:
             runner = hrl.envs.EnvRunner(env, agent, reward_decay=reward_decay,
                                         evaluate_interval=sys.maxint, render_interval=args.render_interval,
                                         logdir=args.logdir)

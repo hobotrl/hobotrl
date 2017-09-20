@@ -94,12 +94,7 @@ class DQNExperiment(Experiment):
         )
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
-        sv = agent.init_supervisor(
-            graph=tf.get_default_graph(), worker_index=0,
-            init_op=tf.global_variables_initializer(), save_dir=args.logdir
-        )
-        with sv.managed_session(config=config) as sess:
-            agent.set_session(sess)
+        with agent.create_session(config=config, save_dir=args.logdir) as sess:
             runner = hrl.envs.EnvRunner(
                 self._env, agent, evaluate_interval=sys.maxint,
                 render_interval=args.render_interval, logdir=args.logdir,
@@ -183,10 +178,7 @@ class PERDQNExperiment(Experiment):
             **kwargs)
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
-        sv = agent.init_supervisor(graph=tf.get_default_graph(), worker_index=0,
-                                   init_op=tf.global_variables_initializer(), save_dir=args.logdir)
-        with sv.managed_session(config=config) as sess:
-            agent.set_session(sess)
+        with agent.create_session(config=config, save_dir=args.logdir) as sess:
             runner = hrl.envs.EnvRunner(self._env, agent,
                                         evaluate_interval=sys.maxint, render_interval=args.render_interval,
                                         logdir=args.logdir)
@@ -262,11 +254,7 @@ class OTDQNExperiment(Experiment):
         )
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
-        sv = agent.init_supervisor(
-            graph=tf.get_default_graph(), worker_index=0,
-            init_op=tf.global_variables_initializer(), save_dir=args.logdir
-        )
-        with sv.managed_session(config=config) as sess:
+        with agent.create_session(config=config, save_dir=args.logdir) as sess:
             agent.set_session(sess)
             runner = hrl.envs.EnvRunner(
                 self._env, agent, evaluate_interval=sys.maxint,
@@ -331,12 +319,7 @@ class DPGExperiment(Experiment):
         )
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
-        sv = agent.init_supervisor(
-            graph=tf.get_default_graph(), worker_index=0,
-            init_op=tf.global_variables_initializer(), save_dir=args.logdir
-        )
-        with sv.managed_session(config=config) as sess:
-            agent.set_session(sess)
+        with agent.create_session(config=config, save_dir=args.logdir) as sess:
             runner = hrl.envs.EnvRunner(
                 self._env, agent, evaluate_interval=sys.maxint, render_interval=40,
                 render_once=True,
@@ -428,10 +411,7 @@ class ACOOExperiment(Experiment):
                     if i == args.index:
                         agent = worker
 
-            sv = agent.init_supervisor(graph=tf.get_default_graph(), worker_index=args.index,
-                                       init_op=tf.global_variables_initializer(), save_dir=args.logdir)
-            with sv.prepare_or_wait_for_session(server.target) as sess:
-                agent.set_session(sess)
+            with agent.create_session(master=server.target, worker_index=args.index, save_dir=args.logdir) as sess:
                 runner = hrl.envs.EnvRunner(env, agent, reward_decay=self.reward_decay,
                                             evaluate_interval=sys.maxint, render_interval=args.render_interval,
                                             render_once=True,
@@ -526,16 +506,15 @@ class ACOOExperimentCon(Experiment):
                     if i == args.index:
                         agent = worker
 
-            sv = agent.init_supervisor(graph=tf.get_default_graph(), worker_index=args.index,
-                                       init_op=tf.global_variables_initializer(), save_dir=args.logdir)
-            with sv.prepare_or_wait_for_session(server.target) as sess:
+            with agent.create_session(master=server.target, worker_index=args.index, save_dir=args.logdir) as sess:
                 agent.set_session(sess)
                 runner = hrl.envs.EnvRunner(env, agent, reward_decay=self.reward_decay,
                                             evaluate_interval=sys.maxint, render_interval=sys.maxint,
                                             render_once=True,
                                             logdir=args.logdir if args.index == 0 else None)
                 runner.episode(self.episode_n)
-                
+
+
 class ACExperiment(Experiment):
 
     def __init__(self,
@@ -577,12 +556,7 @@ class ACExperiment(Experiment):
         )
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
-        sv = agent.init_supervisor(
-            graph=tf.get_default_graph(), worker_index=0,
-            init_op=tf.global_variables_initializer(), save_dir=args.logdir
-        )
-        with sv.managed_session(config=config) as sess:
-            agent.set_session(sess)
+        with agent.create_session(config=config, save_dir=args.logdir) as sess:
             runner = hrl.envs.EnvRunner(
                 self._env, agent, evaluate_interval=sys.maxint,
                 render_interval=args.render_interval, logdir=args.logdir
@@ -744,12 +718,7 @@ class PPOExperiment(Experiment):
         )
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
-        sv = agent.init_supervisor(
-            graph=tf.get_default_graph(), worker_index=0,
-            init_op=tf.global_variables_initializer(), save_dir=args.logdir
-        )
-        with sv.managed_session(config=config) as sess:
-            agent.set_session(sess)
+        with agent.create_session(config=config, save_dir=args.logdir) as sess:
             runner = hrl.envs.EnvRunner(
                 self._env, agent, evaluate_interval=sys.maxint,
                 render_interval=args.render_interval, logdir=args.logdir
