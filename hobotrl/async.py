@@ -84,10 +84,11 @@ class ClusterAgent(Agent):
     def new_episode(self, state):
         return self._agent.new_episode(state)
 
-    def wait_for_session(self):
-        sv = self._agent.init_supervisor(graph=tf.get_default_graph(), worker_index=self._job_index,
-                                         init_op=tf.global_variables_initializer(), save_dir=self._logdir)
-        return sv.prepare_or_wait_for_session(self._server.target)
+    def create_session(self, config=None, **kwargs):
+        return self._agent.create_session(config=config,
+                                          master=self._server.target,
+                                          worker_index=self._job_index,
+                                          save_dir=self._logdir)
 
     def set_session(self, sess):
         self._agent.set_session(sess)
@@ -123,8 +124,9 @@ class AsynchronousAgent(Agent):
     def set_session(self, sess):
         self._agent.set_session(sess)
 
-    def init_supervisor(self, graph=None, worker_index=0, init_op=None, save_dir=None):
-        return self._agent.init_supervisor(graph=graph, worker_index=worker_index, init_op=init_op, save_dir=save_dir)
+    def create_session(self, config=None, save_dir=None, **kwargs):
+        return self._agent.create_session(config=config,
+                                          save_dir=save_dir)
 
     def stop(self, blocking=True):
         self._thread.stop()
@@ -176,8 +178,11 @@ class AsynchronousAgent2(Agent):
         self._step_agent.set_session(sess)
         self._act_agent.set_session(sess)
 
-    def init_supervisor(self, graph=None, worker_index=0, init_op=None, save_dir=None):
-        return self._step_agent.init_supervisor(graph=graph, worker_index=worker_index, init_op=init_op, save_dir=save_dir)
+    def create_session(self, config=None, save_dir=None, **kwargs):
+        sess = self._step_agent.create_session(config=config,
+                                               save_dir=save_dir)
+        self._act_agent.set_session(sess)
+        return sess
 
     @property
     def sess(self):
