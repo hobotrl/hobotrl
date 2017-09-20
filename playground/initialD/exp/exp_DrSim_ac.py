@@ -210,14 +210,9 @@ try:
 
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
-    sv = agent.init_supervisor(
-        graph=tf.get_default_graph(), worker_index=0,
-        init_op=tf.global_variables_initializer(), save_dir=logdir
-    )
     summary_writer = tf.summary.FileWriter(logdir, graph=tf.get_default_graph())
 
-    with sv.managed_session(config=config) as sess:
-        agent.set_session(sess)
+    with agent.create_session(config=config, save_dir=logdir) as sess:
         # print "========\n"*5
         # lr = graph.get_operation_by_name('lr').outputs[0]
         while True:
