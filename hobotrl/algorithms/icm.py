@@ -104,7 +104,7 @@ class ForwardUpdater(network.NetworkUpdater):
 
             # forward loss calculation
             with tf.name_scope("forward"):
-                forward_loss = 0.5 * tf.reduce_mean(tf.square(tf.subtract(op_phi_next_state_hat, op_phi_next_state)),
+                forward_loss = 0.2 * tf.reduce_mean(tf.square(tf.subtract(op_phi_next_state_hat, op_phi_next_state)),
                                                     name="forward_loss")
                 self._forward_loss = forward_loss
             self._op_loss = self._forward_loss
@@ -141,7 +141,7 @@ class InverseUpdater(network.NetworkUpdater):
             # inverse loss calculation
             with tf.name_scope("inverse"):
                 depth = np.shape(op_action_hat)[1]
-                inverse_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
+                inverse_loss = 0.8 * tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
                     labels=tf.one_hot(indices=self._input_action, depth=depth, on_value=1,
                                       off_value=0, axis=-1),
                     logits=op_action_hat))
@@ -177,7 +177,7 @@ class InverseUpdater(network.NetworkUpdater):
 
 class ActorCriticWithICM(sampling.TrajectoryBatchUpdate,
           BaseDeepAgent):
-    def __init__(self,
+    def __init__(self,env,
                  f_se, f_ac, f_forward, f_inverse, state_shape,
                  # ACUpdate arguments
                  discount_factor, entropy=1e-3, target_estimator=None, max_advantage=10.0,
@@ -222,7 +222,7 @@ class ActorCriticWithICM(sampling.TrajectoryBatchUpdate,
             v = network.NetworkFunction(f_ac_out["v"]).output().op
             pi_dist = network.NetworkFunction(f_ac_out["pi"]).output().op
 
-            one_hot_action = tf.one_hot(indices=inputs[2], depth=3, on_value=1, off_value=0, axis=-1)
+            one_hot_action = tf.one_hot(indices=inputs[2], depth=env.action_space.n, on_value=1, off_value=0, axis=-1)
             one_hot_action = tf.cast(one_hot_action, tf.float32)
             f_forward_out = network.Network([one_hot_action, f_se1], f_forward, var_scope='learn_forward')
             phi2_hat = network.NetworkFunction(f_forward_out["phi2_hat"]).output().op
@@ -230,7 +230,7 @@ class ActorCriticWithICM(sampling.TrajectoryBatchUpdate,
             f_inverse_out = network.Network([f_se1, f_se2], f_inverse, var_scope='learn_inverse')
             logits = network.NetworkFunction(f_inverse_out["logits"]).output().op
 
-            bonus = 0.5 * tf.reduce_sum(tf.square(f_se2 - phi2_hat), axis=1)
+            bonus = 0.2 * tf.reduce_sum(tf.square(f_se2 - phi2_hat), axis=1)
 
             return {"pi": pi_dist, "v": v, "logits": logits, "phi1": f_se1, "phi2": f_se2, "phi2_hat": phi2_hat,
                     "bonus": bonus}

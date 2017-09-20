@@ -15,7 +15,7 @@ class ICMLinear(A3CExperimentWithICM):
                  learning_rate=1e-4, discount_factor=0.99, entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4),
                  batch_size=32):
         if env is None:
-            env = gym.make('MountainCar-v0')
+            env = gym.make('Acrobot-v1')
             env._max_episode_steps = 10000
             # env = envs.AugmentEnvWrapper(env, reward_scale=0.01)
             # env = BalanceRewardAcrobot(env)
