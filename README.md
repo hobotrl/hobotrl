@@ -22,7 +22,8 @@ Common RL framework and utilities.
 * [v] Optimality Tightening
 * [v] A3C
 * [v] PPO
-* Bootstrap DQN
+* [v] Bootstrap DQN
+* [v] [ICM](https://arxiv.org/abs/1705.05363)
 
 
 ## Getting started
