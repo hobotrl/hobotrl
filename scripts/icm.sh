@@ -1,10 +1,10 @@
 #
-#	usage: . ./scripts/icm_cartpole.sh
+#	usage: . ./scripts/icm.sh
 #
 
 exp_file=./test/exp_icm.py
 exp_name=ICMLinear
-log_dir=./log/MountainCar/1-0.05-1
+log_dir=./log/$exp_name
 # cluster="{'ps':['localhost:2232'], 'worker':['localhost:2233', 'localhost:2234', 'localhost:2235']}"
 cluster="{'ps':['localhost:2242'], 'worker':['localhost:2243', 'localhost:2244', 'localhost:2245', 'localhost:2246']}"
 worker_n=4
