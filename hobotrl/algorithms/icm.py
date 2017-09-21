@@ -213,6 +213,10 @@ class ActorCriticWithICM(sampling.TrajectoryBatchUpdate,
         """
 
         def f_icm(inputs):
+            """
+            :param inputs: a list, [state, next_state, action]
+            :return: a dict of op
+            """
             f_se1 = network.Network([inputs[0]], f_se, var_scope='learn_se1')
             f_se1 = network.NetworkFunction(f_se1["se"]).output().op
             f_se2 = network.Network([inputs[1]], f_se, var_scope='learn_se2')
@@ -288,9 +292,7 @@ class ActorCriticWithICM(sampling.TrajectoryBatchUpdate,
         self._bonus = network.NetworkFunction(self.network["bonus"])
 
         if target_estimator is None:
-            target_estimator = target_estimate.NStepTD(self._v_function, discount_factor, bonus=self._bonus,
-                                                       phi1=self._phi1_function, phi2=self._phi2_function,
-                                                       logits=self._logits)
+            target_estimator = target_estimate.NStepTD(self._v_function, discount_factor, bonus=self._bonus)
             # target_estimator = target_estimate.GAENStep(self._v_function, discount_factor)
         self.network_optimizer = network_optimizer
         network_optimizer.add_updater(
@@ -320,16 +322,11 @@ class ActorCriticWithICM(sampling.TrajectoryBatchUpdate,
         return network.Network([input_state, input_next_state, self._input_action], f_icm, var_scope="learn")
 
     def update_on_trajectory(self, batch):
-        # self.network_optimizer.update("ac", self.sess, batch)
-        # self.network_optimizer.update("l2", self.sess)
         self.network_optimizer.update("forward", self.sess, batch)
-        # self.bonus = self.network_optimizer.optimize_step(self.sess)
-        # print "--------------bonus---------------", self.bonus
         self.network_optimizer.update("inverse", self.sess, batch)
         self.network_optimizer.update("ac", self.sess, batch)
         self.network_optimizer.update("l2", self.sess)
         info = self.network_optimizer.optimize_step(self.sess)
-        # print "----------------info-------------", info
         return info, {}
 
     def set_session(self, sess):
