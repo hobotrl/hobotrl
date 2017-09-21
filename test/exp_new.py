@@ -55,8 +55,11 @@ class A3CPendulum(Experiment):
             )
             return agent
 
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+
         agent = ClusterAgent(create_agent, create_optimizer, args.cluster, args.job, args.index, args.logdir)
-        with agent.wait_for_session() as sess:
+        with agent.create_session(config=config) as sess:
             agent.set_session(sess)
             runner = hrl.envs.EnvRunner(env, agent, reward_decay=discount_factor,
                                         evaluate_interval=sys.maxint, render_interval=args.render_interval,
@@ -103,8 +106,11 @@ class ADQNExperiment(Experiment):
             )
             return agent
 
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+
         agent = ClusterAgent(create_agent, create_optimizer, args.cluster, args.job, args.index, args.logdir)
-        with agent.wait_for_session() as sess:
+        with agent.create_session(config=config) as sess:
             agent.set_session(sess)
             runner = hrl.envs.EnvRunner(env, agent, reward_decay=discount_factor,
                                         evaluate_interval=sys.maxint, render_interval=args.render_interval,
