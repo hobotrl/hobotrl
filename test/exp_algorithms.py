@@ -606,8 +606,11 @@ class A3CExperiment(Experiment):
             )
             return agent
 
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+
         agent = hrl.async.ClusterAgent(create_agent, create_optimizer, args.cluster, args.job, args.index, args.logdir)
-        with agent.wait_for_session() as sess:
+        with agent.create_session(config=config) as sess:
             agent.set_session(sess)
             runner = hrl.envs.EnvRunner(self._env, agent, reward_decay=self._discount_factor,  max_episode_len=1000,
                                         evaluate_interval=sys.maxint, render_interval=args.render_interval,
@@ -664,10 +667,13 @@ class A3CExperimentWithICM(Experiment):
             )
             return agent
 
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+
         agent = hrl.async.ClusterAgent(create_agent, create_optimizer, args.cluster, args.job, args.index, args.logdir)
-        with agent.wait_for_session() as sess:
+        with agent.create_session(config=config) as sess:
             agent.set_session(sess)
-            runner = hrl.envs.EnvRunner(self._env, agent, reward_decay=self._discount_factor, max_episode_len=200,
+            runner = hrl.envs.EnvRunner(self._env, agent, reward_decay=self._discount_factor, max_episode_len=10000,
                                         evaluate_interval=sys.maxint, render_interval=args.render_interval,
                                         render_once=True,
                                         logdir=args.logdir if args.index == 0 else None)

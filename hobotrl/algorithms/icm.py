@@ -104,7 +104,7 @@ class ForwardUpdater(network.NetworkUpdater):
 
             # forward loss calculation
             with tf.name_scope("forward"):
-                forward_loss = 0.2 * tf.reduce_mean(tf.square(tf.subtract(op_phi_next_state_hat, op_phi_next_state)),
+                forward_loss = 0.05 * tf.reduce_mean(tf.square(tf.subtract(op_phi_next_state_hat, op_phi_next_state)),
                                                     name="forward_loss")
                 self._forward_loss = forward_loss
             self._op_loss = self._forward_loss
@@ -141,7 +141,7 @@ class InverseUpdater(network.NetworkUpdater):
             # inverse loss calculation
             with tf.name_scope("inverse"):
                 depth = np.shape(op_action_hat)[1]
-                inverse_loss = 0.8 * tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
+                inverse_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
                     labels=tf.one_hot(indices=self._input_action, depth=depth, on_value=1,
                                       off_value=0, axis=-1),
                     logits=op_action_hat))
@@ -230,7 +230,7 @@ class ActorCriticWithICM(sampling.TrajectoryBatchUpdate,
             f_inverse_out = network.Network([f_se1, f_se2], f_inverse, var_scope='learn_inverse')
             logits = network.NetworkFunction(f_inverse_out["logits"]).output().op
 
-            bonus = 0.2 * tf.reduce_sum(tf.square(f_se2 - phi2_hat), axis=1)
+            bonus = 0.05 * tf.reduce_sum(tf.square(f_se2 - phi2_hat), axis=1)
 
             return {"pi": pi_dist, "v": v, "logits": logits, "phi1": f_se1, "phi2": f_se2, "phi2_hat": phi2_hat,
                     "bonus": bonus}
