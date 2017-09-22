@@ -1,0 +1,159 @@
+import sys
+sys.path.append(".")
+import logging
+import math
+import numpy as np
+import gym
+import cv2
+import matplotlib.colors as colors
+from exp_algorithms import *
+import hobotrl.environments as envs
+
+
+class I2A(A3CExperimentWithI2A):
+    def __init__(self, env=None, f_se = None, f_ac=None, f_env=None, f_rollout=None, f_encoder = None, episode_n=10000,
+                 learning_rate=1e-4, discount_factor=0.99, entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4),
+                 batch_size=32):
+        if env is None:
+            env = gym.make('MountainCar-v0')
+            env._max_episode_steps = 10000
+            # env = envs.AugmentEnvWrapper(env, reward_scale=0.01)
+            # env = BalanceRewardAcrobot(env)
+            # env = gym.wrappers.Monitor(env, "./log/AcrobotNew/ICMMaxlen200", force=True)
+
+        if (f_env and f_rollout and f_ac) is None:
+            dim_action = env.action_space.n
+            dim_observation = env.observation_space.shape
+
+            def create_se(inputs):
+                l2 = 1e-7
+                input_state = inputs[0]
+                se = hrl.utils.Network.conv2ds(input_state,
+                                               shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
+                                               out_flatten=True,
+                                               activation=tf.nn.relu,
+                                               l2=l2,
+                                               var_scope="se")
+                return {"se": se}
+
+            def create_ac(inputs):
+                l2 = 1e-7
+                input_feature = inputs[0]
+
+                v = hrl.utils.Network.layer_fcs(input_feature, [256], 1,
+                                                activation_hidden=tf.nn.relu,
+                                                l2=l2,
+                                                var_scope="v")
+                v = tf.squeeze(v, axis=1)
+                pi = hrl.utils.Network.layer_fcs(input_feature, [256], dim_action,
+                                                 activation_hidden=tf.nn.relu,
+                                                 activation_out=tf.nn.softmax,
+                                                 l2=l2,
+                                                 var_scope="pi")
+
+                return {"v": v, "pi": pi}
+
+            def create_rollout(inputs):
+                l2 = 1e-7
+                input_state = inputs[0]
+
+                # rollout that imitates the A3C policy
+                # First version just simply looks like A#C network
+                se = hrl.utils.Network.conv2ds(input_state,
+                                               shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
+                                               out_flatten=True,
+                                               activation=tf.nn.relu,
+                                               l2=l2,
+                                               var_scope="se")
+
+                rollout_action = hrl.utils.Network.layer_fcs(se, [256], dim_action,
+                                                 activation_hidden=tf.nn.relu,
+                                                 activation_out=tf.nn.softmax,
+                                                 l2=l2,
+                                                 var_scope="pi")
+                return {"rollout_action": rollout_action}
+
+            def create_env(inputs):
+                l2 = 1e-7
+                input_state = inputs[0]
+                input_action = inputs[1]
+                input_action = tf.image.resize_images(tf.reshape(input_action, [-1, 1, 1, dim_action]),
+                                                      [dim_observation[0], dim_observation[1]])
+                full_input = tf.concat([input_action, input_state], axis=3)
+
+                conv_1 = hrl.utils.Network.conv2ds(full_input,
+                                               shape=[(32, 8, 4)],
+                                               out_flatten=True,
+                                               activation=tf.nn.relu,
+                                               l2=l2,)
+
+                up_1 = tf.image.resize_images(conv_1, [dim_observation[0], dim_observation[1]])
+
+                concat_1 = tf.concat([up_1, input_state], axis=3)
+
+                conv_2 = hrl.utils.Network.conv2ds(concat_1,
+                                                   shape=[(16, 3, 1)],
+                                                   out_flatten=True,
+                                                   activation=tf.nn.relu,
+                                                   l2=l2, )
+
+                up_2 = tf.image.resize_images(conv_2, [dim_observation[0], dim_observation[1]])
+
+                concat_2 = tf.concat([up_2, input_state], axis=3)
+
+                conv_3 = hrl.utils.Network.conv2ds(concat_2,
+                                                   shape=[(8, 3, 1)],
+                                                   out_flatten=True,
+                                                   activation=tf.nn.relu,
+                                                   l2=l2, )
+
+                reward = hrl.utils.Network.layer_fcs(conv_3, [256], 1,
+                                                 activation_hidden=tf.nn.relu,
+                                                 l2=l2,
+                                                 var_scope="reward")
+
+                up_3 = tf.image.resize_images(conv_3, [dim_observation[0], dim_observation[1]])
+
+                concat_3 = tf.concat([up_3, input_state], axis=3)
+
+                conv_4 = hrl.utils.Network.conv2ds(concat_3,
+                                                   shape=[(3, 1, 1)],
+                                                   out_flatten=True,
+                                                   activation=tf.nn.relu,
+                                                   l2=l2, )
+
+                return {"next_state": conv_4, "reward": reward}
+
+            def create_encoder(inputs):
+                l2 = 1e-7
+                input_state = inputs[0]
+
+                for state in inputs:
+                    if state == input_state:
+                        continue
+
+                    input_state = tf.concat([input_state, state], axis=3)
+
+                rolling_encoder = hrl.utils.Network.conv2ds(input_state,
+                                               shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
+                                               out_flatten=True,
+                                               activation=tf.nn.relu,
+                                               l2=l2,
+                                               var_scope="re")
+                return {"re": rolling_encoder}
+
+            f_se = create_se
+            f_ac = create_ac
+            f_env = create_env
+            f_rollout = create_rollout
+            f_encoder = create_encoder
+
+        super(I2A, self).__init__(env, f_se, f_ac, f_env, f_rollout, f_encoder, episode_n, learning_rate,
+                                                 discount_factor, entropy, batch_size)
+
+
+Experiment.register(I2A, "A3C with I2A for complex observation state experiments")
+
+
+if __name__ == '__main__':
+    Experiment.main()

@@ -92,10 +92,77 @@ class ActorCriticUpdater(network.NetworkUpdater):
         return network.UpdateRun(feed_dict=feed_dict, fetch_dict=fetch_dict)
 
 
-class ActorCritic(sampling.TrajectoryBatchUpdate,
+class PolicyNetUpdater(network.NetworkUpdater):
+    def __init__(self, policy_dist, v_function, target_estimator, entropy=1e-3, actor_weight=1.0):
+        super(PolicyNetUpdater, self).__init__()
+        self._policy_dist, self._v_function = policy_dist, v_function
+        self._target_estimator = target_estimator
+        self._entropy = entropy
+        with tf.name_scope("ActorCriticUpdater"):
+            with tf.name_scope("input"):
+                self._input_target_v = tf.placeholder(dtype=tf.float32, shape=[None], name="input_target_v")
+                self._input_action = policy_dist.input_sample()
+                self._input_entropy = tf.placeholder(dtype=tf.float32, shape=[], name="input_entropy")
+            op_v = v_function.output().op
+            with tf.name_scope("value"):
+                td = self._input_target_v - op_v
+                self._q_loss = tf.reduce_mean(network.Utils.clipped_square(td))
+            with tf.name_scope("policy"):
+                advantage = self._input_target_v - op_v
+                self._advantage = advantage
+                _mean, _var = tf.nn.moments(advantage, axes=[0])
+                self._std_advantage = advantage / (tf.sqrt(_var) + 1.0)
+                # self._std_advantage = self._advantage
+                pi_loss = tf.reduce_mean(self._policy_dist.log_prob() * tf.stop_gradient(self._std_advantage))
+                entropy_loss = tf.reduce_mean(self._input_entropy * self._policy_dist.entropy())
+                self._pi_loss = pi_loss
+            self._op_loss = self._q_loss - actor_weight * (self._pi_loss + entropy_loss)
+            print "advantage, self._policy_dist.entropy(), self._policy_dist.log_prob()", advantage, self._policy_dist.entropy(), self._policy_dist.log_prob()
+        self._update_operation = network.MinimizeLoss(self._op_loss,
+                                                      var_list=self._v_function.variables +
+                                                               self._policy_dist._dist_function.variables)
+
+    def declare_update(self):
+        return self._update_operation
+
+    def update(self, sess, batch, *args, **kwargs):
+        state, action, reward, next_state, episode_done = batch["state"], \
+                                                          batch["action"], \
+                                                          batch["reward"], \
+                                                          batch["next_state"], \
+                                                          batch["episode_done"]
+        target_value = self._target_estimator.estimate(state, action, reward, next_state, episode_done)
+        feed_dict = self._v_function.input_dict(state)
+        feed_dict.update(self._policy_dist.dist_function().input_dict(state))
+        feed_more = {
+            self._input_action: action,
+            self._input_target_v: target_value,
+            self._input_entropy: self._entropy
+        }
+        feed_dict.update(feed_more)
+        fetch_dict = {
+            "advantage": self._advantage,
+            "std_advantage": self._std_advantage,
+            "target_value": target_value,
+            "pi_loss": self._pi_loss,
+            "q_loss": self._q_loss,
+            "entropy": self._policy_dist.entropy(),
+            "log_prob": self._policy_dist.log_prob(),
+        }
+        if isinstance(self._policy_dist, hrl.tf_dependent.distribution.NormalDistribution):
+            fetch_dict.update({
+                "stddev": self._policy_dist.stddev(),
+                "mean": self._policy_dist.mean()
+            })
+        else:
+            pass
+        return network.UpdateRun(feed_dict=feed_dict, fetch_dict=fetch_dict)
+
+
+class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
           BaseDeepAgent):
     def __init__(self,
-                 f_create_net, state_shape,
+                 f_se, f_ac, f_env, f_rollout, f_encoder, state_shape,
                  # ACUpdate arguments
                  discount_factor, entropy=1e-3, target_estimator=None, max_advantage=10.0,
                  # optimizer arguments
@@ -128,8 +195,28 @@ class ActorCritic(sampling.TrajectoryBatchUpdate,
         :param args:
         :param kwargs:
         """
+
+        def f_i2a(inputs):
+            input_observation = inputs[0]
+
+            se = network.Network([input_observation], f_se, var_scope="se_ac")
+            se = network.NetworkFunction(se["se"]).output().op
+
+            rollout = network.Network([input_observation], f_rollout, var_scope="rollout")
+            rollout_action1 = network.NetworkFunction(rollout["rollout_action"]).output().op
+
+            env_model = network.Network([input_observation, rollout_action1], f_env, var_scope="EnvModel")
+            next_state = network.NetworkFunction(env_model["next_state"]).output().op
+            reward = network.NetworkFunction(env_model["reward"]).output().op
+
+
+
         kwargs.update({
-            "f_create_net": f_create_net,
+            "f_se": f_se,
+            "f_ac": f_ac,
+            "f_env": f_env,
+            "f_rollout": f_rollout,
+            "f_encoder": f_encoder,
             "state_shape": state_shape,
             "discount_factor": discount_factor,
             "entropy": entropy,
@@ -145,7 +232,7 @@ class ActorCritic(sampling.TrajectoryBatchUpdate,
             sampler = sampling.TrajectoryOnSampler(interval=batch_size)
             kwargs.update({"sampler": sampler})
 
-        super(ActorCritic, self).__init__(*args, **kwargs)
+        super(ActorCriticWithI2A, self).__init__(*args, **kwargs)
         pi = self.network["pi"]
         if pi is not None:
             # discrete action: pi is categorical probability distribution
@@ -196,7 +283,7 @@ class ActorCritic(sampling.TrajectoryBatchUpdate,
         return info, {}
 
     def set_session(self, sess):
-        super(ActorCritic, self).set_session(sess)
+        super(ActorCriticWithI2A, self).set_session(sess)
         self.network.set_session(sess)
         self._pi_distribution.set_session(sess)
 

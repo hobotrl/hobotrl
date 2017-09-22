@@ -213,6 +213,31 @@ class Network(object):
         return out
 
     @staticmethod
+    def deconv2d(input_var, h, w, out_channel, strides=[1, 1], padding="SAME",
+               activation=tf.nn.relu, l2=1e-4, var_scope=""):
+        """
+        should be named conv2d_transpose but keep align with other methods
+        :param input_var:
+        :param h: kernel size
+        :param w: kernel size, always the same as h
+        :param out_channel:
+        :param strides:
+        :param padding:
+        :param activation:
+        :param l2:
+        :param var_scope:
+        :return:
+        """
+        with tf.variable_scope(var_scope):
+            out = tf.layers.conv2d_transpose(inputs=input_var, filters=out_channel, kernel_size=[w, h],
+                                   strides=strides, padding=padding, activation=activation,
+                                   use_bias=True, kernel_initializer=layers.xavier_initializer(),
+                                   # bias_initializer=layers.xavier_initializer(),
+                                   kernel_regularizer=layers.l2_regularizer(l2),
+                                   bias_regularizer=layers.l2_regularizer(l2))
+        return out
+
+    @staticmethod
     def conv2ds(input_var, shape=[(64, 4, 1)], out_flatten=True, padding="SAME",
                 activation=tf.nn.relu, l2=1e-4, var_scope=""):
         out = input_var
@@ -221,6 +246,21 @@ class Network(object):
                 s = shape[i]
                 filter_n, kernel_n, strides_n = s
                 out = Network.conv2d(out, h=kernel_n, w=kernel_n, out_channel=filter_n,
+                                     strides=[strides_n, strides_n], padding=padding,
+                                     activation=activation, l2=l2, var_scope="conv%d" % i)
+        if out_flatten:
+            out = tf.contrib.layers.flatten(out)
+        return out
+
+    @staticmethod
+    def deconv2ds(input_var, shape=[(64, 4, 1)], out_flatten=True, padding="SAME",
+                activation=tf.nn.relu, l2=1e-4, var_scope=""):
+        out = input_var
+        with tf.variable_scope(var_scope):
+            for i in range(len(shape)):
+                s = shape[i]
+                filter_n, kernel_n, strides_n = s
+                out = Network.deconv2d(out, h=kernel_n, w=kernel_n, out_channel=filter_n,
                                      strides=[strides_n, strides_n], padding=padding,
                                      activation=activation, l2=l2, var_scope="conv%d" % i)
         if out_flatten:
