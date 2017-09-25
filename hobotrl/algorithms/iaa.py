@@ -93,34 +93,33 @@ class ActorCriticUpdater(network.NetworkUpdater):
 
 
 class PolicyNetUpdater(network.NetworkUpdater):
-    def __init__(self, policy_dist, v_function, target_estimator, entropy=1e-3, actor_weight=1.0):
+    def __init__(self, rollout_dist, rollout_action_function, pi_function, entropy=1e-3):
+        """
+        Policy Net updater
+        calculate the loss between action derived from A3C and the policy net
+
+        :param rollout_action:
+        :param pi_function:
+        :param entropy:
+        """
         super(PolicyNetUpdater, self).__init__()
-        self._policy_dist, self._v_function = policy_dist, v_function
-        self._target_estimator = target_estimator
+        self._rollout_dist, self._pi_function, self._rollout_action_function = rollout_dist, pi_function, rollout_action_function
         self._entropy = entropy
         with tf.name_scope("ActorCriticUpdater"):
             with tf.name_scope("input"):
-                self._input_target_v = tf.placeholder(dtype=tf.float32, shape=[None], name="input_target_v")
-                self._input_action = policy_dist.input_sample()
-                self._input_entropy = tf.placeholder(dtype=tf.float32, shape=[], name="input_entropy")
-            op_v = v_function.output().op
-            with tf.name_scope("value"):
-                td = self._input_target_v - op_v
-                self._q_loss = tf.reduce_mean(network.Utils.clipped_square(td))
-            with tf.name_scope("policy"):
-                advantage = self._input_target_v - op_v
-                self._advantage = advantage
-                _mean, _var = tf.nn.moments(advantage, axes=[0])
-                self._std_advantage = advantage / (tf.sqrt(_var) + 1.0)
-                # self._std_advantage = self._advantage
-                pi_loss = tf.reduce_mean(self._policy_dist.log_prob() * tf.stop_gradient(self._std_advantage))
-                entropy_loss = tf.reduce_mean(self._input_entropy * self._policy_dist.entropy())
-                self._pi_loss = pi_loss
-            self._op_loss = self._q_loss - actor_weight * (self._pi_loss + entropy_loss)
-            print "advantage, self._policy_dist.entropy(), self._policy_dist.log_prob()", advantage, self._policy_dist.entropy(), self._policy_dist.log_prob()
+                self._input_action = self._rollout_dist.input_sample()
+
+            op_pi = self._pi_function.output().op
+            op_mimic_pi = self._rollout_action_function.output().op
+
+            with tf.name_scope("rollout"):
+                self._rollout_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
+                    op_pi , op_mimic_pi), name="rollout_loss")
+                self._entropy_loss = self._rollout_action_function
+            self._op_loss = self._rollout_loss
+
         self._update_operation = network.MinimizeLoss(self._op_loss,
-                                                      var_list=self._v_function.variables +
-                                                               self._policy_dist._dist_function.variables)
+                                                      var_list=self._rollout_action_function._dist_function.variables)
 
     def declare_update(self):
         return self._update_operation
@@ -131,32 +130,50 @@ class PolicyNetUpdater(network.NetworkUpdater):
                                                           batch["reward"], \
                                                           batch["next_state"], \
                                                           batch["episode_done"]
-        target_value = self._target_estimator.estimate(state, action, reward, next_state, episode_done)
-        feed_dict = self._v_function.input_dict(state)
-        feed_dict.update(self._policy_dist.dist_function().input_dict(state))
+        feed_dict = self._rollout_action_function.input_dict(state)
+
+        return network.UpdateRun(feed_dict=feed_dict, fetch_dict={"rollout_loss": self._op_loss})
+
+
+class EnvModelUpdater(network.NetworkUpdater):
+    def __init__(self, next_state_function, reward_function, state_shape, entropy=1e-3, actor_weight=1.0):
+        super(EnvModelUpdater, self).__init__()
+        self._next_state_function, self._reward_function = next_state_function, reward_function
+        self._entropy = entropy
+        with tf.name_scope("EnvModelUpdater"):
+            with tf.name_scope("input"):
+                self._input_next_state = tf.placeholder(dtype=tf.float32, shape=[None] + list(state_shape), name="input_next_state")
+                self._input_reward = tf.placeholder(dtype=tf.float32, shape=[None], name="input_reward")
+
+            op_next_state = next_state_function.output().op
+            op_reward = reward_function.output().op
+
+            with tf.name_scope("env_model"):
+                self._env_loss = tf.reduce_mean(network.Utils.clipped_square(op_next_state - self._input_next_state))
+                self._reward_loss =tf.reduce_mean(network.Utils.clipped_square(op_reward - self._input_reward))
+
+            self._op_loss = self._env_loss + self._reward_loss
+        self._update_operation = network.MinimizeLoss(self._op_loss,
+                                                      var_list=self._next_state_function.variables +
+                                                               self._reward_function.variables)
+
+    def declare_update(self):
+        return self._update_operation
+
+    def update(self, sess, batch, *args, **kwargs):
+        state, action, reward, next_state, episode_done = batch["state"], \
+                                                          batch["action"], \
+                                                          batch["reward"], \
+                                                          batch["next_state"], \
+                                                          batch["episode_done"]
+        feed_dict = self._next_state_function.input_dict(state)
         feed_more = {
-            self._input_action: action,
-            self._input_target_v: target_value,
-            self._input_entropy: self._entropy
+            self._input_next_state: next_state,
+            self._input_reward: reward,
         }
         feed_dict.update(feed_more)
-        fetch_dict = {
-            "advantage": self._advantage,
-            "std_advantage": self._std_advantage,
-            "target_value": target_value,
-            "pi_loss": self._pi_loss,
-            "q_loss": self._q_loss,
-            "entropy": self._policy_dist.entropy(),
-            "log_prob": self._policy_dist.log_prob(),
-        }
-        if isinstance(self._policy_dist, hrl.tf_dependent.distribution.NormalDistribution):
-            fetch_dict.update({
-                "stddev": self._policy_dist.stddev(),
-                "mean": self._policy_dist.mean()
-            })
-        else:
-            pass
-        return network.UpdateRun(feed_dict=feed_dict, fetch_dict=fetch_dict)
+
+        return network.UpdateRun(feed_dict=feed_dict, fetch_dict={"env_model_loss": self._op_loss})
 
 
 class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
@@ -196,27 +213,50 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
         :param kwargs:
         """
 
-        def f_i2a(inputs):
+        def f_iaa(inputs):
             input_observation = inputs[0]
 
             se = network.Network([input_observation], f_se, var_scope="se_ac")
             se = network.NetworkFunction(se["se"]).output().op
 
-            rollout = network.Network([input_observation], f_rollout, var_scope="rollout")
-            rollout_action1 = network.NetworkFunction(rollout["rollout_action"]).output().op
+            path = []
+            imagine = []
 
-            env_model = network.Network([input_observation, rollout_action1], f_env, var_scope="EnvModel")
-            next_state = network.NetworkFunction(env_model["next_state"]).output().op
-            reward = network.NetworkFunction(env_model["reward"]).output().op
+            for i in range(3):
+                for j in range(5):
+                    rollout = network.Network([input_observation], f_rollout, var_scope="rollout")
+                    rollout_action = network.NetworkFunction(rollout["rollout_action"]).output().op
 
+                    env_model = network.Network([input_observation, rollout_action], f_env, var_scope="EnvModel")
 
+                    next_state = network.NetworkFunction(env_model["next_state"]).output().op
+                    reward = network.NetworkFunction(env_model["reward"]).output().op
+
+                    if i == 0 and j == 0:
+                        out_action = rollout_action
+                        out_next_state = next_state
+                        out_reward = reward
+
+                    imagine.append([next_state, reward])
+
+                    input_observation = next_state
+
+                rollout_encoder = network.Network([imagine], f_encoder, var_scope='rollout_encoder')
+                re = network.NetworkFunction(rollout_encoder["re"]).output().op
+                imagine = []
+                path.append(re)
+
+            tf.reshape(path, [-1, 200])
+            feature = tf.concat([path, se], axis=1)
+
+            ac = network.Network([feature], f_ac, var_scope='ac')
+            v = network.NetworkFunction(ac["v"]).output().op
+            pi_dist = network.NetworkFunction(ac["pi"]).output().op
+
+            return {"v": v, "pi": pi_dist, "rollout_action": out_action, "next_state": out_next_state, "reward": out_reward}
 
         kwargs.update({
-            "f_se": f_se,
-            "f_ac": f_ac,
-            "f_env": f_env,
-            "f_rollout": f_rollout,
-            "f_encoder": f_encoder,
+            "f_iaa": f_iaa,
             "state_shape": state_shape,
             "discount_factor": discount_factor,
             "entropy": entropy,
@@ -259,6 +299,12 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
             self._pi_distribution = distribution.NormalDistribution(self._pi_function, self._input_action)
             self._v_function = network.NetworkFunction(self.network["v"])
             # continuous action: mean / stddev for normal distribution
+
+        self._rollout_action = network.NetworkFunction(self.network["rollout_action"])
+        self._rollout_dist = distribution.DiscreteDistribution(self._rollout_action, self._input_action)
+        self._next_state_function = network.NetworkFunction(self.network["next_state"])
+        self._reward_function = network.NetworkFunction(self.network["reward"])
+
         if target_estimator is None:
             target_estimator = target_estimate.NStepTD(self._v_function, discount_factor)
             # target_estimator = target_estimate.GAENStep(self._v_function, discount_factor)
@@ -268,13 +314,23 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                                v_function=self._v_function,
                                target_estimator=target_estimator, entropy=entropy), name="ac")
         network_optimizer.add_updater(network.L2(self.network), name="l2")
+        network_optimizer.add_updater(
+            PolicyNetUpdater(rollout_dist=self._rollout_dist,
+                             rollout_action_function=self._rollout_action,
+                             pi_function=self._pi_function)
+        )
+        network_optimizer.add_updater(
+            EnvModelUpdater(next_state_function=self._next_state_function,
+                            reward_function=self._reward_function,
+                            state_shape=state_shape)
+        )
         network_optimizer.compile()
 
         self._policy = StochasticPolicy(self._pi_distribution)
 
-    def init_network(self, f_create_net, state_shape, *args, **kwargs):
+    def init_network(self, f_iaa, state_shape, *args, **kwargs):
         input_state = tf.placeholder(dtype=tf.float32, shape=[None] + list(state_shape), name="input_state")
-        return network.Network([input_state], f_create_net, var_scope="learn")
+        return network.Network([input_state], f_iaa, var_scope="learn")
 
     def update_on_trajectory(self, batch):
         self.network_optimizer.update("ac", self.sess, batch)

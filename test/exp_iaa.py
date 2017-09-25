@@ -33,7 +33,12 @@ class I2A(A3CExperimentWithI2A):
                                                out_flatten=True,
                                                activation=tf.nn.relu,
                                                l2=l2,
-                                               var_scope="se")
+                                               var_scope="se_conv")
+                se = hrl.utils.Network.layer_fcs(se, [256], 200,
+                                                activation_hidden=tf.nn.relu,
+                                                activation_out=tf.nn.relu,
+                                                l2=l2,
+                                                var_scope="se_linear")
                 return {"se": se}
 
             def create_ac(inputs):
@@ -58,7 +63,6 @@ class I2A(A3CExperimentWithI2A):
                 input_state = inputs[0]
 
                 # rollout that imitates the A3C policy
-                # First version just simply looks like A#C network
                 se = hrl.utils.Network.conv2ds(input_state,
                                                shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
                                                out_flatten=True,
@@ -126,21 +130,39 @@ class I2A(A3CExperimentWithI2A):
 
             def create_encoder(inputs):
                 l2 = 1e-7
-                input_state = inputs[0]
+                input_state = inputs[0][0]
+                input_reward = []
+                input_reward.append(inputs[0][1])
 
-                for state in inputs:
+                for [state, reward] in inputs:
                     if state == input_state:
                         continue
 
                     input_state = tf.concat([input_state, state], axis=3)
+                    input_reward.append(reward)
 
-                rolling_encoder = hrl.utils.Network.conv2ds(input_state,
+                se = hrl.utils.Network.conv2ds(input_state,
                                                shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
                                                out_flatten=True,
                                                activation=tf.nn.relu,
                                                l2=l2,
-                                               var_scope="re")
-                return {"re": rolling_encoder}
+                                               var_scope="se")
+
+                re_conv = hrl.utils.Network.layer_fcs(se, [], 200,
+                                            activation_hidden=tf.nn.relu,
+                                            activation_out=tf.nn.relu,
+                                            l2=l2,
+                                            var_scope="re_conv")
+
+                re_conv = tf.concat([re_conv, tf.reshape(input_reward, [-1, 1])], axis=1)
+
+                re = hrl.utils.Network.layer_fcs(re_conv, [], 200,
+                                            activation_hidden=tf.nn.relu,
+                                            activation_out=tf.nn.relu,
+                                            l2=l2,
+                                            var_scope="re")
+
+                return {"re": re}
 
             f_se = create_se
             f_ac = create_ac
