@@ -37,8 +37,6 @@ def evaluate(y_true, preds):
 #     return lr
 
 
-
-
 # construct network
 state_shape = (224, 224, 3)
 x = tf.placeholder(dtype=tf.float32, shape=[None] + list(state_shape), name="image")

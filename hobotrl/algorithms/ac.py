@@ -78,7 +78,6 @@ class DiscreteActorCriticUpdater(network.NetworkUpdater):
             "entropy": self._policy_dist.entropy()
         })
 
-
 class ActorCriticUpdater(network.NetworkUpdater):
     def __init__(self, policy_dist, v_function, target_estimator, entropy=1e-3, actor_weight=1.0):
         """
@@ -267,6 +266,7 @@ class ActorCritic(sampling.TrajectoryBatchUpdate,
 
         super(ActorCritic, self).__init__(*args, **kwargs)
         pi = self.network["pi"]
+        # tf.stop_gradient(pi.op)
         if pi is not None:
             # discrete action: pi is categorical probability distribution
             self._pi_function = network.NetworkFunction(self.network["pi"])
@@ -304,6 +304,8 @@ class ActorCritic(sampling.TrajectoryBatchUpdate,
         network_optimizer.compile()
 
         self._policy = StochasticPolicy(self._pi_distribution)
+        # self._policy = GreedyStochasticPolicy(self._pi_distribution)
+
 
     def init_network(self, f_create_net, state_shape, *args, **kwargs):
         input_state = tf.placeholder(dtype=tf.float32, shape=[None] + list(state_shape), name="input_state")
