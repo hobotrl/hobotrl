@@ -223,25 +223,32 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
             imagine = []
 
             for i in range(3):
-                for j in range(5):
-                    rollout = network.Network([input_observation], f_rollout, var_scope="rollout")
-                    rollout_action = network.NetworkFunction(rollout["rollout_action"]).output().op
+                for j in range(3):
+                    rollout = network.Network([input_observation], f_rollout, var_scope="rollout%d_%d" %(i, j))
+                    rollout_action_function = network.NetworkFunction(rollout["rollout_action"])
+                    rollout_action_dist = tf.contrib.distributions.Categorical(rollout_action_function.output().op)
+                    rollout_action = rollout_action_dist.sample()
 
-                    env_model = network.Network([input_observation, rollout_action], f_env, var_scope="EnvModel")
+                    one_hot_rollout_action = tf.one_hot(indices=rollout_action, depth=rollout_action_dist.event_size, on_value=1.0, off_value=0.0, axis=-1)
+
+                    env_model = network.Network([[input_observation], one_hot_rollout_action], f_env, var_scope="EnvModel")
 
                     next_state = network.NetworkFunction(env_model["next_state"]).output().op
                     reward = network.NetworkFunction(env_model["reward"]).output().op
 
-                    if i == 0 and j == 0:
-                        out_action = rollout_action
+                    if j == 0:
+                        out_action = rollout_action_function.output().op
                         out_next_state = next_state
                         out_reward = reward
+                        encode_states = next_state
+                    else:
+                        encode_states = tf.concat([next_state, encode_states], axis=3)
 
-                    imagine.append([next_state, reward])
+                    imagine.append([reward])
 
                     input_observation = next_state
 
-                rollout_encoder = network.Network([imagine], f_encoder, var_scope='rollout_encoder')
+                rollout_encoder = network.Network([encode_states, imagine], f_encoder, var_scope='rollout_encoder')
                 re = network.NetworkFunction(rollout_encoder["re"]).output().op
                 imagine = []
                 path.append(re)
@@ -317,12 +324,14 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
         network_optimizer.add_updater(
             PolicyNetUpdater(rollout_dist=self._rollout_dist,
                              rollout_action_function=self._rollout_action,
-                             pi_function=self._pi_function)
+                             pi_function=self._pi_function),
+            name="policy_net"
         )
         network_optimizer.add_updater(
             EnvModelUpdater(next_state_function=self._next_state_function,
                             reward_function=self._reward_function,
-                            state_shape=state_shape)
+                            state_shape=state_shape),
+            name="env_model"
         )
         network_optimizer.compile()
 
@@ -333,6 +342,8 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
         return network.Network([input_state], f_iaa, var_scope="learn")
 
     def update_on_trajectory(self, batch):
+        self.network_optimizer.update("policy_net", self.sess, batch)
+        self.network_optimizer.update("env_model", self.sess, batch)
         self.network_optimizer.update("ac", self.sess, batch)
         self.network_optimizer.update("l2", self.sess)
         info = self.network_optimizer.optimize_step(self.sess)

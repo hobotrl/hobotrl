@@ -690,8 +690,8 @@ class A3CExperimentWithI2A(Experiment):
                  batch_size=8
                  ):
         super(A3CExperimentWithI2A, self).__init__()
-        self._env, self._f_se, self._f_ac, self._f_encoder,\
-            self._f_env, self._f_rollout, self._episode_n, self._learning_rate, \
+        self._env, self._f_se, self._f_ac, self._f_env,\
+            self._f_rollout, self._f_encoder, self._episode_n, self._learning_rate, \
             self._discount_factor, self._entropy, self._batch_size = \
             env, f_se, f_ac, f_env, f_rollout, f_encoder, episode_n, learning_rate, \
             discount_factor, entropy, batch_size
