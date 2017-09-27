@@ -114,12 +114,12 @@ class PolicyNetUpdater(network.NetworkUpdater):
 
             with tf.name_scope("rollout"):
                 self._rollout_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
-                    op_pi , op_mimic_pi), name="rollout_loss")
+                    labels=op_pi , logits=op_mimic_pi), name="rollout_loss")
                 self._entropy_loss = self._rollout_action_function
             self._op_loss = self._rollout_loss
 
         self._update_operation = network.MinimizeLoss(self._op_loss,
-                                                      var_list=self._rollout_action_function._dist_function.variables)
+                                                      var_list=self._rollout_action_function.variables)
 
     def declare_update(self):
         return self._update_operation
@@ -219,19 +219,18 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
             se = network.Network([input_observation], f_se, var_scope="se_ac")
             se = network.NetworkFunction(se["se"]).output().op
 
-            path = []
             imagine = []
 
             for i in range(3):
                 for j in range(3):
-                    rollout = network.Network([input_observation], f_rollout, var_scope="rollout%d_%d" %(i, j))
+                    rollout = network.Network([input_observation], f_rollout, var_scope="rollout%d_%d" %(i,j))
                     rollout_action_function = network.NetworkFunction(rollout["rollout_action"])
                     rollout_action_dist = tf.contrib.distributions.Categorical(rollout_action_function.output().op)
                     rollout_action = rollout_action_dist.sample()
 
                     one_hot_rollout_action = tf.one_hot(indices=rollout_action, depth=rollout_action_dist.event_size, on_value=1.0, off_value=0.0, axis=-1)
 
-                    env_model = network.Network([[input_observation], one_hot_rollout_action], f_env, var_scope="EnvModel")
+                    env_model = network.Network([[input_observation], one_hot_rollout_action], f_env, var_scope="EnvModel%d_%d" %(i,j))
 
                     next_state = network.NetworkFunction(env_model["next_state"]).output().op
                     reward = network.NetworkFunction(env_model["reward"]).output().op
@@ -248,12 +247,16 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
 
                     input_observation = next_state
 
-                rollout_encoder = network.Network([encode_states, imagine], f_encoder, var_scope='rollout_encoder')
+                rollout_encoder = network.Network([encode_states, imagine], f_encoder, var_scope='rollout_encoder%d' %i)
                 re = network.NetworkFunction(rollout_encoder["re"]).output().op
                 imagine = []
-                path.append(re)
+                if i == 0:
+                    path = re
+                else:
+                    path = tf.concat([path, re], axis=1)
 
-            tf.reshape(path, [-1, 200])
+            print "----------------------------------------"
+            print path, "\n", se
             feature = tf.concat([path, se], axis=1)
 
             ac = network.Network([feature], f_ac, var_scope='ac')
