@@ -707,7 +707,7 @@ class A3CExperimentWithI2A(Experiment):
             # so we will not want to use same object for different Agent instances.
             entropy = hrl.utils.clone_params(self._entropy)
             agent = hrl.ActorCriticWithI2A(
-                env=self._env,
+                num_action=self._env.action_space.n,
                 f_se=self._f_se,
                 f_ac=self._f_ac,
                 f_env=self._f_env,

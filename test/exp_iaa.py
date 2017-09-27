@@ -145,6 +145,8 @@ class I2A(A3CExperimentWithI2A):
                 l2 = 1e-7
                 input_state = inputs[0]
                 input_reward = inputs[1]
+                print "-------------------------------------"
+                print input_state, "\n", input_reward
 
                 rse = hrl.utils.Network.conv2ds(input_state,
                                                shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
@@ -159,7 +161,8 @@ class I2A(A3CExperimentWithI2A):
                                             l2=l2,
                                             var_scope="re_conv")
 
-                re_conv = tf.concat([re_conv, tf.reshape(input_reward, [-1, 1])], axis=1)
+                # re_conv = tf.concat([re_conv, tf.reshape(input_reward, [-1, 1])], axis=1)
+                re_conv = tf.concat([re_conv, input_reward], axis=1)
 
                 re = hrl.utils.Network.layer_fcs(re_conv, [], 200,
                                             activation_hidden=tf.nn.relu,

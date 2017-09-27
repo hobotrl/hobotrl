@@ -178,7 +178,7 @@ class EnvModelUpdater(network.NetworkUpdater):
 
 class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
           BaseDeepAgent):
-    def __init__(self,
+    def __init__(self, num_action,
                  f_se, f_ac, f_env, f_rollout, f_encoder, state_shape,
                  # ACUpdate arguments
                  discount_factor, entropy=1e-3, target_estimator=None, max_advantage=10.0,
@@ -219,18 +219,26 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
             se = network.Network([input_observation], f_se, var_scope="se_ac")
             se = network.NetworkFunction(se["se"]).output().op
 
-            imagine = []
+            input_action = tf.placeholder(dtype=tf.uint8, shape=[None, num_action], name="input_action")
+            input_reward = tf.placeholder(dtype=tf.float32, shape=[None, 3], name="input_reward")
+            encode_state = tf.placeholder(dtype=tf.float32, shape=[None, 210, 160, 9], name="encode_states")
+
+            rollout = network.Network([input_observation], f_rollout, var_scope="rollout_policy")
+            env_model = network.Network([[input_observation], input_action], f_env, var_scope="EnvModel")
+            rollout_encoder = network.Network([encode_state, input_reward], f_encoder, var_scope="rollout_encoder")
+
+            current_state = input_observation
 
             for i in range(3):
                 for j in range(3):
-                    rollout = network.Network([input_observation], f_rollout, var_scope="rollout%d_%d" %(i,j))
-                    rollout_action_function = network.NetworkFunction(rollout["rollout_action"])
+                    current_rollout = rollout([current_state], name_scope="rollout_%d_%d" %(i,j))
+                    rollout_action_function = network.NetworkFunction(current_rollout["rollout_action"])
+
                     rollout_action_dist = tf.contrib.distributions.Categorical(rollout_action_function.output().op)
                     rollout_action = rollout_action_dist.sample()
+                    current_action = tf.one_hot(indices=rollout_action, depth=rollout_action_dist.event_size, on_value=1.0, off_value=0.0, axis=-1)
 
-                    one_hot_rollout_action = tf.one_hot(indices=rollout_action, depth=rollout_action_dist.event_size, on_value=1.0, off_value=0.0, axis=-1)
-
-                    env_model = network.Network([[input_observation], one_hot_rollout_action], f_env, var_scope="EnvModel%d_%d" %(i,j))
+                    env_model = env_model([[current_state], current_action], name_scope="env_model_%d_%d" %(i,j))
 
                     next_state = network.NetworkFunction(env_model["next_state"]).output().op
                     reward = network.NetworkFunction(env_model["reward"]).output().op
@@ -240,16 +248,20 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                         out_next_state = next_state
                         out_reward = reward
                         encode_states = next_state
+                        rollout_reward = reward
                     else:
                         encode_states = tf.concat([next_state, encode_states], axis=3)
+                        rollout_reward = tf.concat([rollout_reward, reward], axis=0)
 
-                    imagine.append([reward])
+                    current_state = next_state
 
-                    input_observation = next_state
+                encode_state = encode_states
+                # input_reward = rollout_reward
+                input_reward = tf.reshape(rollout_reward, [-1, 3])
+                rollout_encoders = rollout_encoder([encode_state, input_reward], name_scope="rollout_encoder_%d" %i)
 
-                rollout_encoder = network.Network([encode_states, imagine], f_encoder, var_scope='rollout_encoder%d' %i)
-                re = network.NetworkFunction(rollout_encoder["re"]).output().op
-                imagine = []
+                re = network.NetworkFunction(rollout_encoders["re"]).output().op
+                input_reward = []
                 if i == 0:
                     path = re
                 else:
