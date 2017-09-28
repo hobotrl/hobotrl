@@ -274,10 +274,18 @@ if __name__=='__main__':
             list_route, dict_junc, dict_pred, dict_succ,
             dict_length, dict_width)
     x0, y0, hdg = dict_geo[route_ids[0]]
+    # start
     x, y, carHdg = project_coord(pos_s, x0, y0, hdg, pos_l)
+    # destination
+    dest_id = route_ids[-1]
+    dest_args = [dict_length[dest_id]] + \
+                list(dict_geo[dest_id]) + \
+                [np.random.choice(dict_width[dest_id])]
+    xd, yd, _ = project_coord(*dest_args)
     print ("[gen_dynamic_launch.py]: car launch: route {}, lane {},"
-           "offset {}, x {}, y {}, heading {}").format(
-               route_ids, pos_l, pos_s, x0, y0, carHdg)
+           "offset {}, x {}, y {}, heading {}, "
+           "destination (x {}, y {})").format(
+               route_ids, pos_l, pos_s, x0, y0, carHdg, xd, yd)
 
     tree = ET.parse(args.launch_template_file)
     root = tree.getroot()
@@ -286,6 +294,8 @@ if __name__=='__main__':
             param.set('value', ','.join(route_ids))
         if param.get('name')=='/obstacles3/filename':
             param.set('value', planning_path+'config/honda_dynamic_obs.obs')
+        if param.get('name')=='/car/dest_coord':
+            param.set('value', str([xd, yd]))
     for include in root.findall('include'):
         for arg in include.findall('arg'):
             if arg.get('name')=='car_pos':
