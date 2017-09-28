@@ -7,6 +7,8 @@
 <param name="/map/filename" type="str" value="$(find map_api)/data/honda.xodr"/>
 <param name="/obstacles3/filename" type="str" value="to be filled"/>
 <param name="/signals/filename" type="str" value="$(find planning)/config/honda.signals"/>
+<param name="/car/dest_coord" type="list" value="[0.0, 0.0]"/>
+
 
 <include file="$(find simulator)/launch/simulator_ground.launch" pass_all_args="true">
 	<arg name="car_pos" value="to be filled"/>
