@@ -4,10 +4,29 @@ import logging
 import math
 import numpy as np
 import gym
+from gym import spaces
 import cv2
 import matplotlib.colors as colors
 from exp_algorithms import *
 import hobotrl.environments as envs
+
+
+class GoTransposeWrapper(gym.Wrapper):
+    def __init__(self, env):
+        super(GoTransposeWrapper, self).__init__(env)
+        self.observation_space = spaces.Box(0, 1, [9, 9, 3])
+
+    def _step(self, action):
+        observation, reward, done, info = self.env.step(action)
+        observation = np.transpose(observation, (2, 1, 0))
+        print "----------------------------", np.shape(observation)
+        return observation, reward, done, info
+
+    def _reset(self):
+        observation = self.env.reset()
+        observation = np.transpose(observation, (2, 1, 0))
+        print "----------------------------", np.shape(observation)
+        return observation
 
 
 class I2A(A3CExperimentWithI2A):
@@ -15,10 +34,10 @@ class I2A(A3CExperimentWithI2A):
                  learning_rate=1e-4, discount_factor=0.99, entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4),
                  batch_size=32):
         if env is None:
-            env = gym.make('Pong-v0')
+            env = gym.make('Go9x9-v0')
+            env = GoTransposeWrapper(env)
             # env._max_episode_steps = 10000
             # env = envs.FrameStack(env, k=4)
-            # env = BalanceRewardAcrobot(env)
             # env = gym.wrappers.Monitor(env, "./log/AcrobotNew/ICMMaxlen200", force=True)
 
         if (f_env and f_rollout and f_ac) is None:

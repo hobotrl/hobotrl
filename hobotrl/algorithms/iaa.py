@@ -221,7 +221,7 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
 
             input_action = tf.placeholder(dtype=tf.uint8, shape=[None, num_action], name="input_action")
             input_reward = tf.placeholder(dtype=tf.float32, shape=[None, 3], name="input_reward")
-            encode_state = tf.placeholder(dtype=tf.float32, shape=[None, 210, 160, 9], name="encode_states")
+            encode_state = tf.placeholder(dtype=tf.float32, shape=[None, state_shape[0], state_shape[1], 9], name="encode_states")
 
             rollout = network.Network([input_observation], f_rollout, var_scope="rollout_policy")
             env_model = network.Network([[input_observation], input_action], f_env, var_scope="EnvModel")
@@ -231,6 +231,7 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
 
             for i in range(3):
                 for j in range(3):
+                    print "------------------------------", np.shape(current_state)
                     current_rollout = rollout([current_state], name_scope="rollout_%d_%d" %(i,j))
                     rollout_action_function = network.NetworkFunction(current_rollout["rollout_action"])
 
@@ -267,8 +268,6 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                 else:
                     path = tf.concat([path, re], axis=1)
 
-            print "----------------------------------------"
-            print path, "\n", se
             feature = tf.concat([path, se], axis=1)
 
             ac = network.Network([feature], f_ac, var_scope='ac')
