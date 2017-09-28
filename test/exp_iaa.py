@@ -19,13 +19,11 @@ class GoTransposeWrapper(gym.Wrapper):
     def _step(self, action):
         observation, reward, done, info = self.env.step(action)
         observation = np.transpose(observation, (2, 1, 0))
-        print "----------------------------", np.shape(observation)
         return observation, reward, done, info
 
     def _reset(self):
         observation = self.env.reset()
         observation = np.transpose(observation, (2, 1, 0))
-        print "----------------------------", np.shape(observation)
         return observation
 
 
@@ -34,8 +32,8 @@ class I2A(A3CExperimentWithI2A):
                  learning_rate=1e-4, discount_factor=0.99, entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4),
                  batch_size=32):
         if env is None:
-            env = gym.make('Go9x9-v0')
-            env = GoTransposeWrapper(env)
+            env = gym.make('CarRacing-v0')
+            # env = GoTransposeWrapper(env)
             # env._max_episode_steps = 10000
             # env = envs.FrameStack(env, k=4)
             # env = gym.wrappers.Monitor(env, "./log/AcrobotNew/ICMMaxlen200", force=True)
@@ -123,18 +121,19 @@ class I2A(A3CExperimentWithI2A):
                                                    l2=l2,
                                                    var_scope="conv_2")
 
-                up_2 = tf.image.resize_images(conv_2, [dim_observation[0], dim_observation[1]])
+                # up_2 = tf.image.resize_images(conv_2, [dim_observation[0], dim_observation[1]])
+                #
+                # concat_2 = tf.concat([up_2, input_state], axis=3)
+                #
+                # conv_3 = hrl.utils.Network.conv2ds(concat_2,
+                #                                    shape=[(8, 3, 1)],
+                #                                    out_flatten=False,
+                #                                    activation=tf.nn.relu,
+                #                                    l2=l2,
+                #                                    var_scope="conv_3")
 
-                concat_2 = tf.concat([up_2, input_state], axis=3)
-
-                conv_3 = hrl.utils.Network.conv2ds(concat_2,
-                                                   shape=[(8, 3, 1)],
-                                                   out_flatten=False,
-                                                   activation=tf.nn.relu,
-                                                   l2=l2,
-                                                   var_scope="conv_3")
-
-                conv_r = hrl.utils.Network.conv2ds(conv_3,
+                # conv_r = hrl.utils.Network.conv2ds(conv_3,
+                conv_r = hrl.utils.Network.conv2ds(conv_2,
                                                    shape=[(8, 3, 1)],
                                                    out_flatten=True,
                                                    activation=tf.nn.relu,
@@ -147,7 +146,8 @@ class I2A(A3CExperimentWithI2A):
                                                  var_scope="reward")
                 reward = tf.squeeze(reward, axis=1)
 
-                up_3 = tf.image.resize_images(conv_3, [dim_observation[0], dim_observation[1]])
+                # up_3 = tf.image.resize_images(conv_3, [dim_observation[0], dim_observation[1]])
+                up_3 = tf.image.resize_images(conv_2, [dim_observation[0], dim_observation[1]])
 
                 concat_3 = tf.concat([up_3, input_state], axis=3)
 
