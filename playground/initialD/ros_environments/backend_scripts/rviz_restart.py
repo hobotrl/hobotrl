@@ -41,9 +41,8 @@ class restart_ros_launch:
 
         # Simulator states
         self.is_running = False  # is simulator curretnly running?
-        self.last_pos = deque(maxlen=1000) # list of last 1000 position points. Approximately 20 secs @ 50Hz
+        self.last_pos = deque(maxlen=20000) # list of last 20000 position points. Approx. 400 secs @ 50Hz
         self.last_on_opposite_path = 1  # last latched signal value for `on_opposite_path`
-
         # ROS node
         rospy.init_node('LaunchFileRestarter')
         # publishers
@@ -67,7 +66,7 @@ class restart_ros_launch:
         # subscribers
         rospy.Subscriber('/rl/simulator_restart', Bool, self.__restart_callback)
         rospy.Subscriber('/error/type', Int16, self.__car_out_of_lane_callback)
-        rospy.Subscriber('/car/status', CarStatus, self.__car_not_move_callback)
+        rospy.Subscriber('/car/status', CarStatus, self.__car_status_callback)
         rospy.Subscriber('/rl/on_grass', Int16, self.__car_out_of_lane_callback)
         rospy.Subscriber('/rl/on_opposite_path', Int16, self.__assign_last_op_callback)
 
@@ -130,22 +129,38 @@ class restart_ros_launch:
             print "[rviz_restart.restart]: publish heartbeat=True!"
 
     def __car_out_of_lane_callback(self, data):
-        """Various reasons car is out of lane. (On grass for one)"""
+        """Various reasons car is out of lane (e.g. on grass)."""
         if abs(int(data.data)-1)<0.001:
             rospy.logwarn("Car out of Lane! (on grass)")
             self.terminate()
 
-    def __car_not_move_callback(self, data):
+    def __car_status_callback(self, data):
         # TODO:
         #  The car stops or go with a very slow speed, doesn't mean the car
         #  arrived at the destination. maybe we can set a circle near
         #  destination, when it reaches that range, we can restart the process 
-        self.last_pos.append(np.array([data.position.x, data.position.y, data.position.z]))
-        if (len(self.last_pos)==self.last_pos.maxlen and
-            LA.norm(self.last_pos[0] - self.last_pos[-1])<0.1):
-            rospy.logwarn("The car stops moving!")
-            self.last_pos.clear()
-            self.terminate()
+        if self.is_running:
+            # detect destination
+            try:
+                dest_x = rospy.get_param('/car/dest_coord_x')
+                dest_y = rospy.get_param('/car/dest_coord_y')
+                dest_dist = np.sqrt(np.square(data.position.x-dest_x) +
+                                    np.square(data.position.y-dest_y))
+                if dest_dist < 20:
+                    rospy.logwarn("Ego car reached destination.")
+                    self.last_pos.clear()
+                    self.terminate()
+            except:
+                pass
+            # detect stopping for too long
+            self.last_pos.append(np.array([data.position.x, data.position.y, data.position.z]))
+            if (len(self.last_pos)==self.last_pos.maxlen and
+                LA.norm(self.last_pos[0] - self.last_pos[-1])<0.1):
+                rospy.logwarn("The car stops moving!")
+                self.last_pos.clear()
+                self.terminate()
+        else:
+            pass
 
     def __assign_last_op_callback(self, data):
         self.last_on_opposite_path = data.data
