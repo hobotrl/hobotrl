@@ -231,7 +231,6 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
 
             for i in range(3):
                 for j in range(3):
-                    print "------------------------------", np.shape(current_state)
                     current_rollout = rollout([current_state], name_scope="rollout_%d_%d" %(i,j))
                     rollout_action_function = network.NetworkFunction(current_rollout["rollout_action"])
 
@@ -356,6 +355,7 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
         return network.Network([input_state], f_iaa, var_scope="learn")
 
     def update_on_trajectory(self, batch):
+        # print "--------------next state-----------------", "\n", self.sess.run(self._next_state_function.output().op)
         self.network_optimizer.update("policy_net", self.sess, batch)
         self.network_optimizer.update("env_model", self.sess, batch)
         self.network_optimizer.update("ac", self.sess, batch)
