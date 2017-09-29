@@ -239,6 +239,35 @@ def project_coord(s, x0, y0, hdg, l):
         carHdg -= 2*np.pi
     return x, y, carHdg
 
+def gen_destination_coord(route_ids, dict_length, dict_geo, dict_width):
+    """Generate the coordinate of destination.
+
+    First get the coordinate of the two end points of the last route segment
+    then select the one that is the most distant from the second to the last
+    route segment. This is to prevent the directional ambiguity of road
+    segments.
+
+    :param route:
+    :param dict_legnth:
+    :param dict_geo:
+    :param dict_width:
+    """
+    dest_id = route_ids[-1]
+    for prev_id in route_ids[-2::-1]:
+        if prev_id[0]!='L':
+            break
+    dest_lane = np.random.choice(dict_width[dest_id])
+    dest_geo = list(dict_geo[dest_id])
+    dest_length = dict_length[dest_id]
+    xd0, yd0, _ = project_coord(*( [0] + dest_geo + [dest_lane] ))
+    xd1, yd1, _ = project_coord(*( [dest_length] + dest_geo + [dest_lane] ))
+    prev_lane = dict_width[prev_id][0]
+    prev_geo = list(dict_geo[prev_id])
+    xp, yp, _ = project_coord(*( [0] + prev_geo + [prev_lane] ))
+    dist_0 = np.sqrt((xd0-xp)**2 + (yd0-yp)**2)
+    dist_1 = np.sqrt((xd1-xp)**2 + (yd1-yp)**2)
+
+    return (xd0, yd0) if dist_0 > dist_1 else (xd1, yd1)
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser('Generate random planning launch file.')
@@ -277,11 +306,7 @@ if __name__=='__main__':
     # start
     x, y, carHdg = project_coord(pos_s, x0, y0, hdg, pos_l)
     # destination
-    dest_id = route_ids[-1]
-    dest_args = [dict_length[dest_id]] + \
-                list(dict_geo[dest_id]) + \
-                [np.random.choice(dict_width[dest_id])]
-    xd, yd, _ = project_coord(*dest_args)
+    xd, yd = gen_destination_coord(route_ids, dict_length, dict_geo, dict_width)
     print ("[gen_dynamic_launch.py]: car launch: route {}, lane {},"
            "offset {}, x {}, y {}, heading {}, "
            "destination (x {}, y {})").format(
@@ -294,8 +319,10 @@ if __name__=='__main__':
             param.set('value', ','.join(route_ids))
         if param.get('name')=='/obstacles3/filename':
             param.set('value', planning_path+'config/honda_dynamic_obs.obs')
-        if param.get('name')=='/car/dest_coord':
-            param.set('value', str([xd, yd]))
+        if param.get('name')=='/car/dest_coord_x':
+            param.set('value', str(xd))
+        if param.get('name')=='/car/dest_coord_y':
+            param.set('value', str(yd))
     for include in root.findall('include'):
         for arg in include.findall('arg'):
             if arg.get('name')=='car_pos':
