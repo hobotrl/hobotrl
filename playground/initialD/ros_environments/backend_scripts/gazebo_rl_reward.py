@@ -128,6 +128,7 @@ class RewardFunction:
         """
         obs_pos = [(obs.ObsPosition.x, obs.ObsPosition.y, obs.ObsPosition.z)
                    for obs in data.obs]
+        obs_yaw = np.array([obs.ObsTheta for obs in data.obs])
         if len(obs_pos)==0:
             self.obs_risk = 0.0
             self.min_obs_dist = self.detect_obstacle_range + 100.0
@@ -145,10 +146,17 @@ class RewardFunction:
             obs_rcos = self.raised_cosine(obs_angle, np.pi/24, np.pi/48)
             # distance risk is Laplacian normalized by detection rangei
             risk_dist = np.exp(-0.1*(dist_obs-self.detect_obstacle_range))
+            # relative angle between headings of ego car and obs car
+            # shifted by pi
+            rel_angle = self.car_euler[2] - obs_yaw + np.pi
+            rel_angle = (rel_angle + np.pi) % (2*np.pi) - np.pi
+            collide_rcos = self.raised_cosine(rel_angle, np.pi/24, np.pi/48)
             # total directional obs risk is distance risk multiplied by
             # raised-cosied directional weight.
-            self.obs_risk = np.sum(risk_dist * obs_rcos)
-            idx = np.argsort(dist_obs)[::]
+            self.obs_risk = np.sum(risk_dist *
+                                   (obs_rcos+0.1) *
+                                   (collide_rcos+0.1))
+            # idx = np.argsort(dist_obs)[::]
             # minimum obs distance
             self.min_obs_dist = min(dist_obs)
         near_obs = True if self.min_obs_dist<self.detect_obstacle_range else False
