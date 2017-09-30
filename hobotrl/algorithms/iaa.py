@@ -12,6 +12,7 @@ import hobotrl.tf_dependent.distribution as distribution
 from hobotrl.tf_dependent.base import BaseDeepAgent
 from hobotrl.policy import StochasticPolicy
 from value_based import GreedyStateValueFunction
+import cv2
 
 
 class ActorCriticUpdater(network.NetworkUpdater):
@@ -136,7 +137,7 @@ class PolicyNetUpdater(network.NetworkUpdater):
 
 
 class EnvModelUpdater(network.NetworkUpdater):
-    def __init__(self, next_state_function, reward_function, state_shape, entropy=1e-3, actor_weight=1.0):
+    def __init__(self, next_state_function, reward_function, state_shape, entropy=1e-3, imshow_count=0):
         super(EnvModelUpdater, self).__init__()
         self._next_state_function, self._reward_function = next_state_function, reward_function
         self._entropy = entropy
@@ -145,17 +146,18 @@ class EnvModelUpdater(network.NetworkUpdater):
                 self._input_next_state = tf.placeholder(dtype=tf.float32, shape=[None] + list(state_shape), name="input_next_state")
                 self._input_reward = tf.placeholder(dtype=tf.float32, shape=[None], name="input_reward")
 
-            op_next_state = next_state_function.output().op
-            op_reward = reward_function.output().op
+            self.op_next_state = next_state_function.output().op
+            self.op_reward = reward_function.output().op
 
             with tf.name_scope("env_model"):
-                self._env_loss = tf.reduce_mean(network.Utils.clipped_square(op_next_state - self._input_next_state))
-                self._reward_loss =tf.reduce_mean(network.Utils.clipped_square(op_reward - self._input_reward))
+                self._env_loss = tf.reduce_mean(network.Utils.clipped_square(self.op_next_state - self._input_next_state))
+                self._reward_loss =tf.reduce_mean(network.Utils.clipped_square(self.op_reward - self._input_reward))
 
             self._op_loss = self._env_loss + self._reward_loss
         self._update_operation = network.MinimizeLoss(self._op_loss,
                                                       var_list=self._next_state_function.variables +
                                                                self._reward_function.variables)
+        self.imshow_count = 0
 
     def declare_update(self):
         return self._update_operation
@@ -172,8 +174,19 @@ class EnvModelUpdater(network.NetworkUpdater):
             self._input_reward: reward,
         }
         feed_dict.update(feed_more)
-
-        return network.UpdateRun(feed_dict=feed_dict, fetch_dict={"env_model_loss": self._op_loss})
+        self.imshow_count += 1
+        for i in range(len(reward)):
+            cv2.imshow(state[i])
+            print np.shape(state[i])
+            a = self._next_state_function([state[i]])[0]
+            print np.shape(a)
+            cv2.imshow(a)
+            cv2.imwrite("./log/I2ACarRacing/Img/%d_%d_raw.png" % (self.imshow_count,i), state[i])
+            cv2.imwrite("./log/I2ACarRacing/Img/%d_%d_pred.png" % (self.imshow_count,i), a)
+        print "---------------------------count-------------------", self.imshow_count
+        return network.UpdateRun(feed_dict=feed_dict, fetch_dict={"env_model_loss": self._op_loss,
+                                                                  "reward_loss": self._reward_loss,
+                                                                  "observation_loss": self._env_loss})
 
 
 class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
@@ -355,7 +368,6 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
         return network.Network([input_state], f_iaa, var_scope="learn")
 
     def update_on_trajectory(self, batch):
-        # print "--------------next state-----------------", "\n", self.sess.run(self._next_state_function.output().op)
         self.network_optimizer.update("policy_net", self.sess, batch)
         self.network_optimizer.update("env_model", self.sess, batch)
         self.network_optimizer.update("ac", self.sess, batch)
