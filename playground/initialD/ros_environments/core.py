@@ -164,6 +164,7 @@ class DrivingSimulatorEnv(object):
             else:
                 num_fail -= 1
                 if num_fail == 0:
+                    print "[step()]: __step failed for 10 times, try reset()."
                     self.reset()
                     num_fail = 10
             time.sleep(0.5)
@@ -307,6 +308,7 @@ class DrivingSimulatorEnv(object):
             if ret is not None:
                 return ret
             else:
+                print "[reset()]: reset faiiled retry in one sec."
                 time.sleep(1.0)
 
     def __reset(self, **kwargs):
@@ -467,7 +469,7 @@ class DrivingSimulatorEnv(object):
         while not self.is_exiting.is_set():
             while not self.is_env_resetting.is_set():
                 time.sleep(1.0)
-                print "Waiting reset."
+                print "[__node_monitor] waiting for reset."
             try:
                 # env done check loop
                 #   reset() should clear `is_env_done`  
