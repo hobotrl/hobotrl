@@ -197,19 +197,18 @@ def gen_single_car(
     """
     # randomly select a route
     route_ids = np.random.choice(list_route)
-    # decide the sign of lane offset values for current heading direction
     cur, nxt = route_ids[0], route_ids[1]
-    sign_l = lane_sign(cur, nxt, dict_junc, dict_pred, dict_succ)
-    # uniformly randomly select an offset on the 1st road segment.
-    # Note: only select from the first three quaters to avoid starting
-    # too close to the insersections, which by large chance not a valid
-    # test case. 
-    pos_s = np.random.rand()*dict_length[route_ids[0]]*0.75
+
     # randomly select lane offset from current direction
-    pos_l = np.random.choice(
-        filter(lambda x: x*sign_l>=0, dict_width[route_ids[0]]))
+    # decide the sign of lane offset values for current heading direction
+    sign_l = lane_sign(cur, nxt, dict_junc, dict_pred, dict_succ)
+    pos_l = np.random.choice(filter(lambda x: x*sign_l>=0, dict_width[cur]))
+
     # randomly set speed
     pos_v = np.random.rand()*5.0 + 5.0  # Uniform [5.0, 10.0)
+
+    # uniformly randomly select an offset on the 1st road segment.
+    pos_s = np.random.rand()*dict_length[cur]
 
     # set life
     life_tappear = 0.0
@@ -238,6 +237,40 @@ def project_coord(s, x0, y0, hdg, l):
     if carHdg > np.pi:
         carHdg -= 2*np.pi
     return x, y, carHdg
+
+def adjust_ego_start_pos(route_ids, pos_l, dict_length, dict_geo, dict_width):
+    """Adjust ego car start offset.
+    Adjust ego car start offset to the first half of the first section. Due to
+    the direction ambiguity, we select two reciprocal points and select the one
+    most distant the the next road section.
+
+    :param route_ids:
+    :param pos_l:
+    :param dict_length:
+    :param dict_geo:
+    :param dict_width:
+    """
+    # get two candidate starting points on the first section
+    cur = route_ids[0]
+    pos_s0 = 0.5*np.random.rand()*dict_length[cur]
+    pos_s1 = dict_length[cur] - pos_s0
+    origin_geo = list(dict_geo[cur])
+    xo0, yo0, _ = project_coord(*( [pos_s0] + origin_geo + [pos_l] ))
+    xo1, yo1, _ = project_coord(*( [pos_s1] + origin_geo + [pos_l] ))
+
+    # get a point on the next section
+    for nxt in route_ids[1::]:
+        if nxt[0]!='L':
+            break
+    next_lane = dict_width[nxt][0]
+    next_geo = list(dict_geo[nxt])
+    xn, yn, _ = project_coord(*( [0] + next_geo + [next_lane] ))
+
+    # select a point most distant to the next point
+    dist_0 = np.sqrt((xo0-xn)**2 + (yo0-yn)**2)
+    dist_1 = np.sqrt((xo1-xn)**2 + (yo1-yn)**2)
+
+    return pos_s0 if dist_0>dist_1 else pos_s1
 
 def gen_destination_coord(route_ids, dict_length, dict_geo, dict_width):
     """Generate the coordinate of destination.
@@ -302,15 +335,20 @@ if __name__=='__main__':
     (route_ids,), (pos_s, pos_l, _), _ = gen_single_car(
             list_route, dict_junc, dict_pred, dict_succ,
             dict_length, dict_width)
-    x0, y0, hdg = dict_geo[route_ids[0]]
+    pos_s = adjust_ego_start_pos(
+        route_ids, pos_l, dict_length, dict_geo, dict_width)
+
     # start
+    x0, y0, hdg = dict_geo[route_ids[0]]
     x, y, carHdg = project_coord(pos_s, x0, y0, hdg, pos_l)
     # destination
     xd, yd = gen_destination_coord(route_ids, dict_length, dict_geo, dict_width)
-    print ("[gen_dynamic_launch.py]: car launch: route {}, lane {},"
-           "offset {}, x {}, y {}, heading {}, "
-           "destination (x {}, y {})").format(
-               route_ids, pos_l, pos_s, x0, y0, carHdg, xd, yd)
+    print ("[gen_dynamic_launch.py]: car launch: \n"
+           "    route {}, lane {}, offset {}/{}, \n"
+           "    x {}, y {}, heading {}, \n"
+           "    destination (x {}, y {})").format(
+               route_ids, pos_l, pos_s, dict_length[route_ids[0]],
+               x0, y0, carHdg, xd, yd)
 
     tree = ET.parse(args.launch_template_file)
     root = tree.getroot()
