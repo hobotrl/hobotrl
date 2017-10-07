@@ -143,7 +143,7 @@ n_additional_learn = 4
 n_ep = 0  # last ep in the last run, if restart use 0
 n_test = 10  # num of episode per test run (no exploration)
 
-tf.app.flags.DEFINE_string("save_dir", "./record_rule_scenes_rnd_obj_100", """save scenes""")
+tf.app.flags.DEFINE_string("save_dir", "/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_rewards_rnd_obj_100", """save scenes""")
 FLAGS = tf.app.flags.FLAGS
 
 try:
@@ -165,7 +165,10 @@ try:
         state_rule_action = env.reset()
         state, rule_action = state_rule_action
         print "eps: ", n_ep
-        os.mkdir(FLAGS.save_dir+"/"+str(n_ep))
+        ep_dir = FLAGS.save_dir + "/" + str(n_ep)
+        os.makedirs(ep_dir)
+        recording_file = open(ep_dir + "/" + "0.txt", "w")
+
         while True:
             n_steps += 1
             print "rule action: ", rule_action
@@ -176,11 +179,13 @@ try:
             next_state, next_rule_action = next_state_rule_action
             reward = func_compile_reward_agent(reward, rule_action)
             skip_reward += reward
+            recording_file.write(str(n_steps)+","+str(rule_action)+","+str(reward)+"\n")
             # done = (reward < -0.9) or done  # heuristic early stopping
             # agent step
             state, rule_action = next_state, next_rule_action  # s',a' -> s,a
             if done:
                 break
+        recording_file.close()
 
 except Exception as e:
     print e.message
