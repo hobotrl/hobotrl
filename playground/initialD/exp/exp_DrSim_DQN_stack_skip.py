@@ -55,7 +55,7 @@ def func_compile_exp_agent(state, action, rewards, next_state, done):
     print (' '*10+'R: ['+'{:4.2f} '*len(rewards)+']').format(*rewards),
 
     speed = rewards[2]
-    ema_speed = 0.2*ema_speed + 0.8*speed
+    ema_speed = 0.5*ema_speed + 0.5*speed
     longest_penalty = rewards[1]
     obs_risk = rewards[5]
     momentum_opp = (rewards[3]<0.5)*(momentum_opp+(1-rewards[3]))
@@ -83,10 +83,10 @@ def func_compile_exp_agent(state, action, rewards, next_state, done):
 
     # early stopping
     if ema_speed < 0.1:
-        if longest_penalty > 2.0:
+        if longest_penalty > 0.5:
             print "[Early stopping] stuck at intersection."
             done = True
-        if obs_risk > 0.01:
+        if obs_risk > 0.1:
             print "[Early stopping] stuck at obstacle."
             done = True
         if momentum_ped>1.0:
@@ -201,7 +201,7 @@ def f_net(inputs):
             kernel_regularizer=l2_regularizer(scale=1e-2), name='q')
     return {"q": q}
 
-optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=1e-4)
+optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=1e-3)
 target_sync_rate = 1e-3
 state_shape = env.observation_space.shape
 graph = tf.get_default_graph()
@@ -263,8 +263,9 @@ def log_info(update_info):
             action_fraction *= 0.9
             action_fraction[s[0]] += 0.1
             action_td_loss[s[0]] = 0.9*action_td_loss[s[0]] + 0.1*s[3]
-            #if cnt_skip==n_skip:
-            #    print ("{} "+"{:8.5f} "*4+"{}").format(*s)
+            if cnt_skip==n_skip:
+                pass
+                # print ("{} "+"{:8.5f} "*4+"{}").format(*s)
         # print action_fraction
         # print action_td_loss
     for tag in update_info:
@@ -321,17 +322,21 @@ def log_info(update_info):
                 tag='num_episode', simple_value=n_ep)
             summary_proto.value.add(
                 tag='cum_reward', simple_value=cum_reward)
+            summary_proto.value.add(
+                tag='per_step_reward', simple_value=cum_reward/n_steps)
         else:
             summary_proto.value.add(
-                tag='num_episode_noexpolore', simple_value=n_ep)
+                tag='num_episode_noexplore', simple_value=n_ep)
             summary_proto.value.add(
-                tag='cum_reward_noexpolore',
+                tag='cum_reward_noexplore',
                 simple_value=cum_reward)
+            summary_proto.value.add(
+                tag='per_step_reward_noexplore', simple_value=cum_reward/n_steps)
 
     return summary_proto
 
 n_interactive = 0
-n_skip = 3
+n_skip = 8
 n_additional_learn = 4
 n_ep = 0  # last ep in the last run, if restart use 0
 n_test = 10  # num of episode per test run (no exploration)
@@ -364,15 +369,17 @@ try:
             skip_reward = 0
             cum_td_loss = 0.0
             cum_reward = 0.0
-            state, action  = env.reset(), 0
+            state  = env.reset()
+            # action = 0  # default no-op at start
+            action = agent.act(state, exploration=not exploration_off)
+            skip_action = action
             while True:
                 n_steps += 1
                 # Env step
-                next_state, reward, done, info = env.step(action)
+                next_state, reward, done, info = env.step(skip_action)
                 state, action, reward, next_state, done = func_compile_exp_agent(
                     state, action, reward, next_state, done)
                 skip_reward += reward
-                # done = (reward < -0.9) or done  # heuristic early stopping
                 # agent step
                 cnt_skip -= 1
                 update_info = {}
@@ -392,6 +399,7 @@ try:
                     cnt_skip = n_skip
                     skip_reward = 0
                     state, action = next_state, next_action  # s',a' -> s,a
+                    skip_action = next_action
                 else:
                     if not learning_off:
                         t = time.time()
@@ -400,7 +408,7 @@ try:
                             reward=None, next_state=None,
                             episode_done=None)
                         t_learn += time.time() - t
-                    next_action = action
+                    skip_action = 3  # no op during skipping
                 sv.summary_computed(sess, summary=log_info(update_info))
                 # addtional learning steps
                 if not learning_off:
