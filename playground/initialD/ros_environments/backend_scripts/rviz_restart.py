@@ -146,7 +146,7 @@ class restart_ros_launch:
                 dest_y = rospy.get_param('/car/dest_coord_y')
                 dest_dist = np.sqrt(np.square(data.position.x-dest_x) +
                                     np.square(data.position.y-dest_y))
-                if dest_dist < 20:
+                if dest_dist < 30:
                     rospy.logwarn("Ego car reached destination.")
                     self.last_pos.clear()
                     self.terminate()
