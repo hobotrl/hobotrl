@@ -1,8 +1,8 @@
 import os
 import tensorflow as tf
 from pprint import pprint
-
-
+import numpy as np
+import cv2
 
 def get_image_list():
     pass
@@ -172,57 +172,108 @@ def get_prep_stop_point(eps_dir):
     """
     img_names = sorted(os.listdir(eps_dir))
     acts = [img_name.split('.')[0].split('_')[-1] for img_name in img_names]
-    for i in range(len(acts) - 1, -1, -1):
-        if acts[i] != '2' and acts[i] != '3':
-            break
-    # use FSM
-    if acts[i] == '1':
-        return i+1
-    assert acts[i] == '0'
-    cond = 'a'
-    pt = i
-    for i in range(pt, max(pt-15, -1), -1):
-        if cond == 'a':
-            if acts[i] == '1' or acts[i] == '3':
+
+    cond = 'start'
+
+    zero_max_count = 10
+    # zero_count = None
+
+    for i in range(len(acts)-1, -1, -1):
+        act = acts[i]
+        if cond == 'start':
+            if act == '3':
+                cond = 'a'
+            else:
+                return 'acc_start', i+1
+        elif cond == 'a':
+            if act == '3' or act == '4':
+                cond = 'a'
+            elif act == '2':
                 cond = 'b'
-                break
-            elif acts[i] == '2':
+            else:
+                return 'acc_a', i+1
+        elif cond == 'b':
+            if act == '2' or act == '4':
+                cond = 'b'
+            elif act == '0':
                 cond = 'c'
+                zero_count = 1
+            elif act == '1':
+                return 'end_b', i+1
             else:
-                pass
+                return 'acc_b', i+1
+        elif cond == 'c':
+            if act == '0' or act == '4':
+                cond = 'c'
+                zero_count += 1
+                if zero_count >= zero_max_count:
+                    return 'end2_c', i+zero_max_count
+            elif act == '1':
+                return 'end_c', i+1
+            elif act == '2':
+                cond = 'd'
+            else:
+                return 'acc_c', i+1
+        elif cond == 'd':
+            if act == '2' or act == '4':
+                cond = 'd'
+            elif act == '0':
+                cond = 'e'
+                zero_count = 1
+            elif act == '1':
+                return 'end_d', i+1
+            else:
+                return 'acc_d', i+1
+        elif cond == 'e':
+            if act == '0' or act == '4':
+                cond = 'e'
+                zero_count += 1
+                if zero_count >= zero_max_count:
+                    return 'end2_e', i+zero_max_count
+            elif act == '2':
+                cond = 'f'
+            elif act == '1':
+                return 'end_e', i+1
+            else:
+                return 'acc_e', i+1
+        elif cond == 'f':
+            if act == '2' or act == '4':
+                cond = 'f'
+            elif act == '0' or act == '1':
+                return 'end_f', i+1
+            else:
+                return 'acc_f', i+1
         else:
-            assert cond == 'c'
-            if acts[i] == '2':
-                pass
-            else:
-                cond = 'b'
-                break
+            return "yiwai1", i+1
 
-    if cond == 'a':
-        return pt
-    else:
-        return i
-    # prep_stop = False
-    # for j in range(i, max(i-15, -1), -1):
-    #     if acts[j] == '0':
-    #         pass
-    #     elif acts[j] == '2':
-    #         prep_stop = True
-    #         break
-    #     else:
-    #         break
-    #
-    # if prep_stop:
-    #     for k in range(j, -1, -1):
-    #         if acts[j] != '2':
-    #             break
-    # else:
-    #     return j
+    return "yiwai2_"+cond, i
 
 
-def test_get_prep_stop_point(obj_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_rnd_obj_40"):
-    for eps_dir in sorted(os.listdir(obj_dir)):
-        print eps_dir, ": ", get_prep_stop_point(obj_dir+"/"+eps_dir)
+
+
+def test_get_prep_stop_point(obj_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_rnd_obj_part_v2/obj_40",
+                             cond_ref='acc'):
+    info = []
+    for count, eps_dir in enumerate(sorted(os.listdir(obj_dir))):
+        if count >= 200:
+            break
+        cond, i = get_prep_stop_point(obj_dir+"/"+eps_dir)
+        if cond_ref in cond:
+            print eps_dir, ": ", cond, ", ", i
+            info.append([cond, i])
+    print len(info)
+    # cond, i = get_prep_stop_point(obj_dir + "/" + '0032')
+    # print '0032', ": ", cond, " ", i
+
+
+def diff(eps_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_rnd_obj_part/obj_100/0016"):
+    img_names = sorted(os.listdir(eps_dir))
+    imgs = []
+    for name in img_names:
+        imgs.append(cv2.imread(eps_dir+"/"+name))
+    for i in range(len(img_names)-1):
+        print i, ": ", np.linalg.norm(imgs[i]-imgs[i+1])
+
 
 
 if __name__ == '__main__':
@@ -233,3 +284,4 @@ if __name__ == '__main__':
     # zero_prefix_recording()
     # test_get_stop_point()
     test_get_prep_stop_point()
+    # diff()
