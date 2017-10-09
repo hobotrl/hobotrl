@@ -24,7 +24,7 @@ from cv_bridge import CvBridge, CvBridgeError
 # ROS
 import rospy
 from rospy.timer import Timer
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, Char
 import utils.message_filters as message_filters
 
 
@@ -194,6 +194,7 @@ class DrivingSimulatorEnv(object):
         Return None if failed to grep data from backend.
         """
         # wait until envnode, q, and backend is up and running
+        # TODO: this while loop may trap the program in a deadlock, add a fail cnt.
         while True:
             if self.is_backend_up.is_set() and \
                self.is_q_ready.is_set() and \
@@ -756,21 +757,34 @@ class DrivingSimulatorNode(multiprocessing.Process):
         return
 
     def __start_car(self):
+        """Send keys to start ego car.
+
+        :return: None
+        """
+        start_pub = rospy.Publisher(
+            '/autoDrive_KeyboardMode', Char, queue_size=10)
+
+        # activate autodrive system
         time.sleep(1.0)
         print "[EnvNode]: sending key 'space' ..."
-        self.action_pubs[0].publish(ord(' '))
+        start_pub.publish(ord(' '))
+
+        # set rule-based or manual and go
         for _ in range(2):
             time.sleep(0.5)
             if self.is_dummy_action:
                 print "[EnvNode]: sending key '0' ..."
-                self.action_pubs[0].publish(ord('0'))
+                start_pub.publish(ord('0'))
             else:
                 print "[EnvNode]: sending key '1' ..."
-                self.action_pubs[0].publish(ord('1'))
+                start_pub.publish(ord('1'))
             time.sleep(0.5)
             print "[EnvNode]: sending key 'g' ..."
-            self.action_pubs[0].publish(ord('g'))
+            start_pub.publish(ord('g'))
+
+        # set flag
         self.car_started.set()
+
         return
 
     def __enque_exp(self, *args):
