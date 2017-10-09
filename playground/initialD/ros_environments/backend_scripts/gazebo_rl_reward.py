@@ -73,7 +73,7 @@ class RewardFunction:
             '/rl/on_pedestrian', Bool, queue_size=100)
         rospy.Subscriber('/path/longest', Path, self.longest_path_callback)
         rospy.Subscriber('/obstacles', Obstacles, self.obstacles_callback)
-        rospy.Subscriber('/car/status', CarStatus, self.car_statuc_callback)
+        rospy.Subscriber('/car/status', CarStatus, self.car_status_callback)
         rospy.Subscriber(
             '/training/image/compressed', CompressedImage, self.trn_image_callback)
         rospy.Subscriber('/rl/on_opposite_path', Int16, self.on_opp_callback)
@@ -81,7 +81,7 @@ class RewardFunction:
             rospy.Duration(1/20.0),
             lambda *args: self.pub_on_opp.publish(self.last_on_opp))
 
-    def car_statuc_callback(self, data):
+    def car_status_callback(self, data):
         """Callback for '/car/status'."""
         self.car_pos = np.array(
             [data.position.x, data.position.y, data.position.z])
@@ -153,9 +153,11 @@ class RewardFunction:
             collide_rcos = self.raised_cosine(rel_angle, np.pi/24, np.pi/48)
             # total directional obs risk is distance risk multiplied by
             # raised-cosied directional weight.
-            self.obs_risk = np.sum(risk_dist *
-                                   (obs_rcos+0.1) *
-                                   (collide_rcos+0.1))
+            self.obs_risk = np.sum(
+                risk_dist * (obs_rcos+0.1) * (collide_rcos+0.1)
+            )
+            if np.isnan(self.obs_risk):
+                self.obs_risk = 0.0
             # idx = np.argsort(dist_obs)[::]
             # minimum obs distance
             self.min_obs_dist = min(dist_obs)
