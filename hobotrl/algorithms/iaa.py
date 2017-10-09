@@ -175,15 +175,12 @@ class EnvModelUpdater(network.NetworkUpdater):
         }
         feed_dict.update(feed_more)
         self.imshow_count += 1
-        for i in range(len(reward)):
-            cv2.imshow(state[i])
-            print np.shape(state[i])
-            a = self._next_state_function([state[i]])[0]
-            print np.shape(a)
-            cv2.imshow(a)
-            cv2.imwrite("./log/I2ACarRacing/Img/%d_%d_raw.png" % (self.imshow_count,i), state[i])
-            cv2.imwrite("./log/I2ACarRacing/Img/%d_%d_pred.png" % (self.imshow_count,i), a)
-        print "---------------------------count-------------------", self.imshow_count
+        print "----------------%s-------------" % self.imshow_count
+        if self.imshow_count % 10000 == 0:
+            for i in range(len(reward)):
+                a = self._next_state_function([state[i]])[0]
+                cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_raw.png" % (self.imshow_count,i), 255 * state[i])
+                cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_pred.png" % (self.imshow_count,i), 255 * a)
         return network.UpdateRun(feed_dict=feed_dict, fetch_dict={"env_model_loss": self._op_loss,
                                                                   "reward_loss": self._reward_loss,
                                                                   "observation_loss": self._env_loss})
