@@ -3,6 +3,7 @@ import tensorflow as tf
 from pprint import pprint
 import numpy as np
 import cv2
+import Image
 
 def get_image_list():
     pass
@@ -101,7 +102,9 @@ def zero_prefix_files(obj_dir_list):
 
 
 def test_zero_prefix_files():
-    obj_dir_list = ["/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_docker03_rnd_obj_100"]
+    # obj_dir_list = ["/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_docker03_rnd_obj_100"]
+    obj_dir_list = ["/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_v3"]
+
     zero_prefix_files(obj_dir_list)
 
 def zero_prefix_recording():
@@ -183,6 +186,12 @@ def get_prep_stop_point(eps_dir):
         if cond == 'start':
             if act == '3':
                 cond = 'a'
+            elif act == '0':
+                cond = 'a0'
+            # elif act == '1':
+            #     cond = 'a1'
+            # elif act == '2':
+            #     cond = 'a2'
             else:
                 return 'acc_start', i+1
         elif cond == 'a':
@@ -192,6 +201,13 @@ def get_prep_stop_point(eps_dir):
                 cond = 'b'
             else:
                 return 'acc_a', i+1
+        elif cond == 'a0':
+            if act == '0' or act == '4':
+                cond = 'a0'
+            elif act == '2':
+                cond = 'b'
+            else:
+                return 'acc_a0', i+1
         elif cond == 'b':
             if act == '2' or act == '4':
                 cond = 'b'
@@ -266,22 +282,175 @@ def test_get_prep_stop_point(obj_dir="/home/pirate03/hobotrl_data/playground/ini
     # print '0032', ": ", cond, " ", i
 
 
+def rename_dirs(obj_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_v3"):
+    eps_names = sorted(os.listdir(obj_dir))
+    for i, name in enumerate(eps_names):
+        eps_dir = os.path.join(obj_dir, name)
+        new_eps_dir = os.path.join(obj_dir, str(i+1).zfill(4))
+        os.rename(eps_dir, new_eps_dir)
+
+
 def diff(eps_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_rnd_obj_part/obj_100/0016"):
     img_names = sorted(os.listdir(eps_dir))
     imgs = []
+    diffs = []
     for name in img_names:
         imgs.append(cv2.imread(eps_dir+"/"+name))
     for i in range(len(img_names)-1):
-        print i, ": ", np.linalg.norm(imgs[i]-imgs[i+1])
+        diffs.append(np.linalg.norm(imgs[i]/255.0-imgs[i+1]/255.0))
+    return diffs
 
+
+def test_diff(obj_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_rnd_obj_part_v2/obj_40"):
+    eps_names = sorted(os.listdir(obj_dir))
+    for eps_name in eps_names:
+        eps_dir = obj_dir + "/" + eps_name
+        diffs = diff(eps_dir)
+        mean_diff = np.mean(np.array(diffs))
+        print "eps: ", eps_name
+        for i, di in enumerate(diffs):
+            print "i: ", i, "diff: ", di
+        print "mean_diff: ", mean_diff
+        print "===========\n"*3
+
+
+def split_image(img, part_size=(175, 175)):
+    # w, h = img.shape
+    w, h = img.size
+    pw, ph = part_size
+    assert w % pw == h % ph == 0
+    return [img.crop((i, j, i+pw, j+ph)).copy()
+            for i in xrange(0, w, pw)
+            for j in xrange(0, h, ph)]
+
+
+def hist_similar(lh, rh):
+    assert len(lh) == len(rh)
+    return sum(1 - (0 if l == r else abs(float(l)-float(r)))/max(float(l), float(r), 1.0) for l, r in zip(lh, rh))/len(lh)
+
+
+def calc_similar(li, ri):
+    # return sum(hist_similar(cv2.calcHist([l], [0], None, [256], [0, 256]),
+    #                         cv2.calcHist([r], [0], None, [256], [0, 256]))
+    #            for l, r in zip(split_image(li), split_image(ri))) / 25.0
+    return sum(hist_similar(l.histogram(), r.histogram())
+               for l, r in zip(split_image(li), split_image(ri))) / 4.0
+
+def calc_similar_eps(eps_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_rnd_obj_orig/80/0084"):
+    img_names = sorted(os.listdir(eps_dir))
+    imgs = []
+    sims = []
+    for name in img_names:
+        # imgs.append(cv2.imread(eps_dir + "/" + name, 0))
+        imgs.append(Image.open(eps_dir+"/"+name))
+    for i in range(len(img_names) - 1):
+        sims.append(calc_similar(imgs[i], imgs[i+1]))
+    return sims
+
+def calc_similar_obj(obj_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_rnd_obj_part_v2/obj_80"):
+    names = sorted(os.listdir(obj_dir))
+    for name in names:
+        simis = calc_similar_eps(obj_dir+"/"+name)
+        ind = np.where(np.array(simis)<=0.46)
+        print name, ": ", ind, np.array(simis)[ind]
+
+
+def cal_hor_sim(li, ri):
+    """
+    :param li: (n, n)
+    :param ri: (n, n)
+    :return:
+    """
+    li0 = np.sum(li, axis=0)+0.0
+    li1 = np.sum(li, axis=1)+0.0
+    ri0 = np.sum(ri, axis=0)+0.0
+    ri1 = np.sum(ri, axis=1)+0.0
+    # return (hist_similar(li0, ri0) + hist_similar(li1, ri1)) / 2.0
+    return 1.0 - (np.sum(np.abs(li0-ri0))+np.sum(np.abs(li1-ri1))+0.0)/(2.0*np.sum(li0))
+
+
+def cal_hor_sim_eps(eps_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_rnd_obj_orig/80/0084"):
+    img_names = sorted(os.listdir(eps_dir))
+    imgs = []
+    sims = []
+    for name in img_names:
+        imgs.append(cv2.imread(eps_dir + "/" + name, 0))
+    for i in range(len(img_names) - 1):
+        sims.append(cal_hor_sim(imgs[i], imgs[i+1]))
+    # for i in range(len(sims)):
+    #     if sims[i] < 0.5:
+    #         print i+1, sims[i]
+    return sims
+
+
+def cal_hor_sim_obj(obj_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_rnd_obj_part_v2/obj_80"):
+    names = sorted(os.listdir(obj_dir))
+    for name in names:
+        simis = cal_hor_sim_eps(obj_dir + "/" + name)
+        ind = np.where(np.array(simis) <= 0.5)
+        print name, ": ", ind, np.array(simis)[ind]
+
+
+def divide_eps(eps_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_rnd_obj_orig/80/0084"):
+    # well need to filter .txt
+    img_names = sorted(os.listdir(eps_dir))
+    imgs = []
+    sims = []
+    for name in img_names:
+        imgs.append(cv2.imread(eps_dir + "/" + name, 0))
+    for i in range(len(img_names) - 1):
+        sims.append(cal_hor_sim(imgs[i], imgs[i+1]))
+    ind = np.where(np.array(sims) <= 0.5)[0]
+    ind = list(ind)
+    ind.append(len(imgs)-1)
+    # division_imgs = [imgs[ind[i]:ind[i+1]] for i in ind]
+    division_names = [img_names[ind[i]+1:ind[i+1]+1] for i in range(len(ind)-1)]
+    # division_names.append(img_names[-1])
+    return division_names
+
+def test_divie_eps(eps_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_rnd_obj_orig/80/0084"):
+    names = divide_eps(eps_dir)
+    for name in names:
+        print name
+
+def divide_obj(obj_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_v3"):
+    eps_names = sorted(os.listdir(obj_dir))
+    current_eps_num = len(eps_names)
+    for name in eps_names:
+        eps_dir = obj_dir + "/" + name
+        img_names_list = divide_eps(eps_dir)
+        for img_names in img_names_list:
+            current_eps_num += 1
+            new_eps_name = str(current_eps_num).zfill(4)
+            new_eps_dir = os.path.join(obj_dir, new_eps_name)
+            os.mkdir(new_eps_dir)
+            for i, img_name in enumerate(img_names):
+                img_path = os.path.join(eps_dir, img_name)
+                new_img_path = os.path.join(new_eps_dir, str(i).zfill(4)+".jpg")
+                os.rename(img_path, new_img_path)
+
+
+def test_divide_obj(obj_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/test_"):
+    divide_obj(obj_dir)
 
 
 if __name__ == '__main__':
     # filter_stop_frames_for_all()
     # stack_info = test_get_all_eps_info()
     # pprint(stack_info)
-    # test_zero_prefix_files()
+    test_zero_prefix_files()
     # zero_prefix_recording()
     # test_get_stop_point()
-    test_get_prep_stop_point()
+    # test_get_prep_stop_point()
     # diff()
+    # sims = calc_similar_eps()
+    # for i in range(len(sims)):
+    #     if sims[i] < 0.5:
+    #         print "i: ", i+1, sims[i]
+    # calc_similar_obj()
+    # cal_hor_sim_eps()
+    # cal_hor_sim_obj(obj_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/test_")
+    # test_divie_eps("/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_v3/0001")
+    # rename_dirs()
+    # divide_obj()
+    # test_divide_obj()
