@@ -173,8 +173,8 @@ class RewardFunction:
         #   centered around ego car, then there will a considerable portions
         #   of black pixels, i.e. RGB =(0,0,0). Thus the sum lumanation will
         #   be significantely lower compared with other cases. 
-        low = int(np.floor(650.0/1400.0*img.shape[0]))
-        high = int(np.ceil(750.0/1400.0*img.shape[0]))
+        low = int(np.floor(600.0/1400.0*img.shape[0]))
+        high = int(np.ceil(800.0/1400.0*img.shape[0]))
         sum_sq = (high-low)**2
         ped_factor = np.sum(img[low:high, low:high, :])/(255*3*sum_sq)  # norm by max val
         self.pub_on_pedestrian.publish(ped_factor<0.31)
