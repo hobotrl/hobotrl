@@ -97,7 +97,7 @@ class DrivingSimulatorEnv(object):
         self.is_dummy_action = is_dummy_action
 
         self.buffer_sizes = buffer_sizes
-        self.MAX_EXCEPTION = 10  # maximum number of q exceptions per episode.
+        self.MAX_EXCEPTION = 100  # maximum number of q exceptions per episode.
 
         self.STEP_DELAY_TARGET = step_delay_target  # target delay for each step()
         self.last_step_t = None
@@ -195,6 +195,7 @@ class DrivingSimulatorEnv(object):
         """
         # wait until envnode, q, and backend is up and running
         # TODO: this while loop may trap the program in a deadlock, add a fail cnt.
+        cnt_fail = 30
         while True:
             if self.is_backend_up.is_set() and \
                self.is_q_ready.is_set() and \
@@ -205,9 +206,13 @@ class DrivingSimulatorEnv(object):
                    self.is_backend_up.is_set(),
                    self.is_envnode_up.is_set(),
                    self.is_q_ready.is_set())
+                cnt_fail -= 1
                 with self.cnt_q_except.get_lock():
                     if self.cnt_q_except.value<=0:
                         return None
+                if cnt_fail == 0:
+                    print "[__step()]: wait timeout, return None."
+                    return None
                 time.sleep(0.5)
 
         # action
@@ -341,6 +346,7 @@ class DrivingSimulatorEnv(object):
 
 
         # wait until backend is up
+        cnt_fail = 30
         while True:
             if self.is_backend_up.is_set() and \
                self.is_q_ready.is_set() and \
@@ -354,6 +360,10 @@ class DrivingSimulatorEnv(object):
                 with self.cnt_q_except.get_lock():
                     if self.cnt_q_except.value<=0:
                         return None
+                cnt_fail -= 1
+                if cnt_fail == 0:
+                    print "[__reset()]: wait timeout, return None."
+                    return None
                 time.sleep(0.5)
 
         # start step delay clock
@@ -683,12 +693,16 @@ class DrivingSimulatorNode(multiprocessing.Process):
         # Heartbeat
         rospy.Subscriber('/rl/simulator_heartbeat', Bool, self.__enque_done)
         rospy.Subscriber('/rl/is_running', Bool, self.__heartbeat_checker)
+
         f_pubs = lambda defs: rospy.Publisher(
             defs[0], defs[1], queue_size=100, latch=True)
         self.action_pubs = map(f_pubs, self.defs_action)
         if not self.is_dummy_action:
             self.actor_loop = Timer(
                 rospy.Duration(1.0/self.rate_action), self.__take_action)
+        self.start_pub = rospy.Publisher(
+            '/autoDrive_KeyboardMode', Char, queue_size=10)
+
         self.restart_pub = rospy.Publisher(
             '/rl/simulator_restart', Bool, queue_size=10, latch=True)
         print "[EnvNode]: node initialized."
@@ -761,29 +775,40 @@ class DrivingSimulatorNode(multiprocessing.Process):
 
         :return: None
         """
-        start_pub = rospy.Publisher(
-            '/autoDrive_KeyboardMode', Char, queue_size=10)
 
         # activate autodrive system
         time.sleep(1.0)
         print "[EnvNode]: sending key 'space' ..."
-        start_pub.publish(ord(' '))
+        self.start_pub.publish(ord(' '))
 
         # set rule-based or manual and go
         for _ in range(2):
-            time.sleep(0.5)
-            if self.is_dummy_action:
-                print "[EnvNode]: sending key '0' ..."
-                start_pub.publish(ord('0'))
-            else:
-                print "[EnvNode]: sending key '1' ..."
-                start_pub.publish(ord('1'))
-            time.sleep(0.5)
-            print "[EnvNode]: sending key 'g' ..."
-            start_pub.publish(ord('g'))
+            self.__car_go()
 
         # set flag
         self.car_started.set()
+
+        return
+
+    def __car_go(self, data=None):
+        """Send go and mode key.
+        This method is to be used as a periodic callback to send those
+        two keys to keep the car going even control and planning modules
+        fail.
+
+        :param data:
+        :return:
+        """
+        time.sleep(0.5)
+        if self.is_dummy_action:
+            print "[EnvNode]: sending key '0' ..."
+            self.start_pub.publish(ord('0'))
+        else:
+            print "[EnvNode]: sending key '1' ..."
+            self.start_pub.publish(ord('1'))
+        time.sleep(0.5)
+        print "[EnvNode]: sending key 'g' ..."
+        self.start_pub.publish(ord('g'))
 
         return
 
