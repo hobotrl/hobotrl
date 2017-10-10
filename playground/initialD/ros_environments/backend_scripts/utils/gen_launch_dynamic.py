@@ -252,7 +252,7 @@ def adjust_ego_start_pos(route_ids, pos_l, dict_length, dict_geo, dict_width):
     """
     # get two candidate starting points on the first section
     cur = route_ids[0]
-    pos_s0 = 0.5*np.random.rand()*dict_length[cur]
+    pos_s0 = 0.01*np.random.rand()*dict_length[cur]
     pos_s1 = dict_length[cur] - pos_s0
     origin_geo = list(dict_geo[cur])
     xo0, yo0, _ = project_coord(*( [pos_s0] + origin_geo + [pos_l] ))

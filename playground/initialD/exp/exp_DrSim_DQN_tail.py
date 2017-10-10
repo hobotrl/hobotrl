@@ -378,9 +378,9 @@ try:
                 n_steps += 1
                 # Env step
                 next_state, reward, done, info = env.step(skip_action)
-                flag_tail = done
                 state, action, reward, next_state, done = \
                         func_compile_exp_agent(state, action, reward, next_state, done)
+                flag_tail = done
                 skip_reward += reward
 
                 cnt_skip -= 1
