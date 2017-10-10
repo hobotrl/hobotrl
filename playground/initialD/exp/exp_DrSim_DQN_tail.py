@@ -83,7 +83,7 @@ def func_compile_exp_agent(state, action, rewards, next_state, done):
 
     # early stopping
     if ema_speed < 0.1:
-        if longest_penalty > 0.5:
+        if longest_penalty > 1.0:
             print "[Early stopping] stuck at intersection."
             done = True
         if obs_risk > 0.2:
@@ -115,10 +115,11 @@ def gen_backend_cmds():
         ['roscore'],
         # 4. start reward function script
         ['python', backend_path+'gazebo_rl_reward.py'],
-        # ['python', backend_path+'rl_reward_function.py'],
-        # 5. start simulation restarter backend
+        # 5. start reward function script
+        ['python', backend_path+'car_go.py'],
+        # 6. start simulation restarter backend
         ['python', backend_path+'rviz_restart.py', 'honda_dynamic_obs.launch'],
-        # 6. [optional] video capture
+        # 7. [optional] video capture
         ['python', backend_path+'non_stop_data_capture.py', 0]
     ]
     return backend_cmds
@@ -200,7 +201,7 @@ def f_net(inputs):
             kernel_regularizer=l2_regularizer(scale=1e-2), name='q')
     return {"q": q}
 
-optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=1e-3)
+optimizer_td = tf.train.AdamOptimizer(learning_rate=1e-3)
 target_sync_rate = 1e-3
 state_shape = env.observation_space.shape
 graph = tf.get_default_graph()
@@ -263,8 +264,8 @@ def log_info(update_info):
             action_fraction[s[0]] += 0.1
             action_td_loss[s[0]] = 0.9*action_td_loss[s[0]] + 0.1*s[3]
             if cnt_skip==n_skip:
-                pass
-                # print ("{} "+"{:8.5f} "*4+"{}").format(*s)
+                # pass
+                print ("{} "+"{:8.5f} "*4+"{}").format(*s)
         # print action_fraction
         # print action_td_loss
     for tag in update_info:
@@ -335,7 +336,7 @@ def log_info(update_info):
     return summary_proto
 
 n_interactive = 0
-n_skip = 8
+n_skip = 6
 n_additional_learn = 4
 n_ep = 0  # last ep in the last run, if restart use 0
 n_test = 10  # num of episode per test run (no exploration)
@@ -368,23 +369,31 @@ try:
             skip_reward = 0
             cum_td_loss = 0.0
             cum_reward = 0.0
+
             state  = env.reset()
-            # action = 0  # default no-op at start
             action = agent.act(state, exploration=not exploration_off)
             skip_action = action
+
             while True:
                 n_steps += 1
                 # Env step
                 next_state, reward, done, info = env.step(skip_action)
-                state, action, reward, next_state, done = func_compile_exp_agent(
-                    state, action, reward, next_state, done)
+                flag_tail = done
+                state, action, reward, next_state, done = \
+                        func_compile_exp_agent(state, action, reward, next_state, done)
                 skip_reward += reward
-                # agent step
+
                 cnt_skip -= 1
                 update_info = {}
                 t_learn, t_infer = 0, 0
+
                 if cnt_skip==0 or done:
+                    # average rewards during skipping
                     skip_reward /= (n_skip - cnt_skip)
+                    print skip_reward,
+                    # add tail for non-early-stops
+                    skip_reward += flag_tail * 0.9 * skip_reward/ (1-0.9)
+                    print skip_reward
                     if not learning_off:
                         t = time.time()
                         update_info = agent.step(
@@ -408,7 +417,9 @@ try:
                             episode_done=None)
                         t_learn += time.time() - t
                     skip_action = 3  # no op during skipping
+
                 sv.summary_computed(sess, summary=log_info(update_info))
+
                 # addtional learning steps
                 if not learning_off:
                     t = time.time()
