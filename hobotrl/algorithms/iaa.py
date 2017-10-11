@@ -13,6 +13,7 @@ from hobotrl.tf_dependent.base import BaseDeepAgent
 from hobotrl.policy import StochasticPolicy
 from value_based import GreedyStateValueFunction
 import cv2
+import matplotlib.image as mpimg
 
 
 class ActorCriticUpdater(network.NetworkUpdater):
@@ -176,12 +177,22 @@ class EnvModelUpdater(network.NetworkUpdater):
         feed_dict.update(feed_more)
         self.imshow_count += 1
         print "----------------%s-------------" % self.imshow_count
-        if self.imshow_count % 300 == 0:
+        if self.imshow_count % 2 == 0:
             for i in range(len(reward)):
                 a = self._next_state_function([state[i]])[0]
-                cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_a_raw.png" % (self.imshow_count,i), 255 * state[i])
-                cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_b_pred.png" % (self.imshow_count,i), 255 * a)
-                cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_c_ground_truth.png" % (self.imshow_count, i), 255 * next_state[i])
+                print "----------------------------\n"
+                print "state", state[i], "shape", np.shape(state[i]), "mean", np.mean(state[i])
+                print "a", a, "shape", np.shape(a), "mean", np.mean(a)
+                print "next_state", next_state[i], "shape", np.shape(next_state[i]), "mean", np.mean(next_state[i])
+                # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_a_raw.png" % (self.imshow_count,i), 255*state[i])#cv2.cvtColor(255 * state[i], cv2.COLOR_RGB2BGR))
+                # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_b_pred.png" % (self.imshow_count,i), cv2.cvtColor(255 * a, cv2.COLOR_RGB2BGR))
+                # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_c_ground_truth.png" % (self.imshow_count, i), 255*next_state[i])#cv2.cvtColor(255 * next_state[i], cv2.COLOR_RGB2BGR))
+                mpimg.imsave("./log/I2AMsPacman/Img/%s_%s_a_raw.png" % (self.imshow_count, i),
+                            state[i])  # cv2.cvtColor(255 * state[i], cv2.COLOR_RGB2BGR))
+                mpimg.imsave("./log/I2AMsPacman/Img/%s_%s_b_pred.png" % (self.imshow_count, i),
+                            a)
+                mpimg.imsave("./log/I2AMsPacman/Img/%s_%s_c_ground_truth.png" % (self.imshow_count, i),
+                            next_state[i])  # cv2.cvtColor(255 * next_state[i], cv2.COLOR_RGB2BGR))
         return network.UpdateRun(feed_dict=feed_dict, fetch_dict={"env_model_loss": self._op_loss,
                                                                   "reward_loss": self._reward_loss,
                                                                   "observation_loss": self._env_loss})

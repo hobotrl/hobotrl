@@ -385,12 +385,11 @@ class I2A(A3CExperimentWithI2A):
                  learning_rate=1e-4, discount_factor=0.99, entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4),
                  batch_size=32):
         if env is None:
-            env = gym.make('CarRacing-v0')
-            env = wrap_car(env, 3, 3, frame=1)
-            # env = GoTransposeWrapper(env)
+            env = gym.make('MsPacman-v0')
+            env = envs.ScaledRewards(env, 0.1)
+            # env = wrap_car(env, 3, 3, frame=1)
             # env._max_episode_steps = 10000
             # env = envs.FrameStack(env, k=4)
-            # env = gym.wrappers.Monitor(env, "./log/AcrobotNew/ICMMaxlen200", force=True)
 
         if (f_env and f_rollout and f_ac) is None:
             dim_action = env.action_space.n
@@ -517,10 +516,7 @@ class I2A(A3CExperimentWithI2A):
             def create_env_upsample(inputs):
                 l2 = 1e-7
                 input_state = inputs[0]
-                print "-------------------------------"
-                print np.shape(input_state)
                 input_state = tf.squeeze(tf.stack(input_state), axis=0)
-                print np.shape(input_state)
                 input_action = inputs[1]
                 input_action = tf.image.resize_images(tf.reshape(input_action, [-1, 1, 1, dim_action]),
                                                       [dim_observation[0], dim_observation[1]])
@@ -568,7 +564,7 @@ class I2A(A3CExperimentWithI2A):
                 reward = tf.squeeze(reward, axis=1)
 
                 # next_state
-                up_1 = tf.image.resize_images(conv_3, [dim_observation[0]/2/2, dim_observation[1]/2/2])
+                up_1 = tf.image.resize_images(conv_3, [((dim_observation[0]+1)/2+1)/2, ((dim_observation[1]+1)/2+1)/2])
 
                 concat_1 = tf.concat([conv_2, up_1], axis=3)
 
@@ -579,7 +575,7 @@ class I2A(A3CExperimentWithI2A):
                                                    l2=l2,
                                                    var_scope="concat_1")
 
-                up_2 = tf.image.resize_images(concat_1, [dim_observation[0]/2, dim_observation[1]/2])
+                up_2 = tf.image.resize_images(concat_1, [(dim_observation[0]+1)/2, (dim_observation[1]+1)/2])
 
                 concat_2 = tf.concat([up_2, conv_1], axis=3)
 
