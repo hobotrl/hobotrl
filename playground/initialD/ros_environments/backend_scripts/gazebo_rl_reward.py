@@ -73,7 +73,7 @@ class RewardFunction:
             '/rl/on_pedestrian', Bool, queue_size=100)
         rospy.Subscriber('/path/longest', Path, self.longest_path_callback)
         rospy.Subscriber('/obstacles', Obstacles, self.obstacles_callback)
-        rospy.Subscriber('/car/status', CarStatus, self.car_statuc_callback)
+        rospy.Subscriber('/car/status', CarStatus, self.car_status_callback)
         rospy.Subscriber(
             '/training/image/compressed', CompressedImage, self.trn_image_callback)
         rospy.Subscriber('/rl/on_opposite_path', Int16, self.on_opp_callback)
@@ -81,7 +81,7 @@ class RewardFunction:
             rospy.Duration(1/20.0),
             lambda *args: self.pub_on_opp.publish(self.last_on_opp))
 
-    def car_statuc_callback(self, data):
+    def car_status_callback(self, data):
         """Callback for '/car/status'."""
         self.car_pos = np.array(
             [data.position.x, data.position.y, data.position.z])
@@ -128,6 +128,7 @@ class RewardFunction:
         """
         obs_pos = [(obs.ObsPosition.x, obs.ObsPosition.y, obs.ObsPosition.z)
                    for obs in data.obs]
+        obs_yaw = np.array([obs.ObsTheta for obs in data.obs])
         if len(obs_pos)==0:
             self.obs_risk = 0.0
             self.min_obs_dist = self.detect_obstacle_range + 100.0
@@ -145,10 +146,19 @@ class RewardFunction:
             obs_rcos = self.raised_cosine(obs_angle, np.pi/24, np.pi/48)
             # distance risk is Laplacian normalized by detection rangei
             risk_dist = np.exp(-0.1*(dist_obs-self.detect_obstacle_range))
+            # relative angle between headings of ego car and obs car
+            # shifted by pi
+            rel_angle = self.car_euler[2] - obs_yaw + np.pi
+            rel_angle = (rel_angle + np.pi) % (2*np.pi) - np.pi
+            collide_rcos = self.raised_cosine(rel_angle, np.pi/24, np.pi/48)
             # total directional obs risk is distance risk multiplied by
             # raised-cosied directional weight.
-            self.obs_risk = np.sum(risk_dist * obs_rcos)
-            idx = np.argsort(dist_obs)[::]
+            self.obs_risk = np.sum(
+                risk_dist * (obs_rcos+0.1) * (collide_rcos+0.1)
+            )
+            if np.isnan(self.obs_risk):
+                self.obs_risk = 0.0
+            # idx = np.argsort(dist_obs)[::]
             # minimum obs distance
             self.min_obs_dist = min(dist_obs)
         near_obs = True if self.min_obs_dist<self.detect_obstacle_range else False
@@ -163,8 +173,8 @@ class RewardFunction:
         #   centered around ego car, then there will a considerable portions
         #   of black pixels, i.e. RGB =(0,0,0). Thus the sum lumanation will
         #   be significantely lower compared with other cases. 
-        low = int(np.floor(650.0/1400.0*img.shape[0]))
-        high = int(np.ceil(750.0/1400.0*img.shape[0]))
+        low = int(np.floor(600.0/1400.0*img.shape[0]))
+        high = int(np.ceil(800.0/1400.0*img.shape[0]))
         sum_sq = (high-low)**2
         ped_factor = np.sum(img[low:high, low:high, :])/(255*3*sum_sq)  # norm by max val
         self.pub_on_pedestrian.publish(ped_factor<0.31)
