@@ -41,7 +41,7 @@ class restart_ros_launch:
 
         # Simulator states
         self.is_running = False  # is simulator curretnly running?
-        self.last_pos = deque(maxlen=20000) # list of last 20000 position points. Approx. 400 secs @ 50Hz
+        self.last_pos = deque(maxlen=6000) # list of last 20000 position points. Approx. 120 secs @ 50Hz
         self.last_on_opposite_path = 1  # last latched signal value for `on_opposite_path`
         # ROS node
         rospy.init_node('LaunchFileRestarter')
@@ -146,7 +146,7 @@ class restart_ros_launch:
                 dest_y = rospy.get_param('/car/dest_coord_y')
                 dest_dist = np.sqrt(np.square(data.position.x-dest_x) +
                                     np.square(data.position.y-dest_y))
-                if dest_dist < 20:
+                if dest_dist < 30:
                     rospy.logwarn("Ego car reached destination.")
                     self.last_pos.clear()
                     self.terminate()
