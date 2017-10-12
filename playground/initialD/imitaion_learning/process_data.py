@@ -5,8 +5,10 @@ import numpy as np
 import cv2
 import Image
 
+
 def get_image_list():
     pass
+
 
 def get_image_tensor(image_list):
     filename_queue = tf.train.string_input_producer(image_list)
@@ -14,6 +16,7 @@ def get_image_tensor(image_list):
     key, value = reader.read(filename_queue)
     example = tf.image.decode_jpeg(value)
     return example
+
 
 def sess_run_read_images():
     image_list = get_image_list()
