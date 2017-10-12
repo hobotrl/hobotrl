@@ -12,7 +12,7 @@ import argparse
 import rospy
 from rospy.timer import Timer
 from std_msgs.msg import Char
-from autodrive_msgs.msg import CarStatus
+from autodrive_msgs.msg import CarStatus, Control
 sys.path.append(dirname(dirname(dirname(realpath(__file__)))))
 
 class CarGo:
@@ -22,10 +22,20 @@ class CarGo:
         self.ema_speed = 10.0
         # ROS related
         rospy.init_node('car_go')
+        rospy.Subscriber('/car/control', Control, self.car_control_callback)
         rospy.Subscriber('/car/status', CarStatus, self.car_status_callback)
         self.start_pub = rospy.Publisher(
             '/autoDrive_KeyboardMode', Char, queue_size=10)
         self.car_go_loop = Timer(rospy.Duration(5.0), self.car_go_callback)
+
+    def car_control_callback(self, data):
+        """Check if control is in autodrive mode, and activate if not.
+
+        :param data:
+        :return:
+        """
+        if not data.autodrive_mode:
+            self.start_pub.publish(ord(' '))
 
     def car_status_callback(self, data):
         """Calculate the exponential moving average of car speed.
@@ -40,6 +50,13 @@ class CarGo:
                 pass
 
     def car_go_callback(self, data):
+        """Start car if car is not moving.
+        Control and Planning modules may die and cause car to stop in some
+        situation. This is to prevent that.
+
+        :param data:
+        :return:
+        """
         if self.ema_speed < 0.1:
             time.sleep(0.5)
             if self.is_dummy_action:
