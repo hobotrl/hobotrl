@@ -385,11 +385,11 @@ class I2A(A3CExperimentWithI2A):
                  learning_rate=1e-4, discount_factor=0.99, entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4),
                  batch_size=32):
         if env is None:
-            env = gym.make('MsPacman-v0')
-            env = envs.ScaledRewards(env, 0.1)
-            # env = wrap_car(env, 3, 3, frame=1)
-            # env._max_episode_steps = 10000
+            env = gym.make('CarRacing-v0')
+            # env = envs.ScaledRewards(env, 0.1)
+            # env = envs.MaxAndSkipEnv(env, max_len=1)
             # env = envs.FrameStack(env, k=4)
+            env = wrap_car(env, 3, 3, frame=4)
 
         if (f_env and f_rollout and f_ac) is None:
             dim_action = env.action_space.n

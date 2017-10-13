@@ -138,7 +138,7 @@ class PolicyNetUpdater(network.NetworkUpdater):
 
 
 class EnvModelUpdater(network.NetworkUpdater):
-    def __init__(self, next_state_function, reward_function, state_shape, entropy=1e-3, imshow_count=0):
+    def __init__(self, next_state_function, reward_function, state_shape, entropy=1e-3):
         super(EnvModelUpdater, self).__init__()
         self._next_state_function, self._reward_function = next_state_function, reward_function
         self._entropy = entropy
@@ -151,7 +151,7 @@ class EnvModelUpdater(network.NetworkUpdater):
             self.op_reward = reward_function.output().op
 
             with tf.name_scope("env_model"):
-                self._env_loss = tf.reduce_mean(network.Utils.clipped_square(self.op_next_state - self._input_next_state))
+                self._env_loss = tf.reduce_mean(network.Utils.clipped_square(self.op_next_state - self._input_next_state[:,:,:,0:3]))
                 self._reward_loss =tf.reduce_mean(network.Utils.clipped_square(self.op_reward - self._input_reward))
 
             self._op_loss = self._env_loss + self._reward_loss
@@ -184,15 +184,25 @@ class EnvModelUpdater(network.NetworkUpdater):
                 print "state", state[i], "shape", np.shape(state[i]), "mean", np.mean(state[i])
                 print "a", a, "shape", np.shape(a), "mean", np.mean(a)
                 print "next_state", next_state[i], "shape", np.shape(next_state[i]), "mean", np.mean(next_state[i])
-                # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_a_raw.png" % (self.imshow_count,i), 255*state[i])#cv2.cvtColor(255 * state[i], cv2.COLOR_RGB2BGR))
-                # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_b_pred.png" % (self.imshow_count,i), cv2.cvtColor(255 * a, cv2.COLOR_RGB2BGR))
+                mpimg.imsave("./log/I2ACarRacing/Img/%s_%s_a_raw1.png" % (self.imshow_count, i),
+                             state[i][:, :, 0:3])
+                mpimg.imsave("./log/I2ACarRacing/Img/%s_%s_a_raw2.png" % (self.imshow_count, i),
+                             state[i][:, :, 3:6])
+                mpimg.imsave("./log/I2ACarRacing/Img/%s_%s_a_raw3.png" % (self.imshow_count, i),
+                             state[i][:, :, 6:9])
+                mpimg.imsave("./log/I2ACarRacing/Img/%s_%s_a_raw4.png" % (self.imshow_count, i),
+                             state[i][:, :, 9:12])
+                # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_a_raw1_cv.png" % (self.imshow_count,i), cv2.cvtColor(state[i][:,:,0:3], cv2.COLOR_RGB2BGR))#cv2.cvtColor(255 * state[i], cv2.COLOR_RGB2BGR))
+                # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_a_raw2_cv.png" % (self.imshow_count,i), cv2.cvtColor(state[i][:,:,3:6], cv2.COLOR_RGB2BGR))#cv2.cvtColor(255 * state[i], cv2.COLOR_RGB2BGR))
+                # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_a_raw3_cv.png" % (self.imshow_count,i), cv2.cvtColor(state[i][:,:,6:9], cv2.COLOR_RGB2BGR))#cv2.cvtColor(255 * state[i], cv2.COLOR_RGB2BGR))
+                # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_a_raw4_cv.png" % (self.imshow_count,i), cv2.cvtColor(state[i][:,:,9:12], cv2.COLOR_RGB2BGR))#cv2.cvtColor(255 * state[i], cv2.COLOR_RGB2BGR))
+                cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_b_pred_cv.png" % (self.imshow_count,i), cv2.cvtColor(a, cv2.COLOR_RGB2BGR))
                 # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_c_ground_truth.png" % (self.imshow_count, i), 255*next_state[i])#cv2.cvtColor(255 * next_state[i], cv2.COLOR_RGB2BGR))
-                mpimg.imsave("./log/I2AMsPacman/Img/%s_%s_a_raw.png" % (self.imshow_count, i),
-                            state[i])  # cv2.cvtColor(255 * state[i], cv2.COLOR_RGB2BGR))
-                mpimg.imsave("./log/I2AMsPacman/Img/%s_%s_b_pred.png" % (self.imshow_count, i),
-                            a)
-                mpimg.imsave("./log/I2AMsPacman/Img/%s_%s_c_ground_truth.png" % (self.imshow_count, i),
-                            next_state[i])  # cv2.cvtColor(255 * next_state[i], cv2.COLOR_RGB2BGR))
+                # mpimg.imsave("./log/I2AMsPacman/Img/%s_%s_a_raw.png" % (self.imshow_count, i),
+                #             state[i][:,:,0:3])  # cv2.cvtColor(255 * state[i], cv2.COLOR_RGB2BGR))
+                # mpimg.imsave("./log/I2AMsPacman/Img/%s_%s_c_pred_mp.png" % (self.imshow_count, i), a)
+                # mpimg.imsave("./log/I2AMsPacman/Img/%s_%s_b_ground_truth.png" % (self.imshow_count, i),
+                #             next_state[i])  # cv2.cvtColor(255 * next_state[i], cv2.COLOR_RGB2BGR))
         return network.UpdateRun(feed_dict=feed_dict, fetch_dict={"env_model_loss": self._op_loss,
                                                                   "reward_loss": self._reward_loss,
                                                                   "observation_loss": self._env_loss})

@@ -4,7 +4,7 @@
 
 exp_file=./test/exp_car.py
 exp_name=I2A
-log_dir=./log/$exp_name"MsPacman"
+log_dir=./log/$exp_name"CarRacing"
 # cluster="{'ps':['localhost:2232'], 'worker':['localhost:2233', 'localhost:2234', 'localhost:2235']}"
 cluster="{'ps':['localhost:2242'], 'worker':['localhost:2243']}"
 worker_n=1
