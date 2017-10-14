@@ -81,7 +81,7 @@ def wrap_data(stack_info):
     pass
 
 
-def rnd_imgs_acts(stack_infos, batch_size):
+def rand_stack_infos(stack_infos, batch_size):
     """
     :param stack_infos:
            [[img1, img1, img1, action1],
@@ -92,25 +92,59 @@ def rnd_imgs_acts(stack_infos, batch_size):
     :param batch_size:
     :return:
     """
-    stack_imgs = []
-    acts = []
+    batch_stack_infos = []
     for _ in range(batch_size):
         info = random.choice(stack_infos)
+        batch_stack_infos.append(info)
+    return batch_stack_infos
+
+
+def rand_stack_infos_specify_batch_size(stack_infos, batch_size_list):
+    assert len(stack_infos) == len(batch_size_list)
+    splited_infos = split_stack_infos(stack_infos)
+    batch_infos = []
+    for i in range(len(batch_size_list)):
+        if stack_infos[i] == []:
+            assert batch_size_list[i] == 0
+            # do not sample
+            pass
+        else:
+            batch_info = rand_stack_infos(splited_infos[i], batch_size_list[i])
+            batch_infos.extend(batch_info)
+    return batch_infos
+
+
+def concat_imgs_acts(stack_infos):
+    stack_imgs = []
+    acts = []
+    for info in stack_infos:
         imgs = info[:-1]
         act = info[-1]
         stack_imgs.append(np.concatenate(imgs, -1))
+        # stack_imgs shape: (none, n, n, 3*stack_num)
         acts.append(act)
     return np.array(stack_imgs), np.array(acts)
 
 
-# def splited_rnd_imgs_acts(splited_stack_infos):
-#     num = len(splited_stack_infos)
-#     assert num == 5
+def rand_imgs_acts(stack_infos, batch_size):
+    batch_infos = rand_stack_infos(stack_infos, batch_size)
+    stack_imgs, acts = concat_imgs_acts(batch_infos)
+    return stack_imgs, acts
+
+
+def rand_imgs_acts_specify_batch_size(stack_infos, batch_size_list):
+    batch_infos = rand_stack_infos_specify_batch_size(stack_infos, batch_size_list)
+    stack_imgs, acts = concat_imgs_acts(batch_infos)
+    return stack_imgs, acts
+
+# def splited_rnd_imgs_acts(splited_stack_infos, nums):
+#     # num = len(splited_stack_infos)
+#     # assert num == 5
 #     num0 = 100
-#     num1 = 30
-#     num2 = 30
-#     num3 = 10
-#     num4 = 10
+#     num1 = 15
+#     num2 = 15
+#     num3 = 5
+#     num4 = 5
 #     imgs0, acts0 = rnd_imgs_acts(splited_stack_infos[0], num0)
 #     imgs1, acts1 = rnd_imgs_acts(splited_stack_infos[1], num1)
 #     imgs2, acts2 = rnd_imgs_acts(splited_stack_infos[2], num2)
@@ -120,18 +154,38 @@ def rnd_imgs_acts(stack_infos, batch_size):
 #     acts = np.concatenate((acts0, acts1, acts2, acts3, acts4), axis=0)
 #     return imgs, acts
 
+#
+# def splited_rnd_imgs_acts_test(splited_stack_infos):
+#     # num = len(splited_stack_infos)
+#     # assert num == 5
+#     num0 = 60
+#     num1 = 15
+#     num2 = 15
+#     # num3 = 5
+#     num4 = 5
+#     imgs0, acts0 = rnd_imgs_acts(splited_stack_infos[0], num0)
+#     imgs1, acts1 = rnd_imgs_acts(splited_stack_infos[1], num1)
+#     imgs2, acts2 = rnd_imgs_acts(splited_stack_infos[2], num2)
+#     # imgs3, acts3 = rnd_imgs_acts(splited_stack_infos[3], num3)
+#     imgs4, acts4 = rnd_imgs_acts(splited_stack_infos[4], num4)
+#     imgs = np.concatenate((imgs0, imgs1, imgs2, imgs4), axis=0)
+#     acts = np.concatenate((acts0, acts1, acts2, acts4), axis=0)
+#     return imgs, acts
 
-tf.app.flags.DEFINE_string('train_dir', "/home/pirate03/hobotrl_data/playground/initialD/exp/TEST/train1", """Path to training dataset""")
-tf.app.flags.DEFINE_string('val_dir', "/home/pirate03/hobotrl_data/playground/initialD/exp/TEST/val1", """Path to test dataset""")
+
+tf.app.flags.DEFINE_string('train_dir', "/home/pirate03/hobotrl_data/playground/initialD/exp/TEST/train", """Path to training dataset""")
+tf.app.flags.DEFINE_string('val_dir', "/home/pirate03/hobotrl_data/playground/initialD/exp/TEST/val", """Path to test dataset""")
 tf.app.flags.DEFINE_integer('batch_size', 64, """Number of images to process in a batch.""")
 tf.app.flags.DEFINE_integer('train_interval', 20, """Train display interval.""")
 tf.app.flags.DEFINE_integer('val_interval', 20, """Val display interval.""")
-tf.app.flags.DEFINE_integer('val_itr', 5, """Val test number.""")
+tf.app.flags.DEFINE_integer('val_itr', 1, """Val test number.""")
 tf.app.flags.DEFINE_float('l2', 1e-4, """L2 loss weight applied all the weights""")
-tf.app.flags.DEFINE_float('initial_lr', 1e-3, """Learning rate""")
-tf.app.flags.DEFINE_float('max_step', 200, """Train iteration nums""")
-tf.app.flags.DEFINE_string('log_dir', './log_sl_rnd_stack1', """Directory where to write log and checkpoint.""")
-tf.app.flags.DEFINE_string('stack_num', 1, """Directory where to write log and checkpoint.""")
+tf.app.flags.DEFINE_float('initial_lr', 1e-2, """Learning rate""")
+tf.app.flags.DEFINE_integer('max_step', 600, """Train iteration nums""")
+tf.app.flags.DEFINE_float('gpu_fraction', 0.5, """GPU using fraction""")
+tf.app.flags.DEFINE_string('log_dir', './log_sl_rnd_stack3_test', """Directory where to write log and checkpoint.""")
+tf.app.flags.DEFINE_integer('stack_num', 3, """stack num.""")
+
 
 
 FLAGS = tf.app.flags.FLAGS
@@ -143,7 +197,8 @@ val_interval = FLAGS.val_interval
 val_itr = FLAGS.val_itr
 l2 = FLAGS.l2
 initial_lr = FLAGS.initial_lr
-max_step = int(FLAGS.max_step)
+max_step = FLAGS.max_step
+gpu_fraction = FLAGS.gpu_fraction
 log_dir = FLAGS.log_dir
 stack_num = FLAGS.stack_num
 
@@ -177,28 +232,47 @@ sv = tf.train.Supervisor(graph=graph,
                         save_summaries_secs=0)
 
 config = tf.ConfigProto(
-            gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=0.9),
-            # allow_soft_placement=False,
-            allow_soft_placement=True,
+            gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=gpu_fraction),
+            allow_soft_placement=False,
+            # allow_soft_placement=True,
             log_device_placement=False)
 
 train_data = stack_obj_eps(train_dir, stack_num)
 val_data = stack_obj_eps(val_dir, stack_num)
 # train_data_splited = split_stack_infos(train_data)
 # val_data_splited = split_stack_infos(val_data)
+# print "train_data: "
+# print train_data
+
+
+# data_size = []
+# for tmp_data in train_data_splited:
+#     data_size.append(len(tmp_data))
+#
+# data_ratio = data_size / (sum(data_size)+0.0)
+# batch_size_list = (map(int), batch_size * data_ratio)
+# batch_size_list[-1] = batch_size - sum(batch_size_list[:-1])
+# print batch_size_list
+
+# val_imgs, val_labels = concat_imgs_acts(val_data)
+
 
 with sv.managed_session(config=config) as sess:
     # init_step = global_step.eval(sess=sess)
     tf.train.start_queue_runners(sess)
     for step in xrange(0, max_step):
+        time.sleep(0.1)
         if step % val_interval == 0:
             print "==========val %d=========" %step
             ave_val_loss, ave_val_acc, ave_val_prec, ave_val_rec, ave_val_f1, ave_conf_mat\
                 = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
             for i in range(val_itr):
-                val_imgs, val_labels = rnd_imgs_acts(val_data, batch_size)
-                # val_imgs, val_labels = splited_rnd_imgs_acts(val_data_splited)
-                val_preds, val_loss, val_acc = sess.run([preds, cross_entropy, acc], feed_dict={x: val_imgs, y_: val_labels})
+                time.sleep(0.1)
+                val_imgs, val_labels = rand_imgs_acts(val_data, batch_size)
+                val_probs, val_preds, val_loss, val_acc = sess.run([probs, preds, cross_entropy, acc], feed_dict={x: val_imgs, y_: val_labels})
+                print "val_probs: \n", val_probs
+                print "val_preds: \n", val_preds
+                print "val_label: \n", val_labels
                 prec, rec, f1, conf_mat = evaluate(val_labels, val_preds, labels)
                 ave_val_loss += val_loss
                 ave_val_acc += val_acc
@@ -219,14 +293,14 @@ with sv.managed_session(config=config) as sess:
             print ave_conf_mat
         # lr_value = get_lr(initial_lr, lr_decay, lr_decay_steps, global_step)
         start_time = time.time()
-        train_imgs, train_labels = rnd_imgs_acts(train_data, batch_size)
-        # train_imgs, train_labels = splited_rnd_imgs_acts(train_data_splited)
-        _, train_preds, train_loss, train_acc = sess.run([train_op, preds, cross_entropy, acc],
+        train_imgs, train_labels = rand_imgs_acts(train_data, batch_size)
+        # train_imgs, train_labels = splited_rnd_imgs_acts_test(train_data_splited)
+        _, train_probs, train_preds, train_loss, train_acc = sess.run([train_op, probs, preds, cross_entropy, acc],
                                                          feed_dict={x:train_imgs, y_:train_labels})
         duration = time.time() - start_time
         if step % train_interval == 0 or step < 10:
             # print "==========train %d========" %step
-            num_examples_per_step = batch_size
+            num_examples_per_step = 140
             examples_per_sec = num_examples_per_step / duration
             sec_per_batch = float(duration)
             format_str = ('%s: (Training) step %d, loss=%.4f, '
@@ -238,6 +312,9 @@ with sv.managed_session(config=config) as sess:
                                  train_acc,
                                  # lr_value,
                                  examples_per_sec, sec_per_batch))
+            print "train_probs: \n", train_probs
+            print "train_preds: \n", train_preds
+            print "train_label: \n", train_labels
             prec, rec, f1, conf_mat = evaluate(train_labels, train_preds, labels)
             # print "loss: ", train_loss, "acc: ", train_acc
             print "prec: ", prec
