@@ -385,11 +385,11 @@ class I2A(A3CExperimentWithI2A):
                  learning_rate=1e-4, discount_factor=0.99, entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4),
                  batch_size=32):
         if env is None:
-            env = gym.make('CarRacing-v0')
-            # env = envs.ScaledRewards(env, 0.1)
+            env = gym.make('MsPacman-v0')
+            env = envs.ScaledRewards(env, 0.1)
             # env = envs.MaxAndSkipEnv(env, max_len=1)
-            # env = envs.FrameStack(env, k=4)
-            env = wrap_car(env, 3, 3, frame=4)
+            env = envs.FrameStack(env, k=4)
+            # env = wrap_car(env, 3, 3, frame=4)
 
         if (f_env and f_rollout and f_ac) is None:
             dim_action = env.action_space.n
@@ -519,10 +519,10 @@ class I2A(A3CExperimentWithI2A):
                 input_state = tf.squeeze(tf.stack(input_state), axis=0)
                 input_action = inputs[1]
                 input_action = tf.image.resize_images(tf.reshape(input_action, [-1, 1, 1, dim_action]),
-                                                      [dim_observation[0], dim_observation[1]])
-                full_input = tf.concat([input_action, input_state], axis=3)
+                                                      [(((dim_observation[0]+1)/2+1)/2+1)/2, (((dim_observation[1]+1)/2+1)/2+1)/2])
+                # full_input = tf.concat([input_action, input_state], axis=3)
 
-                conv_1 = hrl.utils.Network.conv2ds(full_input,
+                conv_1 = hrl.utils.Network.conv2ds(input_state,
                                                shape=[(32, 8, 2)],
                                                out_flatten=False,
                                                activation=tf.nn.relu,
@@ -543,8 +543,17 @@ class I2A(A3CExperimentWithI2A):
                                                    l2=l2,
                                                    var_scope="conv_3")
 
+                conv_3 = tf.concat([conv_3, input_action], axis=3)
+
+                conv_4 = hrl.utils.Network.conv2ds(conv_3,
+                                                   shape=[(32, 1, 1)],
+                                                   out_flatten=False,
+                                                   activation=tf.nn.relu,
+                                                   l2=l2,
+                                                   var_scope="conv_4")
+
                 # reward
-                conv_r1 = hrl.utils.Network.conv2ds(conv_3,
+                conv_r1 = hrl.utils.Network.conv2ds(conv_4,
                                                    shape=[(32, 3, 1)],
                                                    out_flatten=False,
                                                    activation=tf.nn.relu,
@@ -564,7 +573,7 @@ class I2A(A3CExperimentWithI2A):
                 reward = tf.squeeze(reward, axis=1)
 
                 # next_state
-                up_1 = tf.image.resize_images(conv_3, [((dim_observation[0]+1)/2+1)/2, ((dim_observation[1]+1)/2+1)/2])
+                up_1 = tf.image.resize_images(conv_4, [((dim_observation[0]+1)/2+1)/2, ((dim_observation[1]+1)/2+1)/2])
 
                 concat_1 = tf.concat([conv_2, up_1], axis=3)
 

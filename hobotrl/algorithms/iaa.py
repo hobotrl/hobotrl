@@ -177,27 +177,29 @@ class EnvModelUpdater(network.NetworkUpdater):
         feed_dict.update(feed_more)
         self.imshow_count += 1
         print "----------------%s-------------" % self.imshow_count
-        if self.imshow_count % 2 == 0:
+        print "-------------------reward------------"
+        print reward
+        if self.imshow_count % 1000 == 0:
             for i in range(len(reward)):
                 a = self._next_state_function([state[i]])[0]
                 print "----------------------------\n"
                 print "state", state[i], "shape", np.shape(state[i]), "mean", np.mean(state[i])
                 print "a", a, "shape", np.shape(a), "mean", np.mean(a)
                 print "next_state", next_state[i], "shape", np.shape(next_state[i]), "mean", np.mean(next_state[i])
-                mpimg.imsave("./log/I2ACarRacing/Img/%s_%s_a_raw1.png" % (self.imshow_count, i),
+                mpimg.imsave("./log/I2AMsPacman/Img/%s_%s_a_raw1.png" % (self.imshow_count, i),
                              state[i][:, :, 0:3])
-                mpimg.imsave("./log/I2ACarRacing/Img/%s_%s_a_raw2.png" % (self.imshow_count, i),
+                mpimg.imsave("./log/I2AMsPacman/Img/%s_%s_a_raw2.png" % (self.imshow_count, i),
                              state[i][:, :, 3:6])
-                mpimg.imsave("./log/I2ACarRacing/Img/%s_%s_a_raw3.png" % (self.imshow_count, i),
+                mpimg.imsave("./log/I2AMsPacman/Img/%s_%s_a_raw3.png" % (self.imshow_count, i),
                              state[i][:, :, 6:9])
-                mpimg.imsave("./log/I2ACarRacing/Img/%s_%s_a_raw4.png" % (self.imshow_count, i),
+                mpimg.imsave("./log/I2AMsPacman/Img/%s_%s_a_raw4.png" % (self.imshow_count, i),
                              state[i][:, :, 9:12])
                 # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_a_raw1_cv.png" % (self.imshow_count,i), cv2.cvtColor(state[i][:,:,0:3], cv2.COLOR_RGB2BGR))#cv2.cvtColor(255 * state[i], cv2.COLOR_RGB2BGR))
                 # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_a_raw2_cv.png" % (self.imshow_count,i), cv2.cvtColor(state[i][:,:,3:6], cv2.COLOR_RGB2BGR))#cv2.cvtColor(255 * state[i], cv2.COLOR_RGB2BGR))
                 # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_a_raw3_cv.png" % (self.imshow_count,i), cv2.cvtColor(state[i][:,:,6:9], cv2.COLOR_RGB2BGR))#cv2.cvtColor(255 * state[i], cv2.COLOR_RGB2BGR))
                 # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_a_raw4_cv.png" % (self.imshow_count,i), cv2.cvtColor(state[i][:,:,9:12], cv2.COLOR_RGB2BGR))#cv2.cvtColor(255 * state[i], cv2.COLOR_RGB2BGR))
-                cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_b_pred_cv.png" % (self.imshow_count,i), cv2.cvtColor(255*a, cv2.COLOR_RGB2BGR))
-                mpimg.imsave("./log/I2ACarRacing/Img/%s_%s_c_ground_truth.png" % (self.imshow_count, i),
+                cv2.imwrite("./log/I2AMsPacman/Img/%s_%s_b_pred_cv.png" % (self.imshow_count,i), cv2.cvtColor(255*a, cv2.COLOR_RGB2BGR))
+                mpimg.imsave("./log/I2AMsPacman/Img/%s_%s_c_ground_truth.png" % (self.imshow_count, i),
                              next_state[i][:, :, 9:12])
                 # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_c_ground_truth.png" % (self.imshow_count, i), 255*next_state[i])#cv2.cvtColor(255 * next_state[i], cv2.COLOR_RGB2BGR))
                 # mpimg.imsave("./log/I2AMsPacman/Img/%s_%s_a_raw.png" % (self.imshow_count, i),
