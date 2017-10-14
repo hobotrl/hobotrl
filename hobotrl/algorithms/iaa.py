@@ -151,7 +151,7 @@ class EnvModelUpdater(network.NetworkUpdater):
             self.op_reward = reward_function.output().op
 
             with tf.name_scope("env_model"):
-                self._env_loss = tf.reduce_mean(network.Utils.clipped_square(self.op_next_state - self._input_next_state[:,:,:,0:3]))
+                self._env_loss = tf.reduce_mean(network.Utils.clipped_square(self.op_next_state - self._input_next_state[:,:,:,9:12]))
                 self._reward_loss =tf.reduce_mean(network.Utils.clipped_square(self.op_reward - self._input_reward))
 
             self._op_loss = self._env_loss + self._reward_loss
@@ -196,7 +196,9 @@ class EnvModelUpdater(network.NetworkUpdater):
                 # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_a_raw2_cv.png" % (self.imshow_count,i), cv2.cvtColor(state[i][:,:,3:6], cv2.COLOR_RGB2BGR))#cv2.cvtColor(255 * state[i], cv2.COLOR_RGB2BGR))
                 # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_a_raw3_cv.png" % (self.imshow_count,i), cv2.cvtColor(state[i][:,:,6:9], cv2.COLOR_RGB2BGR))#cv2.cvtColor(255 * state[i], cv2.COLOR_RGB2BGR))
                 # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_a_raw4_cv.png" % (self.imshow_count,i), cv2.cvtColor(state[i][:,:,9:12], cv2.COLOR_RGB2BGR))#cv2.cvtColor(255 * state[i], cv2.COLOR_RGB2BGR))
-                cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_b_pred_cv.png" % (self.imshow_count,i), cv2.cvtColor(a, cv2.COLOR_RGB2BGR))
+                cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_b_pred_cv.png" % (self.imshow_count,i), cv2.cvtColor(255*a, cv2.COLOR_RGB2BGR))
+                mpimg.imsave("./log/I2ACarRacing/Img/%s_%s_c_ground_truth.png" % (self.imshow_count, i),
+                             next_state[i][:, :, 9:12])
                 # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_c_ground_truth.png" % (self.imshow_count, i), 255*next_state[i])#cv2.cvtColor(255 * next_state[i], cv2.COLOR_RGB2BGR))
                 # mpimg.imsave("./log/I2AMsPacman/Img/%s_%s_a_raw.png" % (self.imshow_count, i),
                 #             state[i][:,:,0:3])  # cv2.cvtColor(255 * state[i], cv2.COLOR_RGB2BGR))
