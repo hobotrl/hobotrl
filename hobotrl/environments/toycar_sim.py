@@ -1,5 +1,7 @@
 #
 
+import logging
+
 import numpy as np
 import gym
 import gym.spaces
@@ -13,7 +15,55 @@ ROAD_COLOR[0], ROAD_COLOR[1], ROAD_COLOR[2] = [0.0, 0.8, 0.0]
 # WINDOW_H = 640
 
 
+class AllFrictionDetector(FrictionDetector):
+    def _contact(self, contact, begin):
+        tile = None
+        obj = None
+        u1 = contact.fixtureA.body.userData
+        u2 = contact.fixtureB.body.userData
+        if u1 and "road_friction" in u1.__dict__:
+            tile = u1
+            obj  = u2
+        if u2 and "road_friction" in u2.__dict__:
+            tile = u2
+            obj  = u1
+        if not tile: return
+
+        tile.color[0] = ROAD_COLOR[0]
+        tile.color[1] = ROAD_COLOR[1]
+        tile.color[2] = ROAD_COLOR[2]
+        if not obj or "tiles" not in obj.__dict__: return
+        if begin:
+            obj.tiles.add(tile)
+            # print tile.road_friction, "ADD", len(obj.tiles)
+            if not tile.road_visited:
+                tile.road_visited = True
+                self.env.tile_visited_count += 1
+            self.env.reward += 1000.0/len(self.env.track) / 4
+        else:
+            obj.tiles.remove(tile)
+            # print tile.road_friction, "DEL", len(obj.tiles) -- should delete to zero when on grass (this works)
+
+        # logging.warning("tiles, tile: %s %s", len(obj.tiles), tile)
+
+
 class ToyCarEnv(CarRacing):
+
+    def __init__(self):
+        # super(ToyCarEnv, self).__init__()
+        self._seed()
+        self.contactListener_keepref = AllFrictionDetector(self)
+        self.world = Box2D.b2World((0,0), contactListener=self.contactListener_keepref)
+        self.viewer = None
+        self.invisible_state_window = None
+        self.invisible_video_window = None
+        self.road = None
+        self.car = None
+        self.reward = 0.0
+        self.prev_reward = 0.0
+
+        self.action_space = spaces.Box( np.array([-1,0,0]), np.array([+1,+1,+1]))  # steer, gas, brake
+        self.observation_space = spaces.Box(low=0, high=255, shape=(STATE_H, STATE_W, 3))
 
     def _render(self, mode='human', close=False):
         if close:
@@ -74,7 +124,8 @@ class ToyCarEnv(CarRacing):
             image_data = pyglet.image.get_buffer_manager().get_color_buffer().get_image_data()
             arr = np.fromstring(image_data.data, dtype=np.uint8, sep='')
             arr = arr.reshape(VP_H, VP_W, 4)
-            arr = arr[::-1, :, 0:3]
+            # arr = arr[::-1, :, 0:3]
+            arr = arr[::-1, :, 2::-1]  # rgb to bgr
 
         if mode=="rgb_array" and not self.human_render: # agent can call or not call env.render() itself when recording video.
             win.flip()
@@ -115,4 +166,17 @@ class ToyCarEnv(CarRacing):
             for p in poly:
                 gl.glVertex3f(p[0], p[1], 0)
         gl.glEnd()
+
+    def _step(self, action):
+        state, reward, done, info = super(ToyCarEnv, self)._step(action)
+        on_grass = 0
+        for w in self.car.wheels:
+            if len(w.tiles) == 0:
+                on_grass += 1
+        if on_grass >= 4:
+            reward += -4.0
+        else:
+            reward += -0.5 * on_grass
+        # logging.warning("wheel on grass: %s, reward: %s", on_grass, reward)
+        return state, reward, done, info
 
