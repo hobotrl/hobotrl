@@ -8,9 +8,6 @@ to various topics to automatically shutdown and simulator.
 :data: 2017-09-06
 """
 
-import sys
-import os
-from os.path import dirname, realpath
 import time
 import signal
 import argparse
@@ -19,114 +16,71 @@ import subprocess
 import numpy as np
 from numpy import linalg as LA
 import rospy
-import rospkg
 from std_msgs.msg import Char, Int16, Bool
 from autodrive_msgs.msg import CarStatus
-# append initialD path to PATH
-sys.path.append(dirname(dirname(dirname(realpath(__file__)))))
-from ros_environments.utils.timer import Timer
+from base import BaseEpisodeMonitor
 
-class restart_ros_launch:
+
+class SimulatorEpisodeMonitor(BaseEpisodeMonitor):
     def __init__(self, launch_name):
         """Initialization.
 
         :param launch_name: name of the launch file for planning.
         """
-        # Subprocess related
+        # === Init super class ===
+        super(SimulatorEpisodeMonitor, self).__init__()
+
+        # === Subprocess related ===
         self.launch_name = launch_name
         self.process_list = list()
         self.process_names = [
             ['roslaunch', 'planning', self.launch_name]]
         print "[rviz_restart]: using launch file {}".format(self.launch_name)
 
-        # Simulator states
-        self.is_running = False  # is simulator curretnly running?
+        # === Simulator states ===
         self.last_pos = deque(maxlen=6000) # list of last 20000 position points. Approx. 120 secs @ 50Hz
         self.last_on_opposite_path = 1  # last latched signal value for `on_opposite_path`
-        # ROS node
-        rospy.init_node('LaunchFileRestarter')
-        # publishers
-        # async signal for simulator state
-        self.is_running_pub = rospy.Publisher(
-            "/rl/is_running", Bool, queue_size=10, latch=True)
-        # periodic heartbeat
-        self.heartbeat_pub = rospy.Publisher(
-            "/rl/simulator_heartbeat", Bool, queue_size=10, latch=True)
-        # opposite path
+
+        # periodic opposite path signal
         self.opposite_path_pub = rospy.Publisher(
             "/rl/last_on_opposite_path", Int16, queue_size=10, latch=True)
-        # periodic heartbeat
-        Timer(rospy.Duration(1/20.0),
-              lambda *args: self.heartbeat_pub.publish(self.is_running))
-        # periodic opposite path signal
-        Timer(rospy.Duration(1/20.0),
-              lambda *args:
-              self.opposite_path_pub.publish(self.last_on_opposite_path))
 
         # subscribers
-        rospy.Subscriber('/rl/simulator_restart', Bool, self.__restart_callback)
         rospy.Subscriber('/error/type', Int16, self.__car_out_of_lane_callback)
         rospy.Subscriber('/car/status', CarStatus, self.__car_status_callback)
         rospy.Subscriber('/rl/on_grass', Int16, self.__car_out_of_lane_callback)
         rospy.Subscriber('/rl/on_opposite_path', Int16, self.__assign_last_op_callback)
 
-    def spin(self):
-        rospy.spin()
-        self.terminate()
-
-    def terminate(self):
-        # flush heartbeat = False for 1 sec
-        self.is_running = False
-        secs = 3
-        while secs != 0:
-            print "[rviz_restart.terminate]: Shutdown simulator nodes in {} secs".format(secs)
-            secs -= 1
-            time.sleep(1.0)
-
-        # shutdown simulator node
+    def _terminate(self):
+        """shutdown launch file processes."""
         if len(self.process_list) is 0:
-            print("[rviz_restart.terminate]: no process to terminate")
+            print("[SimulatorEpisodeMonitor._terminate()]: no process to terminate")
         else:
-            rospy.loginfo("now shut down launch file")
             for p in self.process_list:
-                # p.terminate()
-                # p.kill()
                 p.send_signal(signal.SIGINT)
                 while p.poll() is None:
                     print (
-                        "[rviz_restart.terminate]: Simulator proc {} termination in progress..."
+                        "[SimulatorEpisodeMonitor._terminate()]: "
+                        "simulator process {} termination in progress..."
                     ).format(p.pid)
                     time.sleep(1.0)
                 print (
-                    "[rviz_restart.terminate]: Simulator proc {} terminated with exit code {}"
+                     "[SimulatorEpisodeMonitor._terminate()]: "
+                    "simulator proc {} terminated with exit code {}"
                 ).format(p.pid, p.returncode)
             self.process_list = []
-            print("Done!")
+            print("[SimulatorEpisodeMonitor]: termination done!")
 
-        # signal env node shutdown
-        print "[rviz_restart.terminate]: publish heartbeat=False!"
-        self.is_running_pub.publish(False)
+        return
 
-    def __restart_callback(self, data):
-        """Terminate and restart simulator on command."""
-        print "[rviz_restart.restart]: restart callback with {}".format(data.data)
-        # terminates simulator on False
-        if data.data==False:
-            print "[rviz_restart.restart]: mere termination requested."
-            self.terminate()
-            print "[rviz_restart.restart]: termination finished."
-            self.is_running_pub.publish(False)
-            return
-        # restart on True
-        else:
-            # restart launch file
-            for name in self.process_names:
-                p = subprocess.Popen(name)
-                self.process_list.append(p)
-            print("[rviz_restart.restart]: restarted launch file!")
-            self.is_running = True
-            self.is_running_pub.publish(True)
-            print "[rviz_restart.restart]: publish heartbeat=True!"
+    def _start(self):
+        """Restart nodes specified in a list of commands."""
+        for name in self.process_names:
+            p = subprocess.Popen(name)
+            self.process_list.append(p)
+        print("[rviz_restart.restart]: started launch file!")
+
+        return
 
     def __car_out_of_lane_callback(self, data):
         """Various reasons car is out of lane (e.g. on grass)."""
@@ -171,7 +125,7 @@ if __name__ == '__main__':
     parser.add_argument('launch_name', type=str)
     args = parser.parse_args()
     try:
-        myobjectx = restart_ros_launch(args.launch_name)
-        myobjectx.spin()
+        mon = SimulatorEpisodeMonitor(args.launch_name)
+        mon.spin()
     except rospy.ROSInterruptException:
         pass
