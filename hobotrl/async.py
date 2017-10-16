@@ -56,7 +56,7 @@ class ClusterAgent(Agent):
                     n_optimizer = network.OptimizerPlaceHolder()
                     global_optimizer = optimizer_creator()
                     global_agent = agent_creator(n_optimizer, global_step)
-                    global_network = global_agent.network
+                    self._global_network = global_agent.network
 
             for i in range(worker_n):
                 with tf.device("/job:worker/task:%d" % i):
@@ -64,7 +64,7 @@ class ClusterAgent(Agent):
                         n_optimizer = network.OptimizerPlaceHolder()
                         worker = agent_creator(n_optimizer, global_step)
                         local_network = worker.network
-                        local_to_global = dict(zip(local_network.variables, global_network.variables))
+                        local_to_global = dict(zip(local_network.variables, self._global_network.variables))
                         n_optimizer.set_optimizer(
                             network.DistributedOptimizer(global_optimizer=global_optimizer,
                                                          local_global_var_map=local_to_global,
@@ -74,6 +74,9 @@ class ClusterAgent(Agent):
                         agent = worker
 
         self._agent = agent
+        with tf.name_scope("init_local_weight"):
+            self._init_local_weight = tf.group(*[tf.assign(var_l, var_g) for var_l, var_g in
+                                                 zip(self._agent.network.variables, self._global_network.variables)])
 
     def step(self, state, action, reward, next_state, episode_done=False, **kwargs):
         return self._agent.step(state, action, reward, next_state, episode_done, **kwargs)
@@ -85,10 +88,13 @@ class ClusterAgent(Agent):
         return self._agent.new_episode(state)
 
     def create_session(self, config=None, **kwargs):
-        return self._agent.create_session(config=config,
+        sess = self._agent.create_session(config=config,
                                           master=self._server.target,
                                           worker_index=self._job_index,
-                                          save_dir=self._logdir)
+                                          save_dir=self._logdir,
+                                          restore_var_list=self._global_network.variables)
+        sess.run(self._init_local_weight)
+        return sess
 
     def set_session(self, sess):
         self._agent.set_session(sess)
