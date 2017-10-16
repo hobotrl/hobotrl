@@ -727,7 +727,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
 
         # === Run simulator ===
         #   1. set `is_envnode_up` Event
-        #   2. Perodically check backend status and termination event
+        #   2. Periodically check backend status and termination event
         t = time.time()
         if not flag_fail:
             print "[EnvNode]: simulator up and receiving obs."
