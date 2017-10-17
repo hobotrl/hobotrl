@@ -21,6 +21,11 @@ case $key in
     shift # past argument
     shift # past value
     ;;
+    --start_port)
+    start_port="$2"
+    shift # past argument
+    shift # past value
+    ;;
     *)    # unknown option
     POSITIONAL+=("$1") # save it in an array for later
     shift # past argument
@@ -30,8 +35,10 @@ done
 set -- "${POSITIONAL[@]}" # restore positional parameters
 
 exp_file=$1
+shift
 
-exp_name=$2
+exp_name=$1
+shift
 
 if [[ "$exp_file" = "" || "$exp_name" = "" ]]; then
     print_help
@@ -42,21 +49,23 @@ if [[ "$log_dir" = "" ]]; then
 	log_dir=./log/$exp_name
 fi
 
-start_port=2242
+if [[ "$start_port" = "" ]]; then
+    start_port=2242
+fi
 
 worker_n=4
 device_n=4
 
-if [[ "$3" != "" ]]; then
-    worker_n=$3
+if [[ "$1" != "" ]]; then
+    worker_n=$1
+    shift
 fi
-if [[ "$4" != "" ]]; then
-    device_n=$4
+if [[ "$1" != "" ]]; then
+    device_n=$1
+    shift
 fi
-extra_arg=""
-if [[ "$5" != "" ]]; then
-    extra_arg=$5
-fi
+
+extra_arg=$@
 
 cluster=$(python -c "import sys;_,port,worker=sys.argv;print \"{'ps':['localhost:\"+port+\"'], 'worker':[\" + \",\".join([\"'localhost:\"+str(i+int(port)+1)+\"'\" for i in range(int(worker))])+\"]}\"" $start_port $worker_n)
 echo "cluster:      $cluster"
