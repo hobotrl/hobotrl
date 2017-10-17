@@ -44,8 +44,9 @@ def func_compile_action(action):
     return ACTIONS[action]
 
 def func_compile_exp_agent(state, action, rewards, next_state, done):
-    global momentum_ped
+    global momentum_valid
     global momentum_opp
+    global momentum_ped
     global ema_speed
 
     # Compile reward
@@ -54,15 +55,19 @@ def func_compile_exp_agent(state, action, rewards, next_state, done):
     rewards.append(np.logical_or(action==1, action==2))
     print (' '*10+'R: ['+'{:4.2f} '*len(rewards)+']').format(*rewards),
 
+    momentum_valid = (rewards[0]>=1.9)*(momentum_valid+(rewards[0]-1))
+    momentum_valid = min(momentum_valid, 30)
+    longest_penalty = rewards[1]
     speed = rewards[2]
     ema_speed = 0.5*ema_speed + 0.5*speed
-    longest_penalty = rewards[1]
-    obs_risk = rewards[5]
     momentum_opp = (rewards[3]<0.5)*(momentum_opp+(1-rewards[3]))
     momentum_opp = min(momentum_opp, 20)
+    momentum_ped = (rewards[4]>0.5)*(momentum_ped+rewards[4])
+    momentum_ped = min(momentum_ped, 12)
+    obs_risk = rewards[5]
 
-    # obstacle
-    rewards[0] *= 0.0
+    # road_validity
+    rewards[0] *= -30.0*(momentum_valid*0.2)*(momentum_valid>1.0)
     # distance to
     rewards[1] *= -10.0*(rewards[1]>2.0)
     # velocity
@@ -70,15 +75,14 @@ def func_compile_exp_agent(state, action, rewards, next_state, done):
     # opposite
     rewards[3] = -20*(0.9+0.1*momentum_opp)*(momentum_opp>1.0)
     # ped
-    momentum_ped = (rewards[4]>0.5)*(momentum_ped+rewards[4])
-    momentum_ped = min(momentum_ped, 12)
     rewards[4] = -40*(0.9+0.1*momentum_ped)*(momentum_ped>1.0)
     # obs factor
     rewards[5] *= -100.0
     # steering
     rewards[6] *= -10.0
     reward = np.sum(rewards)/100.0
-    print '{:6.4f}, {:6.4f}'.format(momentum_opp, momentum_ped),
+    print '{:6.4f}, {:6.4f}, {:6.4f}'.format(
+        momentum_valid, momentum_opp, momentum_ped),
     print ': {:7.4f}'.format(reward)
 
     # early stopping
@@ -93,47 +97,55 @@ def func_compile_exp_agent(state, action, rewards, next_state, done):
             print "[Early stopping] stuck on pedestrain."
             done = True
 
+    if momentum_valid>8.0:
+        print "[Early stopping] entered invalid road."
+        done = True
+    if obs_risk > 0.5:
+        print "[Early stopping] hit obstacle."
+        done = True
+
     return state, action, reward, next_state, done
 
 def gen_backend_cmds():
-    # ws_path = '/home/lewis/Projects/catkin_ws_pirate03_lowres350/'
     ws_path = '/Projects/catkin_ws/'
-    # initialD_path = '/home/lewis/Projects/hobotrl/playground/initialD/'
     initialD_path = '/Projects/hobotrl/playground/initialD/'
     backend_path = initialD_path + 'ros_environments/backend_scripts/'
     utils_path = initialD_path + 'ros_environments/backend_scripts/utils/'
     backend_cmds = [
-        # 1. Parse maps
+        # Parse maps
         ['python', utils_path+'parse_map.py',
          ws_path+'src/Map/src/map_api/data/honda_wider.xodr',
          utils_path+'road_segment_info.txt'],
-        # 2. Generate obs and launch file
+        # Generate obs and launch file
         ['python', utils_path+'gen_launch_dynamic.py',
          utils_path+'road_segment_info.txt', ws_path,
          utils_path+'honda_dynamic_obs_template.launch', 30],
-        # 3. start roscore
+        # start roscore
         ['roscore'],
-        # 4. start reward function script
+        # start reward function script
         ['python', backend_path+'gazebo_rl_reward.py'],
-        # 5. start reward function script
+        # start road validity node script
+        ['python', backend_path+'road_validity.py',
+         utils_path+'road_segment_info.txt.signal'],
+        # start car_go script
         ['python', backend_path+'car_go.py'],
-        # 6. start simulation restarter backend
+        # start simulation restarter backend
         ['python', backend_path+'rviz_restart.py', 'honda_dynamic_obs.launch'],
-        # 7. [optional] video capture
+        # [optional] video capture
         ['python', backend_path+'non_stop_data_capture.py', 0]
     ]
     return backend_cmds
 
 env = DrivingSimulatorEnv(
-    address="10.31.40.197", port='6003',
-    # address='localhost', port='6003',
+    # address="10.31.40.197", port='6003',
+    address='localhost', port='6003',
     backend_cmds=gen_backend_cmds(),
     defs_obs=[
         ('/training/image/compressed', 'sensor_msgs.msg.CompressedImage'),
         ('/decision_result', 'std_msgs.msg.Int16')
     ],
     defs_reward=[
-        ('/rl/has_obstacle_nearby', 'std_msgs.msg.Bool'),
+        ('/rl/current_road_validity', 'std_msgs.msg.Int16'),
         ('/rl/distance_to_longestpath', 'std_msgs.msg.Float32'),
         ('/rl/car_velocity', 'std_msgs.msg.Float32'),
         ('/rl/last_on_opposite_path', 'std_msgs.msg.Int16'),
@@ -356,6 +368,7 @@ try:
         agent.set_session(sess)
         action_fraction = np.ones(len(ACTIONS),) / (1.0*len(ACTIONS))
         action_td_loss = np.zeros(len(ACTIONS),)
+        momentum_valid = 0.0
         momentum_opp = 0.0
         momentum_ped = 0.0
         ema_speed = 10.0

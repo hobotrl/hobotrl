@@ -1,5 +1,5 @@
-#!/usr/bin/env python
 """Reward calculator and publisher.
+
 This scrips calculates components of RL reward based on ROS topics published by
 the simulator. The calculated reward components are published again as ROS
 topics.
