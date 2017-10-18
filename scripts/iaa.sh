@@ -2,7 +2,7 @@
 #	usage: . ./scripts/iaa.sh
 #
 
-exp_file=./test/exp_car.py
+exp_file=./test/exp_iaa.py
 exp_name=I2A
 log_dir=./log/$exp_name"MsPacman"
 # cluster="{'ps':['localhost:2232'], 'worker':['localhost:2233', 'localhost:2234', 'localhost:2235']}"

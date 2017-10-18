@@ -177,15 +177,14 @@ class EnvModelUpdater(network.NetworkUpdater):
         feed_dict.update(feed_more)
         self.imshow_count += 1
         print "----------------%s-------------" % self.imshow_count
-        print "-------------------reward------------"
-        print reward
+        # print state
         if self.imshow_count % 1000 == 0:
             for i in range(len(reward)):
                 a = self._next_state_function([state[i]])[0]
-                print "----------------------------\n"
-                print "state", state[i], "shape", np.shape(state[i]), "mean", np.mean(state[i])
-                print "a", a, "shape", np.shape(a), "mean", np.mean(a)
-                print "next_state", next_state[i], "shape", np.shape(next_state[i]), "mean", np.mean(next_state[i])
+                # print "----------------------------\n"
+                # print "state", state[i], "shape", np.shape(state[i]), "mean", np.mean(state[i])
+                # print "a", a, "shape", np.shape(a), "mean", np.mean(a)
+                # print "next_state", next_state[i], "shape", np.shape(next_state[i]), "mean", np.mean(next_state[i])
                 mpimg.imsave("./log/I2AMsPacman/Img/%s_%s_a_raw1.png" % (self.imshow_count, i),
                              state[i][:, :, 0:3])
                 mpimg.imsave("./log/I2AMsPacman/Img/%s_%s_a_raw2.png" % (self.imshow_count, i),
@@ -198,7 +197,7 @@ class EnvModelUpdater(network.NetworkUpdater):
                 # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_a_raw2_cv.png" % (self.imshow_count,i), cv2.cvtColor(state[i][:,:,3:6], cv2.COLOR_RGB2BGR))#cv2.cvtColor(255 * state[i], cv2.COLOR_RGB2BGR))
                 # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_a_raw3_cv.png" % (self.imshow_count,i), cv2.cvtColor(state[i][:,:,6:9], cv2.COLOR_RGB2BGR))#cv2.cvtColor(255 * state[i], cv2.COLOR_RGB2BGR))
                 # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_a_raw4_cv.png" % (self.imshow_count,i), cv2.cvtColor(state[i][:,:,9:12], cv2.COLOR_RGB2BGR))#cv2.cvtColor(255 * state[i], cv2.COLOR_RGB2BGR))
-                cv2.imwrite("./log/I2AMsPacman/Img/%s_%s_b_pred_cv.png" % (self.imshow_count,i), cv2.cvtColor(255*a, cv2.COLOR_RGB2BGR))
+                cv2.imwrite("./log/I2AMsPacman/Img/%s_%s_b_pred_cv.png" % (self.imshow_count,i), cv2.cvtColor(a, cv2.COLOR_RGB2BGR))
                 mpimg.imsave("./log/I2AMsPacman/Img/%s_%s_c_ground_truth.png" % (self.imshow_count, i),
                              next_state[i][:, :, 9:12])
                 # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_c_ground_truth.png" % (self.imshow_count, i), 255*next_state[i])#cv2.cvtColor(255 * next_state[i], cv2.COLOR_RGB2BGR))
@@ -215,7 +214,7 @@ class EnvModelUpdater(network.NetworkUpdater):
 class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
           BaseDeepAgent):
     def __init__(self, num_action,
-                 f_se, f_ac, f_env, f_rollout, f_encoder, state_shape,
+                 f_se_1, f_se_2, f_se_3, f_se_4, f_ac, f_env, f_rollout, f_encoder, state_shape,
                  # ACUpdate arguments
                  discount_factor, entropy=1e-3, target_estimator=None, max_advantage=10.0,
                  # optimizer arguments
@@ -252,15 +251,25 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
         def f_iaa(inputs):
             input_observation = inputs[0]
 
-            se = network.Network([input_observation], f_se, var_scope="se_ac")
-            se = network.NetworkFunction(se["se"]).output().op
+            se_1 = network.Network([input_observation], f_se_1, var_scope="se_1")
+            se_1 = network.NetworkFunction(se_1["se_1"]).output().op
+
+            se_2 = network.Network([se_1], f_se_2, var_scope="se_2")
+            se_2 = network.NetworkFunction(se_2["se_2"]).output().op
+
+            se_3 = network.Network([se_2], f_se_3, var_scope="se_3")
+            se_3 = network.NetworkFunction(se_3["se_3"]).output().op
+
+            se_4 = network.Network([se_3], f_se_4, var_scope="se_4")
+            se_4 = network.NetworkFunction(se_4["se_4"]).output().op
 
             input_action = tf.placeholder(dtype=tf.uint8, shape=[None, num_action], name="input_action")
             input_reward = tf.placeholder(dtype=tf.float32, shape=[None, 3], name="input_reward")
             encode_state = tf.placeholder(dtype=tf.float32, shape=[None, state_shape[0], state_shape[1], 9], name="encode_states")
 
             rollout = network.Network([input_observation], f_rollout, var_scope="rollout_policy")
-            env_model = network.Network([[input_observation], input_action], f_env, var_scope="EnvModel")
+            # env_model = network.Network([[input_observation], input_action], f_env, var_scope="EnvModel")
+            env_model = network.Network([[se_1], [se_2], [se_3], [se_4], input_action], f_env, var_scope="EnvModel")
             rollout_encoder = network.Network([encode_state, input_reward], f_encoder, var_scope="rollout_encoder")
 
             current_state = input_observation
@@ -274,7 +283,7 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
             current_action = tf.one_hot(indices=rollout_action, depth=rollout_action_dist.event_size, on_value=1.0,
                                         off_value=0.0, axis=-1)
 
-            env_model = env_model([[current_state], current_action], name_scope="env_model")
+            env_model = env_model([[se_1], [se_2], [se_3], [se_4], current_action], name_scope="env_model")
 
             next_state = network.NetworkFunction(env_model["next_state"]).output().op
             reward = network.NetworkFunction(env_model["reward"]).output().op
@@ -324,7 +333,7 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
             # feature = tf.concat([path, se], axis=1)
 
             # ac = network.Network([feature], f_ac, var_scope='ac')
-            ac = network.Network([se], f_ac, var_scope='ac')
+            ac = network.Network([se_4], f_ac, var_scope='ac')
             v = network.NetworkFunction(ac["v"]).output().op
             pi_dist = network.NetworkFunction(ac["pi"]).output().op
 
