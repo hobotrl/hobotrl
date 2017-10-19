@@ -81,19 +81,74 @@ env = DrivingSimulatorEnv(
     step_delay_target=0.4
 )
 
-def f_net(inputs):
-    l2 = 1e-3
-    state = inputs[0]
-    conv = hrl.utils.Network.conv2ds(state, shape=[(32, 4, 4), (64, 4, 4), (64, 2, 2)], out_flatten=True,
-                                     activation=tf.nn.relu,
-                                     l2=l2, var_scope="convolution")
-    q = hrl.network.Utils.layer_fcs(conv, [200, 100], 3,
-                                    l2=l2, var_scope="q")
-    pi = hrl.network.Utils.layer_fcs(conv, [200, 100], 3,
-                                     activation_out=tf.nn.softmax, l2=l2, var_scope="pi")
-    tf.stop_gradient(pi)
-    tf.stop_gradient(conv)
-    return {"q": q, "pi": pi}
+# def f_net(inputs):
+#     l2 = 1e-3
+#     state = inputs[0]
+#     conv = hrl.utils.Network.conv2ds(state, shape=[(32, 4, 4), (64, 4, 4), (64, 2, 2)], out_flatten=True,
+#                                      activation=tf.nn.relu,
+#                                      l2=l2, var_scope="convolution")
+#     q = hrl.network.Utils.layer_fcs(conv, [200, 100], 3,
+#                                     l2=l2, var_scope="q")
+#     pi = hrl.network.Utils.layer_fcs(conv, [200, 100], 3,
+#                                      activation_out=tf.nn.softmax, l2=l2, var_scope="pi")
+#     tf.stop_gradient(pi)
+#     tf.stop_gradient(conv)
+#     return {"q": q, "pi": pi}
+
+
+def f_net(inputs, l2):
+    """
+    action_num is set 5.
+    :param inputs:
+    :return:
+    """
+    inputs = inputs[0]
+    inputs = inputs/128 - 1.0
+    action_num = 5
+    # (350, 350, 3*n) -> ()
+    conv1 = layers.conv2d(
+        inputs=inputs, filters=16, kernel_size=(8, 8), strides=1,
+        kernel_regularizer=l2_regularizer(scale=l2),
+        activation=tf.nn.relu, name='conv1')
+    print conv1.shape
+    pool1 = layers.max_pooling2d(
+        inputs=conv1, pool_size=3, strides=4, name='pool1')
+    print pool1.shape
+    conv2 = layers.conv2d(
+        inputs=pool1, filters=16, kernel_size=(5, 5), strides=1,
+        kernel_regularizer=l2_regularizer(scale=l2),
+        activation=tf.nn.relu, name='conv2')
+    print conv2.shape
+    pool2 = layers.max_pooling2d(
+        inputs=conv2, pool_size=3, strides=3, name='pool2')
+    print pool2.shape
+    conv3 = layers.conv2d(
+         inputs=pool2, filters=64, kernel_size=(3, 3), strides=1,
+         kernel_regularizer=l2_regularizer(scale=l2),
+         activation=tf.nn.relu, name='conv3')
+    print conv3.shape
+    pool3 = layers.max_pooling2d(
+        inputs=conv3, pool_size=3, strides=2, name='pool3',)
+    print pool3.shape
+    depth = pool3.get_shape()[1:].num_elements()
+    inputs = tf.reshape(pool3, shape=[-1, depth])
+    print inputs.shape
+    hid1 = layers.dense(
+        inputs=inputs, units=256, activation=tf.nn.relu,
+        kernel_regularizer=l2_regularizer(scale=l2), name='hid1')
+    print hid1.shape
+    hid2 = layers.dense(
+        inputs=hid1, units=256, activation=tf.nn.relu,
+        kernel_regularizer=l2_regularizer(scale=l2), name='hid2')
+    print hid2.shape
+    pi = layers.dense(
+        inputs=hid2, units=action_num, activation=tf.nn.softmax,
+        kernel_regularizer=l2_regularizer(scale=l2), name='pi')
+    q = layers.dense(
+        inputs=hid2, units=action_num,
+        kernel_initializer=l2_regularizer(scale=l2), name='q')
+    return {"pi": pi, "q":q}
+
 
 def preprocess_image(input_image):
     imagenet_mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
@@ -138,7 +193,7 @@ n_interactive = 0
 n_ep = 0  # last ep in the last run, if restart use 0
 n_test = 10  # num of episode per test run (no exploration)
 reward_decay = 0.7
-logdir = "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/imitaion_learning/DrSim_fnet_sl_ac_rename"
+logdir = "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/imitaion_learning/log_sl_rnd_imbalance_1"
 
 try:
     # config = tf.ConfigProto()

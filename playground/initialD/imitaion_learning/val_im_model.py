@@ -1,5 +1,5 @@
 import tensorflow as tf
-from stack_imgs import stack_obj_eps
+from stack_imgs import stack_obj_eps, read_eps_imgs_acts, stack_one_eps
 import numpy as np
 import random
 from tensorflow import layers
@@ -7,6 +7,7 @@ from tensorflow.contrib.layers import l2_regularizer
 from evaluate import evaluate
 import time
 from datetime import datetime
+
 
 
 def f_net(inputs, l2):
@@ -125,64 +126,8 @@ def concat_imgs_acts(stack_infos):
     return np.array(stack_imgs), np.array(acts)
 
 
-def rand_imgs_acts(stack_infos, batch_size):
-    batch_infos = rand_stack_infos(stack_infos, batch_size)
-    stack_imgs, acts = concat_imgs_acts(batch_infos)
-    return stack_imgs, acts
-
-
-def rand_imgs_acts_specify_batch_size(splited_stack_infos, batch_size_list):
-    batch_infos = rand_stack_infos_specify_batch_size(splited_stack_infos, batch_size_list)
-    stack_imgs, acts = concat_imgs_acts(batch_infos)
-    return stack_imgs, acts
-
-# def splited_rnd_imgs_acts(splited_stack_infos, nums):
-#     # num = len(splited_stack_infos)
-#     # assert num == 5
-#     num0 = 100
-#     num1 = 15
-#     num2 = 15
-#     num3 = 5
-#     num4 = 5
-#     imgs0, acts0 = rnd_imgs_acts(splited_stack_infos[0], num0)
-#     imgs1, acts1 = rnd_imgs_acts(splited_stack_infos[1], num1)
-#     imgs2, acts2 = rnd_imgs_acts(splited_stack_infos[2], num2)
-#     imgs3, acts3 = rnd_imgs_acts(splited_stack_infos[3], num3)
-#     imgs4, acts4 = rnd_imgs_acts(splited_stack_infos[4], num4)
-#     imgs = np.concatenate((imgs0, imgs1, imgs2, imgs3, imgs4), axis=0)
-#     acts = np.concatenate((acts0, acts1, acts2, acts3, acts4), axis=0)
-#     return imgs, acts
-
-#
-# def splited_rnd_imgs_acts_test(splited_stack_infos):
-#     # num = len(splited_stack_infos)
-#     # assert num == 5
-#     num0 = 60
-#     num1 = 15
-#     num2 = 15
-#     # num3 = 5
-#     num4 = 5
-#     imgs0, acts0 = rnd_imgs_acts(splited_stack_infos[0], num0)
-#     imgs1, acts1 = rnd_imgs_acts(splited_stack_infos[1], num1)
-#     imgs2, acts2 = rnd_imgs_acts(splited_stack_infos[2], num2)
-#     # imgs3, acts3 = rnd_imgs_acts(splited_stack_infos[3], num3)
-#     imgs4, acts4 = rnd_imgs_acts(splited_stack_infos[4], num4)
-#     imgs = np.concatenate((imgs0, imgs1, imgs2, imgs4), axis=0)
-#     acts = np.concatenate((acts0, acts1, acts2, acts4), axis=0)
-#     return imgs, acts
-
-
-def get_lr(initial_lr, global_step, lr_decay=0.1, lr_decay_steps=[5000, 30000]):
-    lr = initial_lr
-    for s in lr_decay_steps:
-        if global_step >= s:
-            lr *= lr_decay
-    return lr
-
-
-tf.app.flags.DEFINE_string('train_dir', "/home/pirate03/hobotrl_data/playground/initialD/exp/TEST/train", """Path to training dataset""")
 tf.app.flags.DEFINE_string('val_dir', "/home/pirate03/hobotrl_data/playground/initialD/exp/TEST/val", """Path to test dataset""")
-tf.app.flags.DEFINE_integer('batch_size', 64, """Number of images to process in a batch.""")
+tf.app.flags.DEFINE_integer('batch_size', 128, """Number of images to process in a batch.""")
 tf.app.flags.DEFINE_integer('train_interval', 20, """Train display interval.""")
 tf.app.flags.DEFINE_integer('val_interval', 20, """Val display interval.""")
 tf.app.flags.DEFINE_integer('val_itr', 1, """Val test number.""")
@@ -194,9 +139,7 @@ tf.app.flags.DEFINE_string('log_dir', './log_sl_rnd_stack3_test', """Directory w
 tf.app.flags.DEFINE_integer('stack_num', 3, """stack num.""")
 
 
-
 FLAGS = tf.app.flags.FLAGS
-train_dir = FLAGS.train_dir
 val_dir = FLAGS.val_dir
 batch_size = FLAGS.batch_size
 train_interval = FLAGS.train_interval
@@ -206,7 +149,8 @@ l2 = FLAGS.l2
 initial_lr = FLAGS.initial_lr
 max_step = FLAGS.max_step
 gpu_fraction = FLAGS.gpu_fraction
-log_dir = FLAGS.log_dir
+val_dir = "/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_rnd_obj_v3_fenkai_rm_stp/val"
+log_dir = "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/imitaion_learning/log_sl_rnd_imbalance_1"
 stack_num = FLAGS.stack_num
 
 
@@ -220,8 +164,7 @@ cross_entropy = -tf.reduce_mean(tf.to_float(y_one_hot) * tf.log(pi))
 probs = pi
 preds = tf.to_int32(tf.argmax(probs, 1))
 acc = tf.reduce_mean(tf.cast(tf.equal(preds, y_), "float"))
-lr = tf.placeholder(dtype=tf.float32, name="lr")
-train_op = tf.train.AdamOptimizer(lr).minimize(cross_entropy)
+train_op = tf.train.AdadeltaOptimizer(initial_lr).minimize(cross_entropy)
 
 graph = tf.get_default_graph()
 global_step = tf.get_variable(
@@ -245,92 +188,59 @@ config = tf.ConfigProto(
             # allow_soft_placement=True,
             log_device_placement=False)
 
-train_data = stack_obj_eps(train_dir, stack_num)
 val_data = stack_obj_eps(val_dir, stack_num)
-train_data_splited = split_stack_infos(train_data)
-train_data_splited[3] = []
-train_data_splited[4] = []
-# val_data_splited = split_stack_infos(val_data)
-# print "train_data: "
-# print train_data
-batch_size_list = [64, 16, 16, 0, 0]
-
-# data_size = []
-# for tmp_data in train_data_splited:
-#     data_size.append(len(tmp_data))
-#
-# data_ratio = data_size / (sum(data_size)+0.0)
-# batch_size_list = (map(int), batch_size * data_ratio)
-# batch_size_list[-1] = batch_size - sum(batch_size_list[:-1])
-# print batch_size_list
-
-# val_imgs, val_labels = concat_imgs_acts(val_data)
-
+data_num = len(val_data)
+import os
 
 with sv.managed_session(config=config) as sess:
-    # init_step = global_step.eval(sess=sess)
     tf.train.start_queue_runners(sess)
-    for step in xrange(0, max_step):
+    # ave_val_loss, ave_val_acc, ave_val_prec, ave_val_rec, ave_val_f1, ave_conf_mat \
+    #     = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+    obj_labels = []
+    obj_preds = []
+    obj_dir = "/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_rnd_obj_v3_fenkai_rm_stp/val"
+    eps_names = sorted(os.listdir(obj_dir))
+    print eps_names
+    for eps_name in eps_names:
         time.sleep(0.1)
-        lr_value = get_lr(initial_lr, step)
-        if step % val_interval == 0:
-            print "==========val %d=========" %step
-            ave_val_loss, ave_val_acc, ave_val_prec, ave_val_rec, ave_val_f1, ave_conf_mat\
-                = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
-            for i in range(val_itr):
-                time.sleep(0.1)
-                val_imgs, val_labels = rand_imgs_acts(val_data, batch_size)
-                val_probs, val_preds, val_loss, val_acc = sess.run([probs, preds, cross_entropy, acc],
-                                                                   feed_dict={x: val_imgs, y_: val_labels, lr: lr_value})
-                # print "val_probs: \n", val_probs
-                print "val_preds: \n", val_preds
-                print "val_label: \n", val_labels
-                prec, rec, f1, conf_mat = evaluate(val_labels, val_preds, labels)
-                ave_val_loss += val_loss
-                ave_val_acc += val_acc
-                ave_val_prec += prec
-                ave_val_rec += rec
-                ave_val_f1 += f1
-                ave_conf_mat += conf_mat
-            ave_val_loss /= val_itr
-            ave_val_acc /= val_itr
-            ave_val_prec /= val_itr
-            ave_val_rec /= val_itr
-            ave_val_f1 /= val_itr
-            ave_conf_mat /= val_itr
-            print "loss: ", ave_val_loss, "acc: ", ave_val_acc
-            print "prec: ", ave_val_prec
-            print "rec:  ", ave_val_rec
-            print "conf_mat: "
-            print ave_conf_mat
-        start_time = time.time()
-        # train_imgs, train_labels = rand_imgs_acts(train_data, batch_size)
-        train_imgs, train_labels = rand_imgs_acts_specify_batch_size(train_data_splited, batch_size_list)
-        # train_imgs, train_labels = splited_rnd_imgs_acts_test(train_data_splited)
-        _, train_probs, train_preds, train_loss, train_acc = sess.run([train_op, probs, preds, cross_entropy, acc],
-                                                         feed_dict={x:train_imgs, y_:train_labels, lr: lr_value})
-        duration = time.time() - start_time
-        if step % train_interval == 0 or step < 10:
-            # print "==========train %d========" %step
-            num_examples_per_step = sum(batch_size_list)
-            examples_per_sec = num_examples_per_step / duration
-            sec_per_batch = float(duration)
-            format_str = ('%s: (Training) step %d, loss=%.4f, '
-                          'acc=%.4f, '
-                          'lr=%f '
-                          '(%.1f examples/sec; %.3f '
-                          'sec/batch)')
-            print (format_str % (datetime.now(), step, train_loss,
-                                 train_acc,
-                                 lr_value,
-                                 examples_per_sec, sec_per_batch))
-            # print "train_probs: \n", train_probs
-            print "train_preds: \n", train_preds
-            print "train_label: \n", train_labels
-            prec, rec, f1, conf_mat = evaluate(train_labels, train_preds, labels)
-            # print "loss: ", train_loss, "acc: ", train_acc
-            print "prec: ", prec
-            print "rec: ", rec
-            print "conf_mat: "
-            print conf_mat
+        eps_dir = obj_dir + "/" + eps_name
+        img_names = sorted(os.listdir(eps_dir))[1:]
+        eps_stat_txt = open(eps_dir+"/0000.txt", 'r').readlines()
+        new_eps_stat_txt = []
+        eps_imgs, eps_acts = read_eps_imgs_acts(eps_dir)
+        eps_stack_info = stack_one_eps(eps_imgs, eps_acts, stack_num)
+        eps_labels = []
+        eps_preds = []
+        val_imgs, val_labels = concat_imgs_acts(eps_stack_info)
+        for i in range(len(val_imgs)):
+            time.sleep(0.05)
+            val_img = val_imgs[i]
+            val_label = val_labels[i]
+            val_prob, val_pred, val_loss, val_acc = sess.run([probs, preds, cross_entropy, acc],
+                                                             feed_dict={x:np.array([val_img]), y_:np.array([val_label])})
+            eps_labels.append(val_label)
+            eps_preds.append(val_pred[0])
+
+        for i, val_pred in enumerate(eps_preds):
+            os.rename(eps_dir+"/"+img_names[i], eps_dir+"/"+img_names[i]+"_"+str(val_pred))
+            new_eps_stat_txt.append(eps_stat_txt[i].split('\n')[0]+","+str(val_pred)+"\n")
+
+        f = open(eps_dir+"/0001.txt", "w")
+        for line in new_eps_stat_txt:
+            f.write(line)
+        f.close()
+        prec, rec, f1, conf_mat = evaluate(np.array(eps_labels), np.array(eps_preds), labels)
+        obj_preds.extend(eps_preds)
+        obj_labels.extend(eps_labels)
+        print "eps_name: ", eps_name, "prec: ", prec, "rec: ", rec, "f1: ", f1
+        print "conf_mat: \n", conf_mat
+
+    stat_prec, stat_rec, stat_f1, stat_conf_mat = evaluate(np.array(obj_labels), np.array(obj_preds), labels)
+    print "stat result"
+    print "prec: ", prec, "rec: ", rec, "f1: ", f1
+    print "conf_mat: \n", conf_mat
+
+
+
+
 
