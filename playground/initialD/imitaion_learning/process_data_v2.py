@@ -16,7 +16,7 @@ def cal_hor_sim(li, ri):
     return 1.0 - (np.sum(np.abs(li0-ri0))+np.sum(np.abs(li1-ri1))+0.0)/(2.0*np.sum(li0))
 
 
-def divide_eps(eps_dir=""):
+def get_eps_divid_point(eps_dir=""):
     img_names = sorted(os.listdir(eps_dir))[1:]
     imgs = []
     sims = []
@@ -25,10 +25,21 @@ def divide_eps(eps_dir=""):
     for i in range(len(img_names) - 1):
         sims.append(cal_hor_sim(imgs[i], imgs[i + 1]))
 
-    ind = np.where(np.array(sims) <= 0.5)[0]
+    ind = np.where(np.array(sims) <= 0.0)[0]
     ind = list(ind)
+    print "ind: ", ind
+    print ""
     return ind
 
+def get_obj_divide_point(obj_dir=""):
+    eps_names = os.listdir(obj_dir)
+    inds = []
+    for eps_name in eps_names:
+        eps_dir = obj_dir + "/" + eps_name
+        ind = get_eps_divid_point(eps_dir)
+        inds.append(ind)
+    print "inds: ", inds
+    return inds
 
 def read_eps_imgs(eps_dir):
     img_names = sorted(os.listdir(eps_dir))[1:]
@@ -61,7 +72,7 @@ def mk_new_eps(eps_dir, new_obj_dir, current_eps_num):
     :param current_eps_num:
     :return:
     """
-    txt = open(eps_dir + "/" + "000000.txt", 'r')
+    txt = open(eps_dir + "/" + "0000.txt", 'r')
     lines = txt.readlines()
 
     imgs = read_eps_imgs(eps_dir)
@@ -249,10 +260,11 @@ def get_stop_prep_point_obj(obj_dir="/home/pirate03/hobotrl_data/playground/init
 
 
 if __name__ == '__main__':
-    # divide_obj("/home/pirate03/hobotrl_data/playground/initialD/exp/test",
-    #            "/home/pirate03/hobotrl_data/playground/initialD/exp/test_new")
+    # divide_obj("/home/pirate03/hobotrl_data/playground/initialD/exp/record_rnd_acts_obj80",
+    #            "/home/pirate03/hobotrl_data/playground/initialD/exp/record_rnd_acts_obj80_fenkai")
     # divide_obj()
     # mk_jieduan_obj_dir(obj_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_rnd_obj_v3_new",
     #                    new_obj_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_rnd_obj_v3_new_rm_stp")
-    little_frames(obj_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_rnd_obj_v3_new_rm_stp")
+    # little_frames(obj_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_rnd_obj_v3_new_rm_stp")
     # get_stop_prep_point_obj()
+    print get_obj_divide_point(obj_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/record_rnd_acts_obj80")

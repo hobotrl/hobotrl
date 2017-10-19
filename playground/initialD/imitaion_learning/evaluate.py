@@ -11,13 +11,13 @@ def evaluate(y_true, y_preds, labels=[0, 1, 2, 3, 4]):
     p_scores = []
     r_scroes = []
     for label in labels:
-        p = ((y_true == label) * (y_preds == label)).sum() / ((y_preds == label).sum() + 0.01)
+        p = (((y_true == label) * (y_preds == label)).sum()+0.001) / ((y_preds == label).sum() + 0.001)
         p_scores.append(p)
-        r = ((y_true == label) * (y_preds == label)).sum() / ((y_true == label).sum() + 0.01)
+        r = (((y_true == label) * (y_preds == label)).sum()+0.001) / ((y_true == label).sum() + 0.001)
         r_scroes.append(r)
     p_scores = np.array(p_scores)
     r_scroes = np.array(r_scroes)
-    f1 = 2 * p_scores * r_scroes / (p_scores + r_scroes + 0.01)
+    f1 = 2 * (p_scores * r_scroes + 0.001) / (p_scores + r_scroes + 0.001)
 
     confmat = []
     for label in labels:

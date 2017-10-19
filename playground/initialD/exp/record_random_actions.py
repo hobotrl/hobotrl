@@ -36,14 +36,13 @@ def func_compile_reward(rewards):
 
 def func_compile_obs(obss):
     obs1 = obss[-1][0]
-    action = obss[-1][1]
     # print obss[-1][1]
     # print obs1.shape
-    return obs1, action
+    return obs1
 
 ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0, )]
 def func_compile_action(action):
-    ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0, )] + [(ord('1'),)]
+    ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0, )]
     return ACTIONS[action]
 
 def func_compile_reward_agent(rewards, action=0):
@@ -95,8 +94,6 @@ def func_compile_exp_agent(state, action, rewards, next_state, done):
     obs_risk = rewards[5]
     momentum_opp = (rewards[3]<0.5)*(momentum_opp+(1-rewards[3]))
     momentum_opp = min(momentum_opp, 20)
-
-
     # obstacle
     rewards[0] *= 0.0
     # distance to
@@ -148,7 +145,7 @@ def gen_backend_cmds():
         # 2. Generate obs and launch file
         ['python', utils_path+'gen_launch_dynamic.py',
          utils_path+'road_segment_info.txt', ws_path,
-         utils_path+'honda_dynamic_obs_template.launch', 100],
+         utils_path+'honda_dynamic_obs_template.launch', 80],
         # 3. start roscore
         ['roscore'],
         # 4. start reward function script
@@ -162,7 +159,7 @@ def gen_backend_cmds():
     return backend_cmds
 
 env = DrivingSimulatorEnv(
-    address="10.31.40.197", port='9004',
+    address="10.31.40.197", port='10014',
     # address='localhost', port='22224',
     backend_cmds=gen_backend_cmds(),
     defs_obs=[
@@ -185,7 +182,7 @@ env = DrivingSimulatorEnv(
     func_compile_reward=func_compile_reward,
     func_compile_action=func_compile_action,
     step_delay_target=0.5,
-    is_dummy_action=True)
+    is_dummy_action=False)
 # TODO: define these Gym related params insode DrivingSimulatorEnv
 env.observation_space = Box(low=0, high=255, shape=(350, 350, 3))
 env.reward_range = (-np.inf, np.inf)
@@ -199,15 +196,12 @@ n_additional_learn = 4
 n_ep = 0  # last ep in the last run, if restart use 0
 n_test = 10  # num of episode per test run (no exploration)
 
-tf.app.flags.DEFINE_string("save_dir", "/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_vec_rewards_obj80_docker005", """save scenes""")
+tf.app.flags.DEFINE_string("save_dir", "/home/pirate03/hobotrl_data/playground/initialD/exp/record_rnd_acts_obj80_vec_rewards", """save scenes""")
 FLAGS = tf.app.flags.FLAGS
-
 try:
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
 
-    action_fraction = np.ones(len(ACTIONS),) / (1.0*len(ACTIONS))
-    action_td_loss = np.zeros(len(ACTIONS),)
     momentum_opp = 0.0
     momentum_ped = 0.0
     ema_speed = 10.0
@@ -215,26 +209,21 @@ try:
         n_ep += 1
         env.n_ep = n_ep  # TODO: do this systematically
         n_steps = 0
-        cnt_skip = n_skip
-        cum_td_loss = 0.0
-        cum_reward = 0.0
-        state_rule_action = env.reset()
-        state, rule_action = state_rule_action
+        state = env.reset()
         print "eps: ", n_ep
         ep_dir = FLAGS.save_dir + "/" + str(n_ep).zfill(4)
         os.makedirs(ep_dir)
-        recording_file = open(ep_dir + "/" + "0.txt", "w")
+        recording_file = open(ep_dir + "/" + "0000.txt", "w")
 
         while True:
             n_steps += 1
-            print "rule action: ", rule_action
-            cv2.imwrite(ep_dir+"/"+str(n_steps).zfill(4)+"_"+str(rule_action)+".jpg",
+            action = np.random.randint(3)
+            cv2.imwrite(ep_dir+"/"+str(n_steps).zfill(4)+"_"+str(action)+".jpg",
                         cv2.cvtColor(state, cv2.COLOR_RGB2BGR))
             # Env step
-            next_state_rule_action, vec_reward, done, info = env.step(4)
-            next_state, next_rule_action = next_state_rule_action
-            state, rule_action, reward, next_state, done = func_compile_exp_agent(state, rule_action, vec_reward, next_state, done)
-            recording_file.write(str(n_steps)+","+str(rule_action)+","+str(reward)+"\n")
+            next_state, vec_reward, done, info = env.step(action)
+            state, action, reward, next_state, done = func_compile_exp_agent(state, action, vec_reward, next_state, done)
+            recording_file.write(str(n_steps)+","+str(action)+","+str(reward)+"\n")
             vec_reward = np.mean(np.array(vec_reward), axis=0)
             vec_reward = vec_reward.tolist()
             str_reward = ""
@@ -245,7 +234,7 @@ try:
             recording_file.write(str_reward)
             # done = (reward < -0.9) or done  # heuristic early stopping
             # agent step
-            state, rule_action = next_state, next_rule_action  # s',a' -> s,a
+            state = next_state
             if done:
                 break
         recording_file.close()
