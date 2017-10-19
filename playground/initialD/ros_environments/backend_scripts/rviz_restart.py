@@ -38,7 +38,7 @@ class SimulatorEpisodeMonitor(BaseEpisodeMonitor):
         print "[rviz_restart]: using launch file {}".format(self.launch_name)
 
         # === Simulator states ===
-        self.last_pos = deque(maxlen=6000) # list of last 20000 position points. Approx. 120 secs @ 50Hz
+        self.last_pos = deque(maxlen=2000) # list of last 2000 position points. Approx. 40 secs @ 50Hz
         self.last_on_opposite_path = 1  # last latched signal value for `on_opposite_path`
 
         # periodic opposite path signal
