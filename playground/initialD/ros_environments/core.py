@@ -10,7 +10,6 @@
 import importlib
 import signal
 import time
-import sys
 import traceback
 # Threading and Multiprocessing
 import threading
@@ -19,14 +18,15 @@ import multiprocessing
 from multiprocessing import JoinableQueue as Queue
 from multiprocessing import Value, Event
 # Image
-from cv_bridge import CvBridge, CvBridgeError
+from cv_bridge import CvBridge
 # ROS
 import rospy
 from rospy.timer import Timer
-from std_msgs.msg import Bool, Char
+from std_msgs.msg import Bool
+from message_composer import MetaMessageComposer
 import utils.message_filters as message_filters
 
-
+# the persisitent part
 class DrivingSimulatorEnv(object):
     """Environment wrapper for Hobot Driving Simulator.
 
@@ -87,6 +87,7 @@ class DrivingSimulatorEnv(object):
             self.__compile_reward = lambda x: x
         self.len_reward = window_sizes['reward']
 
+        self.action_msg_composers = [MetaMessageComposer(ac[1]) for ac in defs_action]
         self.defs_action = self.__import_defs(defs_action)
         if func_compile_action is not None:
             self.__compile_action = lambda *args: func_compile_action(*args)
@@ -149,8 +150,8 @@ class DrivingSimulatorEnv(object):
         # data passed in.
         action = self.__compile_action(action)
         new_action = []
-        for i, (_, action_class) in enumerate(self.defs_action):
-            new_action.append(action_class(action[i]))
+        for i in range(len(self.defs_action)):
+            new_action.append(self.action_msg_composers[i](action[i]))
         action = tuple(new_action)
 
         # do __step(), every 10 fails try reset
@@ -606,6 +607,7 @@ class DrivingSimulatorEnv(object):
         self.__kill_backend()
 
 
+# the transient part
 class DrivingSimulatorNode(multiprocessing.Process):
     def __init__(self,
              q_obs, q_reward, q_action, q_done,
@@ -852,10 +854,8 @@ class DrivingSimulatorNode(multiprocessing.Process):
             # print "__take_action: {}, q len {}".format(
             #     actions, self.q_action.qsize()
             # )
-            map(
-                lambda args: args[0].publish(args[1]),
-                zip(self.action_pubs, actions)
-            )
+            for i in range(len(self.action_pubs)):
+                self.action_pubs[i].publish(actions[i])
         else:
             print "[__take_action]: simulator up ({}).".format(
                  self.is_receiving_obs.is_set())
