@@ -16,7 +16,7 @@ import subprocess
 import numpy as np
 from numpy import linalg as LA
 import rospy
-from std_msgs.msg import Char, Int16, Bool
+from std_msgs.msg import Int16
 from autodrive_msgs.msg import CarStatus
 from base import BaseEpisodeMonitor
 
