@@ -70,7 +70,8 @@ class DrivingSimulatorEnv(object):
                  func_compile_action=None,
                  step_delay_target=None,
                  is_dummy_action=False,
-                 backend_cmds=None):
+                 backend_cmds=None,
+                 node_timeout=20):
         """Initialization."""
         # params
         self.defs_obs = self.__import_defs(defs_obs)
@@ -98,6 +99,7 @@ class DrivingSimulatorEnv(object):
 
         self.buffer_sizes = buffer_sizes
         self.MAX_EXCEPTION = 100  # maximum number of q exceptions per episode.
+        self.NODE_TIMEOUT = node_timeout
 
         self.STEP_DELAY_TARGET = step_delay_target  # target delay for each step()
         self.last_step_t = None
@@ -514,7 +516,8 @@ class DrivingSimulatorEnv(object):
                     self.is_backend_up, self.is_q_ready, self.is_envnode_up,
                     self.is_envnode_terminatable, self.is_envnode_resetting,
                     self.defs_obs, self.defs_reward, self.defs_action,
-                    self.rate_action, self.is_dummy_action)
+                    self.rate_action, self.is_dummy_action,
+                    self.NODE_TIMEOUT)
                 node.start()
                 node.join()
                 # ==== protect from resetting by reset() ===
@@ -614,7 +617,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
              is_backend_up, is_q_ready, is_envnode_up,
              is_envnode_terminatable, is_envnode_resetting,
              defs_obs, defs_reward, defs_action,
-             rate_action, is_dummy_action):
+             rate_action, is_dummy_action, node_timeout):
         super(DrivingSimulatorNode, self).__init__()
 
         # inter-thread queues for buffering experience
@@ -637,6 +640,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
         self.rate_action = rate_action
         self.is_dummy_action = is_dummy_action
         self.Q_TIMEOUT = 1.0
+        self.NODE_TIMEOUT = node_timeout
 
         # inter-thread events
         self.is_backend_up = is_backend_up
@@ -715,9 +719,9 @@ class DrivingSimulatorNode(multiprocessing.Process):
         #   4. mark initialization failed and break upon termination flag 
         print "[EnvNode]: signal simulator restart"
         self.restart_pub.publish(True)
-        cnt_fail = 20
+        cnt_fail = self.NODE_TIMEOUT
         flag_fail = False
-        while not self.is_receiving_obs.is_set():
+        while not self.is_receiving_obs.is_set() or self.first_time.is_set():
             cnt_fail -= 1 if cnt_fail>=0 else 0
             print "[EnvNode]: simulator not up, wait for {} sec(s)...".format(cnt_fail)
             time.sleep(1.0)
@@ -733,9 +737,9 @@ class DrivingSimulatorNode(multiprocessing.Process):
         t = time.time()
         if not flag_fail:
             print "[EnvNode]: simulator up and receiving obs."
-            for i in range(5):
-                print "[EnvNode]: simulation start in {} secs.".format(i)
-                time.sleep(1.0)
+            for i in range(6):
+                print "[EnvNode]: simulation start in {} secs.".format(i*0.5)
+                time.sleep(0.5)
             self.is_envnode_resetting.clear()
             self.is_envnode_up.set()
             # Loop check if simulation episode is done
@@ -840,6 +844,9 @@ class DrivingSimulatorNode(multiprocessing.Process):
             return
         if not self.is_q_ready.is_set():
             # print "[__take_action]: queue not ready."
+            return
+        if self.first_time.is_set():
+            print "[__take_action]: simulator is not running."
             return
 
         try:
