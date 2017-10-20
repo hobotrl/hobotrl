@@ -38,10 +38,11 @@ def func_compile_obs(obss):
     print obs1.shape
     return obs1
 
-ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0, )]
+ALL_ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0,)]
+AGENT_ACTIONS = ALL_ACTIONS[:3]
 def func_compile_action(action):
-    ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0, )]
-    return ACTIONS[action]
+    ALL_ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0, )]
+    return ALL_ACTIONS[action]
 
 def func_compile_exp_agent(state, action, rewards, next_state, done):
     global momentum_valid
@@ -52,12 +53,14 @@ def func_compile_exp_agent(state, action, rewards, next_state, done):
     # Compile reward
     rewards = np.mean(np.array(rewards), axis=0)
     rewards = rewards.tolist()
-    rewards.append(np.logical_or(action==1, action==2))
+    rewards.append(np.logical_or(action==1, action==2))  # action == turn?
     print (' '*10+'R: ['+'{:4.2f} '*len(rewards)+']').format(*rewards),
 
-    momentum_valid = (rewards[0]>=1.9)*(momentum_valid+(rewards[0]-1))
+    if momentum_valid>0 or (rewards[1]>0.01 and rewards[0]>=0.5):  # road change
+        momentum_valid += 1
+    else:
+        momentum_valid = 0
     momentum_valid = min(momentum_valid, 30)
-    longest_penalty = rewards[1]
     speed = rewards[2]
     ema_speed = 0.5*ema_speed + 0.5*speed
     momentum_opp = (rewards[3]<0.5)*(momentum_opp+(1-rewards[3]))
@@ -67,9 +70,7 @@ def func_compile_exp_agent(state, action, rewards, next_state, done):
     obs_risk = rewards[5]
 
     # road_validity
-    rewards[0] *= -30.0*(momentum_valid*0.2)*(momentum_valid>1.0)
-    # distance to
-    rewards[1] *= -10.0*(rewards[1]>2.0)
+    rewards[0] *= -600*(momentum_valid>0.0)
     # velocity
     rewards[2] *= 10
     # opposite
@@ -79,28 +80,17 @@ def func_compile_exp_agent(state, action, rewards, next_state, done):
     # obs factor
     rewards[5] *= -100.0
     # steering
-    rewards[6] *= -10.0
+    rewards[6] *= -40.0
     reward = np.sum(rewards)/100.0
     print '{:6.4f}, {:6.4f}, {:6.4f}'.format(
         momentum_valid, momentum_opp, momentum_ped),
     print ': {:7.4f}'.format(reward)
 
-    # early stopping
-    if ema_speed < 0.1:
-        if longest_penalty > 1.0:
-            print "[Early stopping] stuck at intersection."
-            done = True
-        if obs_risk > 0.2:
-            print "[Early stopping] stuck at obstacle."
-            done = True
-        if momentum_ped>1.0:
-            print "[Early stopping] stuck on pedestrain."
-            done = True
-
-    if momentum_valid>8.0:
+    if momentum_valid>00:
         print "[Early stopping] entered invalid road."
         done = True
-    if obs_risk > 0.5:
+
+    if obs_risk > 1.0:
         print "[Early stopping] hit obstacle."
         done = True
 
@@ -131,8 +121,6 @@ def gen_backend_cmds():
         ['python', backend_path+'car_go.py'],
         # start simulation restarter backend
         ['python', backend_path+'rviz_restart.py', 'honda_dynamic_obs.launch'],
-        # [optional] video capture
-        ['python', backend_path+'non_stop_data_capture.py', 0]
     ]
     return backend_cmds
 
@@ -146,7 +134,7 @@ env = DrivingSimulatorEnv(
     ],
     defs_reward=[
         ('/rl/current_road_validity', 'std_msgs.msg.Int16'),
-        ('/rl/distance_to_longestpath', 'std_msgs.msg.Float32'),
+        ('/rl/current_road_change', 'std_msgs.msg.Bool'),
         ('/rl/car_velocity', 'std_msgs.msg.Float32'),
         ('/rl/last_on_opposite_path', 'std_msgs.msg.Int16'),
         ('/rl/on_pedestrian', 'std_msgs.msg.Bool'),
@@ -164,7 +152,7 @@ env = DrivingSimulatorEnv(
 env.observation_space = Box(low=0, high=255, shape=(350, 350, 3))
 env.reward_range = (-np.inf, np.inf)
 env.metadata = {}
-env.action_space = Discrete(len(ACTIONS))
+env.action_space = Discrete(len(ALL_ACTIONS))
 env = FrameStack(env, 3)
 
 # Agent
@@ -209,7 +197,7 @@ def f_net(inputs):
             kernel_regularizer=l2_regularizer(scale=1e-2), name='hid2')
         print hid2.shape
         q = layers.dense(
-            inputs=hid2, units=len(ACTIONS), activation=None,
+            inputs=hid2, units=len(AGENT_ACTIONS), activation=None,
             kernel_regularizer=l2_regularizer(scale=1e-2), name='q')
     return {"q": q}
 
@@ -224,7 +212,7 @@ global_step = tf.get_variable(
 agent = hrl.DQN(
     f_create_q=f_net, state_shape=state_shape,
     # OneStepTD arguments
-    num_actions=len(ACTIONS), discount_factor=0.9, ddqn=False,
+    num_actions=len(AGENT_ACTIONS), discount_factor=0.9, ddqn=False,
     # target network sync arguments
     target_sync_interval=1,
     target_sync_rate=target_sync_rate,
@@ -235,7 +223,7 @@ agent = hrl.DQN(
     # max_gradient=10.0,
     # sampler arguments
     sampler=TransitionSampler(BalancedMapPlayback(
-        num_actions=len(ACTIONS), capacity=15000),
+        num_actions=len(ALL_ACTIONS), capacity=10000),
         batch_size=8, interval=1),
     # checkpoint
     global_step=global_step)
@@ -246,7 +234,8 @@ def log_info(update_info):
     global action_td_loss
     global agent
     global next_state
-    global ACTIONS
+    global ALL_ACTIONS
+    global AGENT_ACTIONS
     global n_steps
     global done
     global cum_td_loss
@@ -294,7 +283,7 @@ def log_info(update_info):
             simple_value=np.min(q_vals))
     if cnt_skip == n_skip:
         next_q_vals_nt = agent.learn_q(np.asarray(next_state)[np.newaxis, :])[0]
-        for i, ac in enumerate(ACTIONS):
+        for i, ac in enumerate(AGENT_ACTIONS):
             summary_proto.value.add(
                 tag='next_q_vals_{}'.format(ac[0]),
                 simple_value=next_q_vals_nt[i])
@@ -308,12 +297,12 @@ def log_info(update_info):
                 tag='action_fraction_{}'.format(ac[0]),
                 simple_value=action_fraction[i])
         p_dict = sorted(zip(
-            map(lambda x: x[0], ACTIONS), next_q_vals_nt))
+            map(lambda x: x[0], AGENT_ACTIONS), next_q_vals_nt))
         max_idx = np.argmax([v for _, v in p_dict])
         p_str = "({:.3f}) ({:3d})[Q_vals]: ".format(
             time.time(), n_steps)
         for i, (a, v) in enumerate(p_dict):
-            if a == ACTIONS[next_action][0]:
+            if a == AGENT_ACTIONS[next_action][0]:
                 sym = '|x|' if i==max_idx else ' x '
             else:
                 sym = '| |' if i==max_idx else '   '
@@ -348,10 +337,10 @@ def log_info(update_info):
     return summary_proto
 
 n_interactive = 0
-n_skip = 3
+n_skip = 6
 n_additional_learn = 4
 n_ep = 0  # last ep in the last run, if restart use 0
-n_test = 10  # num of episode per test run (no exploration)
+n_test = 0  # num of episode per test run (no exploration)
 
 try:
     config = tf.ConfigProto()
@@ -366,22 +355,23 @@ try:
 
     with sv.managed_session(config=config) as sess:
         agent.set_session(sess)
-        action_fraction = np.ones(len(ACTIONS),) / (1.0*len(ACTIONS))
-        action_td_loss = np.zeros(len(ACTIONS),)
-        momentum_valid = 0.0
-        momentum_opp = 0.0
-        momentum_ped = 0.0
-        ema_speed = 10.0
+        action_fraction = np.ones(len(AGENT_ACTIONS), ) / (1.0 * len(AGENT_ACTIONS))
+        action_td_loss = np.zeros(len(AGENT_ACTIONS), )
         while True:
             n_ep += 1
             env.env.n_ep = n_ep  # TODO: do this systematically
-            exploration_off = (n_ep%n_test==0)
+            exploration_off = (n_ep%n_test==0) if n_test >0 else False
             learning_off = exploration_off
             n_steps = 0
             cnt_skip = n_skip
             skip_reward = 0
             cum_td_loss = 0.0
             cum_reward = 0.0
+
+            momentum_valid = 0.0
+            momentum_opp = 0.0
+            momentum_ped = 0.0
+            ema_speed = 10.0
 
             state  = env.reset()
             action = agent.act(state, exploration=not exploration_off)
