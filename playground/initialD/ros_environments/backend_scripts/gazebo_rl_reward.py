@@ -1,5 +1,5 @@
-#!/usr/bin/env python
 """Reward calculator and publisher.
+
 This scrips calculates components of RL reward based on ROS topics published by
 the simulator. The calculated reward components are published again as ROS
 topics.
@@ -171,13 +171,17 @@ class RewardFunction:
         # Pedestrian factor
         #   Since Ped lane is the outmost lane, if we take a patch of image
         #   centered around ego car, then there will a considerable portions
-        #   of black pixels, i.e. RGB =(0,0,0). Thus the sum lumanation will
-        #   be significantely lower compared with other cases. 
-        low = int(np.floor(600.0/1400.0*img.shape[0]))
-        high = int(np.ceil(800.0/1400.0*img.shape[0]))
+        #   of black pixels, i.e. RGB =(0,0,0).
+        offset_y = int(-375/1400.0*img.shape[0])
+        offset_x = int(0/1400.0*img.shape[0])
+        low = int(np.floor(650/1400.0*img.shape[0]))
+        high = int(np.ceil(750/1400.0*img.shape[0]))
         sum_sq = (high-low)**2
-        ped_factor = np.sum(img[low:high, low:high, :])/(255*3*sum_sq)  # norm by max val
-        self.pub_on_pedestrian.publish(ped_factor<0.31)
+        patch = img[
+            (offset_x+low):(offset_x+high),
+            (offset_y+low):(offset_y+high), :]
+        ped_factor = np.sum(np.mean(patch, axis=2)<10.0)/(1.0*sum_sq)
+        self.pub_on_pedestrian.publish(ped_factor>0.05)
 
     def on_opp_callback(self, data):
         self.last_on_opp = data.data
