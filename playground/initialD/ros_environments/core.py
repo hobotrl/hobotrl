@@ -737,9 +737,9 @@ class DrivingSimulatorNode(multiprocessing.Process):
         t = time.time()
         if not flag_fail:
             print "[EnvNode]: simulator up and receiving obs."
-            for i in range(6):
-                print "[EnvNode]: simulation start in {} secs.".format(i*0.5)
-                time.sleep(0.5)
+            for i in range(2):
+                print "[EnvNode]: simulation start in {} secs.".format(i)
+                time.sleep(1.0)
             self.is_envnode_resetting.clear()
             self.is_envnode_up.set()
             # Loop check if simulation episode is done
