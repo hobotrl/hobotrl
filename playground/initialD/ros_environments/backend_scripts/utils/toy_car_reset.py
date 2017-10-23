@@ -8,11 +8,21 @@ from std_msgs.msg import Header
 from geometry_msgs.msg import Point, Quaternion, Pose, PoseStamped
 from nav_msgs.msg import Path
 from autodrive_msgs.msg import PlanningPoint, PlanningTraj
+import matplotlib.pyplot as plt
 
 def get_trajectory(start, goal, start_speed, max_speed,
                    turning_radius=10.0, step_size=0.1, max_length=50):
     qs = sample_points(start, goal, turning_radius, step_size)
     qs = qs[:int(max_length/step_size)]
+
+    # === Plotting Functions ===
+    # x = [q[0] for q in qs]
+    # y = [q[1] for q in qs]
+    # plt.plot(y, x)
+    # plt.plot(start[1], start[0], 'ro')
+    # plt.plot(start[1]+5*np.sin(start[2]), start[0]+5*np.cos(start[2]), 'bo')
+    # plt.pause(0.5)
+
     speeds = sample_speeds(qs, start_speed, max_speed)
     traj = [
         PlanningPoint(**{'x': q[0], 'y': q[1], 'theta': q[2], 'speed': v})

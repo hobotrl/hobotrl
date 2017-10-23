@@ -7,39 +7,40 @@ import subprocess
 # data structure
 from collections import deque
 import numpy as np
+import matplotlib.pyplot as plt
 # ROS
 import rospy
 from rospy.timer import Timer
 from tf.transformations import euler_from_quaternion
-from std_msgs.msg import Char
+from std_msgs.msg import Char, Int8
 from nav_msgs.msg import Path
 from autodrive_msgs.msg import Control, CarStatus, PlanningTraj
 # HobotRL
 from base import BaseEpisodeMonitor
 from utils.toy_car_reset import get_trajectory, traj_plan_to_nav
 
+from autodrive_msgs.msg import Control
+
 
 class ToyCarEpisodeMonitor(BaseEpisodeMonitor):
-    def __init__(self, launch_name):
+    def __init__(self):
         """Initialization.
-
-        :param launch_name: name of the launch file.
         """
         # === Init super class ===
         super(ToyCarEpisodeMonitor, self).__init__()
 
         # === Subprocess related ===
-        self.launch_name = launch_name
         self.process_list = list()
         self.process_names = [
-            ['roslaunch', 'planning', self.launch_name]]
-        print "[toycar_restart]: using launch file {}".format(self.launch_name)
+            ['roslaunch', 'control', 'toycar_control.launch'],]
 
         # === Simulator states ===
-        self.last_pos = deque(maxlen=500) # list of last 500 position points. Approx. 10 secs @ 50Hz
-
-        self.control_status = False
+        self.control_status = None
         self.car_status = None
+        self.car_x_ema = None
+        self.car_y_ema = None
+        self.car_hdg_ema = None
+        self.planning_status = None
 
         # additional publishers and subscribers
         self.pub_traj_plan = rospy.Publisher(
@@ -47,36 +48,22 @@ class ToyCarEpisodeMonitor(BaseEpisodeMonitor):
         self.pub_traj_viz = rospy.Publisher(
             "/visualization/trajectory", Path, queue_size=1, latch=True)
         self.pub_keyboardmode = rospy.Publisher(
-            '/autoDrive_KeyboardMode', Char, queue_size=1
-        )
+            '/autoDrive_KeyboardMode', Char, queue_size=1, latch=True)
+        self.pub_test_reward = rospy.Publisher(
+            '/rl/toycar_test_reward', Int8, queue_size=1)
         self.sub_car_status = rospy.Subscriber(
-            '/car/status', CarStatus, self._log_car_status
-        )
+            '/car/status', CarStatus, self._log_car_status)
         self.sub_car_control = rospy.Subscriber(
             '/car/control', Control, self._set_control_status)
+        self.sub_planning_traj = rospy.Subscriber(
+            "/planning/trajectory", PlanningTraj, self._log_planning_status
+        )
         self.perimeter_checker = Timer(
             rospy.Duration(0.1), self._check_perimeter)
+        self.test_reward = Timer(
+            rospy.Duration(0.1), lambda *args: self.pub_test_reward.publish(0))
 
     def _terminate(self):
-        """shutdown launch file processes."""
-        if len(self.process_list) is 0:
-            print("[ToyCarEpisodeMonitor._terminate()]: no process to terminate")
-        else:
-            for p in self.process_list:
-                p.send_signal(signal.SIGINT)
-                while p.poll() is None:
-                    print (
-                        "[ToyCarEpisodeMonitor._terminate()]: "
-                        "backend process {} termination in progress..."
-                    ).format(p.pid)
-                    time.sleep(1.0)
-                print (
-                     "[ToyCarEpisodeMonitor._terminate()]: "
-                    "backend process {} terminated with exit code {}"
-                ).format(p.pid, p.returncode)
-            self.process_list = []
-            print("[ToyCarEpisodeMonitor]: termination done!")
-
         return
 
     def _start(self):
@@ -84,74 +71,95 @@ class ToyCarEpisodeMonitor(BaseEpisodeMonitor):
         for name in self.process_names:
             p = subprocess.Popen(name)
             self.process_list.append(p)
-        print("[toycar_restart._start]: started launch file!")
-
+        print("[rviz_restart.restart]: started launch file!")
         print("[toycar_restart._start]: resetting toy car.")
         self._mount_control()
-        self.reset_to(
-            (128, 128, 1.0), max_speed=20, turning_radius=15, step_size=0.1,
-            max_length=100
-        )
+        while True:
+            ret = self.reset_to(
+                (128, 128, 1.0), max_speed=10, turning_radius=20, step_size=0.1,
+                max_length=500)
+            if ret:
+                break
+            time.sleep(2.0)
         self._unmount_control()
+        print("[toycar_restart._start]: toy car reset!.")
         return
 
     def _mount_control(self):
-        while not self.control_on:
+        if self.control_status is None or not self.control_status:
+            print "Control status is {}".format(self.control_status)
             self.pub_keyboardmode.publish(ord(' '))
-            time.sleep(1.0)
+            time.sleep(5.0)
 
     def _unmount_control(self):
-        while self.control_on:
+        time.sleep(5.0)
+        if self.control_status is None or self.control_status:
             self.pub_keyboardmode.publish(ord(' '))
-            time.sleep(1.0)
+            time.sleep(5.0)
+        self._kill_launchfile()
 
     def _set_control_status(self, data):
-        self.control_on = data.autodrive_mode
+        self.control_status = data.autodrive_mode
 
     def _log_car_status(self, data):
         if data is not None:
             self.car_status = data
+            hdg = euler_from_quaternion((
+                    self.car_status.orientation.x,
+                    self.car_status.orientation.y,
+                    self.car_status.orientation.z,
+                    self.car_status.orientation.w,))[2]
+            hdg = (hdg + np.pi) % (2 * np.pi) - np.pi
+            if self.car_hdg_ema is not None:
+                self.car_hdg_ema = 0.5 * self.car_hdg_ema + 0.5 * hdg
+            else:
+                self.car_hdg_ema = hdg
+            if self.car_x_ema is not None:
+                self.car_x_ema = 0.5 * self.car_x_ema + 0.5 * self.car_status.position.x
+            else:
+                self.car_x_ema = self.car_status.position.x
+            if self.car_y_ema is not None:
+                self.car_y_ema = 0.5 * self.car_y_ema + 0.5 * self.car_status.position.y
+            else:
+                self.car_y_ema = self.car_status.position.y
+
+    def _log_planning_status(self, data):
+        self.planning_status = True
 
     def _check_perimeter(self, data):
-        x, y = self.car_status.position.x, self.car_status.position.y
-        if x < 20 or x > 240 or y < 20 or y > 240:
-            print "[ToyCarEpisodeMonitor]: crossed fence at ({}, {})".format(
-                x, y
-            )
-            self.terminate()
+        if self.car_status is not None:
+            x, y = self.car_status.position.x, self.car_status.position.y
+            if x < 20 or x > 240 or y < 20 or y > 240:
+                print "[ToyCarEpisodeMonitor]: crossed fence at ({}, {})".format(
+                    x, y
+                )
+                self.terminate()
 
-    def reset_to(self, goal, max_speed=1.0,
-                 turning_radius=10.0, step_size=0.1, max_length=50):
+    def reset_to(self, goal, max_speed=2.0,
+                 turning_radius=10.0, step_size=0.1, max_length=50, retry=100):
         if self.car_status is None:
             print "Not getting any car_status."
             return False
         else:
             current_pose = (
-                self.car_status.position.x,
-                self.car_status.position.y,
-                euler_from_quaternion((
-                    self.car_status.orientation.x,
-                    self.car_status.orientation.y,
-                    self.car_status.orientation.z,
-                    self.car_status.orientation.w,
-               ))[2]
-            )
+                self.car_x_ema,
+                self.car_y_ema,
+                self.car_hdg_ema)
             current_speed = self.car_status.speed
 
-            cnt_plan = 100
+            cnt_plan = retry
+            plt.axis()
+            plt.xlim((0, 255))
+            plt.ylim((0, 255))
+            plt.ion()
             while True:
                 self.plan_once(current_pose, goal, current_speed, max_speed,
                                turning_radius, step_size, max_length)
-                time.sleep(1.0)
+                time.sleep(0.5)
                 current_pose = (
-                    self.car_status.position.x,
-                    self.car_status.position.y,
-                    euler_from_quaternion((
-                        self.car_status.orientation.x,
-                        self.car_status.orientation.y,
-                        self.car_status.orientation.z,
-                        self.car_status.orientation.w,
-                    ))[2]
+                    self.car_x_ema,
+                    self.car_y_ema,
+                    self.car_hdg_ema
                 )
                 current_speed = self.car_status.speed
                 cnt_plan -= 1
@@ -163,7 +171,7 @@ class ToyCarEpisodeMonitor(BaseEpisodeMonitor):
                 print "N plans left: {}".format(cnt_plan)
                 print "Errors: pos {} angle {}".format(err1, err2)
 
-                if err1 < 30 and err2 < 0.3:
+                if err1 < 50 and err2 < 5.0:
                     print "Reset finished"
                     break
                 elif cnt_plan <= 0:
@@ -174,6 +182,8 @@ class ToyCarEpisodeMonitor(BaseEpisodeMonitor):
                     print current_pose,
                     print current_speed
 
+            return True
+
     def plan_once(self, start, goal, start_speed, max_speed,
                   turning_radius=10.0, step_size=0.1, max_length=50):
         traj_plan = get_trajectory(start, goal, start_speed, max_speed,
@@ -183,12 +193,33 @@ class ToyCarEpisodeMonitor(BaseEpisodeMonitor):
         self.pub_traj_viz.publish(traj_viz)
         return
 
+    def _kill_launchfile(self):
+        """shutdown launch file processes."""
+        if len(self.process_list) is 0:
+            print("[SimulatorEpisodeMonitor._terminate()]: no process to terminate")
+        else:
+            for p in self.process_list:
+                p.send_signal(signal.SIGINT)
+                while p.poll() is None:
+                    print (
+                        "[SimulatorEpisodeMonitor._terminate()]: "
+                        "simulator process {} termination in progress..."
+                    ).format(p.pid)
+                    time.sleep(1.0)
+                print (
+                     "[SimulatorEpisodeMonitor._terminate()]: "
+                    "simulator proc {} terminated with exit code {}"
+                ).format(p.pid, p.returncode)
+            self.process_list = []
+            print("[SimulatorEpisodeMonitor]: termination done!")
+
+        return
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('toycar_restart.py')
-    parser.add_argument('launch_name', type=str)
     args = parser.parse_args()
     try:
-        mon = ToyCarEpisodeMonitor(args.launch_name)
+        mon = ToyCarEpisodeMonitor()
         mon.spin()
     except rospy.ROSInterruptException:
         pass
