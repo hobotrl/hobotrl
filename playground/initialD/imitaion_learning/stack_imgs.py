@@ -25,24 +25,23 @@ def stack_one_eps(eps_imgs, eps_acts, stack_num):
     :param eps_imgs: numpy array of shape (l, n, n, 3).
     :param eps_acts: numpy array of shape (l,).
     :param stack_num:
-    :return: [[img1, img1, img1, action1],
-              [img1, img1, img2, action2],
-              [img1, img2, img3, action3],
-              [img2, img3, img4, action4],
+    :return: [[img1, img2, img3, action4],
+              [img2, img3, img4, action5],
               ......]
               action: int
     """
     assert len(eps_imgs) == len(eps_acts)
-    for i in range(stack_num-1):
-        eps_imgs.insert(0, eps_imgs[0])
-        eps_acts.insert(0, eps_acts[0])
+    assert len(eps_imgs) > stack_num
+    # for i in range(stack_num-1):
+    #     eps_imgs.insert(0, eps_imgs[0])
+    #     eps_acts.insert(0, eps_acts[0])
     img_num = len(eps_imgs)
     stack_info = []
-    for i in range(img_num-stack_num+1):
+    for i in range(img_num-stack_num):
         info = []
         for j in range(stack_num):
             info.append(eps_imgs[i+j])
-        action = eps_acts[i+stack_num-1]
+        action = eps_acts[i+stack_num]
         info.append(action)
         stack_info.append(info)
     return stack_info
@@ -71,7 +70,10 @@ def stack_obj_eps(obj_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/T
     for i, eps_name in enumerate(eps_names):
         eps_dir = obj_dir + "/" + eps_name
         eps_imgs, eps_acts = read_eps_imgs_acts(eps_dir)
-        if len(eps_imgs) >= stack_num:
+        for j in range(len(eps_acts)):
+            if eps_acts[j] == 3 or eps_acts[j] == 4:
+                eps_acts[j] = 0
+        if len(eps_imgs) >= stack_num+1:
             eps_stack_info = stack_one_eps(eps_imgs, eps_acts, stack_num)
             # obj_stack_info.append(eps_stack_info)
             obj_stack_info.extend(eps_stack_info)
@@ -85,4 +87,6 @@ def test_stack_obj_eps(obj_dir="/home/pirate03/hobotrl_data/playground/initialD/
 
 
 if __name__ == "__main__":
-    test_stack_one_eps()
+
+    test_stack_one_eps("/home/pirate03/hobotrl_data/playground/initialD/exp/TEST2/0002", 3,
+                    "/home/pirate03/hobotrl_data/playground/initialD/exp/TEST2_stack")

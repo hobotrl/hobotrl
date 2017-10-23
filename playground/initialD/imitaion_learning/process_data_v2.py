@@ -13,7 +13,9 @@ def cal_hor_sim(li, ri):
     ri0 = np.sum(ri, axis=0)+0.0
     ri1 = np.sum(ri, axis=1)+0.0
     # return (hist_similar(li0, ri0) + hist_similar(li1, ri1)) / 2.0
-    return 1.0 - (np.sum(np.abs(li0-ri0))+np.sum(np.abs(li1-ri1))+0.0)/(2.0*np.sum(li0))
+    # return 1.0 - (np.sum(np.abs(li0-ri0))+np.sum(np.abs(li1-ri1))+0.0)/(2.0*np.sum(li0))
+    # return 1.0 - (np.sum(np.abs(li0-ri0))+np.sum(np.abs(li1-ri1))+0.0)/(np.sum(li0) + np.sum(ri0))
+    return 1.0 - (np.sum(np.abs(li0-ri0))+np.sum(np.abs(li1-ri1))+0.0)/min((np.sum(li0),np.sum(ri0)))
 
 
 def get_eps_divid_point(eps_dir=""):
@@ -24,21 +26,22 @@ def get_eps_divid_point(eps_dir=""):
         imgs.append(cv2.imread(eps_dir + "/" + name, 0))
     for i in range(len(img_names) - 1):
         sims.append(cal_hor_sim(imgs[i], imgs[i + 1]))
-
     ind = np.where(np.array(sims) <= 0.0)[0]
     ind = list(ind)
-    print "ind: ", ind
-    print ""
-    return ind
+
+    # print "ind: ", ind
+    return ind, [sims[i] for i in ind]
 
 def get_obj_divide_point(obj_dir=""):
-    eps_names = os.listdir(obj_dir)
+    eps_names = sorted(os.listdir(obj_dir))
     inds = []
     for eps_name in eps_names:
         eps_dir = obj_dir + "/" + eps_name
-        ind = get_eps_divid_point(eps_dir)
+        ind, sims = get_eps_divid_point(eps_dir)
+        if ind != []:
+            print eps_name, ": ", ind, ", ", sims
         inds.append(ind)
-    print "inds: ", inds
+    # print "inds: ", inds
     return inds
 
 def read_eps_imgs(eps_dir):
@@ -55,11 +58,11 @@ def read_raw_imgs(eps_dir):
         raw_imgs.append(cv2.imread(eps_dir + "/" + name))
     return raw_imgs
 
-def divide_eps_imgs(imgs):
+def divide_eps_imgs(imgs, threashold=0.2):
     sims = []
     for i in range(len(imgs) - 1):
         sims.append(cal_hor_sim(imgs[i], imgs[i + 1]))
-    ind = np.where(np.array(sims) <= 0.5)[0]
+    ind = np.where(np.array(sims) <= threashold)[0]
     ind = list(ind)
     return ind
 
@@ -267,4 +270,7 @@ if __name__ == '__main__':
     #                    new_obj_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_rnd_obj_v3_new_rm_stp")
     # little_frames(obj_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_rnd_obj_v3_new_rm_stp")
     # get_stop_prep_point_obj()
-    print get_obj_divide_point(obj_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/record_rnd_acts_obj80")
+    # print get_obj_divide_point(obj_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/record_rnd_acts_obj80")
+
+    # get_stop_prep_point_obj("/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_vec_rewards_obj80_docker005_no_early_stopping_all_green")
+    get_obj_divide_point("/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_vec_rewards_obj80_docker005_no_early_stopping_all_green")

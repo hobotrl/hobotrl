@@ -12,37 +12,38 @@ from tensorflow.python.client import timeline
 
 import initialD_input as data_input
 import resnet
-sys.path.append("/home/pirate03/anaconda2/lib/python2.7/site-packages")
-import sklearn.metrics
+from playground.initialD.imitaion_learning.stack_imgs import stack_obj_eps
+from playground.initialD.imitaion_learning.split_stack_infos import split_stack_infos, rand_imgs_acts, rand_imgs_acts_specify_batch_size
+from playground.initialD.imitaion_learning.evaluate import evaluate
 
 
 # Dataset Configuration
-tf.app.flags.DEFINE_string('train_dataset', '/home/pirate03/PycharmProjects/resnet-18-tensorflow/train.tfrecords', """Path to initialD the training dataset""")
-tf.app.flags.DEFINE_string('val_dataset', '/home/pirate03/PycharmProjects/resnet-18-tensorflow/val.tfrecords', """Path to initialD the test dataset""")
+tf.app.flags.DEFINE_string('train_dir', '/home/pirate03/hobotrl_data/playground/initialD/exp/test_prog/train', """Path to initialD the training dataset""")
+tf.app.flags.DEFINE_string('val_dir', '/home/pirate03/hobotrl_data/playground/initialD/exp/test_prog/valid', """Path to initialD the test dataset""")
 tf.app.flags.DEFINE_integer('num_classes', 3, """Number of classes in the dataset.""")
-tf.app.flags.DEFINE_integer('num_train_instance', 4975, """Number of training images.""")
-tf.app.flags.DEFINE_integer('num_val_instance', 1244, """Number of val images.""")
+tf.app.flags.DEFINE_integer('num_train_instance', 166000, """Number of training images.""")
+tf.app.flags.DEFINE_integer('num_val_instance', 24850, """Number of val images.""")
 
 # Network Configuration
-tf.app.flags.DEFINE_integer('batch_size', 256, """Number of images to process in a batch.""")
+tf.app.flags.DEFINE_integer('batch_size', 128, """Number of images to process in a batch.""")
 tf.app.flags.DEFINE_integer('num_gpus', 1, """Number of GPUs.""")
 
 # Optimization Configuration
 tf.app.flags.DEFINE_float('l2_weight', 0.0001, """L2 loss weight applied all the weights""")
 tf.app.flags.DEFINE_float('momentum', 0.9, """The momentum of MomentumOptimizer""")
-tf.app.flags.DEFINE_float('initial_lr', 0.1, """Initial learning rate""")
+tf.app.flags.DEFINE_float('initial_lr', 0.01, """Initial learning rate""")
 tf.app.flags.DEFINE_string('lr_step_epoch', "20.0,40.0", """Epochs after which learing rate decays""")
 tf.app.flags.DEFINE_float('lr_decay', 0.1, """Learning rate decay factor""")
 tf.app.flags.DEFINE_boolean('finetune', False, """Whether to finetune.""")
 
 # Training Configuration
-tf.app.flags.DEFINE_string('train_dir', '/home/pirate03/PycharmProjects/resnet-18-tensorflow/log', """Directory where to write log and checkpoint.""")
+tf.app.flags.DEFINE_string('log_dir', './docker005_resnet', """Directory where to write log and checkpoint.""")
 tf.app.flags.DEFINE_integer('max_steps', 3000, """Number of batches to run.""")
 tf.app.flags.DEFINE_integer('display', 100, """Number of iterations to display training info.""")
 tf.app.flags.DEFINE_integer('val_interval', 200, """Number of iterations to run a val""")
 tf.app.flags.DEFINE_integer('val_iter', 100, """Number of iterations during a val""")
 tf.app.flags.DEFINE_integer('checkpoint_interval', 500, """Number of iterations to save parameters as a checkpoint""")
-tf.app.flags.DEFINE_float('gpu_fraction', 0.95, """The fraction of GPU memory to be allocated""")
+tf.app.flags.DEFINE_float('gpu_fraction', 0.9, """The fraction of GPU memory to be allocated""")
 tf.app.flags.DEFINE_boolean('log_device_placement', False, """Whether to log device placement.""")
 tf.app.flags.DEFINE_string('basemodel', None, """Base model to load paramters""")
 tf.app.flags.DEFINE_string('checkpoint', None,
@@ -62,9 +63,9 @@ def get_lr(initial_lr, lr_decay, lr_decay_steps, global_step):
 def train():
     print('[Dataset Configuration]')
     # print('\tImageNet training root: %s' % FLAGS.train_image_root)
-    print('\tImageNet training list: %s' % FLAGS.train_dataset)
+    print('\tImageNet training list: %s' % FLAGS.train_dir)
     # print('\tImageNet val root: %s' % FLAGS.val_image_root)
-    print('\tImageNet val list: %s' % FLAGS.val_dataset)
+    print('\tImageNet val list: %s' % FLAGS.val_dir)
     print('\tNumber of classes: %d' % FLAGS.num_classes)
     print('\tNumber of training images: %d' % FLAGS.num_train_instance)
     print('\tNumber of val images: %d' % FLAGS.num_val_instance)
@@ -82,7 +83,7 @@ def train():
     print('\tLearning rate decay: %f' % FLAGS.lr_decay)
 
     print('[Training Configuration]')
-    print('\tTrain dir: %s' % FLAGS.train_dir)
+    print('\tlog dir: %s' % FLAGS.log_dir)
     print('\tTraining max steps: %d' % FLAGS.max_steps)
     print('\tSteps per displaying info: %d' % FLAGS.display)
     print('\tSteps per validation: %d' % FLAGS.val_interval)
@@ -91,27 +92,9 @@ def train():
     print('\tGPU memory fraction: %f' % FLAGS.gpu_fraction)
     print('\tLog device placement: %d' % FLAGS.log_device_placement)
 
-
     with tf.Graph().as_default():
         init_step = 0
         global_step = tf.Variable(0, trainable=False, name='global_step')
-
-        # Get images and labels of ImageNet
-        import multiprocessing
-        # num_threads = multiprocessing.cpu_count() / FLAGS.num_gpus
-        num_threads = 6
-        print('Load initialD dataset(%d threads)' % num_threads)
-        with tf.device('/cpu:0'):
-            print('\tLoading training data from %s' % FLAGS.train_dataset)
-            with tf.variable_scope('train_image'):
-                train_images, train_labels = data_input.distorted_inputs(FLAGS.train_dataset
-                                               , FLAGS.batch_size, True, num_threads=num_threads)
-            print('\tLoading validation data from %s' % FLAGS.val_dataset)
-            with tf.variable_scope('test_image'):
-                val_images, val_labels = data_input.inputs(FLAGS.val_dataset
-                                               , FLAGS.batch_size, False, num_threads=num_threads)
-        # tf.summary.image('images', train_images[0])
-
         # Build model
         lr_decay_steps = map(float,FLAGS.lr_step_epoch.split(','))
         lr_decay_steps = map(int,[s*FLAGS.num_train_instance/FLAGS.batch_size/FLAGS.num_gpus for s in lr_decay_steps])
@@ -129,7 +112,6 @@ def train():
         network_val.build_model()
         print('Number of Weights: %d' % network_train._weights)
         print('FLOPs: %d' % network_train._flops)
-
 
         # Build an initialization operation to run below.
         init = tf.global_variables_initializer()
@@ -170,12 +152,17 @@ def train():
         # Start queue runners & summary_writer
         tf.train.start_queue_runners(sess=sess)
 
-        if not os.path.exists(FLAGS.train_dir):
-            os.mkdir(FLAGS.train_dir)
-        summary_writer = tf.summary.FileWriter(os.path.join(FLAGS.train_dir, str(global_step.eval(session=sess))),
+        # if not os.path.exists(FLAGS.train_dir):
+        #     os.mkdir(FLAGS.train_dir)
+        summary_writer = tf.summary.FileWriter(os.path.join(FLAGS.log_dir, str(global_step.eval(session=sess))),
                                                 sess.graph)
 
         # Training!
+        train_data = stack_obj_eps(FLAGS.train_dir)
+        val_data = stack_obj_eps(FLAGS.val_dir)
+        train_data_splited = split_stack_infos(train_data)
+        batch_size_list = [64, 8, 8]
+
         val_best_acc = 0.0
         for step in xrange(init_step, FLAGS.max_steps):
             # val
@@ -183,20 +170,17 @@ def train():
                 val_loss, val_acc, val_prec, val_rec, val_f1 = 0.0, 0.0, 0.0, 0.0, 0.0
                 val_conf_mat = np.zeros((3,3))
                 for i in range(FLAGS.val_iter):
-                    np_val_images, np_val_labels = sess.run([val_images, val_labels])
+                    val_imgs, val_labels = rand_imgs_acts(val_data, FLAGS.batch_size)
                     loss_value, acc_value, preds = sess.run([network_val.loss, network_val.acc, network_val.preds],
-                                feed_dict={network_val._images:np_val_images, network_val._labels:np_val_labels,
+                                feed_dict={network_val._images:val_imgs, network_val._labels:val_labels,
                                            network_val.is_train:False})
                     # preds = np.zeros(FLAGS.batch_size)
                     # y_true = sess.run(val_labels)
                     # y_true = y_true[0]
-                    y_true = np_val_labels
+                    y_true = val_labels
                     # print "y_true: ", y_true
                     # print "y_pred: ", preds
-                    prec_value = sklearn.metrics.precision_score(y_true, preds, average=None)
-                    rec_value = sklearn.metrics.recall_score(y_true, preds, average=None)
-                    f1_value = sklearn.metrics.f1_score(y_true, preds, average=None)
-                    conf_mat_value = sklearn.metrics.confusion_matrix(y_true, preds)
+                    prec_value, rec_value, f1_value, conf_mat_value = evaluate(y_true, preds, labels=[0,1,2])
                     val_loss += loss_value
                     val_acc += acc_value
                     val_prec += prec_value
@@ -221,29 +205,26 @@ def train():
                 val_summary.value.add(tag='val/loss', simple_value=val_loss)
                 val_summary.value.add(tag='val/acc', simple_value=val_acc)
                 val_summary.value.add(tag='val/best_acc', simple_value=val_best_acc)
-                # val_summary.value.add(tag='val/prec', simple_value=val_prec)
-                # val_summary.value.add(tag='val/rec', simple_value=val_rec)
-                # val_summary.value.add(tag='val/f1', simple_value=val_f1)
+                val_summary.value.add(tag='val/prec', simple_value=np.mean(val_prec))
+                val_summary.value.add(tag='val/rec', simple_value=np.mean(val_rec))
+                val_summary.value.add(tag='val/f1', simple_value=np.mean(val_f1))
                 summary_writer.add_summary(val_summary, step)
                 summary_writer.flush()
 
             # Train
             lr_value = get_lr(FLAGS.initial_lr, FLAGS.lr_decay, lr_decay_steps, step)
             start_time = time.time()
-            np_train_images, np_train_labels = sess.run([train_images, train_labels])
+            train_imgs, train_labels = rand_imgs_acts_specify_batch_size(train_data_splited, batch_size_list)
             _, loss_value, acc_value, train_summary_str, preds = \
                     sess.run([network_train.train_op, network_train.loss, network_train.acc, train_summary_op, network_train.preds],
-                            feed_dict={network_train._images:np_train_images, network_train._labels:np_train_labels,
+                            feed_dict={network_train._images:train_imgs, network_train._labels:train_labels,
                                        network_train.is_train:True, network_train.lr:lr_value})
             # preds = np.zeros(FLAGS.batch_size)
             # y_true = sess.run(train_labels)
-            y_true = np_train_labels
+            y_true = train_labels
             # print "y_true: ", y_true
             # print "y_pred: ", preds
-            train_prec = sklearn.metrics.precision_score(y_true, preds, average=None)
-            train_rec = sklearn.metrics.recall_score(y_true, preds, average=None)
-            train_f1 = sklearn.metrics.f1_score(y_true, preds, average=None)
-            train_conf_mat = sklearn.metrics.confusion_matrix(y_true, preds)
+            train_prec, train_rec,train_f1,train_conf_mat = evaluate(y_true, preds, labels=[0,1,2])
 
             duration = time.time() - start_time
             # sys.stdout.flush()
@@ -251,7 +232,7 @@ def train():
 
             # Display & Summary(training)
             if step % FLAGS.display == 0 or step < 10:
-                num_examples_per_step = FLAGS.batch_size * FLAGS.num_gpus
+                num_examples_per_step = FLAGS.batch_size
                 examples_per_sec = num_examples_per_step / duration
                 sec_per_batch = float(duration)
                 format_str = ('%s: (Training) step %d, loss=%.4f, '
@@ -271,7 +252,7 @@ def train():
 
             # Save the model checkpoint periodically.
             if (step >= init_step and step % FLAGS.checkpoint_interval == 0) or (step + 1) == FLAGS.max_steps:
-                checkpoint_path = os.path.join(FLAGS.train_dir, 'model.ckpt')
+                checkpoint_path = os.path.join(FLAGS.log_dir, 'model.ckpt')
                 saver.save(sess, checkpoint_path, global_step=step)
 
             if sys.stdin in select.select([sys.stdin], [], [], 0)[0]:

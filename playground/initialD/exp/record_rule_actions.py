@@ -118,16 +118,16 @@ def func_compile_exp_agent(state, action, rewards, next_state, done):
     print ': {:7.4f}'.format(reward)
 
     # early stopping
-    if ema_speed < 0.1:
-        if longest_penalty > 0.5:
-            print "[Early stopping] stuck at intersection."
-            done = True
-        if obs_risk > 0.2:
-            print "[Early stopping] stuck at obstacle."
-            done = True
-        if momentum_ped>1.0:
-            print "[Early stopping] stuck on pedestrain."
-            done = True
+    # if ema_speed < 0.1:
+    #     if longest_penalty > 0.5:
+    #         print "[Early stopping] stuck at intersection."
+    #         done = True
+    #     if obs_risk > 0.2:
+    #         print "[Early stopping] stuck at obstacle."
+    #         done = True
+    #     if momentum_ped>1.0:
+    #         print "[Early stopping] stuck on pedestrain."
+    #         done = True
 
     return state, action, reward, next_state, done
 
@@ -154,6 +154,7 @@ def gen_backend_cmds():
         # 4. start reward function script
         ['python', backend_path+'gazebo_rl_reward.py'],
         # ['python', backend_path+'rl_reward_function.py'],
+        ['python', backend_path + 'car_go.py', '--use-dummy-action'],
         # 5. start simulation restarter backend
         ['python', backend_path+'rviz_restart.py', 'honda_dynamic_obs.launch'],
         # 6. [optional] video capture
@@ -162,7 +163,7 @@ def gen_backend_cmds():
     return backend_cmds
 
 env = DrivingSimulatorEnv(
-    address="10.31.40.197", port='9004',
+    address="10.31.40.197", port='9024',
     # address='localhost', port='22224',
     backend_cmds=gen_backend_cmds(),
     defs_obs=[
@@ -199,7 +200,9 @@ n_additional_learn = 4
 n_ep = 0  # last ep in the last run, if restart use 0
 n_test = 10  # num of episode per test run (no exploration)
 
-tf.app.flags.DEFINE_string("save_dir", "/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_vec_rewards_obj80_docker005", """save scenes""")
+tf.app.flags.DEFINE_string("save_dir",
+                           "/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_vec_rewards_obj80_docker005_no_early_stopping_check_all_green",
+                           """save scenes""")
 FLAGS = tf.app.flags.FLAGS
 
 try:
@@ -223,7 +226,7 @@ try:
         print "eps: ", n_ep
         ep_dir = FLAGS.save_dir + "/" + str(n_ep).zfill(4)
         os.makedirs(ep_dir)
-        recording_file = open(ep_dir + "/" + "0.txt", "w")
+        recording_file = open(ep_dir + "/" + "0000.txt", "w")
 
         while True:
             n_steps += 1
