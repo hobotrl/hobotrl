@@ -57,6 +57,8 @@ class BaseDeepAgent(BaseAgent):
 
     def set_session(self, sess):
         self.sess = sess
+        if self._network is not None:
+            self._network.set_session(sess)
 
     def set_graph(self, graph):
         self.graph = graph

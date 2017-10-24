@@ -88,7 +88,7 @@ class DQNExperiment(Experiment):
             replay_size=self._replay_size,
             batch_size=self._batch_size,
             # epsilon greedy arguments
-            greedy_epsilon=hrl.utils.CappedLinear(1e5, 0.5, 0.1),
+            greedy_epsilon=self._greedy_epsilon,
             network_optimizer=self._network_optimizer_ctor(),
             global_step=global_step
         )
