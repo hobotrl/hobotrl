@@ -7,6 +7,7 @@ import time
 from os.path import dirname, realpath
 import sys
 import argparse
+from multiprocessing import Event
 
 # ROS
 import rospy
@@ -20,12 +21,15 @@ class CarGo:
         """Initialization."""
         self.is_dummy_action = is_dummy_action
         self.ema_speed = 10.0
+        self.lock = Event()
+        self.lock.clear()
+
         # ROS related
         rospy.init_node('car_go')
         rospy.Subscriber('/car/control', Control, self.car_control_callback)
         rospy.Subscriber('/car/status', CarStatus, self.car_status_callback)
         self.start_pub = rospy.Publisher(
-            '/autoDrive_KeyboardMode', Char, queue_size=10)
+            '/autoDrive_KeyboardMode', Char, queue_size=10, latch=True)
         self.car_go_loop = Timer(rospy.Duration(5.0), self.car_go_callback)
 
     def car_control_callback(self, data):
@@ -34,8 +38,12 @@ class CarGo:
         :param data:
         :return:
         """
-        if not data.autodrive_mode:
-            self.start_pub.publish(ord(' '))
+        if not self.lock.is_set():
+            if not data.autodrive_mode:
+                self.lock.set()
+                self.start_pub.publish(ord(' '))
+                time.sleep(1.0)
+                self.lock.clear()
 
     def car_status_callback(self, data):
         """Calculate the exponential moving average of car speed.
@@ -58,17 +66,19 @@ class CarGo:
         :return:
         """
         if self.ema_speed < 0.1:
-            time.sleep(0.5)
-            if self.is_dummy_action:
-                print "[CarGo]: sending key '0' ..."
-                self.start_pub.publish(ord('0'))
-            else:
-                print "[CarGo]: sending key '1' ..."
-                self.start_pub.publish(ord('1'))
-            time.sleep(0.5)
-            print "[CarGo]: sending key 'g' ..."
-            self.start_pub.publish(ord('g'))
             self.ema_speed = 10.0
+            for _ in range(5):
+                if self.is_dummy_action:
+                    print "[CarGo]: sending key '0' ..."
+                    self.start_pub.publish(ord('0'))
+                else:
+                    print "[CarGo]: sending key '1' ..."
+                    self.start_pub.publish(ord('1'))
+                time.sleep(0.1)
+                print "[CarGo]: sending key 'g' ..."
+                self.start_pub.publish(ord('g'))
+                time.sleep(0.1)
+
 
         return
 
