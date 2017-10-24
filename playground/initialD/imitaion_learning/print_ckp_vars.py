@@ -1,6 +1,6 @@
 import tensorflow as tf
-
-checkpoint_dir = "/home/pirate03/PycharmProjects/hobotrl/playground/initialD/imitaion_learning/fnet_rename"
+from pprint import pprint
+checkpoint_dir = "/home/pirate03/PycharmProjects/hobotrl/playground/resnet/resnet_pq"
 checkpoint = tf.train.get_checkpoint_state(checkpoint_dir)
 
 with tf.Session() as sess:
@@ -10,7 +10,9 @@ with tf.Session() as sess:
         var_names.append(var_name)
         var = tf.contrib.framework.load_variable(checkpoint_dir, var_name)
         vars.append(var)
-    print var_names
-    print vars
-    print tf.global_variables()
+    pprint(var_names)
+
+    for name, var in zip(var_names, vars):
+        print name, ": ", var.shape
+    # print vars
 

@@ -79,6 +79,27 @@ def rm_obj_start_time_imgs(obj_dir, stack_num=3):
             rm_start_time_imgs(eps_dir, ind, stack_num)
     # print len(stat_names)
 
+
+def rm_eps_pred_acts(eps_dir):
+    img_names = sorted(os.listdir(eps_dir))[1:]
+    for img_name in img_names[:-3]:
+        new_img_name = img_name[:-2]
+        os.rename(eps_dir+"/"+img_name, eps_dir+"/"+new_img_name)
+
+def rm_obj_pred_acts(obj_dir):
+    eps_names = sorted(os.listdir(obj_dir))
+    for eps_name in eps_names:
+        rm_eps_pred_acts(obj_dir+"/"+eps_name)
+
+def complete_last_three_imgs(obj_dir):
+    eps_names = sorted(os.listdir(obj_dir))
+    for eps_name in eps_names:
+        eps_dir = obj_dir + "/" + eps_name
+        last_three_img_names = sorted(os.listdir(eps_dir))[-3:]
+        for name in last_three_img_names:
+            os.rename(eps_dir+"/"+name, eps_dir+"/"+name+"pg")
+
+
 if __name__ == "__main__":
     # [36511   791  1010    27   252]
     # [6338  101   89    0    2]
@@ -92,8 +113,8 @@ if __name__ == "__main__":
     # print stat_obj_action_num(train_dir)
     #
     # train_dir = "/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_obj80_vec_rewards_docker005_no_early_stopping_all_green/valid"
-    val_dir = "/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_obj80_vec_rewards_docker005_no_early_stopping_all_green/valid"
-    rm_obj_start_time_imgs(val_dir)
+    # val_dir = "/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_obj80_vec_rewards_docker005_no_early_stopping_all_green/valid"
+    # rm_obj_start_time_imgs(val_dir)
 
     # train_dir = "/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_vec_rewards_obj80_docker005_no_early_stopping_all_green/train"
     # train_dir = "/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_obj80_vec_rewards_docker005_no_early_stopping_all_green/train"
@@ -108,3 +129,6 @@ if __name__ == "__main__":
 
     # rm_obj_start_time_imgs(train_dir)
 
+    obj_dir = "/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_obj80_vec_rewards_docker005_no_early_stopping_all_green/valid"
+    rm_obj_pred_acts(obj_dir)
+    # complete_last_three_imgs(obj_dir)
