@@ -35,7 +35,7 @@ class Playback(object):
         :param augment_scale:
         """
         self.capacity = capacity
-        print "capacity:", capacity
+        logging.warning("capacity:%s", capacity)
         self.data = None
         self.push_policy = push_policy
         self.pop_policy = pop_policy
@@ -78,7 +78,7 @@ class Playback(object):
         if self.data is None:
             # lazy creation
 
-            print "initializing data with:", sample, ",type:", type(sample)
+            logging.warning("initializing data with: %s, type: %s", sample, type(sample))
             sample_class = type(sample)
             if sample_class in scalar_type:
                 sample_shape = []  # scalar value
@@ -258,6 +258,7 @@ class MapPlayback(Playback):
         :return:
         """
         column_batch = {}
+        column_shape = {}
         batch_size = len(batch)
         if batch_size == 0:
             return column_batch
@@ -267,6 +268,12 @@ class MapPlayback(Playback):
             sample = batch[i]
             for field in sample:
                 column_batch[field].append(sample[field])
+                if field not in column_shape:
+                    column_shape[field] = sample[field].shape
+                else:
+                    if column_shape[field] != sample[field].shape:
+                        logging.error("column[%s] shape mismatch: old:%s, new:%s",
+                                      field, column_shape[field], sample[field].shape)
         for field in column_batch:
             column_batch[field] = np.asarray(column_batch[field])
         return column_batch

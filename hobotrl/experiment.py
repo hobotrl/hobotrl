@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import sys
+import logging
 import tensorflow as tf
 import gym
 import argparse
@@ -35,6 +36,7 @@ class Experiment(object):
             args.logdir = args.name
         experiment_class = Experiment.experiments[name]
         experiment_class().run(args)
+        logging.warning("Experiment %s end.", name)
         pass
 
     @staticmethod
