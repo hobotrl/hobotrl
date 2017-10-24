@@ -285,11 +285,12 @@ def test_get_prep_stop_point(obj_dir="/home/pirate03/hobotrl_data/playground/ini
     # print '0032', ": ", cond, " ", i
 
 
-def rename_dirs(obj_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_v3"):
+def rename_dirs(obj_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_v3",
+                start_num=0):
     eps_names = sorted(os.listdir(obj_dir))
     for i, name in enumerate(eps_names):
         eps_dir = os.path.join(obj_dir, name)
-        new_eps_dir = os.path.join(obj_dir, str(i+1).zfill(4))
+        new_eps_dir = os.path.join(obj_dir, str(start_num+i+1).zfill(4))
         os.rename(eps_dir, new_eps_dir)
 
 
@@ -441,7 +442,7 @@ if __name__ == '__main__':
     # filter_stop_frames_for_all()
     # stack_info = test_get_all_eps_info()
     # pprint(stack_info)
-    test_zero_prefix_files()
+    # test_zero_prefix_files()
     # zero_prefix_recording()
     # test_get_stop_point()
     # test_get_prep_stop_point()
@@ -454,6 +455,7 @@ if __name__ == '__main__':
     # cal_hor_sim_eps()
     # cal_hor_sim_obj(obj_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/test_")
     # test_divie_eps("/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_v3/0001")
-    # rename_dirs()
+    obj_dir = "/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_vec_rewards_docker005_no_early_stopping_all_green2"
+    rename_dirs(obj_dir, start_num=550)
     # divide_obj()
     # test_divide_obj()

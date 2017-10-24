@@ -60,11 +60,11 @@ def f_net(inputs, l2):
     return {"pi": pi}
 
 
-def split_stack_infos(stack_infos):
+def split_stack_infos(stack_infos, num_class=3):
     # big bug !!!!!!!!!!!!!!!!!
     # split_infos = [[]] * 5
     # big bug !!!!!!!!!!!!!!!!!
-    split_infos = [[] for _ in range(5)]
+    split_infos = [[] for _ in range(num_class)]
     for info in stack_infos:
         act = info[-1]
         split_infos[act].append(info)
@@ -248,8 +248,8 @@ config = tf.ConfigProto(
 train_data = stack_obj_eps(train_dir, stack_num)
 val_data = stack_obj_eps(val_dir, stack_num)
 train_data_splited = split_stack_infos(train_data)
-train_data_splited[3] = []
-train_data_splited[4] = []
+# train_data_splited[3] = []
+# train_data_splited[4] = []
 # val_data_splited = split_stack_infos(val_data)
 # print "train_data: "
 # print train_data
