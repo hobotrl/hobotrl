@@ -33,8 +33,9 @@ class I2A(A3CExperimentWithI2A):
                  batch_size=32):
         if env is None:
             env = gym.make('MsPacman-v0')
+            env = envs.DownsampledMsPacman(env)
             env = envs.ScaledRewards(env, 0.1)
-            env = envs.MaxAndSkipEnv(env, skip=2, max_len=1)
+            env = envs.MaxAndSkipEnv(env, skip=4, max_len=4)
             env = envs.FrameStack(env, k=4)
             # env = wrap_car(env, 3, 3, frame=4)
 
@@ -42,49 +43,16 @@ class I2A(A3CExperimentWithI2A):
             dim_action = env.action_space.n
             dim_observation = env.observation_space.shape
 
-            def create_se_1(inputs):
+            def create_se(inputs):
                 l2 = 1e-7
                 input_state = inputs[0]
                 se_conv = hrl.utils.Network.conv2ds(input_state,
-                                               shape=[(64, 8, 4)],
+                                               shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
                                                out_flatten=False,
                                                activation=tf.nn.relu,
                                                l2=l2,
-                                               var_scope="se_conv")
-                return {"se_1": se_conv}
-
-            def create_se_2(inputs):
-                l2 = 1e-7
-                input_feature = inputs[0]
-                se_conv = hrl.utils.Network.conv2ds(input_feature,
-                                               shape=[(64, 4, 2)],
-                                               out_flatten=False,
-                                               activation=tf.nn.relu,
-                                               l2=l2,
-                                               var_scope="se_conv")
-                return {"se_2": se_conv}
-
-            def create_se_3(inputs):
-                l2 = 1e-7
-                input_feature = inputs[0]
-                se_conv = hrl.utils.Network.conv2ds(input_feature,
-                                               shape=[(64, 4, 2)],
-                                               out_flatten=False,
-                                               activation=tf.nn.relu,
-                                               l2=l2,
-                                               var_scope="se_conv")
-                return {"se_3": se_conv}
-
-            def create_se_4(inputs):
-                l2 = 1e-7
-                input_feature = inputs[0]
-                se_conv = hrl.utils.Network.conv2ds(input_feature,
-                                               shape=[(64, 3, 1)],
-                                               out_flatten=False,
-                                               activation=tf.nn.relu,
-                                               l2=l2,
-                                               var_scope="se_conv")
-                return {"se_4": se_conv}
+                                               var_scope="se")
+                return {"se": se_conv}
 
             def create_ac(inputs):
                 l2 = 1e-7
@@ -134,165 +102,81 @@ class I2A(A3CExperimentWithI2A):
                                                  var_scope="pi")
                 return {"rollout_action": rollout_action}
 
-            def create_env_deconv(inputs):
+            def create_env_upsample_little(inputs):
                 l2 = 1e-7
                 input_state = inputs[0]
                 input_state = tf.squeeze(tf.stack(input_state), axis=0)
-                input_action = inputs[1]
-                input_action = tf.image.resize_images(tf.reshape(input_action, [-1, 1, 1, dim_action]),
-                                                      [dim_observation[0], dim_observation[1]])
-                full_input = tf.concat([input_action, input_state], axis=3)
 
-                conv_1 = hrl.utils.Network.conv2ds(full_input,
-                                               shape=[(32, 8, 8), (32, 3, 1)],
+                input_action = inputs[1]
+                input_action = tf.one_hot(indices=input_action, depth=dim_action, on_value=1.0, off_value=0.0, axis=-1)
+                input_action_tiled = tf.image.resize_images(tf.reshape(input_action, [-1, 1, 1, dim_action]),
+                                                      [((((dim_observation[0]+1)/2+1)/2+1)/2+1)/2,
+                                                       ((((dim_observation[1]+1)/2+1)/2+1)/2+1)/2])
+
+                conv_1 = hrl.utils.Network.conv2ds(input_state,
+                                               shape=[(32, 8, 4)],
                                                out_flatten=False,
                                                activation=tf.nn.relu,
                                                l2=l2,
                                                var_scope="conv_1")
 
                 conv_2 = hrl.utils.Network.conv2ds(conv_1,
-                                                   shape=[(32, 3, 1)],
+                                                   shape=[(64, 4, 2)],
                                                    out_flatten=False,
                                                    activation=tf.nn.relu,
                                                    l2=l2,
                                                    var_scope="conv_2")
 
-                conv_middle = conv_1 + conv_2
-
-                # reward
-                conv_r1 = hrl.utils.Network.conv2ds(conv_middle,
-                                                   shape=[(32, 3, 1)],
-                                                   out_flatten=False,
+                conv_3 = hrl.utils.Network.conv2ds(conv_2,
+                                                   shape=[(64, 3, 2)],
+                                                   out_flatten=True,
                                                    activation=tf.nn.relu,
                                                    l2=l2,
-                                                   var_scope="conv_r1")
+                                                   var_scope="conv_3")
 
-                pool_r1 = tf.layers.max_pooling2d(conv_r1, 2, 1)
+                fc_1 = hrl.utils.Network.layer_fcs(conv_3, [], 64*5*5,
+                                                        activation_hidden=tf.nn.relu,
+                                                        activation_out=tf.nn.relu,
+                                                        l2=l2,
+                                                        var_scope="fc_1")
 
-                pool_r1 = tf.nn.relu(pool_r1)
+                # concat_action = tf.concat([conv_4, input_action_tiled], axis=3)
+                fc_action = hrl.utils.Network.layer_fcs(tf.to_float(input_action), [], 64*5*5,
+                                                        activation_hidden=tf.nn.relu,
+                                                        activation_out=tf.nn.relu,
+                                                        l2=l2,
+                                                        var_scope="fc_action")
 
-                conv_r2 = hrl.utils.Network.conv2ds(pool_r1,
-                                                    shape=[(32, 3, 1)],
-                                                    out_flatten=False,
-                                                    activation=tf.nn.relu,
-                                                    l2=l2,
-                                                    var_scope="conv_r2")
+                concat = tf.multiply(fc_1, fc_action)
 
-                pool_r2 = tf.layers.max_pooling2d(conv_r2, 2, 1)
+                fc_out = hrl.utils.Network.layer_fcs(concat, [64*5*5], 64*5*5,
+                                                        activation_hidden=tf.nn.relu,
+                                                        activation_out=tf.nn.relu,
+                                                        l2=l2,
+                                                        var_scope="fc_out")
 
-                pool_r2 = tf.nn.relu(pool_r2)
-
-                pool_r2 = tf.contrib.layers.flatten(pool_r2)
-
-                reward = hrl.utils.Network.layer_fcs(pool_r2, [256], 1,
+                # reward
+                reward = hrl.utils.Network.layer_fcs(fc_out, [256], 1,
                                                      activation_hidden=tf.nn.relu,
                                                      l2=l2,
                                                      var_scope="reward")
                 reward = tf.squeeze(reward, axis=1)
 
                 # next_state
-                next_state = hrl.utils.Network.deconv2ds(conv_middle,
-                                                         shape=[(3, 8, 8)],
-                                                         out_flatten=False,
-                                                         activation=tf.nn.relu,
-                                                         l2=l2,
-                                                         var_scope="next_state")
+                twoD_out = tf.reshape(fc_out, [-1, 64, 5, 5])
 
-                return {"next_state": next_state, "reward": reward}
-
-            def create_env_upsample(inputs):
-                l2 = 1e-7
-                # input_state = inputs[0]
-                # input_state = tf.squeeze(tf.stack(input_state), axis=0)
-                input_se_1 = inputs[0]
-
-                input_se_1 = tf.squeeze(tf.stack(input_se_1), axis=0)
-
-                input_se_2 = inputs[1]
-                input_se_2 = tf.squeeze(tf.stack(input_se_2), axis=0)
-
-                input_se_3 = inputs[2]
-                input_se_3 = tf.squeeze(tf.stack(input_se_3), axis=0)
-
-                input_se_4 = inputs[3]
-                input_se_4 = tf.squeeze(tf.stack(input_se_4), axis=0)
-
-                input_action = inputs[4]
-                input_action = tf.image.resize_images(tf.reshape(input_action, [-1, 1, 1, dim_action]),
-                                                      [(((dim_observation[0] + 3) / 4 + 1) / 2 + 1) / 2,
-                                                       (((dim_observation[1] + 3) / 4 + 1) / 2 + 1) / 2])
-                conv_3 = tf.concat([input_se_4, input_action], axis=3)
-                # input_action = tf.image.resize_images(tf.reshape(input_action, [-1, 1, 1, dim_action]),
-                #                                       [(((dim_observation[0]+1)/2+1)/2+1)/2, (((dim_observation[1]+1)/2+1)/2+1)/2])
-                # full_input = tf.concat([input_action, input_state], axis=3)
-
-                # conv_1 = hrl.utils.Network.conv2ds(input_state,
-                #                                shape=[(32, 8, 2)],
-                #                                out_flatten=False,
-                #                                activation=tf.nn.relu,
-                #                                l2=l2,
-                #                                var_scope="conv_1")
-                #
-                # conv_2 = hrl.utils.Network.conv2ds(conv_1,
-                #                                    shape=[(32, 3, 2)],
-                #                                    out_flatten=False,
-                #                                    activation=tf.nn.relu,
-                #                                    l2=l2,
-                #                                    var_scope="conv_2")
-                #
-                # conv_3 = hrl.utils.Network.conv2ds(conv_2,
-                #                                    shape=[(32, 3, 2)],
-                #                                    out_flatten=False,
-                #                                    activation=tf.nn.relu,
-                #                                    l2=l2,
-                #                                    var_scope="conv_3")
-                #
-                # conv_3 = tf.concat([conv_3, input_action], axis=3)
-                #
-                conv_4 = hrl.utils.Network.conv2ds(conv_3,
+                conv_5 = hrl.utils.Network.conv2ds(twoD_out,
                                                    shape=[(32, 3, 1)],
                                                    out_flatten=False,
                                                    activation=tf.nn.relu,
                                                    l2=l2,
-                                                   var_scope="conv_4")
-
-                # reward
-                conv_r1 = hrl.utils.Network.conv2ds(conv_4,
-                                                   shape=[(32, 3, 1)],
-                                                   out_flatten=False,
-                                                   activation=tf.nn.relu,
-                                                   l2=l2,
-                                                   var_scope="conv_r1")
-
-                pool_r1 = tf.layers.max_pooling2d(conv_r1, 2, 1)
-
-                pool_r1 = tf.nn.relu(pool_r1)
-
-                pool_r1 = tf.contrib.layers.flatten(pool_r1)
-
-                reward = hrl.utils.Network.layer_fcs(pool_r1, [256], 1,
-                                                     activation_hidden=tf.nn.relu,
-                                                     l2=l2,
-                                                     var_scope="reward")
-                reward = tf.squeeze(reward, axis=1)
-
-                # next_state
-                concat_0 = tf.concat([input_se_3, conv_4], axis=3)
-
-                conv_5 = hrl.utils.Network.conv2ds(concat_0,
-                                                   shape=[(64, 3, 1)],
-                                                   out_flatten=False,
-                                                   activation=tf.nn.relu,
-                                                   l2=l2,
-                                                   var_scope="conv_4_after")
-
+                                                   var_scope="conv_5")
 
                 up_1 = tf.image.resize_images(conv_5, [((dim_observation[0]+3)/4+1)/2, ((dim_observation[1]+3)/4+1)/2])
 
-                concat_1 = tf.concat([input_se_2, up_1], axis=3)
-
+                concat_1 = tf.concat([conv_2, up_1], axis=3)
                 concat_1 = hrl.utils.Network.conv2ds(concat_1,
-                                                   shape=[(32, 1, 1)],
+                                                   shape=[(32, 3, 1)],
                                                    out_flatten=False,
                                                    activation=tf.nn.relu,
                                                    l2=l2,
@@ -300,10 +184,9 @@ class I2A(A3CExperimentWithI2A):
 
                 up_2 = tf.image.resize_images(concat_1, [(dim_observation[0]+3)/4, (dim_observation[1]+3)/4])
 
-                concat_2 = tf.concat([input_se_1, up_2], axis=3)
-
+                concat_2 = tf.concat([conv_1, up_2], axis=3)
                 concat_2 = hrl.utils.Network.conv2ds(concat_2,
-                                                   shape=[(32, 1, 1)],
+                                                   shape=[(64, 4, 1)],
                                                    out_flatten=False,
                                                    activation=tf.nn.relu,
                                                    l2=l2,
@@ -311,10 +194,134 @@ class I2A(A3CExperimentWithI2A):
 
                 up_3 = tf.image.resize_images(concat_2, [dim_observation[0], dim_observation[1]])
 
-                # concat_3 = tf.concat([input_se_1, up_3], axis=3)
+                concat_3 = tf.concat([input_state, up_3], axis=3)
+                concat_3 = hrl.utils.Network.conv2ds(concat_3,
+                                                     shape=[(64, 3, 1)],
+                                                     out_flatten=False,
+                                                     activation=tf.nn.relu,
+                                                     l2=l2,
+                                                     var_scope="concat_3")
 
-                next_state = hrl.utils.Network.conv2ds(up_3,
-                                                     shape=[(3, 1, 1)],
+                next_state = hrl.utils.Network.conv2ds(concat_3,
+                                                     shape=[(3, 3, 1)],
+                                                     out_flatten=False,
+                                                     activation=tf.nn.relu,
+                                                     l2=l2,
+                                                     var_scope="next_state")
+
+                return {"next_state": next_state, "reward": reward}
+
+            def create_env_upsample(inputs):
+                l2 = 1e-7
+                input_state = inputs[0]
+                input_state = tf.squeeze(tf.stack(input_state), axis=0)
+
+                input_action = inputs[1]
+                input_action = tf.one_hot(indices=input_action, depth=dim_action, on_value=1.0, off_value=0.0, axis=-1)
+                input_action_tiled = tf.image.resize_images(tf.reshape(input_action, [-1, 1, 1, dim_action]),
+                                                      [((((dim_observation[0]+1)/2+1)/2+1)/2+1)/2,
+                                                       ((((dim_observation[1]+1)/2+1)/2+1)/2+1)/2])
+
+                conv_1 = hrl.utils.Network.conv2ds(input_state,
+                                               shape=[(64, 8, 2)],
+                                               out_flatten=False,
+                                               activation=tf.nn.relu,
+                                               l2=l2,
+                                               var_scope="conv_1")
+
+                conv_2 = hrl.utils.Network.conv2ds(conv_1,
+                                                   shape=[(128, 4, 2)],
+                                                   out_flatten=False,
+                                                   activation=tf.nn.relu,
+                                                   l2=l2,
+                                                   var_scope="conv_2")
+
+                conv_3 = hrl.utils.Network.conv2ds(conv_2,
+                                                   shape=[(128, 4, 2)],
+                                                   out_flatten=False,
+                                                   activation=tf.nn.relu,
+                                                   l2=l2,
+                                                   var_scope="conv_3")
+
+                conv_4 = hrl.utils.Network.conv2ds(conv_3,
+                                                   shape=[(32, 3, 2)],
+                                                   out_flatten=True,
+                                                   activation=tf.nn.relu,
+                                                   l2=l2,
+                                                   var_scope="conv_4")
+
+                fc_1 = hrl.utils.Network.layer_fcs(conv_4, [], 2048,
+                                                        activation_hidden=tf.nn.relu,
+                                                        activation_out=tf.nn.relu,
+                                                        l2=l2,
+                                                        var_scope="fc_1")
+
+                # concat_action = tf.concat([conv_4, input_action_tiled], axis=3)
+                fc_action = hrl.utils.Network.layer_fcs(tf.to_float(input_action), [], 2048,
+                                                        activation_hidden=tf.nn.relu,
+                                                        activation_out=tf.nn.relu,
+                                                        l2=l2,
+                                                        var_scope="fc_action")
+
+                concat = tf.multiply(fc_1, fc_action)
+
+                fc_out = hrl.utils.Network.layer_fcs(concat, [2048], 128*14*10,
+                                                        activation_hidden=tf.nn.relu,
+                                                        activation_out=tf.nn.relu,
+                                                        l2=l2,
+                                                        var_scope="fc_out")
+
+                # reward
+                reward = hrl.utils.Network.layer_fcs(fc_out, [2048], 1,
+                                                     activation_hidden=tf.nn.relu,
+                                                     l2=l2,
+                                                     var_scope="reward")
+                reward = tf.squeeze(reward, axis=1)
+
+                # next_state
+                twoD_out = tf.reshape(fc_out, [-1, 128, 14, 10])
+
+                conv_5 = hrl.utils.Network.conv2ds(twoD_out,
+                                                   shape=[(32, 3, 1)],
+                                                   out_flatten=False,
+                                                   activation=tf.nn.relu,
+                                                   l2=l2,
+                                                   var_scope="conv_5")
+
+                up_1 = tf.image.resize_images(conv_5, [(((dim_observation[0]+1)/2+1)/2+1)/2, (((dim_observation[1]+1)/2+1)/2+1)/2])
+
+                concat_1 = tf.concat([conv_3, up_1], axis=3)
+                concat_1 = hrl.utils.Network.conv2ds(concat_1,
+                                                   shape=[(32, 3, 1)],
+                                                   out_flatten=False,
+                                                   activation=tf.nn.relu,
+                                                   l2=l2,
+                                                   var_scope="concat_1")
+
+                up_2 = tf.image.resize_images(concat_1, [((dim_observation[0]+1)/2+1)/2, ((dim_observation[1]+1)/2+1)/2])
+
+                concat_2 = tf.concat([conv_2, up_2], axis=3)
+                concat_2 = hrl.utils.Network.conv2ds(concat_2,
+                                                   shape=[(128, 4, 1)],
+                                                   out_flatten=False,
+                                                   activation=tf.nn.relu,
+                                                   l2=l2,
+                                                   var_scope="concat_2")
+
+                up_3 = tf.image.resize_images(concat_2, [(dim_observation[0]+1)/2, (dim_observation[1]+1)/2])
+
+                concat_3 = tf.concat([conv_1, up_3], axis=3)
+                concat_3 = hrl.utils.Network.conv2ds(concat_3,
+                                                     shape=[(128, 4, 1)],
+                                                     out_flatten=False,
+                                                     activation=tf.nn.relu,
+                                                     l2=l2,
+                                                     var_scope="concat_3")
+
+                up_4 = tf.image.resize_images(concat_3, [dim_observation[0], dim_observation[1]])
+                concat_4 = tf.concat([input_state, up_4], axis=3)
+                next_state = hrl.utils.Network.conv2ds(concat_4,
+                                                     shape=[(3, 8, 1)],
                                                      out_flatten=False,
                                                      activation=tf.nn.relu,
                                                      l2=l2,
@@ -353,16 +360,13 @@ class I2A(A3CExperimentWithI2A):
 
                 return {"re": re}
 
-            f_se_1 = create_se_1
-            f_se_2 = create_se_2
-            f_se_3 = create_se_3
-            f_se_4 = create_se_4
+            f_se = create_se
             f_ac = create_ac
-            f_env = create_env_upsample
+            f_env = create_env_upsample_little
             f_rollout = create_rollout
             f_encoder = create_encoder
 
-        super(I2A, self).__init__(env, f_se_1, f_se_2, f_se_3, f_se_4, f_ac, f_env, f_rollout, f_encoder, episode_n, learning_rate,
+        super(I2A, self).__init__(env, f_se, f_ac, f_env, f_rollout, f_encoder, episode_n, learning_rate,
                                                  discount_factor, entropy, batch_size)
 
 

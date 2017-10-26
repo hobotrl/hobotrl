@@ -226,8 +226,7 @@ class ActorCriticWithICM(sampling.TrajectoryBatchUpdate,
             v = network.NetworkFunction(f_ac_out["v"]).output().op
             pi_dist = network.NetworkFunction(f_ac_out["pi"]).output().op
 
-            one_hot_action = tf.one_hot(indices=inputs[2], depth=env.action_space.n, on_value=1, off_value=0, axis=-1)
-            one_hot_action = tf.cast(one_hot_action, tf.float32)
+            one_hot_action = tf.one_hot(indices=inputs[2], depth=env.action_space.n, on_value=1.0, off_value=0.0, axis=-1)
             f_forward_out = network.Network([one_hot_action, f_se1], f_forward, var_scope='learn_forward')
             phi2_hat = network.NetworkFunction(f_forward_out["phi2_hat"]).output().op
 

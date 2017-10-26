@@ -682,7 +682,8 @@ class A3CExperimentWithICM(Experiment):
 
 class A3CExperimentWithI2A(Experiment):
     def __init__(self,
-                 env, f_se_1, f_se_2, f_se_3, f_se_4, f_ac, f_env, f_rollout, f_encoder,
+                 env, f_se, f_ac, f_env, f_rollout, f_encoder,
+                 # env, f_se_1, f_se_2, f_se_3, f_se_4, f_ac, f_env, f_rollout, f_encoder,
                  episode_n=1000,
                  learning_rate=1e-4,
                  discount_factor=0.9,
@@ -690,10 +691,10 @@ class A3CExperimentWithI2A(Experiment):
                  batch_size=8
                  ):
         super(A3CExperimentWithI2A, self).__init__()
-        self._env, self._f_se_1, self._f_se_2, self._f_se_3, self._f_se_4, self._f_ac, self._f_env,\
+        self._env, self._f_se, self._f_ac, self._f_env,\
             self._f_rollout, self._f_encoder, self._episode_n, self._learning_rate, \
             self._discount_factor, self._entropy, self._batch_size = \
-            env, f_se_1, f_se_2, f_se_3, f_se_4, f_ac, f_env, f_rollout, f_encoder, episode_n, learning_rate, \
+            env, f_se, f_ac, f_env, f_rollout, f_encoder, episode_n, learning_rate, \
             discount_factor, entropy, batch_size
 
     def run(self, args):
@@ -708,10 +709,11 @@ class A3CExperimentWithI2A(Experiment):
             entropy = hrl.utils.clone_params(self._entropy)
             agent = hrl.ActorCriticWithI2A(
                 num_action=self._env.action_space.n,
-                f_se_1=self._f_se_1,
-                f_se_2=self._f_se_2,
-                f_se_3=self._f_se_3,
-                f_se_4=self._f_se_4,
+                f_se=self._f_se,
+                # f_se_1=self._f_se_1,
+                # f_se_2=self._f_se_2,
+                # f_se_3=self._f_se_3,
+                # f_se_4=self._f_se_4,
                 f_ac=self._f_ac,
                 f_env=self._f_env,
                 f_rollout=self._f_rollout,
