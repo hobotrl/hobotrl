@@ -545,7 +545,11 @@ class NetworkOptimizer(object):
         network_optimizer.optimize_step()
 
     """
-    def add_updater(self, updater, weight=1.0, name=None):
+    DEFAULT_PASS = "default"
+    """
+    
+    """
+    def add_updater(self, updater, weight=1.0, name=None, forward_pass=DEFAULT_PASS):
         """
         Appends NetworkUpdater to this optimizer
         :param updater:
@@ -585,71 +589,122 @@ class BaseNetworkOptimizer(NetworkOptimizer):
     def __init__(self, grad_clip=None, name=""):
         super(BaseNetworkOptimizer, self).__init__()
         self._name = name
-        self._list_updater, self._dict_updater, self._updater_weights, self._updater_labels = [], {}, {}, {}
+        self._updaters = {}
+        self._updater_weights = {}
+        self._updater_labels = {}
         self._name_scope = tf.name_scope("NetworkOptimizer%s" % self._name)
         self._optimize_op = None
-        self._update_runs = []
+        self._compute_gradient_ops = {} # pass_name: op
+        self._var_gradient_index = None
+        self._apply_gradient_op = None
+        self._apply_gradient_inputs = None
+        self._update_runs = {}   # pass_name: [update_run]
         self._grad_clip = grad_clip
         self._default_optimizer = tf.train.AdamOptimizer()
+        self._pass2updater = {}  # pass_name: [updater_name]
+        self._updater2pass = {}  # updater_name: pass_name
 
-    def add_updater(self, updater, weight=1.0, name=None):
+    def add_updater(self, updater, weight=1.0, name=None, forward_pass=NetworkOptimizer.DEFAULT_PASS):
         if self._optimize_op is not None:
             raise RuntimeError("no updater can be added after compile()!")
         if name is None:
-            self._list_updater.append(updater)
-            self._updater_labels[updater] = self.gen_updater_label_(updater, str(len(self._list_updater)-1))
-        else:
-            self._dict_updater[name] = updater
-            self._updater_labels[updater] = self.gen_updater_label_(updater, name)
-
+            name = "_" + str(len(self._updaters))
+        updater.name = name
+        self._updaters[name] = updater
+        self._updater_labels[updater] = self.gen_updater_label_(updater, name)
         self._updater_weights[updater] = weight
+        if forward_pass not in self._pass2updater:
+            self._pass2updater[forward_pass] = []
+        self._pass2updater[forward_pass].append(name)
+        self._updater2pass[name] = forward_pass
 
     def update(self, updater_name=None, *args, **kwargs):
-        updater = None
         if updater_name is None:
-            assert(len(self._list_updater) + len(self._dict_updater) == 1)
-            if len(self._list_updater) > 0:
-                updater = self._list_updater[0]
-            elif len(self._dict_updater) > 0:
-                for k in self._dict_updater:
-                    updater = self._dict_updater[k]
-                    break
-        else:
-            updater = self._dict_updater[updater_name]
+            updater_name = "_0"
+        #     assert(len(self._dict_updater) == 1)
+        #     for k in self._dict_updater:
+        #         updater = self._dict_updater[k]
+        #         break
+        # else:
+        updater = self._updaters[updater_name]
         update_run = updater.update(*args, **kwargs)
         update_run._updater = updater
-        self.collect_update_run(update_run)
+        self.collect_update_run(update_run, updater_name)
 
     def gen_updater_label_(self, updater, label):
         return updater.__class__.__name__ + "/" + label
 
-    def collect_update_run(self, update_run):
-        self._update_runs.append(update_run)
+    def collect_update_run(self, update_run, updater_name):
+        pass_name = self._updater2pass[updater_name]
+        if pass_name not in self._update_runs:
+            self._update_runs[pass_name] = []
+        self._update_runs[pass_name].append(update_run)
 
     def compile(self):
         if self._optimize_op is not None:
             raise RuntimeError("compile() can be invoked only once!")
-        updates = []
-        for updater in self._list_updater:
+        updates = {}
+        for k in self._updaters:
+            updater = self._updaters[k]
             update = updater.declare_update()
             update._updater = updater
-            updates.append(update)
-        for k in self._dict_updater:
-            updater = self._dict_updater[k]
-            update = updater.declare_update()
-            update._updater = updater
-            updates.append(update)
-        self._optimize_op = self.create_optimize_op_(updates)
+            pass_name = self._updater2pass[updater.name]
+            if pass_name not in updates:
+                updates[pass_name] = []
+            updates[pass_name].append(update)
+        self.create_optimize_ops_(updates)
 
     def optimize_step(self, sess):
-        result = self.run_(sess, self._optimize_op, self._update_runs)
-        self._update_runs = []
+        if self._optimize_op is not None:
+            for pass_name in self._update_runs:
+                update_runs = self._update_runs[pass_name]
+            result = self.run_(sess, self._optimize_op, update_runs)
+        else:
+            # multiple pass
+            for pass_name in self._compute_gradient_ops:
+                update_runs = self._update_runs[pass_name]
+                compute_op = self._compute_gradient_ops[pass_name]
+                grads = self.run_(sess, compute_op, update_runs)
+                # todo
+        self._update_runs = {}
         return result
 
-    def create_optimize_op_(self, updates):
+    def create_optimize_ops_(self, updates):
         with tf.name_scope("optimizers"):
-            grads_and_vars = self.compute_gradients_op_(updates)
-            return self.apply_gradients_op_(grads_and_vars)
+            if len(self._pass2updater) == 1:
+                # optimize to single pass
+                for pass_name in updates:
+                    update_list = updates[pass_name]
+                    grads_and_vars = self.compute_gradients_op_(update_list)
+                    self._optimize_op = self.apply_gradients_op_(grads_and_vars)
+            else:
+                # multiple forward pass.
+                grad2var = {}
+                var2grads = {}  # var: {pass1: grad1_index, pass2: grad2_index}
+                with tf.name_scope("compute_gradients"):
+                    for pass_name in updates:
+                        update_list = updates[pass_name]
+                        grads_and_vars = self.compute_gradients_op_(update_list)
+                        grads_and_vars = filter(lambda x: x[0] is not None, grads_and_vars)
+                        for i in len(grads_and_vars):
+                            grad, var = grads_and_vars[i]
+                            if var not in var2grads:
+                                var2grads[var] = {}
+                            if pass_name in var2grads[var]:
+                                # multiple grads in single pass!
+                                raise ValueError("previous grads:" + str(var2grads[var][pass_name]))
+                            else:
+                                var2grads[var][pass_name] = i
+                        grads = [grad for grad, var in grads_and_vars]
+                        self._compute_gradient_ops[pass_name] = grads
+                self._var_gradient_index = var2grads
+                with tf.name_scope("apply_gradients"):
+                    var2inputs = {}
+                    inputs_vars = [ \
+                        (tf.placeholder(dtype=tf.float32, shape=var.shape.as_list()), var) \
+                        for var in self._var_gradient_index]
+                    self._apply_gradient_op = self.apply_gradients_op_(inputs_vars)
+                    self._apply_gradient_inputs = inputs_vars
 
     def compute_gradients_op_(self, updates):
         """
@@ -841,16 +896,16 @@ class OptimizerPlaceHolder(NetworkOptimizer):
     def update(self, updater_name=None, *args, **kwargs):
         return self._optimizer.update(updater_name, *args, **kwargs)
 
-    def optimize_step(self, sess):
-        return self._optimizer.optimize_step(sess)
-
-    def add_updater(self, updater, weight=1.0, name=None):
+    def add_updater(self, updater, weight=1.0, name=None, forward_pass=NetworkOptimizer.DEFAULT_PASS):
         if self._compiled:
             raise RuntimeError("no updater can be added after compile()!")
         if self._optimizer is not None:
-            self._optimizer.add_updater(updater, weight, name)
+            self._optimizer.add_updater(updater, weight, name, forward_pass)
         else:
-            self._updaters.append((updater, weight, name))
+            self._updaters.append((updater, weight, name, forward_pass))
+
+    def optimize_step(self, sess):
+        return self._optimizer.optimize_step(sess)
 
     def compile(self):
         if self._compiled:
@@ -870,7 +925,7 @@ class OptimizerPlaceHolder(NetworkOptimizer):
             raise RuntimeError("This placeholder already occupied by %s" % str(self._optimizer))
         self._optimizer = optimizer
         if len(self._updaters) > 0:
-            for updater, weight, name in self._updaters:
-                self._optimizer.add_updater(updater, weight, name)
+            for updater, weight, name, forward_pass in self._updaters:
+                self._optimizer.add_updater(updater, weight, name, forward_pass)
         if self._compiled:
             self._optimizer.compile()
