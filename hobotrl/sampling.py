@@ -391,3 +391,14 @@ class TrajectoryBatchUpdate(SamplerAgentMixin):
         """
         raise NotImplementedError()
 
+
+def to_transitions(trajectories):
+    transitions = {}
+    for trajectory in trajectories:
+        for field in trajectory:
+            if field not in transitions:
+                transitions[field] = []
+            transitions[field].append(trajectory[field])
+    for field in transitions:
+        transitions[field] = np.concatenate(transitions[field])
+    return transitions

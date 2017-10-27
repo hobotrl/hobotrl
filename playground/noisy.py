@@ -7,17 +7,24 @@ import logging
 import numpy as np
 import tensorflow as tf
 
-from hobotrl.utils import CappedLinear
 from hobotrl.sampling import *
 from hobotrl.network import *
 from hobotrl.tf_dependent.base import BaseDeepAgent
 from hobotrl.playback import MapPlayback
 from hobotrl.target_estimate import GAENStep
 from hobotrl.policy import OUNoise
+from hobotrl.policy import OUExplorationPolicy
+from hobotrl.tf_dependent.distribution import NormalDistribution
+from hobotrl.algorithms import ac as ac
 
 
 def norm_vector_scale(v, scale=1.0):
     return v / tf.norm(v, axis=-1, keep_dims=True) * scale
+
+
+def cosine(a, b, name=None):
+    cos = tf.div(tf.reduce_sum(a * b, axis=-1), (tf.norm(a, axis=-1) * tf.norm(b, axis=-1)), name=name)
+    return cos
 
 
 class TransitionPolicyGradientUpdater(NetworkUpdater):
@@ -55,11 +62,19 @@ class TransitionPolicyGradientUpdater(NetworkUpdater):
             net_se_next = net_se([self._input_next_state], "next_se")
             goal_fact = tf.stop_gradient(net_se_next["se"].op - net_se["se"].op)
             goal_predict = func_goal.output().op
+            self._goal_predict_norm = tf.norm(goal_predict, axis=-1)
             self._goal_fact = goal_fact
-            # cosine:
-            cos = tf.reduce_sum(goal_fact * goal_predict, axis=-1) / (tf.norm(goal_fact, axis=-1)*tf.norm(goal_predict, axis=-1))
+            # cosine transition policy loss
+            cos = cosine(goal_fact, goal_predict, name="cosine_goal")
+            self._manager_cos = cos
             self._manager_loss = tf.reduce_mean(cos * self._std_advantage)
-            self._op_loss = - self._manager_loss + self._v_loss
+            # regularization: achievable goals
+            # achievable_loss = tf.reduce_mean(Utils.clipped_square(
+            #     tf.reduce_mean(norm_vector_scale(goal_fact), axis=0)
+            #     - tf.reduce_mean(norm_vector_scale(goal_predict), axis=0)
+            # ))
+            achievable_loss = tf.reduce_mean(Utils.clipped_square(goal_fact - goal_predict))
+            self._op_loss = self._v_loss - self._manager_loss + 0.1 * achievable_loss
         self._update_operation = network.MinimizeLoss(self._op_loss,
                                                       var_list=func_goal.variables +
                                                                func_value.variables)
@@ -86,10 +101,12 @@ class TransitionPolicyGradientUpdater(NetworkUpdater):
             "advantage": self._advantage,
             "std_advantage": self._std_advantage,
             "target_value": target_value,
-            "v_loss": self._v_loss,
-            "manager_loss": self._manager_loss,
+            "loss_v": self._v_loss,
+            "loss_manager": self._manager_loss,
+            "los_cos": self._manager_cos,
             "goal_predict": self._func_goal.output().op,
             "goal_fact": self._goal_fact,
+            "goal_predict_norm": self._goal_predict_norm
         }
         return network.UpdateRun(feed_dict=feed_dict, fetch_dict=fetch_dict)
 
@@ -99,6 +116,7 @@ class DisentangleUpdater(NetworkUpdater):
         super(DisentangleUpdater, self).__init__()
         self._stddev = stddev
         state_shape = net_se.inputs[0].shape.as_list()
+        se_dimension = net_se["se"].op.shape.as_list()[-1]
         noise_shape = func.inputs[1].shape.as_list()
         with tf.name_scope("input"):
             self._input_state = tf.placeholder(dtype=tf.float32, shape=state_shape, name="St")
@@ -111,7 +129,7 @@ class DisentangleUpdater(NetworkUpdater):
             mean = tf.reduce_mean(self._noise_op, axis=0, keep_dims=True)
             mean_loss = tf.reduce_sum(Utils.clipped_square(mean))
             stddev = tf.reduce_mean(tf.sqrt(tf.reduce_sum(tf.square(self._noise_op - mean), axis=-1)))
-            stddev_loss = Utils.clipped_square(stddev - self._input_stddev)
+            stddev_loss = Utils.clipped_square(stddev - self._input_stddev * np.sqrt(se_dimension))
             self._op_loss = mean_loss + stddev_loss
             self._mean_op, self._stddev_op, self._mean_loss, self._stddev_loss = \
                 mean, stddev, mean_loss, stddev_loss
@@ -122,16 +140,12 @@ class DisentangleUpdater(NetworkUpdater):
         return self._update_operation
 
     def update(self, sess, batch, *args, **kwargs):
-        all_state, all_noise = [], []
-        for trajectory in batch:
-            state, noise = trajectory["state"], trajectory["noise"]
-            all_state.append(state)
-            all_noise.append(noise)
-        all_state = np.concatenate(all_state)
-        all_noise = np.concatenate(all_noise)
+        if isinstance(batch, list):
+            batch = to_transitions(batch)
+        state, noise = batch["state"], batch["noise"]
         feed_dict = {
-            self._input_state: all_state,
-            self._input_noise: all_noise,
+            self._input_state: state,
+            self._input_noise: noise,
             self._input_stddev: self._stddev
         }
         return network.UpdateRun(feed_dict=feed_dict, fetch_dict={"mean": self._mean_op,
@@ -145,16 +159,24 @@ class IKUpdater(NetworkUpdater):
     def __init__(self, net_se, net_ik):
         super(IKUpdater, self).__init__()
         state_shape = net_se.inputs[0].shape.as_list()
+        se_shape = net_se["se"].op.shape.as_list()
         action_shape = net_ik["action"].op.shape.as_list()
         with tf.name_scope("input"):
             self._input_state = tf.placeholder(dtype=tf.float32, shape=state_shape, name="St")
             self._input_next_state = tf.placeholder(dtype=tf.float32, shape=state_shape, name="St1")
             self._input_action = tf.placeholder(dtype=tf.float32, shape=action_shape, name="action")
+            self._input_goal = tf.placeholder(dtype=tf.float32, shape=se_shape, name="se")
         with tf.name_scope("ik"):
             net_se_off = net_se([self._input_state], "off_se")
             net_next_se_off = net_se([self._input_next_state], "off_next_se")
             goal = net_next_se_off["se"].op - net_se_off["se"].op
-            goal = norm_vector_scale(goal)
+            # goal = norm_vector_scale(goal)
+            norm_scale = tf.stop_gradient(
+                tf.reduce_mean(tf.norm(self._input_goal, axis=-1))
+                / tf.reduce_mean(tf.norm(goal, axis=-1))
+            )
+            goal = goal * norm_scale
+            self._goal_norm = tf.norm(goal, axis=-1)
             net_ik_off = net_ik([net_se_off["se"].op, goal], "off_ik")
             action_off = net_ik_off["action"].op
             action_loss = tf.reduce_mean(
@@ -162,6 +184,7 @@ class IKUpdater(NetworkUpdater):
                     Utils.clipped_square(self._input_action - action_off),
                     axis=-1)
             )
+            self._goal_complete_loss = cosine(self._input_goal, goal)
             self._goal_op, self._action_off_op, self._action_loss = goal, action_off, action_loss
         self._update_operation = network.MinimizeLoss(self._action_loss,
                                                       var_list=net_se.variables+net_ik.variables)
@@ -171,25 +194,23 @@ class IKUpdater(NetworkUpdater):
 
     def update(self, sess, batch, *args, **kwargs):
         # horizon c = 1
-        all_state, all_next_state, all_action = [], [], []
-        for trajectory in batch:
-            state, next_state, action = trajectory["state"], trajectory["next_state"], trajectory["action"]
-            all_state.append(state)
-            all_next_state.append(next_state)
-            all_action.append(action)
-        all_state = np.concatenate(all_state)
-        all_next_state = np.concatenate(all_next_state)
-        all_action = np.concatenate(all_action)
+        # batch = to_transitions(batch)
+        state, next_state, action, goal = \
+            batch["state"], batch["next_state"], batch["action"], batch["goal"]
+
         feed_dict = {
-            self._input_state: all_state,
-            self._input_next_state: all_next_state,
-            self._input_action: all_action
+            self._input_state: state,
+            self._input_next_state: next_state,
+            self._input_action: action,
+            self._input_goal: goal
         }
         return network.UpdateRun(feed_dict=feed_dict, fetch_dict={"goal": self._goal_op,
+                                                                  "goal_norm": self._goal_norm,
                                                                   "action_off": self._action_off_op,
-                                                                  "abs_all_action": np.abs(all_action),
-                                                                  "action_loss": self._action_loss,
-                                                                  "action": all_action})
+                                                                  "abs_all_action": np.abs(action),
+                                                                  "loss_action": self._action_loss,
+                                                                  "loss_completion": self._goal_complete_loss,
+                                                                  "action": action})
 
 
 class NoisySD(BaseDeepAgent):
@@ -199,6 +220,7 @@ class NoisySD(BaseDeepAgent):
                  f_ik,          # inverse kinetic           a  = IK(se, goal)
                  f_value,       # value network             v  = V(se)
                  f_model,       # transition model          goal[0] = TM(se[0], a[0])
+                 f_pi,          # worker_policy
                  state_shape,
                  action_dimension,
                  noise_dimension,
@@ -210,7 +232,9 @@ class NoisySD(BaseDeepAgent):
                  noise_stddev=1.0,
                  noise_explore_param=(0, 0.2, 0.2),
                  worker_explore_param=(0, 0.2, 0.2),
+                 worker_entropy=1e-2,
                  manager_horizon=32,
+                 manager_interval=4,
                  batch_size=32,
                  batch_horizon=4,
                  replay_size=1000,
@@ -222,6 +246,7 @@ class NoisySD(BaseDeepAgent):
             "f_ik": f_ik,  # inverse kinetic
             "f_value": f_value,  # value network
             "f_model": f_model,  # transition model
+            "f_pi": f_pi,  # actor_critic
             "state_shape": state_shape,
             "action_dimension": action_dimension,
             "noise_dimension": noise_dimension,
@@ -233,16 +258,18 @@ class NoisySD(BaseDeepAgent):
             "batch_size": batch_size,
             "replay_size": replay_size,
             "manager_horizon": manager_horizon,
+            "manager_interval": manager_interval,
             "batch_horizon": batch_horizon,
             "noise_stddev": noise_stddev,
             "noise_explore_param": noise_explore_param,
-            "worker_explore_param": worker_explore_param
+            "worker_explore_param": worker_explore_param,
+            "worker_entropy": worker_entropy,
         })
         super(NoisySD, self).__init__(*args, **kwargs)
 
-        def make_sample(state, action, reward, next_state, episode_done, noise, **kwargs):
+        def make_sample(state, action, reward, next_state, episode_done, noise, goal, goal_step, **kwargs):
             sample = default_make_sample(state, action, reward, next_state, episode_done)
-            sample.update({"noise": noise})
+            sample.update({"noise": noise, "goal": goal, "goal_step": goal_step})
             return sample
 
         self._on_data = TrajectoryOnSampler(MapPlayback(capacity=manager_horizon),
@@ -256,8 +283,14 @@ class NoisySD(BaseDeepAgent):
         if network_optimizer is None:
             network_optimizer = LocalOptimizer(tf.contrib.opt.NadamOptimizer(1e-4), max_gradient)
         self._optimizer = network_optimizer
-        func_goal = NetworkFunction(self.network["goal"])
+        func_goal = NetworkFunction(self.network["goal"], inputs=[self._input_state, self._input_noise])
         func_value = NetworkFunction(self.network["value"], [self._input_state])
+        self._func_manager = func_goal
+        self._func_worker = NetworkFunction(self.network["action"], inputs=[self._input_state, self.network["goal"].op])
+        self._func_worker_ac = NetworkFunction(outputs={
+            "mean": self.network["worker_mean"],
+            "stddev": self.network["worker_stddev"],
+        }, inputs=[self._input_state, self.network["goal"].op])
         self._func_action = NetworkFunction(self.network["action"])
         self._func_action_with_goals = NetworkFunction({"action": self.network["action"],
                                                         "sd": self.network["sd"],
@@ -266,26 +299,51 @@ class NoisySD(BaseDeepAgent):
                                                         "noise": self.network["noise"]})
         if target_estimator is None:
             target_estimator = GAENStep(func_value, discount_factor)
+
+        # algorithm hyperparameter
+        self._act_ac = True
+        self._explore_net = False
+
         self._optimizer.add_updater(TransitionPolicyGradientUpdater(func_goal,
                                                                     func_value,
                                                                     self.network.sub_net("se"),
                                                                     target_estimator), name="tpg")
-        self._optimizer.add_updater(DisentangleUpdater(
-            self.network.sub_net("se"),
-            self.network.sub_net("noise"),
-            stddev=noise_stddev,
-        ), name="disentangle")
-        self._optimizer.add_updater(IKUpdater(self.network.sub_net("se"), self.network.sub_net("ik")), name="ik")
+        if self._explore_net:
+            self._optimizer.add_updater(DisentangleUpdater(
+                self.network.sub_net("se"),
+                self.network.sub_net("noise"),
+                stddev=noise_stddev,
+            ), name="disentangle")
+        if not self._act_ac:
+            self._optimizer.add_updater(IKUpdater(self.network.sub_net("se"), self.network.sub_net("ik")), name="ik")
+        else:
+            # worker  pi
+            self._pi_function = network.NetworkFunction(
+                outputs={"mean": self.network["worker_mean"], "stddev": self.network["worker_stddev"]},
+                inputs=[self._input_state, self._input_noise]
+            )
+            self._pi_dist = NormalDistribution(self._pi_function, self._input_action)
+            self._worker_v_function = NetworkFunction(self.network["worker_value"], inputs=[self._input_state, self._input_noise])
+            self._func_se = NetworkFunction(self.network.sub_net("se")["se"])
+            self._func_ac_act = NetworkFunction(outputs={
+                "mean": self.network["worker_mean"],
+                "stddev": self.network["worker_stddev"],
+                "goal": self.network["goal"],
+            })
+            self._optimizer.add_updater(ac.ActorCriticUpdater(self._pi_dist, self._worker_v_function, target_estimator, worker_entropy), name="worker_ac")
+        self._optimizer.add_updater(L2(self.network), name="l2")
         self._optimizer.compile()
 
         # noise generator source for manager targets
         self._noise_source = OUNoise([noise_dimension], *noise_explore_param)
+        self._manager_interval = manager_interval
         self._last_input_noise = None
+        self._last_goal = None
+        self._last_goal_step = 0
         # noise source for worker actions
         self._noise_action = OUNoise([action_dimension], *worker_explore_param)
 
-
-    def init_network(self, f_se, f_manager, f_explorer, f_ik, f_value, f_model,
+    def init_network(self, f_se, f_manager, f_explorer, f_ik, f_value, f_model, f_pi,
                      state_shape, action_dimension, noise_dimension, discount_factor, *args, **kwargs):
         with tf.name_scope("inputs"):
             self._input_state = tf.placeholder(dtype=np.float32, shape=[None]+list(state_shape), name="input_state")
@@ -300,17 +358,26 @@ class NoisySD(BaseDeepAgent):
             manager_net = Network([encoded_state], f_manager, "manager")
             sd = manager_net["sd"].op
             norm_sd = norm_vector_scale(sd)
-            noise_generator_net = Network([encoded_state, self._input_noise], f_explorer, "noise")
+            noise_generator_net = Network([tf.stop_gradient(encoded_state), self._input_noise], f_explorer, "noise")
             sd_noise = noise_generator_net["noise"].op
-            goal = norm_sd + sd_noise
-            goal = norm_vector_scale(goal)
+            goal = sd + sd_noise
+            # goal = norm_vector_scale(goal)
             ik_net = Network([encoded_state, goal], f_ik, "ik")
             value_net = Network([encoded_state], f_value, "value")
+
+            worker_state = tf.concat((encoded_state, tf.stop_gradient(goal)), axis=-1, name="worker_state")
+            worker_value_net = Network([worker_state], f_value, "worker_value")
+            worker_pi_net = Network([worker_state], f_pi, "worker_pi")
+
             model_net = Network([encoded_state, input_action], f_model, "model")
             return {
                        "action": ik_net["action"].op,
                        "goal": goal, "sd": sd, "noise": sd_noise, "norm_sd": norm_sd,
-                       "value": value_net["value"].op
+                       "value": value_net["value"].op,
+                       "worker_value": worker_value_net["value"].op,
+                       "worker_mean": worker_pi_net["mean"].op,
+                       "worker_stddev": worker_pi_net["stddev"].op,
+                       "worker_state": worker_state,
                    }, \
                    {
                        "se": state_encoder_net,
@@ -318,7 +385,9 @@ class NoisySD(BaseDeepAgent):
                        "noise": noise_generator_net,
                        "ik": ik_net,
                        "value": value_net,
-                       "model": model_net
+                       "worker_value": worker_value_net,
+                       "worker_pi": worker_pi_net,
+                       "model": model_net,
                    }
             # on: manager, value, state encoder noise
             # off: noise, IK, model
@@ -327,35 +396,125 @@ class NoisySD(BaseDeepAgent):
 
     def reinforce_(self, state, action, reward, next_state, episode_done=False, **kwargs):
         super(NoisySD, self).reinforce_(state, action, reward, next_state, episode_done, **kwargs)
-        on_batch = self._on_data.step(state, action, reward, next_state, episode_done, noise=self._last_input_noise)
+        on_batch = self._on_data.step(state, action, reward, next_state, episode_done,
+                                      noise=self._last_input_noise, goal=self._last_goal, goal_step=self._last_goal_step)
         if on_batch is not None:
             off_batch = self._off_data.step(state, action, reward, next_state, episode_done,
-                                            force_sample=True, noise=self._last_input_noise)
+                                            force_sample=True,
+                                            noise=self._last_input_noise, goal=self._last_goal, goal_step=self._last_goal_step)
         else:
             off_batch = None
+        if episode_done:
+            # need to regenerate goal from manager
+            self._last_goal = None
 
         if on_batch is None or off_batch is None:
             return {}
         # on / off batch are synced
-        self._optimizer.update("tpg", self.sess, on_batch)
-        self._optimizer.update("disentangle", self.sess, off_batch)
-        self._optimizer.update("ik", self.sess, off_batch)
+        # pick samples according to goal_step
+        rows = MapPlayback.to_rowwise(on_batch)
+        manager_batch = []
+        manager_sample = None
+        for sample in rows:
+            if sample["goal_step"] == 1:
+                if manager_sample is not None:
+                    manager_sample["next_state"] = sample["state"]
+                    manager_batch.append(manager_sample)
+                manager_sample = sample
+            else:
+                if manager_sample is not None:
+                    manager_sample["reward"] += sample["reward"]
+                    manager_sample["next_state"] = sample["next_state"]
+                    if sample["episode_done"]:
+                        manager_sample["episode_done"] = True
+                        manager_batch.append(manager_sample)
+                        manager_sample = None
+        if manager_sample is not None:
+            manager_batch.append(manager_sample)
+        manager_batch = MapPlayback.to_columnwise(manager_batch)
+        self._optimizer.update("tpg", self.sess, manager_batch)
+        if self._explore_net:
+            self._optimizer.update("disentangle", self.sess, off_batch)
+        if not self._act_ac:
+            self._optimizer.update("ik", self.sess, on_batch)
+        else:
+            # recalculate reward for worker
+            goal_truth = self._func_se(on_batch["next_state"]) - self._func_se(on_batch["state"])
+            goal = on_batch["goal"]
+            org_reward = on_batch["reward"]
+            reward = np.sum(goal * goal_truth, axis=-1)
+            norm1 = np.linalg.norm(goal, axis=-1)
+            norm2 = np.linalg.norm(goal_truth, axis=-1)
+            reward = reward / (norm1 * norm2)
+            on_batch["reward"] = reward + org_reward
+            self._optimizer.update("worker_ac", self.sess, on_batch)
+        self._optimizer.update("l2", self.sess)
         info = self._optimizer.optimize_step(self.sess)
         return info
 
     def act(self, state, **kwargs):
-        n = self._noise_source.tick()
-        self._last_input_noise = n
-        # action = self._func_action(state[np.newaxis, :], n[np.newaxis, :])[0]
-        result = self._func_action_with_goals(state[np.newaxis, :], n[np.newaxis, :])
-        action, sd, norm_sd, goal, noise = result["action"][0], result["sd"][0], result["norm_sd"][0], result["goal"][0], result["noise"][0]
-        logging.warning("action:%s, sd:%s, norm_sd:%s, goal:%s, noise:%s", action, sd, norm_sd, goal, noise)
-        action_exp = self._noise_action.tick()
-        action = action + action_exp
-        action = np.clip(action, -1.0, 1.0)
-        logging.warning("actual action:%s, action_noise:%s", action, action_exp)
+        if not self._act_ac:
+            return self.act_ik(state, **kwargs)
+        else:
+            return self.act_ac(state, **kwargs)
+
+    # def act_ac(self, state, **kwargs):
+    #     n = self._noise_source.tick()
+    #     self._last_input_noise = n
+    #     result = self._func_ac_act(np.asarray(state)[np.newaxis, :], n[np.newaxis, :])
+    #     mean, stddev, goal = result["mean"], result["stddev"], result["goal"]
+    #     self._last_goal = goal[0]
+    #     action = self._pi_dist.do_sample(mean, stddev)[0]
+    #     logging.warning("mean:%s, stddev:%s, goal:%s, action:%s", mean, stddev, goal, action)
+    #     return action
+
+    def check_goal(self, state, **kwargs):
+        exploration = False
+        goal_shape = self._func_manager.output().op.shape.as_list()[1:]
+        if self._last_goal is None or self._last_goal_step >= self._manager_interval:
+            # need to regenerate goal
+            if self._explore_net:
+                # explore via generative network
+                n = self._noise_source.tick()
+            else:
+                n = np.zeros(self._noise_source._shape, dtype=np.float32)
+            if not self._explore_net and np.random.rand() < 0.2:
+                exploration = True
+                goal = np.random.normal(0.0, 1.0, goal_shape)
+            else:
+                exploration = False
+                goal = self._func_manager(state[np.newaxis, :], n[np.newaxis, :])[0]
+            self._last_goal = goal
+            self._last_input_noise = n
+            self._last_goal_step = 0
+        self._last_goal_step += 1
+
+    def act_ac(self, state, **kwargs):
+        self.check_goal(state, **kwargs)
+        result = self._func_worker_ac(np.asarray(state)[np.newaxis, :], self._last_goal[np.newaxis, :])
+        mean, stddev = result["mean"], result["stddev"]
+        action = self._pi_dist.do_sample(mean, stddev)[0]
+        logging.warning("step:%s, goal:%s, action:%s, mean:%s, stddev:%s", self._last_goal_step, self._last_goal, action, mean, stddev)
         return action
 
+    # def act_ik(self, state, **kwargs):
+    #     n = self._noise_source.tick()
+    #     self._last_input_noise = n
+    #     # action = self._func_action(state[np.newaxis, :], n[np.newaxis, :])[0]
+    #     result = self._func_action_with_goals(state[np.newaxis, :], n[np.newaxis, :])
+    #     action, sd, norm_sd, goal, noise = result["action"][0], result["sd"][0], result["norm_sd"][0], result["goal"][0], result["noise"][0]
+    #     self._last_goal = goal
+    #     logging.warning("action:%s, sd:%s, norm_sd:%s, goal:%s, noise:%s", action, sd, norm_sd, goal, noise)
+    #     action_exp = self._noise_action.tick()
+    #     action = OUExplorationPolicy.action_add(action, action_exp)
+    #     # action = np.clip(action, -0.99, 0.99)
+    #     logging.warning("actual action:%s, action_noise:%s", action, action_exp)
+    #     return action
 
-
-
+    def act_ik(self, state, **kwargs):
+        self.check_goal(state, **kwargs)
+        action = self._func_worker(state[np.newaxis, :], self._last_goal[np.newaxis, :])[0]
+        action_exp = self._noise_action.tick()
+        action_all = OUExplorationPolicy.action_add(action, action_exp)
+        logging.warning("step:%s, goal:%s, action_ik:%s, action_noise:%s", self._last_goal_step, self._last_goal, action, action_all)
+        return action_all

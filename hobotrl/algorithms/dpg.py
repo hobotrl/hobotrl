@@ -66,7 +66,7 @@ class DPGUpdater(network.NetworkUpdater):
                                                           batch["reward"], \
                                                           batch["next_state"], \
                                                           batch["episode_done"]
-        target_q = self._target_estimator.estimate(state, action, reward, next_state, episode_done)
+        target_q = self._target_estimator.estimate(**batch)
         current_action = self._actor(state)
         action_gradient = self._gradient_func(state, current_action)
         feed_dict = self._critic.input_dict(state, action)

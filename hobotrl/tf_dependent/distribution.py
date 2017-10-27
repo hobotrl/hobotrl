@@ -243,6 +243,9 @@ class NormalDistribution(NNDistribution):
         mean, stddev = self._sess.run(
             [self._op_mean, self._op_stddev],
             feed_dict=self.dist_input(inputs))
+        return self.do_sample(mean, stddev, support)
+
+    def do_sample(self, mean, stddev, support=(-1.0, 1.0)):
         sample_i = []
         stddev = np.sqrt(stddev)
         size = support[1] - support[0]
@@ -253,8 +256,8 @@ class NormalDistribution(NNDistribution):
             overflow = sample > support[1]
             underflow = sample < support[0]
             sample = sample * (1 - (overflow + underflow)) + \
-                     (np.abs((sample - support[1]) % (2*size) - size) - half) * overflow + \
-                     (half - np.abs((support[0] - sample) % (2*size) - size)) * underflow
+                     (np.abs((sample - support[1]) % (2 * size) - size) - half) * overflow + \
+                     (half - np.abs((support[0] - sample) % (2 * size) - size)) * underflow
             # sample = np.clip(sample, support[0], support[1])
             sample_i.append(sample)
         sample_i = np.asarray(sample_i)

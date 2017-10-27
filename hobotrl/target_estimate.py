@@ -21,7 +21,7 @@ class TargetEstimator(object):
         super(TargetEstimator, self).__init__()
         self._discount_factor = discount_factor
 
-    def estimate(self, state, action, reward, next_state, episode_done):
+    def estimate(self, state, action, reward, next_state, episode_done, **kwargs):
         """
         Estimate target state value (or action-value) from a batch of data.
 
