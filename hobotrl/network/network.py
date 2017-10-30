@@ -342,7 +342,8 @@ class NetworkFunction(Function):
         :param inputs: list of input symbol
                 if inputs is a list, this function can be called with *args;
                 if inputs is a dict, this function can be called with **kwargs.
-                if inputs is None, then inputs is derived from the input of symbol's network
+                if inputs is None, then inputs is derived from the input of symbol's network.
+                if len(inputs) == 1, then this function could be invoked with *args or **kwargs.
         :type inputs: list, dict
         """
         super(NetworkFunction, self).__init__()
@@ -435,7 +436,12 @@ class NetworkFunction(Function):
                     value = kwargs[k]
                     feed_dict[holder] = value
         else:
-            feed_dict = dict([(holder, value) for holder, value in zip(self._inputs, args)])
+            if len(self._inputs) == 1 and len(args) == 0:
+                for k in kwargs:
+                    feed_dict = {self._inputs[0]: kwargs[k]}
+                    break
+            else:
+                feed_dict = dict([(holder, value) for holder, value in zip(self._inputs, args)])
         return feed_dict
 
     def set_session(self, sess):
@@ -595,9 +601,9 @@ class BaseNetworkOptimizer(NetworkOptimizer):
         self._name_scope = tf.name_scope("NetworkOptimizer%s" % self._name)
         self._optimize_op = None
         self._compute_gradient_ops = {} # pass_name: op
-        self._var_gradient_index = None
+        self._var_gradient_index = None # var: {pass_name: grad_index}
         self._apply_gradient_op = None
-        self._apply_gradient_inputs = None
+        self._apply_gradient_inputs = None # list(input, var)
         self._update_runs = {}   # pass_name: [update_run]
         self._grad_clip = grad_clip
         self._default_optimizer = tf.train.AdamOptimizer()
@@ -656,16 +662,39 @@ class BaseNetworkOptimizer(NetworkOptimizer):
 
     def optimize_step(self, sess):
         if self._optimize_op is not None:
+            # single pass
             for pass_name in self._update_runs:
                 update_runs = self._update_runs[pass_name]
             result = self.run_(sess, self._optimize_op, update_runs)
         else:
+            result = {}
             # multiple pass
+            # bp passes to compute gradients
+            pass_grads = {}
             for pass_name in self._compute_gradient_ops:
                 update_runs = self._update_runs[pass_name]
                 compute_op = self._compute_gradient_ops[pass_name]
-                grads = self.run_(sess, compute_op, update_runs)
-                # todo
+                r, grads = self.run_(sess, compute_op, update_runs, return_op_result=True)
+                result.update(r)
+                # for name in r:
+                #     v = r[name]
+                #     logging.warning("[%s][%s]: min:%s, max:%s, avg:%s", pass_name, name, np.min(v), np.max(v), np.average(v))
+                # for i in range(len(compute_op)):
+                #     grad, grad_op = grads[i], compute_op[i]
+                #     logging.warning("pass:%s, grad:%s, shape:%s, %s, min:%s, max:%s, avg:%s", pass_name, grad_op, grad_op.shape, grad.shape, np.min(grad), np.max(grad), np.average(grad))
+                pass_grads[pass_name] = grads
+            # combine grads from different pass
+            grads = []
+            for grad_input, var in self._apply_gradient_inputs:
+                grad = 0.0
+                grad_indices = self._var_gradient_index[var]
+                for pass_name in grad_indices:
+                    pass_index = grad_indices[pass_name]
+                    grad = grad + pass_grads[pass_name][pass_index]
+                grads.append(grad)
+            # apply gradients
+            feed = dict([(i_v[0], grad) for i_v, grad in zip(self._apply_gradient_inputs, grads)])
+            sess.run(self._apply_gradient_op, feed_dict=feed)
         self._update_runs = {}
         return result
 
@@ -686,7 +715,7 @@ class BaseNetworkOptimizer(NetworkOptimizer):
                         update_list = updates[pass_name]
                         grads_and_vars = self.compute_gradients_op_(update_list)
                         grads_and_vars = filter(lambda x: x[0] is not None, grads_and_vars)
-                        for i in len(grads_and_vars):
+                        for i in range(len(grads_and_vars)):
                             grad, var = grads_and_vars[i]
                             if var not in var2grads:
                                 var2grads[var] = {}
@@ -771,7 +800,7 @@ class BaseNetworkOptimizer(NetworkOptimizer):
         else:
             return merged_grad_vars
 
-    def run_(self, sess, op, update_runs):
+    def run_(self, sess, op, update_runs, return_op_result=False):
         """
         actually run op with session, together with all fetch_dict defined in updates.
         :param sess:
@@ -806,7 +835,11 @@ class BaseNetworkOptimizer(NetworkOptimizer):
         else:
             result_dict = {}
         result_dict.update(prefetched)
-        return result_dict
+        if return_op_result:
+            op_result = results[len(fetch_ops):]
+            return result_dict, op_result
+        else:
+            return result_dict
 
     def apply_gradients_op_(self, grads_and_vars):
         raise NotImplementedError()
