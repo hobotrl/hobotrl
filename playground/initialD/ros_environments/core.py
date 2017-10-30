@@ -177,6 +177,9 @@ class DrivingSimulatorEnv(object):
         if done:
             self.is_env_done.set()
 
+        step_self_delay = time.time() - self.last_step_t
+        #print "[step()]: step self delay {}".format(step_self_delay)
+
         return next_state, reward, done, info
 
     def __step(self, action):
@@ -864,8 +867,8 @@ class DrivingSimulatorNode(multiprocessing.Process):
             for i in range(len(self.action_pubs)):
                 self.action_pubs[i].publish(actions[i])
         else:
-            print "[__take_action]: simulator up ({}).".format(
-                 self.is_receiving_obs.is_set())
+            # print "[__take_action]: simulator up ({}).".format(
+            #      self.is_receiving_obs.is_set())
             pass
 
     def __heartbeat_checker(self, data):
