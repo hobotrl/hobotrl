@@ -4,10 +4,12 @@ import time
 import sys
 import argparse
 import subprocess
+from multiprocessing import Event
 # data structure
 from collections import deque
 import numpy as np
 import matplotlib.pyplot as plt
+import pylab
 # ROS
 import rospy
 from rospy.timer import Timer
@@ -33,10 +35,13 @@ class ToyCarEpisodeMonitor(BaseEpisodeMonitor):
         self.process_list = list()
         self.process_names = [
             ['roslaunch', 'control', 'toycar_control.launch'],]
-
+        self.lock_autodrive_mode = Event()
+        self.lock_autodrive_mode.clear()
+        self.lock_perimeter = Event()
+        self.lock_perimeter.clear()
 
         # === Simulator states ===
-        self.control_status = None
+        self.last_autodrive_mode = None
         self.car_status = None
         self.car_x_ema = None
         self.car_y_ema = None
@@ -55,7 +60,7 @@ class ToyCarEpisodeMonitor(BaseEpisodeMonitor):
         self.sub_car_status = rospy.Subscriber(
             '/car/status', CarStatus, self._log_car_status)
         self.sub_car_control = rospy.Subscriber(
-            '/car/control', Control, self._set_control_status)
+            '/car/control', Control, self._log_autodrive_mode)
         self.sub_planning_traj = rospy.Subscriber(
             "/planning/trajectory", PlanningTraj, self._log_planning_status
         )
@@ -63,48 +68,52 @@ class ToyCarEpisodeMonitor(BaseEpisodeMonitor):
             rospy.Duration(0.1), self._check_perimeter)
         self.test_reward = Timer(
             rospy.Duration(0.1), lambda *args: self.pub_test_reward.publish(0))
+        self.control_mounter = Timer(
+            rospy.Duration(1.0), self._mount_control
+        )
 
     def _terminate(self):
         return
 
     def _start(self):
         """Restart nodes specified in a list of commands."""
+        self.lock_perimeter.set()
         for name in self.process_names:
             p = subprocess.Popen(name)
             self.process_list.append(p)
         print("[rviz_restart.restart]: started launch file!")
         print("[toycar_restart._start]: resetting toy car.")
-        # self.reset_to(
-        #     (10, 10, 1.0), max_speed=5, turning_radius=15, step_size=0.1,
-        #     max_length=100, retry=1)
-        self._mount_control()
-        # time.sleep(5)
+
         while True:
             ret = self.reset_to(
-                (128, 128, 1.0), max_speed=25, turning_radius=20, step_size=0.1,
-                max_length=500)
+                (128, 128, 1.0), max_speed=25, turning_radius=20, step_size=0.1, max_length=500)
             if ret:
                 break
             time.sleep(2.0)
-        self._unmount_control()
+
+            self._kill_launchfile()
+
         print("[toycar_restart._start]: toy car reset!.")
+
+        self.lock_perimeter.clear()
+
         return
 
-    def _mount_control(self):
-        if self.control_status is None or not self.control_status:
-            print "Control status is {}".format(self.control_status)
-            self.pub_keyboardmode.publish(ord(' '))
+    def _mount_control(self, data=None):
+        if self.last_autodrive_mode is not None:
+            if not self.last_autodrive_mode and not self.lock_autodrive_mode.is_set():
+                print "Control status is {}, setting True".format(self.last_autodrive_mode)
+                self.lock_autodrive_mode.set()
+                self.pub_keyboardmode.publish(ord(' '))
+                time.sleep(2.0)
+                self.lock_autodrive_mode.clear()
+        else:
+            print "Control status is None."
             time.sleep(5.0)
 
-    def _unmount_control(self):
-        time.sleep(5.0)
-        if self.control_status is None or self.control_status:
-            self.pub_keyboardmode.publish(ord(' '))
-            time.sleep(5.0)
-        self._kill_launchfile()
-
-    def _set_control_status(self, data):
-        self.control_status = data.autodrive_mode
+    def _log_autodrive_mode(self, data):
+        if data is not None:
+            self.last_autodrive_mode = data.autodrive_mode
 
     def _log_car_status(self, data):
         if data is not None:
@@ -132,7 +141,7 @@ class ToyCarEpisodeMonitor(BaseEpisodeMonitor):
         self.planning_status = True
 
     def _check_perimeter(self, data):
-        if self.car_status is not None:
+        if not self.lock_perimeter.is_set() and self.car_status is not None:
             x, y = self.car_status.position.x, self.car_status.position.y
             if x < 50 or x > 200 or y < 50 or y > 200:
                 print "[ToyCarEpisodeMonitor]: crossed fence at ({}, {})".format(
@@ -154,6 +163,7 @@ class ToyCarEpisodeMonitor(BaseEpisodeMonitor):
 
             cnt_plan = retry
             print "See figure?!!!!=============="
+            fig = plt.figure()
             plt.axis()
             plt.xlim((0, 255))
             plt.ylim((0, 255))
@@ -187,6 +197,7 @@ class ToyCarEpisodeMonitor(BaseEpisodeMonitor):
                     print goal,
                     print current_pose,
                     print current_speed
+            pylab.close()
 
             return True
 
