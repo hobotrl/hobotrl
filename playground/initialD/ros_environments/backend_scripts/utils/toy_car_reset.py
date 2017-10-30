@@ -55,6 +55,3 @@ def traj_plan_to_nav(plan_traj):
     header = Header(*[0, time, 'map'])
     return Path(**{'header': header, 'poses': poses})
 
-
-
-

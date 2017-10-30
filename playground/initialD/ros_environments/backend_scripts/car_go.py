@@ -20,9 +20,12 @@ class CarGo:
     def __init__(self, is_dummy_action=False):
         """Initialization."""
         self.is_dummy_action = is_dummy_action
-        self.ema_speed = 10.0
+        self.ema_speed = 0.0
+        self.speed = 0.0
         self.lock = Event()
         self.lock.clear()
+        self.lock1 = Event()
+        self.lock1.clear()
 
         # ROS related
         rospy.init_node('car_go')
@@ -30,7 +33,8 @@ class CarGo:
         rospy.Subscriber('/car/status', CarStatus, self.car_status_callback)
         self.start_pub = rospy.Publisher(
             '/autoDrive_KeyboardMode', Char, queue_size=10, latch=True)
-        self.car_go_loop = Timer(rospy.Duration(5.0), self.car_go_callback)
+        # self.car_go_loop = Timer(rospy.Duration(5.0), self.car_go_callback)
+        self.ema_speed_loop = Timer(rospy.Duration(0.1), self.ema_speed_callback)
 
     def car_control_callback(self, data):
         """Check if control is in autodrive mode, and activate if not.
@@ -52,12 +56,23 @@ class CarGo:
         :return:
         """
         if data is not None:
-            try:
-                self.ema_speed = 0.9*self.ema_speed + data.speed
-            except:
-                pass
+            self.speed = data.speed
 
-    def car_go_callback(self, data):
+    def ema_speed_callback(self, data):
+        try:
+            if self.speed > self.ema_speed:
+                self.ema_speed = self.speed
+            else:
+                self.ema_speed = 0.97 * self.ema_speed + 0.03 * self.speed
+        except:
+            pass
+        if self.ema_speed < 0.1 and not self.lock1.is_set():
+            self.lock1.set()
+            self.car_go_callback()
+            time.sleep(10.0)
+            self.lock1.clear()
+
+    def car_go_callback(self, data=None):
         """Start car if car is not moving.
         Control and Planning modules may die and cause car to stop in some
         situation. This is to prevent that.
@@ -66,21 +81,17 @@ class CarGo:
         :return:
         """
         if self.ema_speed < 0.1:
-            self.ema_speed = 10.0
-            for _ in range(5):
+            for _ in range(2):
                 if self.is_dummy_action:
                     print "[CarGo]: sending key '0' ..."
                     self.start_pub.publish(ord('0'))
                 else:
                     print "[CarGo]: sending key '1' ..."
                     self.start_pub.publish(ord('1'))
-                time.sleep(0.5)
+                time.sleep(0.1)
                 print "[CarGo]: sending key 'g' ..."
                 self.start_pub.publish(ord('g'))
-                time.sleep(0.5)
-
-
-        return
+                time.sleep(0.1)
 
     def spin(self):
         rospy.spin()

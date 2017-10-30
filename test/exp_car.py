@@ -11,6 +11,7 @@ import cv2
 import matplotlib.colors as colors
 from exp_algorithms import *
 import hobotrl.environments as envs
+from hobotrl.tf_dependent.ops import atanh
 
 
 class CarDiscreteWrapper(gym.Wrapper):
@@ -236,7 +237,8 @@ class A3CCarContinuous(A3CExperiment):
                                                      activation_out=None,
                                                      l2=l2,
                                                      var_scope="stddev")
-                stddev = 4.0 * tf.nn.sigmoid(stddev / 4.0)
+                # stddev = 4.0 * tf.nn.sigmoid(stddev / 4.0)
+                stddev = 2.0 * (1.0 + atanh(stddev / 4.0))
                 return {"v": v, "mean": mean, "stddev": stddev}
             f_create_net = create_ac_car
         super(A3CCarContinuous, self).__init__(env, f_create_net, episode_n, learning_rate, discount_factor, entropy,
@@ -280,6 +282,36 @@ class A3CCarDiscrete2(A3CExperiment):
         super(A3CCarDiscrete2, self).__init__(env, f_create_net, episode_n, learning_rate, discount_factor, entropy,
                                               batch_size)
 Experiment.register(A3CCarDiscrete2, "continuous A3C for CarRacing")
+
+
+class A3CToyCarDiscrete(A3CCarDiscrete2):
+    def __init__(self, env=None, f_create_net=None, episode_n=10000, learning_rate=5e-5, discount_factor=0.95,
+                 entropy=hrl.utils.CappedLinear(1e6, 1e-1, 5e-3),
+                 batch_size=32):
+        if env is None:
+            env = hrl.envs.ToyCarEnv()
+            env = wrap_car(env, 5, 5)
+            # gym.wrappers.Monitor(env, "./log/video", video_callable=lambda idx: True, force=True)
+        super(A3CToyCarDiscrete, self).__init__(env, f_create_net, episode_n, learning_rate, discount_factor, entropy,
+                                              batch_size)
+Experiment.register(A3CToyCarDiscrete, "Discrete A3C for Toy Car Env")
+
+
+class A3CToyCarContinuous(A3CCarContinuous):
+    def __init__(self, env=None, f_create_net=None, episode_n=10000, learning_rate=5e-5, discount_factor=0.95,
+                 entropy=hrl.utils.CappedLinear(1e6, 2e-4, 5e-5),
+                 batch_size=32):
+        if env is None:
+            env = hrl.envs.ToyCarEnv()
+            env = CarContinuousWrapper(env)
+            env = envs.MaxAndSkipEnv(env, skip=2, max_len=1)
+            # env = ProcessFrame96H(env)
+            env = envs.FrameStack(env, 4)
+            env = envs.ScaledRewards(env, 0.1)
+            env = envs.ScaledFloatFrame(env)
+        super(A3CToyCarContinuous, self).__init__(env, f_create_net, episode_n, learning_rate, discount_factor, entropy,
+                                              batch_size)
+Experiment.register(A3CToyCarContinuous, "Continuous A3C for Toy Car Env")
 
 
 class DDPGCar(DPGExperiment):
