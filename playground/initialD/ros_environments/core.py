@@ -142,9 +142,9 @@ class DrivingSimulatorEnv(object):
                 time.sleep(self.STEP_DELAY_TARGET-delay)
             else:
                 pass
-                #print ("[step()]: delay {:.3f} >= target {:.3f}, if happen "
-                #       "regularly please conconsider increasing target.").format(
-                #           delay, self.STEP_DELAY_TARGET)
+                print ("[step()]: delay {:.3f} >= target {:.3f}, if happen "
+                       "regularly please conconsider increasing target.").format(
+                           delay, self.STEP_DELAY_TARGET)
         self.last_step_t = time.time()
 
         # build action ROS msg

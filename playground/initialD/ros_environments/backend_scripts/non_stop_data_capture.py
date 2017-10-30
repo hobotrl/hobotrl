@@ -152,18 +152,27 @@ if __name__ == '__main__':
     # print files
     # print files
     ep_counter = max(files)+1 if len(files)!=0 else 1
-    video_every = 10
-    n_latest = 10
+    # video_every = 1
+    # n_latest = 10
     locked = False
     time_elapsed = 1e4*1e9  # 1e4 seconds 
     new_ep = True
 
     parser = argparse.ArgumentParser()
     parser.add_argument("n_ep", help="Num of episode to recored", type=int)
+    parser.add_argument("video_every", nargs="?",
+                        help="Record video every # of episodes",
+                        type=int, default=1)
+    parser.add_argument("n_latest", nargs="?",
+                        help=("Num of latest video files to process on a "
+                              "rolling basis"),
+                        type=int, default=10)
     args = parser.parse_args()
     print "[VideoRecorder]: Parsed n_ep is {}".format(args.n_ep)
     if args.n_ep > 0:
         ep_counter = args.n_ep
+    video_every = args.video_every
+    n_latest = args.n_latest
 
     try:
         print "[VideoRecorder]: recording episode {}".format(ep_counter)
