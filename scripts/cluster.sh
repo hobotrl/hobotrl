@@ -8,6 +8,12 @@ print_help() {
 	echo "extra_args will be passed directly to experiment"
 }
 
+log_dir=""
+start_port=""
+exp_file=""
+exp_name=""
+worker_n=""
+device_n=""
 
 POSITIONAL=()
 
@@ -77,7 +83,13 @@ end_i=$(expr $worker_n - 1)
 echo "job $exp_name with worker: [ 0 .. $end_i ]"
 for i in $(seq 0 $end_i)
 do
-	device=$(expr $i % $device_n)
+    if [[ "$device_n" = "0" ]]; then
+        # without gpu
+        device=""
+    else
+	    device=$(expr $i % $device_n)
+    fi
+
     CUDA_VISIBLE_DEVICES=$device python $exp_file run --name $exp_name --cluster "$cluster" --job worker --index $i --logdir $log_dir $extra_arg > $log_dir/worker.$i.txt 2>&1 &
 done
 
