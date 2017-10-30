@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import sys
+import logging
 import tensorflow as tf
 import gym
 import argparse
@@ -35,6 +36,7 @@ class Experiment(object):
             args.logdir = args.name
         experiment_class = Experiment.experiments[name]
         experiment_class().run(args)
+        logging.warning("Experiment %s end.", name)
         pass
 
     @staticmethod
@@ -55,6 +57,7 @@ class Experiment(object):
         parser.add_argument("--job", default="worker")
         parser.add_argument("--index", default="0")
         parser.add_argument("--render_interval", default="-1")
+        parser.add_argument("--render_once", default="true")
         parser.add_argument("--episode_n", default="1000")
         parser.add_argument("--cluster",
                             default="{'ps':['localhost:2222'], " \
@@ -65,6 +68,7 @@ class Experiment(object):
         args.index = int(args.index)
         args.render_interval = int(args.render_interval)
         args.render_interval = sys.maxint if args.render_interval < 0 else args.render_interval
+        args.render_once = args.render_once == 'true'
         args.episode_n = int(args.episode_n)
         if args.operation == "list":
             print Experiment.list()

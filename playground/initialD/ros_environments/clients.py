@@ -40,6 +40,8 @@ class DrivingSimulatorEnvClient(object):
             raise Exception('EnvClient: msg_type is not exit.')
         return
 
+    def close(self):
+        self.exit()
 
 class Driving1Env(DrivingSimulatorEnvClient):
     def __init__(self, address, port, **kwargs):
