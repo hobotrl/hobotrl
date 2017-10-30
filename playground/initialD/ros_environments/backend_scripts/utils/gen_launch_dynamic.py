@@ -185,7 +185,8 @@ def lane_sign(cur, nxt, dict_junc, dict_pred, dict_succ):
     return sign_l
 
 def gen_single_car(
-    list_route, dict_junc, dict_pred, dict_succ, dict_length, dict_width):
+    list_route, dict_junc, dict_pred, dict_succ, dict_length, dict_width,
+    v_range=None, period_range=None):
     """Randomly generate params for a single car.
 
     :param list_route: list of candidate route. Each is list of route ids.
@@ -194,9 +195,11 @@ def gen_single_car(
     :param dict_succ: map link id to list of successor road ids.
     :param dict_length: map road id to road length (meters).
     :param dict_width: map road id to offset of lanes (meters).
+    :param v_range:
+    :param period_range:
     """
     # randomly select a route
-    route_ids = np.random.choice(list_route)
+    route_ids = list_route[np.random.choice(range(len(list_route)))]
     cur, nxt = route_ids[0], route_ids[1]
 
     # randomly select lane offset from current direction
@@ -205,7 +208,9 @@ def gen_single_car(
     pos_l = np.random.choice(filter(lambda x: x*sign_l>=0, dict_width[cur]))
 
     # randomly set speed
-    pos_v = np.random.rand()*5.0 + 5.0  # Uniform [5.0, 10.0)
+    if v_range is None:
+        v_range = [5, 10]
+    pos_v = v_range[0] + np.random.rand() * (v_range[1] - v_range[0])
 
     # uniformly randomly select an offset on the 1st road segment.
     pos_s = np.random.rand()*dict_length[cur]
@@ -213,7 +218,11 @@ def gen_single_car(
     # set life
     life_tappear = 0.0
     life_duration = 4.0e5
-    life_period = np.random.rand()*30.0 + 30.0  # Uniform [30.0, 60)
+    if period_range is None:
+        period_range = (30, 60)
+    life_period = period_range[0] + \
+                  np.random.rand() * (period_range[1] - period_range[0])
+
 
     return ((route_ids,), (pos_s, pos_l, pos_v),
             (life_tappear, life_duration, life_period))

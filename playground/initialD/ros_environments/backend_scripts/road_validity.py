@@ -49,6 +49,8 @@ class RoadValidity(object):
             '/rl/current_road_validity', Int16, queue_size=10)
         self.pub_road_change = rospy.Publisher(
             '/rl/current_road_change', Bool, queue_size=10, latch=True)
+        self.pub_intersection = rospy.Publisher(
+            '/rl/entering_intersection', Bool, queue_size=10, latch=True)
         Timer(rospy.Duration(1/20.0), self.pub_current_validity)
 
     def update_validity(self, data):
@@ -61,13 +63,16 @@ class RoadValidity(object):
     def update_current_road(self, data):
         if data.data != self.current_road:
             self.pub_road_change.publish(True)
+            self.pub_intersection.publish(data.data == 'L')
             self.current_road = data.data
             self.cnt = 10
         elif self.cnt > 0:
             self.pub_road_change.publish(True)
+            self.pub_intersection.publish(self.current_road[0]=='L')
             self.cnt -= 1
         else:
             self.pub_road_change.publish(False)
+            self.pub_intersection.publish(False)
 
     def pub_current_validity(self, data):
         if self.current_road is None or self.current_road[0] != 'L':
