@@ -34,9 +34,13 @@ def func_compile_reward(rewards):
 
 def func_compile_obs(obss):
     obs1 = obss[-1][0]
+    obs2 = obss[-2][0]
+    obs3 = obss[-3][0]
     print obss[-1][1]
-    print obs1.shape
-    return obs1
+    # cast as uint8 is important otherwise float64
+    obs = ((obs1 + obs2)/2).astype('uint8')
+    # print obs.shape
+    return obs.copy()
 
 ALL_ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0,)]
 AGENT_ACTIONS = ALL_ACTIONS[:3]
@@ -45,24 +49,30 @@ def func_compile_action(action):
     return ALL_ACTIONS[action]
 
 def func_compile_exp_agent(state, action, rewards, next_state, done):
-    global momentum_valid
+    global cnt_skip
+    global n_skip
     global momentum_opp
     global momentum_ped
+    global ema_dist
     global ema_speed
+    global last_road_change
+    global road_invalid_at_enter
 
     # Compile reward
     rewards = np.mean(np.array(rewards), axis=0)
     rewards = rewards.tolist()
     rewards.append(np.logical_or(action==1, action==2))  # action == turn?
-    print (' '*10+'R: ['+'{:4.2f} '*len(rewards)+']').format(*rewards),
+    print (' '*5+'R: ['+'{:4.2f} '*len(rewards)+']').format(*rewards),
 
-    if momentum_valid>0 or (rewards[1]>0.01 and rewards[0]>=0.5):  # road change
-        momentum_valid += 1
-    else:
-        momentum_valid = 0
-    momentum_valid = min(momentum_valid, 30)
+    road_change = rewards[1] > 0.01  # road changed
+    road_invalid = rewards[0] > 0.01  # any yellow or red
+    if road_change and not last_road_change:
+        road_invalid_at_enter = road_invalid
+    last_road_change = road_change
+
     speed = rewards[2]
     ema_speed = 0.5*ema_speed + 0.5*speed
+    ema_dist = 0.5 * ema_dist + 0.5 * rewards[6]
     momentum_opp = (rewards[3]<0.5)*(momentum_opp+(1-rewards[3]))
     momentum_opp = min(momentum_opp, 20)
     momentum_ped = (rewards[4]>0.5)*(momentum_ped+rewards[4])
@@ -70,7 +80,7 @@ def func_compile_exp_agent(state, action, rewards, next_state, done):
     obs_risk = rewards[5]
 
     # road_validity
-    rewards[0] *= -600*(momentum_valid>0.0)
+    rewards[0] = -100*(road_change and ema_dist>1.0)*(n_skip-cnt_skip)  # direct penalty
     # velocity
     rewards[2] *= 10
     # opposite
@@ -79,15 +89,21 @@ def func_compile_exp_agent(state, action, rewards, next_state, done):
     rewards[4] = -40*(0.9+0.1*momentum_ped)*(momentum_ped>1.0)
     # obs factor
     rewards[5] *= -100.0
+    # dist
+    rewards[6] *= 0.0
     # steering
-    rewards[6] *= -40.0
+    rewards[-1] *= -40.0
     reward = np.sum(rewards)/100.0
-    print '{:6.4f}, {:6.4f}, {:6.4f}'.format(
-        momentum_valid, momentum_opp, momentum_ped),
-    print ': {:7.4f}'.format(reward)
+    print '{:4.2f}, {:4.2f}, {:4.2f}, {:4.2f}'.format(
+        road_invalid_at_enter, momentum_opp, momentum_ped, ema_dist),
+    print ': {:5.2f}'.format(reward)
 
-    if momentum_valid>00:
+    if road_invalid_at_enter:
         print "[Early stopping] entered invalid road."
+        # done = True
+
+    if road_change and ema_dist > 1.0:
+        print "[Early stopping] turned onto intersection."
         done = True
 
     if obs_risk > 1.0:
@@ -107,9 +123,10 @@ def gen_backend_cmds():
          ws_path+'src/Map/src/map_api/data/honda_wider.xodr',
          utils_path+'road_segment_info.txt'],
         # Generate obs and launch file
-        ['python', utils_path+'gen_launch_dynamic.py',
+        ['python', utils_path+'gen_launch_dynamic_v1.py',
          utils_path+'road_segment_info.txt', ws_path,
-         utils_path+'honda_dynamic_obs_template.launch', 30],
+         utils_path+'honda_dynamic_obs_template.launch',
+         32, '--random_n_obs'],
         # start roscore
         ['roscore'],
         # start reward function script
@@ -134,16 +151,17 @@ env = DrivingSimulatorEnv(
     ],
     defs_reward=[
         ('/rl/current_road_validity', 'std_msgs.msg.Int16'),
-        ('/rl/current_road_change', 'std_msgs.msg.Bool'),
+        ('/rl/entering_intersection', 'std_msgs.msg.Bool'),
         ('/rl/car_velocity', 'std_msgs.msg.Float32'),
         ('/rl/last_on_opposite_path', 'std_msgs.msg.Int16'),
         ('/rl/on_pedestrian', 'std_msgs.msg.Bool'),
         ('/rl/obs_factor', 'std_msgs.msg.Float32'),
+        ('/rl/distance_to_longestpath', 'std_msgs.msg.Float32'),
     ],
     defs_action=[('/autoDrive_KeyboardMode', 'std_msgs.msg.Char')],
     rate_action=10.0,
-    window_sizes={'obs': 2, 'reward': 3},
-    buffer_sizes={'obs': 2, 'reward': 3},
+    window_sizes={'obs': 3, 'reward': 3},
+    buffer_sizes={'obs': 3, 'reward': 3},
     func_compile_obs=func_compile_obs,
     func_compile_reward=func_compile_reward,
     func_compile_action=func_compile_action,
@@ -246,6 +264,7 @@ def log_info(update_info):
     global n_skip
     global t_learn
     global t_infer
+    global t_step
     summary_proto = tf.Summary()
     # modify info dict keys
     k_del = []
@@ -313,6 +332,10 @@ def log_info(update_info):
         and update_info['td_loss'] is not None else 0
     cum_reward += reward
 
+    summary_proto.value.add(tag='t_infer', simple_value=t_infer)
+    summary_proto.value.add(tag='t_learn', simple_value=t_learn)
+    summary_proto.value.add(tag='t_step', simple_value=t_step)
+
     if done:
         print ("Episode {} done in {} steps, reward is {}, "
                "average td_loss is {}. No exploration {}").format(
@@ -338,7 +361,7 @@ def log_info(update_info):
 
 n_interactive = 0
 n_skip = 6
-n_additional_learn = 4
+n_additional_learn = 1
 n_ep = 0  # last ep in the last run, if restart use 0
 n_test = 0  # num of episode per test run (no exploration)
 
@@ -368,10 +391,12 @@ try:
             cum_td_loss = 0.0
             cum_reward = 0.0
 
-            momentum_valid = 0.0
+            last_road_change = False
+            road_invalid_at_enter = False
             momentum_opp = 0.0
             momentum_ped = 0.0
             ema_speed = 10.0
+            ema_dist = 0.0
 
             state  = env.reset()
             action = agent.act(state, exploration=not exploration_off)
@@ -379,16 +404,18 @@ try:
 
             while True:
                 n_steps += 1
+                cnt_skip -= 1
+                update_info = {}
+                t_learn, t_infer, t_step = 0, 0, 0
+
                 # Env step
+                t = time.time()
                 next_state, reward, done, info = env.step(skip_action)
+                t_step = time.time() - t
                 state, action, reward, next_state, done = \
                         func_compile_exp_agent(state, action, reward, next_state, done)
                 flag_tail = done
                 skip_reward += reward
-
-                cnt_skip -= 1
-                update_info = {}
-                t_learn, t_infer = 0, 0
 
                 if cnt_skip==0 or done:
                     # average rewards during skipping
