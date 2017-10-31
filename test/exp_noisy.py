@@ -28,6 +28,7 @@ class NoisyExperiment(Experiment):
                  noise_dimension=2,
                  se_dimension=4,
                  manager_horizon=32,
+                 manager_interval=2,
                  batch_size=32,
                  batch_horizon=4,
                  noise_stddev=1.0,
@@ -40,12 +41,12 @@ class NoisyExperiment(Experiment):
         super(NoisyExperiment, self).__init__()
         self._env, self._f_se, self._f_manager, self._f_explorer, self._f_ik, self._f_value, self._f_model, self._f_pi, \
             self._episode_n, self._discount_factor, \
-            self._noise_dimension, self._se_dimension, self._manager_horizon, self._batch_size, self._batch_horizon, \
+            self._noise_dimension, self._se_dimension, self._manager_horizon, self._manager_interval, self._batch_size, self._batch_horizon, \
             self._noise_stddev, self._noise_explore_param, self._worker_explore_param, \
             self._network_optimizer_ctor, self._replay_size, self._worker_entropy = \
             env, f_se, f_manager, f_explorer, f_ik, f_value, f_model, f_pi, \
             episode_n, discount_factor, \
-            noise_dimension, se_dimension, manager_horizon, batch_size, batch_horizon, \
+            noise_dimension, se_dimension, manager_horizon, manager_interval, batch_size, batch_horizon, \
             noise_stddev, noise_explore_param, worker_explore_param, \
             network_optimizer_ctor, replay_size, worker_entropy
 
@@ -76,6 +77,7 @@ class NoisyExperiment(Experiment):
             worker_explore_param=self._worker_explore_param,
             worker_entropy=self._worker_entropy,
             manager_horizon=self._manager_horizon,
+            manager_interval=self._manager_interval,
             batch_size=self._batch_size,
             batch_horizon=self._batch_horizon,
             replay_size=self._replay_size,
@@ -95,13 +97,13 @@ class NoisyExperiment(Experiment):
 class NoisyPendulum(NoisyExperiment):
     def __init__(self, env=None, se_dimension=4, f_se=None, f_manager=None, f_explorer=None, f_ik=None, f_value=None, f_model=None, f_pi=None,
                  episode_n=2000, discount_factor=0.9,
-                 noise_dimension=2, manager_horizon=40, batch_size=40, batch_horizon=4,
+                 noise_dimension=2, manager_horizon=8, manager_interval=1, batch_size=8, batch_horizon=4,
                  noise_stddev=hrl.utils.CappedLinear(1e5, 0.5, 0.05),
                  # noise_stddev=0.3,
                  noise_explore_param=(0, 0.2, 0.2),
                  # worker_explore_param=(0, 0.2, 0.2),
                  worker_explore_param=(0, 0.2, hrl.utils.CappedLinear(1e5, 0.5, 0.02)),
-                 worker_entropy=1e-4,
+                 worker_entropy=1e-2,
                  network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3),
                                                                            grad_clip=10.0),
                  replay_size=1000):
@@ -177,7 +179,7 @@ class NoisyPendulum(NoisyExperiment):
 
         super(NoisyPendulum, self).__init__(env, f_se, f_manager, f_explorer, f_ik, f_value, f_model, f_pi,
                                             episode_n, discount_factor,
-                                            noise_dimension, se_dimension, manager_horizon, batch_size, batch_horizon,
+                                            noise_dimension, se_dimension, manager_horizon, manager_interval, batch_size, batch_horizon,
                                             noise_stddev, noise_explore_param, worker_explore_param, worker_entropy,
                                             network_optimizer_ctor, replay_size)
 Experiment.register(NoisyPendulum, "Noisy explore for pendulum")
