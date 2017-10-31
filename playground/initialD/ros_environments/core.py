@@ -857,7 +857,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
             self.q_action.put_nowait(actions)
             self.q_action.task_done()
         except:
-            # print "[__take_action]: get action from queue failed."
+            print "[__take_action]: get action from queue failed."
             return
 
         if self.is_receiving_obs.is_set():

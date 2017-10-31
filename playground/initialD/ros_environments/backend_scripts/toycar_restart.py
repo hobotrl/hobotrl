@@ -1,12 +1,10 @@
 # system
 import signal
 import time
-import sys
 import argparse
 import subprocess
 from multiprocessing import Event
-# data structure
-from collections import deque
+# data structures
 import numpy as np
 import matplotlib.pyplot as plt
 import pylab
@@ -25,7 +23,7 @@ from autodrive_msgs.msg import Control
 
 
 class ToyCarEpisodeMonitor(BaseEpisodeMonitor):
-    def __init__(self):
+    def __init__(self, reset_to, reset_speed, reset_radius, fences):
         """Initialization.
         """
         # === Init super class ===
@@ -34,11 +32,18 @@ class ToyCarEpisodeMonitor(BaseEpisodeMonitor):
         # === Subprocess related ===
         self.process_list = list()
         self.process_names = [
-            ['roslaunch', 'control', 'toycar_control.launch'],]
-        self.lock_autodrive_mode = Event()
+            ['roslaunch', 'control', 'toycar_control.launch'],  # launch control node when resetting
+        ]
+        self.lock_autodrive_mode = Event()  # lock sendding '\32'
         self.lock_autodrive_mode.clear()
-        self.lock_perimeter = Event()
-        self.lock_perimeter.clear()
+        self.lock_perimeter = Event()  # lock checking perimeter
+        self.lock_perimeter.set()
+
+        # === Reset config ===
+        self.param_reset_to = reset_to
+        self.param_reset_speed = reset_speed
+        self.param_reset_radius = reset_radius
+        self.param_fences = fences
 
         # === Simulator states ===
         self.last_autodrive_mode = None
@@ -46,62 +51,86 @@ class ToyCarEpisodeMonitor(BaseEpisodeMonitor):
         self.car_x_ema = None
         self.car_y_ema = None
         self.car_hdg_ema = None
-        self.planning_status = None
 
-        # additional publishers and subscribers
+        # == Additional publishers and subscribers ===
         self.pub_traj_plan = rospy.Publisher(
-            "/planning/trajectory", PlanningTraj, queue_size=1, latch=True)
+            "/planning/trajectory", PlanningTraj, queue_size=1, latch=True
+        )
         self.pub_traj_viz = rospy.Publisher(
-            "/visualization/trajectory", Path, queue_size=1, latch=True)
+            "/visualization/trajectory", Path, queue_size=1, latch=True
+        )
         self.pub_keyboardmode = rospy.Publisher(
-            '/autoDrive_KeyboardMode', Char, queue_size=1, latch=True)
-        self.pub_test_reward = rospy.Publisher(
-            '/rl/toycar_test_reward', Int8, queue_size=1)
+            '/autoDrive_KeyboardMode', Char, queue_size=1, latch=True
+        )
+        self.pub_control = rospy.Publisher(
+            '/car/control', Control, queue_size=1, latch=True
+        )
         self.sub_car_status = rospy.Subscriber(
-            '/car/status', CarStatus, self._log_car_status)
+            '/car/status', CarStatus, self._log_car_status
+        )
         self.sub_car_control = rospy.Subscriber(
-            '/car/control', Control, self._log_autodrive_mode)
-        self.sub_planning_traj = rospy.Subscriber(
-            "/planning/trajectory", PlanningTraj, self._log_planning_status
+            '/car/control', Control, self._log_autodrive_mode
         )
         self.perimeter_checker = Timer(
-            rospy.Duration(0.1), self._check_perimeter)
-        self.test_reward = Timer(
-            rospy.Duration(0.1), lambda *args: self.pub_test_reward.publish(0))
+            rospy.Duration(0.1), self._check_perimeter
+        )
         self.control_mounter = Timer(
             rospy.Duration(1.0), self._mount_control
         )
 
     def _terminate(self):
+        """Terminate this ToyCar episode."""
+        for _ in range(5):
+            self.pub_control.publish(
+                Control(**{'throttle': 0.0})
+            )
+            time.sleep(0.1)
+
+        # stop checking perimeter to avoid calling `self.terminate()` for multiple times.
+        self.lock_perimeter.set()
+
         return
 
     def _start(self):
-        """Restart nodes specified in a list of commands."""
-        self.lock_perimeter.set()
+        """Start a ToyCar episode.
+        Resetting toy car to a pre-defined location. Use Dubins path planning and Hobot control node.
+        """
+        self.lock_perimeter.set()  # don't check perimeter while resetting.
+
         for name in self.process_names:
             p = subprocess.Popen(name)
             self.process_list.append(p)
-        print("[rviz_restart.restart]: started launch file!")
-        print("[toycar_restart._start]: resetting toy car.")
+        print("[toycar_restart._start()]: started Hobot control node!")
 
+        print("[toycar_restart._start()]: resetting toy car.")
         while True:
             ret = self.reset_to(
-                (128, 128, 1.0), max_speed=25, turning_radius=20, step_size=0.1, max_length=500)
+                self.param_reset_to,
+                max_speed=self.param_reset_speed,
+                turning_radius=self.param_reset_radius,
+                step_size=0.1, max_length=500
+            )
             if ret:
+                for _ in range(5):
+                    self.pub_control.publish(
+                        Control(**{'throttle': 0.0})
+                    )
+                    time.sleep(0.1)
                 break
             time.sleep(2.0)
-
-            self._kill_launchfile()
-
-        print("[toycar_restart._start]: toy car reset!.")
+        self._kill_launchfile()
+        print("[toycar_restart._start()]: toy car reset finished!.")
 
         self.lock_perimeter.clear()
 
         return
 
     def _mount_control(self, data=None):
+        """Active control node."""
         if self.last_autodrive_mode is not None:
-            if not self.last_autodrive_mode and not self.lock_autodrive_mode.is_set():
+            if not self.last_autodrive_mode and \
+               not self.lock_autodrive_mode.is_set() and \
+               self.lock_perimeter.is_set():
                 print "Control status is {}, setting True".format(self.last_autodrive_mode)
                 self.lock_autodrive_mode.set()
                 self.pub_keyboardmode.publish(ord(' '))
@@ -109,7 +138,6 @@ class ToyCarEpisodeMonitor(BaseEpisodeMonitor):
                 self.lock_autodrive_mode.clear()
         else:
             print "Control status is None."
-            time.sleep(5.0)
 
     def _log_autodrive_mode(self, data):
         if data is not None:
@@ -137,13 +165,14 @@ class ToyCarEpisodeMonitor(BaseEpisodeMonitor):
             else:
                 self.car_y_ema = self.car_status.position.y
 
-    def _log_planning_status(self, data):
-        self.planning_status = True
-
     def _check_perimeter(self, data):
         if not self.lock_perimeter.is_set() and self.car_status is not None:
             x, y = self.car_status.position.x, self.car_status.position.y
-            if x < 50 or x > 200 or y < 50 or y > 200:
+
+            if x < self.param_fences[0] or \
+               x > self.param_fences[1] or \
+               y < self.param_fences[2] or \
+               y > self.param_fences[3]:
                 print "[ToyCarEpisodeMonitor]: crossed fence at ({}, {})".format(
                     x, y
                 )
@@ -213,7 +242,7 @@ class ToyCarEpisodeMonitor(BaseEpisodeMonitor):
     def _kill_launchfile(self):
         """shutdown launch file processes."""
         if len(self.process_list) is 0:
-            print("[SimulatorEpisodeMonitor._terminate()]: no process to terminate")
+            print("[ToyCarEpisodeMonitor._terminate()]: no process to terminate")
         else:
             for p in self.process_list:
                 p.send_signal(signal.SIGINT)
@@ -224,19 +253,44 @@ class ToyCarEpisodeMonitor(BaseEpisodeMonitor):
                     ).format(p.pid)
                     time.sleep(1.0)
                 print (
-                     "[SimulatorEpisodeMonitor._terminate()]: "
+                     "[ToyCarEpisodeMonitor._terminate()]: "
                     "simulator proc {} terminated with exit code {}"
                 ).format(p.pid, p.returncode)
             self.process_list = []
-            print("[SimulatorEpisodeMonitor]: termination done!")
+            print("[ToyCarEpisodeMonitor]: termination done!")
 
         return
 
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('toycar_restart.py')
+    parser.add_argument(
+        "--reset_to", nargs=3, type=int, default=(128, 128, 1.0),
+        help="Coordinates and pose yaw angle of resetting goal."
+    )
+    parser.add_argument(
+        "--reset_speed", nargs=1, type=int, default=40,
+        help="Maximum speed during reset."
+    )
+    parser.add_argument(
+        "--reset_radius", nargs=1, type=int, default=10,
+        help="Radius of the Dubins reset path."
+    )
+    parser.add_argument(
+        "--fences", nargs=4, type=int, default=(50, 200, 50, 200),
+        help="Virtual fences for termination."
+    )
     args = parser.parse_args()
     try:
-        mon = ToyCarEpisodeMonitor()
+        mon = ToyCarEpisodeMonitor(
+            reset_to=args.reset_to,
+            reset_speed=args.reset_speed,
+            reset_radius=args.reset_radius,
+            fences=args.fences
+        )
         mon.spin()
     except rospy.ROSInterruptException:
         pass
+    finally:
+        mon.terminate()
+

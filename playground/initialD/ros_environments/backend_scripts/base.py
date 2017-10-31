@@ -4,6 +4,7 @@ import rospy
 from rospy.timer import Timer
 from std_msgs.msg import Bool
 
+
 class BaseEpisodeMonitor(object):
     """Base class for episode monitors.
     This class set up a ROS node for monitoring an episode of interaction in a
@@ -85,7 +86,6 @@ class BaseEpisodeMonitor(object):
 
     def spin(self):
         rospy.spin()
-        self.terminate()
 
     def _terminate(self):
         """This guy does all the real work."""

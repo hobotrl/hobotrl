@@ -35,7 +35,6 @@ def sample_points(start, goal, rho, step_size):
 def sample_speeds(qs, start_speed, max_speed):
     speeds = np.ones(len(qs)) * max_speed  # array of speeds
     len_acc = len(speeds)/3  # acceleration length
-    speeds[:len_acc] = np.linspace(start_speed, max_speed, len_acc)
     speeds[-len_acc:] = np.linspace(speeds[-len_acc], 0, len_acc)
     return speeds
 
