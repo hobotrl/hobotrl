@@ -115,6 +115,7 @@ class DrivingSimulatorEnv(object):
         self.is_env_resetting = Event()  # if environment is undergoing reset
         self.is_env_done = Event()  # if environment is is done for this ep
         self.is_env_done.set()
+        self.is_receiving_obs = Event()  # if obs topic are publishing
         self.cnt_q_except = Value('i', self.MAX_EXCEPTION)
 
         # backend
@@ -203,13 +204,16 @@ class DrivingSimulatorEnv(object):
         while True:
             if self.is_backend_up.is_set() and \
                self.is_q_ready.is_set() and \
-               self.is_envnode_up.is_set():
+               self.is_envnode_up.is_set() and \
+               self.is_receiving_obs.is_set():
                 break
             else:
-                print "[__step()]: backend {}, node {}, queue {}.".format(
+                print "[__step()]: backend {}, node {}, queue {}, obs {}.".format(
                    self.is_backend_up.is_set(),
                    self.is_envnode_up.is_set(),
-                   self.is_q_ready.is_set())
+                   self.is_q_ready.is_set(),
+                   self.is_receiving_obs.is_set()
+                )
                 cnt_fail -= 1
                 with self.cnt_q_except.get_lock():
                     if self.cnt_q_except.value<=0:
@@ -354,13 +358,16 @@ class DrivingSimulatorEnv(object):
         while True:
             if self.is_backend_up.is_set() and \
                self.is_q_ready.is_set() and \
-               self.is_envnode_up.is_set():
+               self.is_envnode_up.is_set() and \
+               self.is_receiving_obs.is_set():
                    break
             else:
-                print "[reset]: backend {}, node {}, queue {}, waiting.".format(
+                print "[reset]: backend {}, node {}, queue {}, obs {}, waiting.".format(
                     self.is_backend_up.is_set(),
                     self.is_envnode_up.is_set(),
-                    self.is_q_ready.is_set())
+                    self.is_q_ready.is_set(),
+                    self.is_receiving_obs.is_set()
+                )
                 with self.cnt_q_except.get_lock():
                     if self.cnt_q_except.value<=0:
                         return None
@@ -480,6 +487,7 @@ class DrivingSimulatorEnv(object):
         self.is_envnode_up.clear()    # default to node_down
         self.is_envnode_terminatable.clear()  # prevents q monitor from turning down
         self.is_envnode_resetting.set()
+        self.is_receiving_obs.clear()
 
         while not self.is_exiting.is_set():
             while not self.is_env_resetting.is_set():
@@ -518,6 +526,7 @@ class DrivingSimulatorEnv(object):
                     self.q_obs, self.q_reward, self.q_action, self.q_done,
                     self.is_backend_up, self.is_q_ready, self.is_envnode_up,
                     self.is_envnode_terminatable, self.is_envnode_resetting,
+                    self.is_receiving_obs,
                     self.defs_obs, self.defs_reward, self.defs_action,
                     self.rate_action, self.is_dummy_action,
                     self.NODE_TIMEOUT)
@@ -529,6 +538,7 @@ class DrivingSimulatorEnv(object):
                 # ===========================================
                 self.is_envnode_terminatable.clear()
                 self.is_envnode_up.clear()
+                self.is_receiving_obs.clear()
 
                 # wait for queue mon to return
                 thread_queue_monitor.join()  # implies queue cleared and not ready
@@ -619,6 +629,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
              q_obs, q_reward, q_action, q_done,
              is_backend_up, is_q_ready, is_envnode_up,
              is_envnode_terminatable, is_envnode_resetting,
+             is_receiving_obs,
              defs_obs, defs_reward, defs_action,
              rate_action, is_dummy_action, node_timeout):
         super(DrivingSimulatorNode, self).__init__()
@@ -651,7 +662,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
         self.first_time = Event()
         self.is_envnode_terminatable = is_envnode_terminatable
         self.is_envnode_resetting = is_envnode_resetting
-        self.is_receiving_obs = Event()
+        self.is_receiving_obs = is_receiving_obs
 
     def run(self):
         """Run the simulator backend for one episode.
@@ -849,7 +860,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
             # print "[__take_action]: queue not ready."
             return
         if self.first_time.is_set():
-            print "[__take_action]: simulator is not running."
+            # print "[__take_action]: simulator is not running."
             return
 
         try:
@@ -857,7 +868,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
             self.q_action.put_nowait(actions)
             self.q_action.task_done()
         except:
-            print "[__take_action]: get action from queue failed."
+            # print "[__take_action]: get action from queue failed."
             return
 
         if self.is_receiving_obs.is_set():
@@ -878,5 +889,4 @@ class DrivingSimulatorNode(multiprocessing.Process):
         if not data.data and not self.first_time.is_set():
             self.is_envnode_terminatable.set()
         self.first_time.clear()
-
 

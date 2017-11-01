@@ -86,6 +86,8 @@ class BaseEpisodeMonitor(object):
 
     def spin(self):
         rospy.spin()
+        # turn-out this is important for shutting down gazebo successfully
+        self.terminate()
 
     def _terminate(self):
         """This guy does all the real work."""
@@ -100,3 +102,4 @@ class BaseEpisodeMonitor(object):
 
     def __heartbeat(self, *args, **kwargs):
         self.heartbeat_pub.publish(self.is_running)
+
