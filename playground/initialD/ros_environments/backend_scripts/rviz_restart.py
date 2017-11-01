@@ -128,4 +128,6 @@ if __name__ == '__main__':
         mon = SimulatorEpisodeMonitor(args.launch_name)
         mon.spin()
     except rospy.ROSInterruptException:
-        pass
+        mon.terminate()
+
+
