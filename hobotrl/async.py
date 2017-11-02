@@ -3,6 +3,7 @@
 
 import logging
 import threading
+import time
 import Queue
 
 import tensorflow as tf
@@ -134,6 +135,10 @@ class AsynchronousAgent(Agent):
         return self._agent.create_session(config=config,
                                           save_dir=save_dir)
 
+    @property
+    def sess(self):
+        return self._agent.sess
+
     def stop(self, blocking=True):
         self._thread.stop()
         if blocking:
@@ -217,14 +222,26 @@ class TrainingThread(threading.Thread):
         super(TrainingThread, self).__init__(group, target, name, args, kwargs, verbose)
         self._agent, self._step_queue, self._info_queue = agent, step_queue, info_queue
         self._stopped = False
+        self._first_sample_arrived = False
 
     def run(self):
         while not self._stopped:
-            step = self._step_queue.get(block=True)
             queue_empty = self._step_queue.qsize() == 0
+            if queue_empty:
+                step = {
+                    "kwargs": {
+                        "async_buffer_empty": True,
+                    },
+                    "args": (None, None, None, None, None)
+                }
+                time.sleep(0.001)
+            else:
+                step = self._step_queue.get(block=True)
+                self._first_sample_arrived = True
             # async_buffer_end signal for asynchronous samplers, representing end of step queue
-            info = self._agent.step(*step["args"], async_buffer_end=queue_empty, **step["kwargs"])
-            self._info_queue.put(info)
+            if self._first_sample_arrived:
+                info = self._agent.step(*step["args"], async_buffer_end=queue_empty, **step["kwargs"])
+                self._info_queue.put(info)
 
     def stop(self):
         self._stopped = True
@@ -245,9 +262,11 @@ class AsyncTransitionSampler(TransitionSampler):
         :param kwargs:
         :return:
         """
+        if "async_buffer_empty" in kwargs and not kwargs["async_buffer_empty"]:
+            self._replay.push_sample(self._sample_maker(state, action, reward, next_state, episode_done, **kwargs))
         self._step_n += 1
-        self._replay.push_sample(self._sample_maker(state, action, reward, next_state, episode_done, **kwargs))
-        async_buffer_end = kwargs["async_buffer_end"]
+        async_buffer_end = kwargs["async_buffer_end"] or \
+                           "async_buffer_empty" in kwargs and kwargs["async_buffer_empty"]
         if async_buffer_end and self._replay.get_count() >= self._minimum_count:
             return self._replay.sample_batch(self._batch_size)
         else:
