@@ -20,7 +20,7 @@ class CarGo:
     def __init__(self, is_dummy_action=False):
         """Initialization."""
         self.is_dummy_action = is_dummy_action
-        self.ema_speed = 0.0
+        self.ema_speed = 1.0  # avoid sending key at start
         self.speed = 0.0
         self.lock = Event()
         self.lock.clear()
@@ -46,7 +46,7 @@ class CarGo:
             if not data.autodrive_mode:
                 self.lock.set()
                 self.start_pub.publish(ord(' '))
-                time.sleep(1.0)
+                time.sleep(2.0)
                 self.lock.clear()
 
     def car_status_callback(self, data):
@@ -81,7 +81,7 @@ class CarGo:
         :return:
         """
         if self.ema_speed < 0.1:
-            for _ in range(2):
+            for _ in range(5):
                 if self.is_dummy_action:
                     print "[CarGo]: sending key '0' ..."
                     self.start_pub.publish(ord('0'))

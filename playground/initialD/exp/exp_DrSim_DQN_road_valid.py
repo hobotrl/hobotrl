@@ -212,11 +212,25 @@ def f_net(inputs):
         print hid1.shape
         hid2 = layers.dense(
             inputs=hid1, units=256, activation=tf.nn.relu,
-            kernel_regularizer=l2_regularizer(scale=1e-2), name='hid2')
+            kernel_regularizer=l2_regularizer(scale=1e-2), name='hid2_adv')
         print hid2.shape
-        q = layers.dense(
+        adv = layers.dense(
             inputs=hid2, units=len(AGENT_ACTIONS), activation=None,
-            kernel_regularizer=l2_regularizer(scale=1e-2), name='q')
+            kernel_initializer=tf.random_uniform_initializer(-3e-3, 3e-3),
+            kernel_regularizer=l2_regularizer(scale=1e-2), name='adv')
+        print adv.shape
+        hid2 = layers.dense(
+            inputs=hid1, units=256, activation=tf.nn.relu,
+            kernel_regularizer=l2_regularizer(scale=1e-2), name='hid2_v')
+        print hid2.shape
+        v = layers.dense(
+            inputs=hid2, units=1, activation=None,
+            kernel_initializer=tf.random_uniform_initializer(-3e-3, 3e-3),
+            kernel_regularizer=l2_regularizer(scale=1e-2), name='v')
+        print v.shape
+        q = tf.add(adv, v, name='q')
+        print q.shape
+
     return {"q": q}
 
 optimizer_td = tf.train.AdamOptimizer(learning_rate=1e-4)
@@ -230,7 +244,7 @@ global_step = tf.get_variable(
 agent = hrl.DQN(
     f_create_q=f_net, state_shape=state_shape,
     # OneStepTD arguments
-    num_actions=len(AGENT_ACTIONS), discount_factor=0.9, ddqn=False,
+    num_actions=len(AGENT_ACTIONS), discount_factor=0.9, ddqn=True,
     # target network sync arguments
     target_sync_interval=1,
     target_sync_rate=target_sync_rate,
@@ -238,7 +252,6 @@ agent = hrl.DQN(
     greedy_epsilon=0.2,
     # optimizer arguments
     network_optimizer=hrl.network.LocalOptimizer(optimizer_td, 10.0),
-    # max_gradient=10.0,
     # sampler arguments
     sampler=TransitionSampler(BalancedMapPlayback(
         num_actions=len(ALL_ACTIONS), capacity=10000),

@@ -250,7 +250,14 @@ class Network(object):
 class NP(object):
     @staticmethod
     def one_hot(array, num):
-        oh = np.zeros(shape=array.shape+[num])
+        """Construct a one-hot matrix from an array.
+        [0, 2, 1] -> [[1, 0, 0], [0, 0, 1], [0, 1, 0]]
+
+        :param array: N by 0 vector.
+        :param num: number of categories.
+        :return:
+        """
+        oh = np.zeros(shape=list(array.shape)+[num])
         oh[np.arange(array.size), array] = 1
         return oh
 
