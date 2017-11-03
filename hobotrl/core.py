@@ -118,18 +118,18 @@ class BaseAgent(Agent):
     def reinforce_(self, state, action, reward, next_state,
                    episode_done=False, **kwargs):
         # Default agent does nothing. This method is not
-        #   abstract to fascilitate super() call from
+        #   abstract to facilitate super() call from
         #   child classes.
         return {}
-        pass
 
 
 class Policy(object):
-    """
+    """Base class for policies.
     A Policy acts according to state.
     """
     def act(self, state, **kwargs):
-        """
+        """Return an action according to incoming state.
+
         :param state:
         :return: action for current state
         """

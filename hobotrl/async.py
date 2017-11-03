@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 
-
-import logging
-import threading
 import time
+import logging
 import Queue
+import threading
 
 import tensorflow as tf
 from core import Agent
@@ -112,7 +111,9 @@ class AsynchronousAgent(Agent):
         self._agent = agent
         self._queue = Queue.Queue(maxsize=-1)
         self._infoq = Queue.Queue(maxsize=-1)
-        self._thread = TrainingThread(self._agent, self._queue, self._infoq)
+        self._thread = RateControlTrainingThread(
+            self._agent, self._queue, self._infoq, **kwargs
+        )
         self._thread.start()
 
     def new_episode(self, state):
@@ -121,6 +122,7 @@ class AsynchronousAgent(Agent):
     def step(self, state, action, reward, next_state, episode_done=False, **kwargs):
         self._queue.put({"kwargs": kwargs, "args": (state, action, reward, next_state, episode_done)})
         info = {}
+        # TODO: if only return the latest info, why not assume _infoq.size = 1?
         while self._infoq.qsize() > 0:
             info = self._infoq.get()
         return info
@@ -147,6 +149,12 @@ class AsynchronousAgent(Agent):
     @property
     def sess(self):
         return self._agent.sess
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.stop()
 
 
 class AsynchronousAgent2(Agent):
@@ -219,32 +227,55 @@ class TrainingThread(threading.Thread):
         :param kwargs:
         :param verbose:
         """
-        super(TrainingThread, self).__init__(group, target, name, args, kwargs, verbose)
-        self._agent, self._step_queue, self._info_queue = agent, step_queue, info_queue
-        self._stopped = False
+        super(TrainingThread, self).__init__(
+            group=group, target=target, name=name,
+            args=args, kwargs=kwargs, verbose=verbose
+        )
+        self._agent = agent
+        self._step_queue, self._info_queue = step_queue, info_queue
+        self._stopped = False  # poisson pill
         self._first_sample_arrived = False
+        self.__n_step = 0
 
     def run(self):
         while not self._stopped:
-            queue_empty = self._step_queue.qsize() == 0
-            if queue_empty:
-                step = {
-                    "kwargs": {
-                        "async_buffer_empty": True,
-                    },
-                    "args": (None, None, None, None, None)
-                }
-                time.sleep(0.001)
-            else:
-                step = self._step_queue.get(block=True)
-                self._first_sample_arrived = True
-            # async_buffer_end signal for asynchronous samplers, representing end of step queue
-            if self._first_sample_arrived:
-                info = self._agent.step(*step["args"], async_buffer_end=queue_empty, **step["kwargs"])
-                self._info_queue.put(info)
+            self.step()
+
+    def step(self, *args, **kwargs):
+        # get data from step queue
+        queue_empty = self._step_queue.qsize() == 0
+        if queue_empty:
+            step = {
+                "kwargs": {
+                    "async_buffer_empty": True,
+                },
+                "args": (None, None, None, None, None)
+            }
+            time.sleep(0.001)
+        else:
+            step = self._step_queue.get(block=True)
+            self._first_sample_arrived = True
+
+        # print "[TrainingThread.step()]: ", step
+        # async_buffer_end signal for asynchronous samplers, representing end of step queue
+        # TODO: ??? aync_buffer end, async_buffer_empty?
+        if self._first_sample_arrived:
+            info = self._agent.step(
+                *step["args"], async_buffer_end=queue_empty, **step["kwargs"]
+            )
+            self.__n_step += 1
+            info['TrainingThread/n_step'] = self.__n_step
+            # TODO: make lock for multiple threads
+            if self._info_queue.qsize() > 0:
+                self._info_queue.get(block=True)
+            self._info_queue.put(info)
 
     def stop(self):
         self._stopped = True
+
+    @property
+    def len_step_queue(self):
+        return self._step_queue.qsize()
 
 
 class AsyncTransitionSampler(TransitionSampler):
@@ -271,3 +302,94 @@ class AsyncTransitionSampler(TransitionSampler):
             return self._replay.sample_batch(self._batch_size)
         else:
             return None
+
+
+class RateControlMixin(object):
+    """Adaptive rate control for threads with step() method.
+    Support three throttling methods:
+        1. 'rate': assign quota to make step() runs with this rate on average.
+        2. 'ratio': assign certain quota per item coming from step queue.
+        3. 'best_effort': run as fast as possible.
+    Assumes super class has a `step()` method. Also assume super class has a
+    `len_step_queue` attribute to make `ratio` control work.
+    """
+    def __init__(self, *args, **kwargs):
+        """Initialization.
+
+        :param method: throttle method, 'rate', 'ratio', or 'best_effort'.
+        :param rate:
+        :param ratio:
+        :param args:
+        :param kwargs:
+        """
+        if 'method' in kwargs:
+            method = kwargs['method']
+            del kwargs['method']
+        else:
+            method = None
+        if 'rate' in kwargs:
+            rate = kwargs['rate']
+            del kwargs['rate']
+        else:
+            rate = None
+        if 'ratio' in kwargs:
+            ratio = kwargs['ratio']
+            del kwargs['ratio']
+        else:
+            ratio = None
+        super(RateControlMixin, self).__init__(*args, **kwargs)
+
+        # determine throttle method
+        self.__method = method
+        if self.__method == 'rate':
+            if rate is None:
+                self.__rate = 1.0
+                print "[ThrottleMixin.__init__()]: using default rate = 1.0."
+            else:
+                assert rate > 0
+                self.__rate = rate
+            self.__t_last_call = time.time()
+        elif self.__method == 'ratio':
+            if ratio is None:
+                self.__ratio = 1.0
+                print "[ThrottleMixin.__init__()]: using default ratio = 1.0."
+            else:
+                assert ratio > 0
+                self.__ratio = ratio
+            self.__len_step_queue = 0
+        else:
+            self.__method = 'best_effort'
+            print "[ThrottleMixin.__init__()]: will run thread with best " \
+                  "effort."
+
+        # initialize quota
+        self.__quota = 0
+        self.__MAX_QUOTA = 65535
+
+    def step(self, *args, **kwargs):
+        # adjust quota
+        if self.__method == "ratio":
+            self.__quota += self.__ratio * max(
+                self.len_step_queue - self.__len_step_queue, 0
+            )
+            self.__len_step_queue = self.len_step_queue
+        elif self.__method == 'rate':
+            self.__quota += self.__rate * max(
+                time.time() - self.__t_last_call, 0
+            )
+            self.__t_last_call = time.time()
+        self.__quota = max(min(self.__quota, self.__MAX_QUOTA), 0)
+
+        # print "[RateControlMixin.step()]: current quota", self.__quota
+        # throttle calls to the step() method of super class
+        if self.__quota > 1 or self.__method == 'best_effort':
+            super(RateControlMixin, self).step(*args, **kwargs)
+            self.__quota -= 1
+        else:
+            time.sleep(0.001)
+
+
+class RateControlTrainingThread(RateControlMixin, TrainingThread):
+    def __init__(self, *args, **kwargs):
+        super(RateControlTrainingThread, self).__init__(*args, **kwargs)
+
