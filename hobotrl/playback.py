@@ -612,9 +612,15 @@ class BalancedMapPlayback(MapPlayback):
     """MapPlayback with rebalanced action and done distribution.
     The current balancing method only support discrete action spaces.
     """
-    def __init__(self, num_actions, *args, **kwargs):
+    def __init__(self, num_actions, discount=0.995, upsample_bias=None,
+                 p_min=None, *args, **kwargs):
         super(BalancedMapPlayback, self).__init__(*args, **kwargs)
-        self.num_actions = num_actions
+        self.NUM_ACTIONS = num_actions
+        self.DISCOUNT = discount
+        self.P_MIN = p_min if p_min is not None else (1e-3, 1e-2)
+        self.UPSAMPLE_BIAS = upsample_bias if upsample_bias is not None \
+            else tuple([1.0] * (self.NUM_ACTIONS + 1))
+
         self.sample_prob =  num_actions * np.ones(self.capacity)
         self.action_prob = 1.0/num_actions*np.ones(num_actions)
         self.done_prob = 0.0
@@ -622,43 +628,44 @@ class BalancedMapPlayback(MapPlayback):
     def next_batch_index(self, batch_size):
         count = self.get_count()
         if count == 0:
-            return super(
-                BalancedMapPlayback, self).next_batch_index(batch_size)
+            return super(BalancedMapPlayback, self).next_batch_index(batch_size)
         else:
             p = self.sample_prob[:count] / np.sum(self.sample_prob[:count])
             return np.random.choice(
-                np.arange(count), size=batch_size, replace=True, p=p)
+                np.arange(count), size=batch_size, replace=True, p=p
+            )
 
     def push_sample(self, sample, **kwargs):
         index = self.push_index
 
-        # Calculate unnormalized resampling weight for sample
+        # Calculate un-normalized re-sampling weight for sample
         assert 'action' in sample and 'episode_done' in sample
         action = sample['action']
         done = sample['episode_done']
+        self.sample_prob[index] = 1 / self.action_prob[action] * \
+                                  self.UPSAMPLE_BIAS[action]
         if done:
-            self.sample_prob[index] = self.num_actions
-            self.sample_prob[index] = 1/(self.done_prob+1e-5)
+            self.sample_prob[index] *= 1 / self.done_prob * \
+                                       self.UPSAMPLE_BIAS[-1]
         else:
-            self.sample_prob[index] = 1/self.action_prob[action]
-            self.sample_prob[index] *= 1/(1-self.done_prob+1e-5)
+            self.sample_prob[index] *= 1 / (1 - self.done_prob)
 
-        # Exponetial moving averaged action and doneprobability
-        delta = np.zeros(self.num_actions)
+        # Exponential moving averaged action and done probability
+        delta = np.zeros(self.NUM_ACTIONS)
         delta[action] = 1
-        self.action_prob = self.action_prob*0.95 + delta*0.05
-        cap = 1e-2
+        self.action_prob = self.action_prob * self.DISCOUNT + \
+                           delta*(1 - self.DISCOUNT)
+        cap = self.P_MIN[0]
         self.action_prob[self.action_prob<cap] = cap
         self.action_prob /= np.sum(self.action_prob)
 
-        self.done_prob = self.done_prob*0.95 + float(done)*0.05
-        cap = 1e-1
-        if self.done_prob < cap:
-            self.done_prob = cap
-        if self.done_prob > 1-cap:
-            self.done_prob = 1 - cap
-        # print ("[BalancedMapPlayback.push_sample()]: "
-        #        "action {}, done {:.3f}, sample {:.3f}").format(
-        #            self.action_prob, self.done_prob, self.sample_prob[index])
+        self.done_prob = self.done_prob*self.DISCOUNT + \
+                         float(done)*(1 - self.DISCOUNT)
+        cap = self.P_MIN[1]
+        self.done_prob = max(min(self.done_prob, 1-cap), cap)
+
+        print ("[BalancedMapPlayback.push_sample()]: "
+               "action {}, done {:.3f}, sample {:.3f}").format(
+                   self.action_prob, self.done_prob, self.sample_prob[index])
 
         super(BalancedMapPlayback, self).push_sample(sample, **kwargs)
