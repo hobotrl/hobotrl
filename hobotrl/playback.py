@@ -1,6 +1,8 @@
 #
 # -*- coding: utf-8 -*-
 
+import os
+import json
 import logging
 import numpy as np
 
@@ -190,10 +192,7 @@ class MapPlayback(Playback):
         if self.data is None:
             self.init_data_(sample)
         # push sample iteritively into Playbacks
-        for key in sample:
-             self.data[key].push_sample(sample[key], sample_score)
-        # increment ego count and push_index
-        self.add_sample(None, None, None)
+        self.add_sample(sample, self.push_index, sample_score)
         self.push_index = (self.push_index + 1) % self.capacity
 
     def add_sample(self, sample, index, sample_score=0):
@@ -210,6 +209,9 @@ class MapPlayback(Playback):
         batch = dict([(key, self.data[key].get_batch(index)) for key in self.data])
         batch["_index"] = index
         return batch
+
+    def get_count(self):
+        return self.count
 
     def reset(self):
         if self.data is None:
@@ -662,3 +664,217 @@ class BalancedMapPlayback(MapPlayback):
         #            self.action_prob, self.done_prob, self.sample_prob[index])
 
         super(BalancedMapPlayback, self).push_sample(sample, **kwargs)
+
+
+class CachedMapPlayback(MapPlayback):
+
+    META_FILE = "meta.json"
+    NP_POSTFIX = ".npy"
+
+    def __init__(self, cache_path, *args, **kwargs):
+        super(CachedMapPlayback, self).__init__(*args, **kwargs)
+        # cache_path = kwargs["cache_path"]
+        self._path = cache_path
+        self._io_status = None  # None, init, loading, flushing, ready
+        self.init_()
+
+    def init_(self):
+        while True:
+            if not os.path.isdir(self._path):
+                break
+            meta_path = os.sep.join([self._path, self.META_FILE])
+            if not os.path.isfile(meta_path):
+                break
+            data = json.loads(open(meta_path).read())
+            self.count = int(data["count"])
+            self.push_index = int(data["push_index"])
+            break
+        self._io_status = "init"
+
+    def load(self):
+        self._io_status = "loading"
+        while True:
+            if not os.path.isdir(self._path):
+                break
+            paths = os.listdir(self._path)
+            paths = filter(lambda p: p.endswith(self.NP_POSTFIX), paths)
+            fields = [p[:-len(self.NP_POSTFIX)] for p in paths]
+            if len(fields) == 0:
+                break
+            self.init_data_(fields)
+            for field, path in zip(fields, paths):
+                self.data[field].data = np.load(os.sep.join([self._path, path]))
+            break
+        self._io_status = "ready"
+
+    def save(self):
+        self._io_status = "flushing"
+        if not os.path.isdir(self._path):
+            os.makedirs(self._path)
+        meta_path = os.sep.join([self._path, self.META_FILE])
+        with open(meta_path, mode="w") as f:
+            f.write(json.dumps({
+                "count": self.count,
+                "push_index": self.push_index
+            }))
+        if self.data is not None:
+            for field in self.data:
+                data = self.data[field].data
+                np.save(os.sep.join([self._path, field+self.NP_POSTFIX]), data)
+        self._io_status = "ready"
+
+    def release_mem(self):
+        self._io_status = "init"
+        self.init_()
+        self.data = None
+        pass
+
+
+class BigMapPlayback(Playback):
+
+    META_FILE = "meta.json"
+
+    def __init__(self, *args, **kwargs):
+        """Stores maps of ndarray.
+        :param capacity:
+        :param push_policy:
+        :param pop_policy:
+        :param dtype:
+        :param bucket_size: size of a single bucket.
+            There will be at most 2 bucket of data swapped in memory simultaneously.
+        :param cache_path:
+            path under which to store swapped out data.
+        """
+        sup_kwargs = self.pick_args(["capacity", "push_policy", "pop_policy", "augment_offset", "augment_scale"], args, kwargs)
+        super(BigMapPlayback, self).__init__(**sup_kwargs)
+        if "bucket_size" in kwargs:
+            self._bucket_size = kwargs["bucket_size"]
+            self._bucket_count = self.capacity / self._bucket_size
+            del kwargs["bucket_size"]
+        else:
+            self._bucket_count = 8
+            self._bucket_size = self.capacity / self._bucket_count
+        if "cache_path" in kwargs:
+            self._cache_path = kwargs["cache_path"]
+            del kwargs["cache_path"]
+        else:
+            self._cache_path = "."
+        if "epoch_count" in kwargs:
+            self._pop_epoch_count = kwargs["epoch_count"]
+            del kwargs["epoch_count"]
+        else:
+            self._pop_epoch_count = 8
+
+        if len(args) > 0:
+            args = list(args)
+            args[0] = self._bucket_size  # capacity
+        elif "capacity" in kwargs:
+            kwargs["capacity"] = self._bucket_size
+        self._buckets = [CachedMapPlayback(os.sep.join([self._cache_path, str(i)]), *args, **kwargs) for i in range(self._bucket_count)]
+        # self._buckets = []
+        # for i in range(self._bucket_count):
+        #     kwargs.update({"cache_path": os.sep.join([self._cache_path, str(i)])})
+        #     self._buckets.append(CachedMapPlayback(*args, **kwargs))
+
+        self._push_bucket = self._pop_bucket = 0
+        self._pop_count = 0
+        self._last_push_index = 0
+        self.init_from_cache_()
+
+    def pick_args(self, fields, args, kwargs):
+        picked_args = {}
+        for i in range(len(args)):
+            picked_args[fields[i]] = args[i]
+        for f in fields:
+            if f in kwargs:
+                picked_args[f] = kwargs[f]
+        return picked_args
+
+    def init_from_cache_(self):
+        if not os.path.isdir(self._cache_path):
+            return
+        meta_path = os.sep.join([self._cache_path, self.META_FILE])
+        if not os.path.isfile(meta_path):
+            return
+        data = json.loads(open(meta_path).read())
+        self._push_bucket = int(data["push_bucket"])
+        self._pop_bucket = int(data["pop_bucket"])
+        self._buckets[self._push_bucket].load()
+        if self._pop_bucket != self._push_bucket:
+            self._buckets[self._pop_bucket].load()
+
+    def save(self):
+        if not os.path.isdir(self._cache_path):
+            os.makedirs(self._cache_path)
+        meta_path = os.sep.join([self._cache_path, self.META_FILE])
+        with open(meta_path, mode="w") as f:
+            f.write(json.dumps({
+                "push_bucket": self._push_bucket,
+                "pop_bucket": self._pop_bucket
+            }))
+
+    def push_sample(self, sample, sample_score=0):
+        self.check_push_bucket_()
+        self._buckets[self._push_bucket].push_sample(sample, sample_score)
+
+    def add_sample(self, sample, index, sample_score=0):
+        self.check_push_bucket_()
+        index = index - (self._bucket_size * self._push_bucket)
+        self._buckets[self._push_bucket].add_sample(sample, index, sample_score)
+
+    def get_batch(self, index):
+        index = index - (self._bucket_size * self._pop_bucket)
+        batch = self._buckets[self._pop_bucket].get_batch(index)
+        self.check_pop_bucket_(len(index))
+        return batch
+
+    def next_batch_index(self, batch_size):
+        index = self._buckets[self._pop_bucket].next_batch_index(batch_size)
+        index = index + (self._bucket_size * self._pop_bucket)
+        return index
+
+    def reset(self):
+        for bucket in self._buckets:
+            bucket.release_mem()
+        self._push_bucket = self._pop_bucket = 0
+
+    def get_count(self):
+        return sum([b.get_count() for b in self._buckets])
+
+    def get_capacity(self):
+        return super(BigMapPlayback, self).get_capacity()
+
+    def check_push_bucket_(self):
+        current_push_index = self._buckets[self._push_bucket].push_index
+        if current_push_index < self._last_push_index:
+            # probably push_index rewinded from end of buffer to 0
+            self._buckets[self._push_bucket].save()
+            new_push = (self._push_bucket + 1) % self._bucket_count
+            self._buckets[new_push].load()
+            old_push = self._push_bucket
+            self._push_bucket = new_push
+            self._buckets[old_push].release_mem()
+            self._last_push_index = 0
+            logging.warning("push index: %s => %s", old_push, new_push)
+            self.save()
+        else:
+            self._last_push_index = current_push_index
+
+    def check_pop_bucket_(self, batch_size):
+        self._pop_count += batch_size
+        if self._pop_count / self._bucket_size > self._pop_epoch_count:
+            # re-select pop bucket
+            candidates = np.where([b.get_count() > batch_size for b in self._buckets])[0]
+            new_pop = np.random.choice(candidates)
+            logging.warning("pop index: %s => %s", self._pop_bucket, new_pop)
+            if new_pop != self._pop_bucket:
+                # load new_pop
+                self._buckets[new_pop].load()
+                # release old pop
+                if self._pop_bucket != self._push_bucket:  # cannot release while pushing!
+                    self._buckets[self._pop_bucket].release_mem()
+                self._pop_bucket = new_pop
+            self._pop_count = 0
+
+
+
