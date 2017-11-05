@@ -10,24 +10,23 @@
 import importlib
 import signal
 import time
-import sys
 import traceback
 # Threading and Multiprocessing
 import threading
 import subprocess
 import multiprocessing
 from multiprocessing import JoinableQueue as Queue
-from multiprocessing import Value, Event, Pipe
+from multiprocessing import Value, Event
 # Image
-from scipy.misc import imresize
-from cv_bridge import CvBridge, CvBridgeError
+from cv_bridge import CvBridge
 # ROS
 import rospy
 from rospy.timer import Timer
 from std_msgs.msg import Bool
+from message_composer import MetaMessageComposer
 import utils.message_filters as message_filters
 
-
+# the persisitent part
 class DrivingSimulatorEnv(object):
     """Environment wrapper for Hobot Driving Simulator.
 
@@ -71,7 +70,8 @@ class DrivingSimulatorEnv(object):
                  func_compile_action=None,
                  step_delay_target=None,
                  is_dummy_action=False,
-                 backend_cmds=None):
+                 backend_cmds=None,
+                 node_timeout=20):
         """Initialization."""
         # params
         self.defs_obs = self.__import_defs(defs_obs)
@@ -88,6 +88,7 @@ class DrivingSimulatorEnv(object):
             self.__compile_reward = lambda x: x
         self.len_reward = window_sizes['reward']
 
+        self.action_msg_composers = [MetaMessageComposer(ac[1]) for ac in defs_action]
         self.defs_action = self.__import_defs(defs_action)
         if func_compile_action is not None:
             self.__compile_action = lambda *args: func_compile_action(*args)
@@ -97,7 +98,8 @@ class DrivingSimulatorEnv(object):
         self.is_dummy_action = is_dummy_action
 
         self.buffer_sizes = buffer_sizes
-        self.MAX_EXCEPTION = 10  # maximum number of q exceptions per episode.
+        self.MAX_EXCEPTION = 100  # maximum number of q exceptions per episode.
+        self.NODE_TIMEOUT = node_timeout
 
         self.STEP_DELAY_TARGET = step_delay_target  # target delay for each step()
         self.last_step_t = None
@@ -114,7 +116,6 @@ class DrivingSimulatorEnv(object):
         self.is_env_done = Event()  # if environment is is done for this ep
         self.is_env_done.set()
         self.cnt_q_except = Value('i', self.MAX_EXCEPTION)
-
 
         # backend
         self.backend_cmds = backend_cmds if backend_cmds is not None else []
@@ -151,8 +152,8 @@ class DrivingSimulatorEnv(object):
         # data passed in.
         action = self.__compile_action(action)
         new_action = []
-        for i, (_, action_class) in enumerate(self.defs_action):
-            new_action.append(action_class(action[i]))
+        for i in range(len(self.defs_action)):
+            new_action.append(self.action_msg_composers[i](action[i]))
         action = tuple(new_action)
 
         # do __step(), every 10 fails try reset
@@ -164,6 +165,7 @@ class DrivingSimulatorEnv(object):
             else:
                 num_fail -= 1
                 if num_fail == 0:
+                    print "[step()]: __step failed for 10 times, try reset()."
                     self.reset()
                     num_fail = 10
             time.sleep(0.5)
@@ -193,6 +195,8 @@ class DrivingSimulatorEnv(object):
         Return None if failed to grep data from backend.
         """
         # wait until envnode, q, and backend is up and running
+        # TODO: this while loop may trap the program in a deadlock, add a fail cnt.
+        cnt_fail = 30
         while True:
             if self.is_backend_up.is_set() and \
                self.is_q_ready.is_set() and \
@@ -203,9 +207,13 @@ class DrivingSimulatorEnv(object):
                    self.is_backend_up.is_set(),
                    self.is_envnode_up.is_set(),
                    self.is_q_ready.is_set())
+                cnt_fail -= 1
                 with self.cnt_q_except.get_lock():
                     if self.cnt_q_except.value<=0:
                         return None
+                if cnt_fail == 0:
+                    print "[__step()]: wait timeout, return None."
+                    return None
                 time.sleep(0.5)
 
         # action
@@ -307,6 +315,7 @@ class DrivingSimulatorEnv(object):
             if ret is not None:
                 return ret
             else:
+                print "[reset()]: reset faiiled retry in one sec."
                 time.sleep(1.0)
 
     def __reset(self, **kwargs):
@@ -338,6 +347,7 @@ class DrivingSimulatorEnv(object):
 
 
         # wait until backend is up
+        cnt_fail = 30
         while True:
             if self.is_backend_up.is_set() and \
                self.is_q_ready.is_set() and \
@@ -351,6 +361,10 @@ class DrivingSimulatorEnv(object):
                 with self.cnt_q_except.get_lock():
                     if self.cnt_q_except.value<=0:
                         return None
+                cnt_fail -= 1
+                if cnt_fail == 0:
+                    print "[__reset()]: wait timeout, return None."
+                    return None
                 time.sleep(0.5)
 
         # start step delay clock
@@ -467,7 +481,7 @@ class DrivingSimulatorEnv(object):
         while not self.is_exiting.is_set():
             while not self.is_env_resetting.is_set():
                 time.sleep(1.0)
-                print "Waiting reset."
+                print "[__node_monitor] waiting for reset."
             try:
                 # env done check loop
                 #   reset() should clear `is_env_done`  
@@ -502,7 +516,8 @@ class DrivingSimulatorEnv(object):
                     self.is_backend_up, self.is_q_ready, self.is_envnode_up,
                     self.is_envnode_terminatable, self.is_envnode_resetting,
                     self.defs_obs, self.defs_reward, self.defs_action,
-                    self.rate_action, self.is_dummy_action)
+                    self.rate_action, self.is_dummy_action,
+                    self.NODE_TIMEOUT)
                 node.start()
                 node.join()
                 # ==== protect from resetting by reset() ===
@@ -595,15 +610,17 @@ class DrivingSimulatorEnv(object):
         self.__kill_backend()
 
 
+# the transient part
 class DrivingSimulatorNode(multiprocessing.Process):
     def __init__(self,
              q_obs, q_reward, q_action, q_done,
              is_backend_up, is_q_ready, is_envnode_up,
              is_envnode_terminatable, is_envnode_resetting,
              defs_obs, defs_reward, defs_action,
-             rate_action, is_dummy_action):
+             rate_action, is_dummy_action, node_timeout):
         super(DrivingSimulatorNode, self).__init__()
 
+        # inter-thread queues for buffering experience
         self.q_obs = q_obs
         self.q_reward = q_reward
         self.q_action = q_action
@@ -615,6 +632,7 @@ class DrivingSimulatorNode(multiprocessing.Process):
             'action': self.q_action,
             'done': self.q_done}
 
+        # experience definition
         self.defs_obs = defs_obs
         self.defs_reward = defs_reward
         self.defs_action = defs_action
@@ -622,14 +640,15 @@ class DrivingSimulatorNode(multiprocessing.Process):
         self.rate_action = rate_action
         self.is_dummy_action = is_dummy_action
         self.Q_TIMEOUT = 1.0
+        self.NODE_TIMEOUT = node_timeout
 
+        # inter-thread events
         self.is_backend_up = is_backend_up
         self.is_envnode_up = is_envnode_up
         self.first_time = Event()
         self.is_envnode_terminatable = is_envnode_terminatable
         self.is_envnode_resetting = is_envnode_resetting
         self.is_receiving_obs = Event()
-        self.car_started = Event()
 
     def run(self):
         """Run the simulator backend for one episode.
@@ -649,8 +668,9 @@ class DrivingSimulatorNode(multiprocessing.Process):
                is_envnode_terminatable flag to terminate this process (i.e. poison pill).
         """
         print "[EnvNode]: started frontend process: {}".format(self.name)
-        # TODO: should be able to set how to process, this is only a
-        #        temporary hack.
+
+        # === Specify experience preparation functions ===
+        # TODO: should be able to specify arbitrary ways to prepare exp
         self.list_prep_exp = []
         for i in range(len(self.defs_obs)):
             if i<1:
@@ -659,30 +679,32 @@ class DrivingSimulatorNode(multiprocessing.Process):
                 self.list_prep_exp.append(self.__prep_reward)
         self.list_prep_exp += [self.__prep_reward]*len(self.defs_reward)
 
-        # Setup sync events
-        # self.is_envnode_up.clear()
+        # === Setup sync events ===
         self.is_receiving_obs.clear()
-        self.car_started.clear()
         self.first_time.set()
-        # self.is_envnode_terminatable.clear()
 
-        # Initialize frontend ROS node
+        # === Initialize frontend ROS node ===
         print "[EnvNode]: initialiting node..."
         rospy.init_node('DrivingSimulatorEnv')
         self.brg = CvBridge()
-        # Obs + Reward: synced
+
+        # obs + Reward subscribers (synchronized)
         f_subs = lambda defs: message_filters.Subscriber(defs[0], defs[1])
         self.ob_subs = map(f_subs, self.defs_obs)
         self.reward_subs = map(f_subs, self.defs_reward)
         self.ts = message_filters.ApproximateTimeSynchronizer(
             self.ob_subs + self.reward_subs, 10, 0.1, allow_headerless=True)
         self.ts.registerCallback(self.__enque_exp)
-        # Heartbeat
+
+        # heartbeat subscribers
         rospy.Subscriber('/rl/simulator_heartbeat', Bool, self.__enque_done)
         rospy.Subscriber('/rl/is_running', Bool, self.__heartbeat_checker)
+
+        # action and restart publishers
         f_pubs = lambda defs: rospy.Publisher(
             defs[0], defs[1], queue_size=100, latch=True)
         self.action_pubs = map(f_pubs, self.defs_action)
+        # publish action periodically if not using dummy action
         if not self.is_dummy_action:
             self.actor_loop = Timer(
                 rospy.Duration(1.0/self.rate_action), self.__take_action)
@@ -690,16 +712,16 @@ class DrivingSimulatorNode(multiprocessing.Process):
             '/rl/simulator_restart', Bool, queue_size=10, latch=True)
         print "[EnvNode]: node initialized."
 
-        # Simulator initialization:
+        # === Simulator initialization: ===
         #   1. signal start
         #   2. wait for new observation and count cnt_fail seconds
         #   3. mark initialization failed and break upon timeout
         #   4. mark initialization failed and break upon termination flag 
         print "[EnvNode]: signal simulator restart"
         self.restart_pub.publish(True)
-        cnt_fail = 10
-        flag_fail = False  # initialization failed flag
-        while not self.is_receiving_obs.is_set():
+        cnt_fail = self.NODE_TIMEOUT
+        flag_fail = False
+        while not self.is_receiving_obs.is_set() or self.first_time.is_set():
             cnt_fail -= 1 if cnt_fail>=0 else 0
             print "[EnvNode]: simulator not up, wait for {} sec(s)...".format(cnt_fail)
             time.sleep(1.0)
@@ -709,26 +731,23 @@ class DrivingSimulatorNode(multiprocessing.Process):
                 flag_fail = True
                 break
 
-        # Simulator run:
-        #   1. send ' ', 'g', '1' until new obs is observed
-        #   2. set `is_envnode_up` Event
-        #   3. Perodically check backend status and termination event
+        # === Run simulator ===
+        #   1. set `is_envnode_up` Event
+        #   2. Periodically check backend status and termination event
         t = time.time()
         if not flag_fail:
             print "[EnvNode]: simulator up and receiving obs."
-            __thread_start_car = threading.Thread(target=self.__start_car)
-            __thread_start_car.start()
-            __thread_start_car.join()
-            # === Not protected from resetting from here on ===
-            # === until frontend node is shutdown ===
+            for i in range(2):
+                print "[EnvNode]: simulation start in {} secs.".format(i)
+                time.sleep(1.0)
             self.is_envnode_resetting.clear()
-            # =================================================
             self.is_envnode_up.set()
             # Loop check if simulation episode is done
             while self.is_backend_up.is_set() and \
                   not self.is_envnode_terminatable.is_set():
                 time.sleep(0.2)
-        else:  # if initialization if failed we should terminiate frontend 
+        else:
+            # if initialization failed terminate the front end
             self.is_envnode_terminatable.set()
 
         # shutdown frontend ROS threads
@@ -748,27 +767,10 @@ class DrivingSimulatorNode(multiprocessing.Process):
             secs -= 1
             time.sleep(1.0)
         print "[EnvNode]: Now!"
+
         # manually set this event to notify queue monitor to clear queues
         self.is_envnode_terminatable.set()
 
-        return
-
-    def __start_car(self):
-        time.sleep(1.0)
-        print "[EnvNode]: sending key 'space' ..."
-        self.action_pubs[0].publish(ord(' '))
-        for _ in range(2):
-            time.sleep(0.5)
-            if self.is_dummy_action:
-                print "[EnvNode]: sending key '0' ..."
-                self.action_pubs[0].publish(ord('0'))
-            else:
-                print "[EnvNode]: sending key '1' ..."
-                self.action_pubs[0].publish(ord('1'))
-            time.sleep(0.5)
-            print "[EnvNode]: sending key 'g' ..."
-            self.action_pubs[0].publish(ord('g'))
-        self.car_started.set()
         return
 
     def __enque_exp(self, *args):
@@ -843,6 +845,9 @@ class DrivingSimulatorNode(multiprocessing.Process):
         if not self.is_q_ready.is_set():
             # print "[__take_action]: queue not ready."
             return
+        if self.first_time.is_set():
+            print "[__take_action]: simulator is not running."
+            return
 
         try:
             actions = self.q_action.get_nowait()
@@ -852,17 +857,15 @@ class DrivingSimulatorNode(multiprocessing.Process):
             # print "[__take_action]: get action from queue failed."
             return
 
-        if self.is_receiving_obs.is_set() and self.car_started.is_set():
+        if self.is_receiving_obs.is_set():
             # print "__take_action: {}, q len {}".format(
             #     actions, self.q_action.qsize()
             # )
-            map(
-                lambda args: args[0].publish(args[1]),
-                zip(self.action_pubs, actions)
-            )
+            for i in range(len(self.action_pubs)):
+                self.action_pubs[i].publish(actions[i])
         else:
-            print "[__take_action]: simulator up ({}), car started ({})".format(
-                 self.is_receiving_obs.is_set(), self.car_started.is_set())
+            print "[__take_action]: simulator up ({}).".format(
+                 self.is_receiving_obs.is_set())
             pass
 
     def __heartbeat_checker(self, data):
