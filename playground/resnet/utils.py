@@ -21,10 +21,10 @@ def _conv(x, filter_size, out_channel, strides, pad='SAME', input_q=None, output
     in_shape = x.get_shape()
     with tf.variable_scope(name):
         # Main operation: conv2d
-        with tf.device('/CPU:0'):
-            kernel = tf.get_variable('kernel', [filter_size, filter_size, in_shape[3], out_channel],
-                            tf.float32, initializer=tf.random_normal_initializer(
-                                stddev=np.sqrt(2.0/filter_size/filter_size/out_channel)))
+        # with tf.device('/CPU:0'):
+        kernel = tf.get_variable('kernel', [filter_size, filter_size, in_shape[3], out_channel],
+                        tf.float32, initializer=tf.random_normal_initializer(
+                            stddev=np.sqrt(2.0/filter_size/filter_size/out_channel)))
         if kernel not in tf.get_collection(WEIGHT_DECAY_KEY):
             tf.add_to_collection(WEIGHT_DECAY_KEY, kernel)
             # print('\tadded to WEIGHT_DECAY_KEY: %s(%s)' % (kernel.name, str(kernel.get_shape().as_list())))
@@ -45,12 +45,12 @@ def _fc(x, out_dim, input_q=None, output_q=None, name='fc'):
 
     with tf.variable_scope(name):
         # Main operation: fc
-        with tf.device('/CPU:0'):
-            w = tf.get_variable('weights', [x.get_shape()[1], out_dim],
-                            tf.float32, initializer=tf.random_normal_initializer(
-                                stddev=np.sqrt(1.0/out_dim)))
-            b = tf.get_variable('biases', [out_dim], tf.float32,
-                                initializer=tf.constant_initializer(0.0))
+        # with tf.device('/CPU:0'):
+        w = tf.get_variable('weights', [x.get_shape()[1], out_dim],
+                        tf.float32, initializer=tf.random_normal_initializer(
+                            stddev=np.sqrt(1.0/out_dim)))
+        b = tf.get_variable('biases', [out_dim], tf.float32,
+                            initializer=tf.constant_initializer(0.0))
         if w not in tf.get_collection(WEIGHT_DECAY_KEY):
             tf.add_to_collection(WEIGHT_DECAY_KEY, w)
             # print('\tadded to WEIGHT_DECAY_KEY: %s(%s)' % (w.name, str(w.get_shape().as_list())))
@@ -71,10 +71,10 @@ def _get_split_q(ngroups, dim, name='split', l2_loss=False):
         std_dev = 0.01
         init_val = np.random.normal(0, std_dev, (ngroups, dim))
         init_val = init_val - np.average(init_val, axis=0) + 1.0/ngroups
-        with tf.device('/CPU:0'):
-            q = tf.get_variable('q', shape=[ngroups, dim], dtype=tf.float32,
-                                # initializer=tf.constant_initializer(1.0/ngroups))
-                                initializer=tf.constant_initializer(init_val))
+        # with tf.device('/CPU:0'):
+        q = tf.get_variable('q', shape=[ngroups, dim], dtype=tf.float32,
+                            # initializer=tf.constant_initializer(1.0/ngroups))
+                            initializer=tf.constant_initializer(init_val))
         if l2_loss:
             if q not in tf.get_collection(WEIGHT_DECAY_KEY):
                 tf.add_to_collection(WEIGHT_DECAY_KEY, q*2.236)
@@ -184,15 +184,15 @@ def _bn(x, is_train, global_step=None, name='bn'):
                             # , lambda: tf.constant(moving_average_decay, tf.float32)
                             # , lambda: tf.constant(moving_average_decay_init, tf.float32))
         batch_mean, batch_var = tf.nn.moments(x, [0, 1, 2])
-        with tf.device('/CPU:0'):
-            mu = tf.get_variable('mu', batch_mean.get_shape(), tf.float32,
-                            initializer=tf.zeros_initializer(), trainable=False)
-            sigma = tf.get_variable('sigma', batch_var.get_shape(), tf.float32,
-                            initializer=tf.ones_initializer(), trainable=False)
-            beta = tf.get_variable('beta', batch_mean.get_shape(), tf.float32,
-                            initializer=tf.zeros_initializer())
-            gamma = tf.get_variable('gamma', batch_var.get_shape(), tf.float32,
-                            initializer=tf.ones_initializer())
+        # with tf.device('/CPU:0'):
+        mu = tf.get_variable('mu', batch_mean.get_shape(), tf.float32,
+                        initializer=tf.zeros_initializer(), trainable=False)
+        sigma = tf.get_variable('sigma', batch_var.get_shape(), tf.float32,
+                        initializer=tf.ones_initializer(), trainable=False)
+        beta = tf.get_variable('beta', batch_mean.get_shape(), tf.float32,
+                        initializer=tf.zeros_initializer())
+        gamma = tf.get_variable('gamma', batch_var.get_shape(), tf.float32,
+                        initializer=tf.ones_initializer())
         # BN when training
         update = 1.0 - decay
         # with tf.control_dependencies([tf.Print(decay, [decay])]):

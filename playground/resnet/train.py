@@ -1,21 +1,19 @@
 #!/usr/bin/env python
 
 import os
-from datetime import datetime
-import time
-import tensorflow as tf
-import numpy as np
-import sys
 import select
-from IPython import embed
-from tensorflow.python.client import timeline
+import sys
+import time
+from datetime import datetime
 
-import initialD_input as data_input
+import numpy as np
 import resnet
-from playground.initialD.imitaion_learning.stack_imgs import stack_obj_eps
-from playground.initialD.imitaion_learning.split_stack_infos import split_stack_infos, rand_imgs_acts, rand_imgs_acts_specify_batch_size
-from playground.initialD.imitaion_learning.evaluate import evaluate
-
+import tensorflow as tf
+from IPython import embed
+from playground.initialD.imitaion_learning.sl.evaluate import evaluate
+from playground.initialD.imitaion_learning.process_data.stack_imgs import stack_obj_eps
+from playground.initialD.imitaion_learning.split_stack_infos import split_stack_infos, rand_imgs_acts, \
+    rand_imgs_acts_specify_batch_size
 
 # Dataset Configuration
 tf.app.flags.DEFINE_string('train_dir', '/home/pirate03/hobotrl_data/playground/initialD/exp/test_prog/train', """Path to initialD the training dataset""")

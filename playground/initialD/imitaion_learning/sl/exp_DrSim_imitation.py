@@ -28,7 +28,8 @@ from sensor_msgs.msg import CompressedImage
 from gym.spaces import Discrete, Box
 import cv2
 
-from playground.initialD.imitaion_learning import initialD_input
+from playground.initialD.imitaion_learning.sl import initialD_input
+
 
 # Environment
 def compile_reward(rewards):

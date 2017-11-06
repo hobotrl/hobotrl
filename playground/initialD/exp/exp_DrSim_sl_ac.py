@@ -29,7 +29,7 @@ import sklearn.metrics
 from gym.spaces import Discrete, Box
 import cv2
 
-from playground.initialD.imitaion_learning import initialD_input
+from playground.initialD.imitaion_learning.sl import initialD_input
 import random
 import resnet
 import hobotrl as hrl
