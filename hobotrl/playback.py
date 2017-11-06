@@ -191,7 +191,7 @@ class MapPlayback(Playback):
         # init key->Playback map
         if self.data is None:
             self.init_data_(sample)
-        # push sample iteritively into Playbacks
+        # push sample iteratively into Playbacks
         self.add_sample(sample, self.push_index, sample_score)
         self.push_index = (self.push_index + 1) % self.capacity
 
@@ -644,8 +644,8 @@ class BalancedMapPlayback(MapPlayback):
         assert 'action' in sample and 'episode_done' in sample
         action = sample['action']
         done = sample['episode_done']
-        self.sample_prob[index] = 1 / self.action_prob[action] * \
-                                  self.UPSAMPLE_BIAS[action]
+        self.sample_prob[index] = self.UPSAMPLE_BIAS[action] * \
+            np.sum(self.action_prob) / self.action_prob[action]
         if done:
             self.sample_prob[index] *= 1 / self.done_prob * \
                                        self.UPSAMPLE_BIAS[-1]
@@ -659,7 +659,7 @@ class BalancedMapPlayback(MapPlayback):
                            delta*(1 - self.DISCOUNT)
         cap = self.P_MIN[0]
         self.action_prob[self.action_prob<cap] = cap
-        self.action_prob /= np.sum(self.action_prob)
+        # self.action_prob /= np.sum(self.action_prob)
 
         self.done_prob = self.done_prob*self.DISCOUNT + \
                          float(done)*(1 - self.DISCOUNT)

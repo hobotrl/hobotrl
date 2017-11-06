@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import time
+import traceback
 import logging
 import Queue
 import threading
@@ -142,6 +143,7 @@ class AsynchronousAgent(Agent):
         return self._agent.sess
 
     def stop(self, blocking=True):
+        print "[AsynchronousAgent.stop()]: stopping training thread."
         self._thread.stop()
         if blocking:
             self._thread.join()
@@ -239,7 +241,12 @@ class TrainingThread(threading.Thread):
 
     def run(self):
         while not self._stopped:
-            self.step()
+            try:
+                self.step()
+            except:
+                print "[TrainingThread.run()]: step exception:"
+                traceback.print_exc()
+        print "[TrainingThread.run()]: returning."
 
     def step(self, *args, **kwargs):
         # get data from step queue
@@ -271,6 +278,7 @@ class TrainingThread(threading.Thread):
             self._info_queue.put(info)
 
     def stop(self):
+        print "[TrainingThread.step()]: setting poison pill."
         self._stopped = True
 
     @property
