@@ -1145,5 +1145,40 @@ class PPOPendulum(PPOExperiment):
 Experiment.register(PPOPendulum, "PPO for Pendulum")
 
 
+class PPOBipedal(PPOExperiment):
+    def __init__(self, env=None, f_create_net=None, episode_n=10000,
+                 discount_factor=0.9, entropy=5e-4, clip_epsilon=0.2,
+                 epoch_per_step=4,
+                 network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(3e-4),
+                                                                           grad_clip=10.0),
+                 batch_size=16,
+                 horizon=256):
+        if env is None:
+            env = gym.make("BipedalWalker-v2")
+            env = hrl.envs.AugmentEnvWrapper(env, reward_decay=discount_factor, reward_scale=0.1)
+        if f_create_net is None:
+            dim_action = env.action_space.shape[-1]
+
+            def f_net(inputs):
+                l2 = 1e-4
+                state = inputs[0]
+                v = hrl.network.Utils.layer_fcs(state, [200, 100], 1, l2=l2, var_scope="v")
+                v = tf.squeeze(v, axis=1)
+                mean = hrl.network.Utils.layer_fcs(state, [200, 100], dim_action,
+                                                   # activation_out=None,
+                                                   activation_out=lambda x: tf.tanh(x / 4.0),
+                                                   l2=l2, var_scope="mean")
+                stddev = hrl.network.Utils.layer_fcs(state, [200, 100], dim_action,
+                                                     # activation_out=None,
+                                                     activation_out=lambda x: 4.0 * tf.sigmoid(x / 4.0),
+                                                     l2=l2, var_scope="stddev")
+                return {"v": v, "mean": mean, "stddev": stddev}
+            f_create_net = f_net
+
+        super(PPOBipedal, self).__init__(env, f_create_net, episode_n, discount_factor, entropy, clip_epsilon,
+                                          epoch_per_step, network_optimizer_ctor, batch_size, horizon)
+Experiment.register(PPOBipedal, "PPO for BipedalWalker")
+
+
 if __name__ == '__main__':
     Experiment.main()

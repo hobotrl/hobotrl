@@ -97,7 +97,7 @@ class NoisyExperiment(Experiment):
 class NoisyPendulum(NoisyExperiment):
     def __init__(self, env=None, se_dimension=4, f_se=None, f_manager=None, f_explorer=None, f_ik=None, f_value=None, f_model=None, f_pi=None,
                  episode_n=2000, discount_factor=0.9,
-                 noise_dimension=2, manager_horizon=8, manager_interval=1, batch_size=8, batch_horizon=4,
+                 noise_dimension=2, manager_horizon=16, manager_interval=1, batch_size=8, batch_horizon=4,
                  noise_stddev=hrl.utils.CappedLinear(1e5, 0.5, 0.05),
                  # noise_stddev=0.3,
                  noise_explore_param=(0, 0.2, 0.2),
@@ -163,8 +163,11 @@ class NoisyPendulum(NoisyExperiment):
                 input_se, input_action = inputs[0], inputs[1]
                 input_var = tf.concat([input_se, input_action], axis=-1)
                 out = hrl.network.Utils.layer_fcs(input_var, [hidden_dim, hidden_dim], se_dimension,
-                                                  activation, None, l2=l2)
-                return {"sd": out}
+                                                  activation, None, l2=l2, var_scope="sd")
+                r = hrl.network.Utils.layer_fcs(input_var, [hidden_dim, hidden_dim], 1,
+                                                  activation, None, l2=l2, var_scope="r")
+                r = tf.squeeze(r, axis=-1)
+                return {"sd": out, "r": r}
             f_model = f
         if f_pi is None:
             def f(inputs):
@@ -286,7 +289,7 @@ class NoisyDPGPendulum(NoisyDPGExperiment):
     def __init__(self, env=None, f_se=None, f_actor=None, f_critic=None, f_noise=None,
                  episode_n=1000, discount_factor=0.9, batch_size=32,
                  dim_se=16, dim_hidden=32, dim_noise=2,
-                 noise_stddev=hrl.utils.CappedLinear(1e5, 1.0, 0.1),
+                 noise_stddev=hrl.utils.CappedLinear(1e5, 0.1, 0.02),
                  noise_weight=1e-1,
                  ou_params=(0.0, 0.2, 0.2),
                  network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3),
@@ -295,6 +298,7 @@ class NoisyDPGPendulum(NoisyDPGExperiment):
 
         if env is None:
             env = gym.make("Pendulum-v0")
+            # env = hrl.envs.MaxAndSkipEnv(env, 1, skip=2)
             env = hrl.envs.AugmentEnvWrapper(env, reward_decay=discount_factor, reward_scale=0.1)
 
         dim_action = env.action_space.shape[0]
@@ -356,12 +360,12 @@ class NoisyDPGBipedal(NoisyDPGPendulum):
     def __init__(self, env=None, f_se=None, f_actor=None, f_critic=None, f_noise=None,
                  episode_n=5000,
                  discount_factor=0.99, batch_size=32, dim_se=16, dim_hidden=64, dim_noise=2,
-                 noise_stddev=hrl.utils.CappedLinear(5e5, 1.0, 0.1),
+                 noise_stddev=hrl.utils.CappedLinear(5e5, 0.2, 0.05),
                  noise_weight=1e-1,
                  ou_params=(0.0, 0.2, 0.2),
                  network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3),
                                                                            grad_clip=10.0), target_sync_interval=10,
-                 target_sync_rate=0.01, replay_size=1000):
+                 target_sync_rate=0.01, replay_size=10000):
         if env is None:
             env = gym.make("BipedalWalker-v2")
             env = hrl.envs.AugmentEnvWrapper(env, reward_decay=discount_factor, reward_scale=0.1)

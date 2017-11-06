@@ -35,8 +35,8 @@ class NoisyDPGUpdater(dpg.DPGUpdater):
                                                              name="input_action_mean_gradient")
                 self._actor_mean_loss = tf.reduce_sum(actor_mean.output().op * self._input_action_mean_gradient, axis=1)
                 self._actor_mean_loss = -tf.reduce_mean(self._actor_mean_loss)
-            # self._op_loss = (self._actor_loss + self._actor_mean_loss) * actor_weight + self._critic_loss
-            self._op_loss = self._actor_mean_loss * actor_weight + self._critic_loss
+            self._op_loss = (self._actor_loss + self._actor_mean_loss) * actor_weight + self._critic_loss
+            # self._op_loss = self._actor_mean_loss * actor_weight + self._critic_loss
 
         self._update_operation = network.MinimizeLoss(self._op_loss,
                                                       var_list=self._actor.variables +
