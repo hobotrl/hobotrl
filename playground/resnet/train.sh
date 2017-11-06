@@ -19,7 +19,7 @@ unbuffer python train.py  \
     --initial_lr 0.01 \
     --lr_step_epoch 10.0,20.0 \
     --lr_decay 0.01 \
-    --max_steps 100000 \
+    --max_steps 50000 \
     --log_dir $log_dir \
     --checkpoint_interval 1000 \
     --gpu_fraction 0.7 \

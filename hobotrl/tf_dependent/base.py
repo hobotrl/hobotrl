@@ -39,12 +39,13 @@ class BaseDeepAgent(BaseAgent):
 
     def create_session(self, config=None, master="", graph=None, worker_index=0,
                        init_op=None,
-                       save_dir=None, restore_var_list=None):
+                       save_dir=None, restore_var_list=None, save_checkpoint_secs=None, save_summaries_steps=None):
         sess = MonitoredTrainingSession(master=master,
                                         is_chief=(worker_index == 0),
                                         checkpoint_dir=save_dir,
                                         restore_var_list=restore_var_list,
-                                        save_summaries_steps=None,
+                                        save_checkpoint_secs=save_checkpoint_secs,
+                                        save_summaries_steps=save_summaries_steps,
                                         save_summaries_secs=None, config=config)
         self.set_session(sess)
         return sess
