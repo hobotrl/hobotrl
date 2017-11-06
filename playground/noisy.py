@@ -29,7 +29,7 @@ def cosine(a, b, name=None):
 
 class TransitionPolicyGradientUpdater(NetworkUpdater):
 
-    def __init__(self, func_goal, func_value, net_se, target_estimator):
+    def __init__(self, func_goal, func_value, net_se, target_estimator, achievable_weight=1e-1):
         """
 
         :param func_goal: goal generator function
@@ -45,6 +45,8 @@ class TransitionPolicyGradientUpdater(NetworkUpdater):
         self._estimator = target_estimator
         self._func_goal, self._func_value = func_goal, func_value
         state_shape = net_se.inputs[0].shape.as_list()
+        se_dimension = net_se["se"].op.shape.as_list()[-1]
+
         op_v = func_value.output().op
         self._op_v = op_v
         with tf.name_scope("input"):
@@ -77,8 +79,8 @@ class TransitionPolicyGradientUpdater(NetworkUpdater):
             #     tf.reduce_mean(norm_vector_scale(goal_fact), axis=0)
             #     - tf.reduce_mean(norm_vector_scale(goal_predict), axis=0)
             # ))
-            achievable_loss = tf.reduce_mean(Utils.clipped_square(goal_fact - goal_predict))
-            self._op_loss = self._v_loss - self._manager_loss + 0.001 * achievable_loss
+            self._achievable_loss = tf.reduce_mean(Utils.clipped_square(goal_fact - goal_predict))
+            self._op_loss = self._v_loss - self._manager_loss + achievable_weight * self._achievable_loss
         self._update_operation = network.MinimizeLoss(self._op_loss,
                                                       var_list=func_goal.variables +
                                                                func_value.variables)
@@ -109,6 +111,7 @@ class TransitionPolicyGradientUpdater(NetworkUpdater):
             "loss_v": self._v_loss,
             "loss_manager": self._manager_loss,
             "los_cos": self._manager_cos,
+            "loss_achieve": self._achievable_loss,
             "goal_predict": self._func_goal.output().op,
             "goal_fact": self._goal_fact,
             "goal_predict_norm": self._goal_predict_norm,
@@ -163,7 +166,7 @@ class DisentangleUpdater(NetworkUpdater):
     
 
 class ModelUpdater(NetworkUpdater):
-    def __init__(self, net_se, net_model):
+    def __init__(self, net_se, net_model, reward_weight=1.0):
         super(ModelUpdater, self).__init__()
         state_shape = net_se.inputs[0].shape.as_list()
         se_shape = net_se["se"].op.shape.as_list()
@@ -172,16 +175,20 @@ class ModelUpdater(NetworkUpdater):
             self._input_state = tf.placeholder(dtype=tf.float32, shape=state_shape, name="St")
             self._input_next_state = tf.placeholder(dtype=tf.float32, shape=state_shape, name="St1")
             self._input_action = tf.placeholder(dtype=tf.float32, shape=action_shape, name="action")
+            self._input_reward = tf.placeholder(dtype=tf.float32, shape=[None], name="reward")
         with tf.name_scope("forward_model"):
             se = net_se([self._input_state])["se"].op
             next_se = net_se([self._input_next_state])["se"].op
             self._goal_fact = tf.stop_gradient(next_se - se)
             logging.warning("ModelUpdater model input:%s", [se, self._input_action])
-            self._goal_predict = net_model([se, self._input_action])["sd"].op
-            self._loss = tf.reduce_mean(
+            net = net_model([se, self._input_action])
+            self._goal_predict = net["sd"].op
+            self._goal_loss = tf.reduce_mean(
                 tf.reduce_sum(
                     Utils.clipped_square(self._goal_fact - self._goal_predict)
                 ))
+            self._reward_loss = tf.reduce_mean(Utils.clipped_square(self._input_reward - net["r"].op))
+            self._loss = self._goal_loss + reward_weight * self._reward_loss
         self._update_operation = network.MinimizeLoss(self._loss,
                                                       var_list=net_se.variables + net_model.variables)
 
@@ -192,17 +199,20 @@ class ModelUpdater(NetworkUpdater):
         # horizon c = 1
         if isinstance(batch, list):
             batch = to_transitions(batch)
-        state, next_state, action = \
-            batch["state"], batch["next_state"], batch["action"]
+        state, next_state, action, reward = \
+            batch["state"], batch["next_state"], batch["action"], batch["reward"]
 
         feed_dict = {
             self._input_state: state,
             self._input_next_state: next_state,
-            self._input_action: action
+            self._input_action: action,
+            self._input_reward: reward,
         }
         return network.UpdateRun(feed_dict=feed_dict, fetch_dict={"goal_predict": self._goal_predict,
                                                                   "goal_fact": self._goal_fact,
                                                                   "action": self._input_action,
+                                                                  "loss_reward": self._reward_loss,
+                                                                  "loss_goal": self._goal_loss,
                                                                   "loss": self._loss})
 
 
@@ -231,8 +241,8 @@ class ImaginaryGoalGradient(NetworkUpdater):
             self._goal_predict = net_model([se, action_predict])["sd"].op
             self._loss = tf.reduce_mean(
                 tf.reduce_sum(
-                    Utils.clipped_square(self._goal_fact - self._goal_predict)
-                ))
+                    Utils.clipped_square(self._goal_fact - self._goal_predict), axis=-1)
+            )
         self._update_operation = network.MinimizeLoss(self._loss,
                                                       var_list=net_ik.variables)
 
@@ -445,9 +455,12 @@ class NoisySD(BaseDeepAgent):
             target_estimator = GAENStep(func_value, discount_factor)
 
         # algorithm hyperparameter
-        self._act_ac = False
+        # True if act by actor critic; False by IK
+        self._act_ac = True
+        # True if explore by noise net; False by plain ou noise
         self._explore_net = False
-
+        # True if goal expressed in absolute delta; False in direction
+        self._abs_goal = False
         self._optimizer.add_updater(TransitionPolicyGradientUpdater(func_goal,
                                                                     func_value,
                                                                     self.network.sub_net("se"),

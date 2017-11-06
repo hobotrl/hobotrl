@@ -13,7 +13,7 @@ class Utils(object):
 
     @staticmethod
     def layer_fcs(input_var, shape, out_count, activation_hidden=tf.nn.elu, activation_out=None, l2=0.0001,
-                  var_scope=""):
+                  var_scope="", initializer=layers.xavier_initializer):
         variables = []
         ops = []
         with tf.variable_scope(var_scope):
@@ -21,8 +21,8 @@ class Utils(object):
                 hidden_count = shape[i]
                 out = layers.fully_connected(inputs=input_var, num_outputs=hidden_count,
                                              activation_fn=activation_hidden,
-                                             weights_initializer=layers.xavier_initializer(),
-                                             biases_initializer=layers.xavier_initializer(),
+                                             weights_initializer=initializer(),
+                                             biases_initializer=initializer(),
                                              weights_regularizer=layers.l2_regularizer(l2),
                                              biases_regularizer=layers.l2_regularizer(l2),
                                              scope="hidden_%d" % i)
@@ -31,8 +31,8 @@ class Utils(object):
             # output
             out = layers.fully_connected(inputs=input_var, num_outputs=out_count,
                                          activation_fn=activation_out,
-                                         weights_initializer=layers.xavier_initializer(),
-                                         biases_initializer=layers.xavier_initializer(),
+                                         weights_initializer=initializer(),
+                                         biases_initializer=initializer(),
                                          weights_regularizer=layers.l2_regularizer(l2),
                                          biases_regularizer=layers.l2_regularizer(l2),
                                          scope="out")
@@ -40,11 +40,11 @@ class Utils(object):
 
     @staticmethod
     def conv2d(input_var, h, w, out_channel, strides=[1, 1], padding="SAME",
-               activation=tf.nn.elu, l2=1e-4, var_scope=""):
+               activation=tf.nn.elu, l2=1e-4, var_scope="", initializer=layers.xavier_initializer):
         with tf.variable_scope(var_scope):
             out = tf.layers.conv2d(inputs=input_var, filters=out_channel, kernel_size=[w, h],
                                    strides=strides, padding=padding, activation=activation,
-                                   use_bias=True, kernel_initializer=layers.xavier_initializer(),
+                                   use_bias=True, kernel_initializer=initializer(),
                                    # bias_initializer=layers.xavier_initializer(),
                                    kernel_regularizer=layers.l2_regularizer(l2),
                                    bias_regularizer=layers.l2_regularizer(l2))
@@ -52,15 +52,16 @@ class Utils(object):
 
     @staticmethod
     def conv2ds(input_var, shape=[(64, 4, 1)], out_flatten=True, padding="SAME",
-                activation=tf.nn.elu, l2=1e-4, var_scope=""):
+                activation=tf.nn.elu, l2=1e-4, var_scope="", initializer=layers.xavier_initializer):
         out = input_var
         with tf.variable_scope(var_scope):
             for i in range(len(shape)):
                 s = shape[i]
                 filter_n, kernel_n, strides_n = s
                 out = Utils.conv2d(out, h=kernel_n, w=kernel_n, out_channel=filter_n,
-                                     strides=[strides_n, strides_n], padding=padding,
-                                     activation=activation, l2=l2, var_scope="conv%d" % i)
+                                   strides=[strides_n, strides_n], padding=padding,
+                                   activation=activation, l2=l2, var_scope="conv%d" % i,
+                                   initializer=initializer)
         if out_flatten:
             out = tf.contrib.layers.flatten(out)
         return out
