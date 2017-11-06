@@ -455,7 +455,8 @@ if __name__ == '__main__':
     # cal_hor_sim_eps()
     # cal_hor_sim_obj(obj_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/test_")
     # test_divie_eps("/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_v3/0001")
-    obj_dir = "/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_vec_rewards_docker005_no_early_stopping_all_green2"
-    rename_dirs(obj_dir, start_num=550)
+    # obj_dir = "/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_vec_rewards_docker005_no_early_stopping_all_green2"
+    obj_dir = "/home/pirate03/hobotrl_data/A3CCarRecordingDiscrete2/1"
+    rename_dirs(obj_dir, start_num=200)
     # divide_obj()
     # test_divide_obj()

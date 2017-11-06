@@ -10,17 +10,19 @@ import numpy as np
 import resnet
 import tensorflow as tf
 from IPython import embed
+import sys
+sys.path.append('../../')
 from playground.initialD.imitaion_learning.sl.evaluate import evaluate
 from playground.initialD.imitaion_learning.process_data.stack_imgs import stack_obj_eps
-from playground.initialD.imitaion_learning.split_stack_infos import split_stack_infos, rand_imgs_acts, \
+from playground.initialD.imitaion_learning.process_data.split_stack_infos import split_stack_infos, rand_imgs_acts, \
     rand_imgs_acts_specify_batch_size
 
 # Dataset Configuration
 tf.app.flags.DEFINE_string('train_dir', '/home/pirate03/hobotrl_data/playground/initialD/exp/test_prog/train', """Path to initialD the training dataset""")
 tf.app.flags.DEFINE_string('val_dir', '/home/pirate03/hobotrl_data/playground/initialD/exp/test_prog/valid', """Path to initialD the test dataset""")
-tf.app.flags.DEFINE_integer('num_classes', 3, """Number of classes in the dataset.""")
-tf.app.flags.DEFINE_integer('num_train_instance', 166000, """Number of training images.""")
-tf.app.flags.DEFINE_integer('num_val_instance', 24850, """Number of val images.""")
+tf.app.flags.DEFINE_integer('num_classes', 9, """Number of classes in the dataset.""")
+tf.app.flags.DEFINE_integer('num_train_instance', 180000, """Number of training images.""")
+tf.app.flags.DEFINE_integer('num_val_instance', 8000, """Number of val images.""")
 
 # Network Configuration
 tf.app.flags.DEFINE_integer('batch_size', 128, """Number of images to process in a batch.""")
@@ -158,17 +160,18 @@ def train():
         # Training!
         train_data = stack_obj_eps(FLAGS.train_dir)
         val_data = stack_obj_eps(FLAGS.val_dir)
-        train_data_splited = split_stack_infos(train_data)
-        batch_size_list = [64, 8, 8]
+        train_data_splited = split_stack_infos(train_data, 9)
+        val_data_splited = split_stack_infos(val_data, 9)
+        batch_size_list = [4, 10, 16, 4, 4, 32, 4, 6, 10]
 
         val_best_acc = 0.0
         for step in xrange(init_step, FLAGS.max_steps):
             # val
             if step % FLAGS.val_interval == 0:
                 val_loss, val_acc, val_prec, val_rec, val_f1 = 0.0, 0.0, 0.0, 0.0, 0.0
-                val_conf_mat = np.zeros((3,3))
+                val_conf_mat = np.zeros((9,9))
                 for i in range(FLAGS.val_iter):
-                    val_imgs, val_labels = rand_imgs_acts(val_data, FLAGS.batch_size)
+                    val_imgs, val_labels = rand_imgs_acts_specify_batch_size(val_data_splited, batch_size_list)
                     loss_value, acc_value, preds = sess.run([network_val.loss, network_val.acc, network_val.preds],
                                 feed_dict={network_val._images:val_imgs, network_val._labels:val_labels,
                                            network_val.is_train:False})
@@ -178,7 +181,7 @@ def train():
                     y_true = val_labels
                     # print "y_true: ", y_true
                     # print "y_pred: ", preds
-                    prec_value, rec_value, f1_value, conf_mat_value = evaluate(y_true, preds, labels=[0,1,2])
+                    prec_value, rec_value, f1_value, conf_mat_value = evaluate(y_true, preds, labels=range(9))
                     val_loss += loss_value
                     val_acc += acc_value
                     val_prec += prec_value
@@ -222,7 +225,7 @@ def train():
             y_true = train_labels
             # print "y_true: ", y_true
             # print "y_pred: ", preds
-            train_prec, train_rec,train_f1,train_conf_mat = evaluate(y_true, preds, labels=[0,1,2])
+            train_prec, train_rec, train_f1, train_conf_mat = evaluate(y_true, preds, labels=range(9))
 
             duration = time.time() - start_time
             # sys.stdout.flush()

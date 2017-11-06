@@ -3,34 +3,22 @@ import numpy as np
 
 def stat_eps_action_num(eps_dir):
     filenames = sorted(os.listdir(eps_dir))
-    img_names =filenames[1:]
-    stat_acts = [0, 0, 0, 0, 0]
-    has_action3_imgs = []
-    has_action4_imgs = []
+    img_names = filenames[1:]
+    stat_acts = np.zeros(9)
     for img_name in img_names:
         act = int(img_name.split('.')[0].split('_')[-1])
-        if act == 3:
-            has_action3_imgs.append(img_name)
-        if act == 4:
-            has_action4_imgs.append(img_name)
         stat_acts[act] += 1
-    return np.array(stat_acts), has_action3_imgs, has_action4_imgs
+    return stat_acts
 
 
 def stat_obj_action_num(obj_dir):
     eps_names = sorted(os.listdir(obj_dir))
-    obj_stats = np.array([0, 0, 0, 0, 0])
-    stat_action3_eps = {}
-    stat_action4_eps = {}
+    obj_stats = np.zeros(9)
     for eps_name in eps_names:
         eps_dir = obj_dir + "/" + eps_name
-        eps_stats, has_action3_imgs, has_action4_imgs = stat_eps_action_num(eps_dir)
+        eps_stats = stat_eps_action_num(eps_dir)
         obj_stats += eps_stats
-        if has_action3_imgs != []:
-            stat_action3_eps[eps_name] = has_action3_imgs
-        if has_action4_imgs != []:
-            stat_action4_eps[eps_name] = has_action4_imgs
-    return obj_stats, stat_action3_eps, stat_action4_eps
+    return obj_stats
 
 
 def stat_action_start_time(eps_dir):
@@ -147,6 +135,22 @@ if __name__ == "__main__":
     # complete_last_three_imgs(obj_dir)
 
     # test_obj_dir = "/home/pirate03/hobotrl_data/playground/initialD/exp/TEST/test_rm_txt_start_time"
-    obj_dir = "/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_obj80_vec_rewards_docker005_no_early_stopping_all_green/valid"
-    rm_obj_txt_start_time_lines(obj_dir)
+    # obj_dir = "/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_obj80_vec_rewards_docker005_no_early_stopping_all_green/valid"
+    # rm_obj_txt_start_time_lines(obj_dir)
 
+    obj_dir = "/home/pirate03/hobotrl_data/A3CCarRecordingDiscrete2/train"
+    obj_stats = stat_obj_action_num(obj_dir)
+    # [  6910.  21584.  26952.   6100.   9927.  70329.   4678.  12266.  21468.]
+    # 180214
+    # [ 0.0383433 ,  0.11976872,  0.14955553,  0.03384865,  0.05508451,
+    #   0.3902527 ,  0.02595803,  0.06806352,  0.11912504]
+
+    obj_dir = "/home/pirate03/hobotrl_data/A3CCarRecordingDiscrete2/valid"
+    obj_stats = stat_obj_action_num(obj_dir)
+    # [  365.   900.  1189.   345.   421.  3259.   253.   515.  1001.]
+    # 8248
+    # [ 0.04425315  0.10911736  0.14415616  0.04182832  0.05104268  0.39512609
+    # 0.0306741   0.06243938  0.12136275]
+    print obj_stats
+    print obj_stats.sum()
+    print obj_stats / obj_stats.sum()

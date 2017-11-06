@@ -70,9 +70,6 @@ def stack_obj_eps(obj_dir="/home/pirate03/hobotrl_data/playground/initialD/exp/T
     for i, eps_name in enumerate(eps_names):
         eps_dir = obj_dir + "/" + eps_name
         eps_imgs, eps_acts = read_eps_imgs_acts(eps_dir)
-        for j in range(len(eps_acts)):
-            if eps_acts[j] == 3 or eps_acts[j] == 4:
-                eps_acts[j] = 0
         if len(eps_imgs) >= stack_num+1:
             eps_stack_info = stack_one_eps(eps_imgs, eps_acts, stack_num)
             # obj_stack_info.append(eps_stack_info)

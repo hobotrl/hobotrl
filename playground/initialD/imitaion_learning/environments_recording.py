@@ -44,7 +44,7 @@ class EnvRecordingRunner(object):
         self.savedir = savedir
         self.render_once = True if render_once else False
 
-    def step(self, evaluate=False, eps_dir=None, recording_file=None):
+    def step(self, evaluate=False, eps_dir=None, recording_file=None, step_t=0):
         """
         agent runs one step against env.
         :param evaluate:
@@ -61,15 +61,16 @@ class EnvRecordingRunner(object):
         # print "orig: ", img
         img = img.astype(np.uint8)
         # print "astype: ", img
-        cv2.imwrite(eps_dir+"/"+str(self.step_n).zfill(6)+"_"
+        cv2.imwrite(eps_dir+"/"+str(step_t).zfill(6)+"_"
                     +str(self.action)+".jpg", cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
 
         next_state, reward, done, info = self.env.step(self.action)
         self.total_reward = reward + self.reward_decay * self.total_reward
-        recording_file.write("{}, {}, {:.6f}, {:.6f}".format(self.step_n, self.action, reward, self.total_reward))
+        recording_file.write("{}, {}, {:.6f}, {:.6f} \n".format(step_t, self.action, reward, self.total_reward))
         info = self.agent.step(
             state=self.state, action=self.action, reward=reward,
-            next_state=next_state, episode_done=done
+            next_state=next_state, episode_done=done,
+            learning_off=True
         )
         self.record(info)
         self.state = next_state
@@ -92,7 +93,7 @@ class EnvRecordingRunner(object):
         :param n:
         :return:
         """
-        os.mkdir(self.savedir)
+        os.makedirs(self.savedir)
         for i in range(n):
             self.episode_n += 1
             eps_dir = self.savedir+"/"+str(self.episode_n).zfill(6)
@@ -109,7 +110,7 @@ class EnvRecordingRunner(object):
             for t in range(self.max_episode_len):
                 if render:
                     self.env.render()
-                terminate = self.step(evaluate, eps_dir, recording_file)
+                terminate = self.step(evaluate, eps_dir, recording_file, t)
                 if terminate:
                     break
             recording_file.close()

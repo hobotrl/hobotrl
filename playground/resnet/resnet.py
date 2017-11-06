@@ -4,8 +4,6 @@ import tensorflow as tf
 import numpy as np
 
 import utils
-import sys
-from playground.initialD.imitaion_learning.sl.evaluate import evaluate
 
 HParams = namedtuple('HParams',
                     'batch_size, num_gpus, num_classes, weight_decay, '
@@ -15,7 +13,7 @@ HParams = namedtuple('HParams',
 class ResNet(object):
     def __init__(self, hp, global_step, name=None, reuse_weights=False):
         self._hp = hp # Hyperparameters
-        self._images = tf.placeholder(tf.float32, [None, 224, 224, 3], name="images")
+        self._images = tf.placeholder(tf.float32, [None, 96, 96, 9], name="images")
         print "images name: ", self._images.name
         self._labels = tf.placeholder(tf.int32, [None], name="labels")
         print "labels name: ", self._labels.name

@@ -130,12 +130,12 @@ class A3CRecordingExperiment(Experiment):
                                         evaluate_interval=sys.maxint, render_interval=args.render_interval,
                                         render_once=True,
                                         logdir=args.logdir if args.index == 0 else None,
-                                        savedir=args.savedir)
+                                        savedir=args.savedir+"/"+str(args.index))
             runner.episode(self._episode_n)
 
 
 class A3CCarRecordingDiscrete2(A3CRecordingExperiment):
-    def __init__(self, env=None, f_create_net=None, episode_n=200, learning_rate=5e-5, discount_factor=0.99,
+    def __init__(self, env=None, f_create_net=None, episode_n=500, learning_rate=5e-5, discount_factor=0.99,
                  entropy=hrl.utils.CappedLinear(1e6, 2e-2, 5e-3),
                  batch_size=32):
         if env is None:
