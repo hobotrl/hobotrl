@@ -103,6 +103,10 @@ class DrivingSimulatorEnv(object):
 
         self.STEP_DELAY_TARGET = step_delay_target  # target delay for each step()
         self.last_step_t = None
+        self.phase_target = 0.0
+        self.phase_err = None
+        self.phase_err_i = 0.0
+        self.phase_delta = 0.0
 
         # inter-process flags (mp.Event)
         self.is_exiting = Event()
@@ -136,17 +140,31 @@ class DrivingSimulatorEnv(object):
         if self.is_env_resetting.is_set():
             raise Exception('[step()]: reset() is in progress and not returned.')
 
-        # step delay regularization
+        # step delay and phase regularization
         delay = time.time() - self.last_step_t
+        delay_delta = self.STEP_DELAY_TARGET - delay + self.phase_delta
+
         if self.STEP_DELAY_TARGET is not None:
-            if delay < self.STEP_DELAY_TARGET:
-                time.sleep(self.STEP_DELAY_TARGET-delay)
+            if delay_delta > 0:
+                time.sleep(delay_delta)
             else:
                 pass
-                print ("[step()]: delay {:.3f} >= target {:.3f}, if happen "
-                       "regularly please conconsider increasing target.").format(
-                           delay, self.STEP_DELAY_TARGET)
+                print (
+                    "[step()]: delay delta < 0. Delay {:.3f}/{:.3f}, Phase {:.5f}/{:.5f}."
+                ).format(
+                           delay, self.STEP_DELAY_TARGET,
+                           self.phase_err, self.phase_target
+                )
+
+        # set point
         self.last_step_t = time.time()
+        phase_err = \
+            (self.phase_target - self.last_step_t + self.STEP_DELAY_TARGET/2) \
+            % self.STEP_DELAY_TARGET - self.STEP_DELAY_TARGET/2
+        self.phase_err_i += phase_err
+        phase_err_d = (phase_err - self.phase_err) if self.phase_err is not None else 0
+        self.phase_err = phase_err
+        self.phase_delta = 0.1*(self.phase_err + self.phase_err_i + phase_err_d)
 
         # build action ROS msg
         # Note: users need to make sure the ROS msg can be initialized with the
@@ -377,8 +395,18 @@ class DrivingSimulatorEnv(object):
                     return None
                 time.sleep(0.5)
 
-        # start step delay clock
+        # start step delay clock and correct phase
+        phase_err = (self.phase_target - time.time())% self.STEP_DELAY_TARGET
+        time.sleep(phase_err)
+        print "Initial phase error = {}".format(phase_err)
         self.last_step_t = time.time()
+        phase_err = \
+            (self.phase_target - self.last_step_t + self.STEP_DELAY_TARGET/2.0) \
+            % self.STEP_DELAY_TARGET - self.STEP_DELAY_TARGET/2.0
+        self.phase_err_i += phase_err
+        phase_err_d = (phase_err - self.phase_err) if self.phase_err is not None else 0
+        self.phase_err = phase_err
+        self.phase_delta = 0.1*(self.phase_err + self.phase_err_i + phase_err_d)
 
         # observation
         obs_list = []
