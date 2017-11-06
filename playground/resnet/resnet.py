@@ -5,7 +5,7 @@ import numpy as np
 
 import utils
 import sys
-from playground.initialD.imitaion_learning.evaluate import evaluate
+from playground.initialD.imitaion_learning.sl.evaluate import evaluate
 
 HParams = namedtuple('HParams',
                     'batch_size, num_gpus, num_classes, weight_decay, '

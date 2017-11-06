@@ -57,10 +57,13 @@ class EnvRecordingRunner(object):
         self.action = self.agent.act(
             state=self.state, evaluate=evaluate, sess=self.agent.sess
         )
-        print "state shape: ", self.state.shape
-        img = self.state[-3:]
+        img = self.state[:, :, -3:] * 255.0
+        # print "orig: ", img
+        img = img.astype(np.uint8)
+        # print "astype: ", img
         cv2.imwrite(eps_dir+"/"+str(self.step_n).zfill(6)+"_"
                     +str(self.action)+".jpg", cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+
         next_state, reward, done, info = self.env.step(self.action)
         self.total_reward = reward + self.reward_decay * self.total_reward
         recording_file.write("{}, {}, {:.6f}, {:.6f}".format(self.step_n, self.action, reward, self.total_reward))

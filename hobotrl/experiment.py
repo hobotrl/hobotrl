@@ -54,6 +54,7 @@ class Experiment(object):
         parser.add_argument("operation", default="list")
         parser.add_argument("--name", default="HelloWorld")
         parser.add_argument("--logdir", default=None)
+        parser.add_argument("--savedir", default=None)
         parser.add_argument("--job", default="worker")
         parser.add_argument("--index", default="0")
         parser.add_argument("--render_interval", default="-1")

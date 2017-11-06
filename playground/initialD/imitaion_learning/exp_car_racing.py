@@ -1,3 +1,8 @@
+import sys
+sys.path.append('../../../..')
+sys.path.append('..')
+sys.path.append('.')
+
 import hobotrl as hrl
 from hobotrl.experiment import Experiment
 import tensorflow as tf
@@ -124,12 +129,13 @@ class A3CRecordingExperiment(Experiment):
             runner = EnvRecordingRunner(self._env, agent, reward_decay=self._discount_factor,  max_episode_len=1000,
                                         evaluate_interval=sys.maxint, render_interval=args.render_interval,
                                         render_once=True,
-                                        logdir=args.logdir if args.index == 0 else None)
+                                        logdir=args.logdir if args.index == 0 else None,
+                                        savedir=args.savedir)
             runner.episode(self._episode_n)
 
 
 class A3CCarRecordingDiscrete2(A3CRecordingExperiment):
-    def __init__(self, env=None, f_create_net=None, episode_n=100, learning_rate=5e-5, discount_factor=0.99,
+    def __init__(self, env=None, f_create_net=None, episode_n=200, learning_rate=5e-5, discount_factor=0.99,
                  entropy=hrl.utils.CappedLinear(1e6, 2e-2, 5e-3),
                  batch_size=32):
         if env is None:
@@ -227,3 +233,6 @@ Experiment.register(A3CCarRecordingDiscrete2, "Discrete A3C for CarRacing Record
 #                                         savedir=args.savedir+"/"+args.index)
 #             runner.episode(self._episode_n)
 #
+
+if __name__ == '__main__':
+    Experiment.main()

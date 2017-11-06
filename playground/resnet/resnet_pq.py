@@ -44,11 +44,12 @@ class ResNet(object):
         # conv4_x
         x = self._residual_block_first(x, filters[3], strides[3], name='conv4_1')
         x = self._residual_block(x, name='conv4_2')
+        # x = tf.stop_gradient(x)
 
         # conv5_x
         x = self._residual_block_first(x, filters[4], strides[4], name='conv5_1')
         x = self._residual_block(x, name='conv5_2')
-        # x = tf.stop_gradient(x)
+        x = tf.stop_gradient(x)
 
         # Logit
         with tf.variable_scope('logits') as scope:
@@ -60,8 +61,8 @@ class ResNet(object):
         probs = tf.nn.softmax(x)
         preds = tf.to_int32(tf.argmax(probs, 1))
         print "preds name {}".format(preds.name)
-        return probs
-        # return tf.stop_gradient(probs)
+        # return probs
+        return tf.stop_gradient(probs)
 
     def build_new_tower(self, images):
         with tf.variable_scope(tf.get_variable_scope()) as scope:
@@ -92,11 +93,12 @@ class ResNet(object):
             # conv4_x
             x = self._residual_block_first(x, filters[3], strides[3], name='conv4_1')
             x = self._residual_block(x, name='conv4_2')
+            # x = tf.stop_gradient(x)
 
             # conv5_x
             x = self._residual_block_first(x, filters[4], strides[4], name='conv5_1')
             x = self._residual_block(x, name='conv5_2')
-            # x = tf.stop_gradient(x)
+            x = tf.stop_gradient(x)
 
 
         # with tf.variable_scope(tf.get_variable_scope(), reuse=False):
@@ -114,6 +116,7 @@ class ResNet(object):
 
         # Probs & preds & acc
         return logits
+
 
 
     def _residual_block_first(self, x, out_channel, strides, name="unit"):

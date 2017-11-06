@@ -1,23 +1,14 @@
 #!/usr/bin/env python
 
-import os
-from datetime import datetime
 import time
-import tensorflow as tf
+
 import numpy as np
-import sys
-import select
-from IPython import embed
-from tensorflow.python.client import timeline
-
-import initialD_input as data_input
 import resnet
-from playground.initialD.imitaion_learning.stack_imgs import stack_obj_eps
+import tensorflow as tf
+from playground.initialD.imitaion_learning.sl.evaluate import evaluate
+from playground.initialD.imitaion_learning.process_data.stack_imgs import read_eps_imgs_acts, stack_one_eps
+from playground.initialD.imitaion_learning.process_data.stack_imgs import stack_obj_eps
 from playground.initialD.imitaion_learning.split_stack_infos import concat_imgs_acts
-from playground.initialD.imitaion_learning.stack_imgs import read_eps_imgs_acts, stack_one_eps
-
-from playground.initialD.imitaion_learning.evaluate import evaluate
-import resnet
 
 # Dataset Configuration
 tf.app.flags.DEFINE_string('val_dir', '/home/pirate03/hobotrl_data/playground/initialD/exp/record_rule_scenes_obj80_vec_rewards_docker005_no_early_stopping_all_green/valid', """Path to initialD the test dataset""")

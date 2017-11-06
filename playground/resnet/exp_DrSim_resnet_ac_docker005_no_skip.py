@@ -17,6 +17,8 @@ import cv2
 import os
 import resnet_pq
 from pprint import pprint
+from tensorflow.python.training.summary_io import SummaryWriterCache
+
 
 # Environment
 def func_compile_reward(rewards):
@@ -29,7 +31,6 @@ def func_compile_obs(obss):
     # print obss[-1][1]
     # print obs1.shape
     return obs1
-
 
 
 def f_net(inputs):
@@ -60,36 +61,69 @@ def func_compile_action(action):
     return ACTIONS[action]
 
 
-def func_compile_reward_agent(rewards, action=0):
-    global momentum_ped
-    global momentum_opp
-    rewards = np.mean(np.array(rewards), axis=0)
-    rewards = rewards.tolist()
-    rewards.append(np.logical_or(action==1, action==2))
-    print (' '*10+'R: ['+'{:4.2f} '*len(rewards)+']').format(*rewards),
+# def func_compile_reward_agent(rewards, action=0):
+#     global momentum_ped
+#     global momentum_opp
+#     rewards = np.mean(np.array(rewards), axis=0)
+#     rewards = rewards.tolist()
+#     rewards.append(np.logical_or(action==1, action==2))
+#     print (' '*10+'R: ['+'{:4.2f} '*len(rewards)+']').format(*rewards),
+#
+#     # obstacle
+#     rewards[0] *= 0.0
+#     # distance to
+#     # rewards[1] *= -10.0*(rewards[1]>2.0)
+#     rewards[1] *= 0.0
+#     # velocity
+#     rewards[2] *= 10
+#     # opposite
+#     momentum_opp = (rewards[3]<0.5)*(momentum_opp+(1-rewards[3]))
+#     momentum_opp = min(momentum_opp, 20)
+#     rewards[3] = -20*(0.9+0.1*momentum_opp)*(momentum_opp>1.0)
+#     min reward[3] == -0.6
+#     # ped
+#     momentum_ped = (rewards[4]>0.5)*(momentum_ped+rewards[4])
+#     momentum_ped = min(momentum_ped, 12)
+#     rewards[4] = -40*(0.9+0.1*momentum_ped)*(momentum_ped>1.0)
+#     min reward[4] == -0.8
+#     # obs factor
+#     rewards[5] *= -100.0
+#     # steering
+#     rewards[6] *= -10.0
+#     reward = np.sum(rewards)/100.0
+#     print '{:6.4f}, {:6.4f}'.format(momentum_opp, momentum_ped),
+#     print ': {:7.4f}'.format(reward)
+#     return reward
 
-    # obstacle
-    rewards[0] *= 0.0
-    # distance to
-    rewards[1] *= -10.0*(rewards[1]>2.0)
-    # velocity
-    rewards[2] *= 10
-    # opposite
-    momentum_opp = (rewards[3]<0.5)*(momentum_opp+(1-rewards[3]))
-    momentum_opp = min(momentum_opp, 20)
-    rewards[3] = -20*(0.9+0.1*momentum_opp)*(momentum_opp>1.0)
-    # ped
-    momentum_ped = (rewards[4]>0.5)*(momentum_ped+rewards[4])
-    momentum_ped = min(momentum_ped, 12)
-    rewards[4] = -40*(0.9+0.1*momentum_ped)*(momentum_ped>1.0)
-    # obs factor
-    rewards[5] *= -100.0
-    # steering
-    rewards[6] *= -10.0
-    reward = np.sum(rewards)/100.0
-    print '{:6.4f}, {:6.4f}'.format(momentum_opp, momentum_ped),
+
+def func_compile_reward_agent(rewards, action=0):
+    """
+    :param rewards: rewards[0]: obstacle???
+                    rewards[1]: distance_to_planning_line
+                    rewards[2]: velocity, 0-8.5
+                    rewards[3]: oppsite reward, 0.0 if car is on oppsite else 1.0
+                    rewards[4]: pedestrain reward, 1.0 if car is on pedestrain else 0.0
+                    rewards[5]: obs factor???
+    :param action:
+    :return:
+    """
+    rewards = np.mean(np.array(rewards), axis=0)
+    print (' ' * 10 + 'R: [' + '{:4.2f} ' * len(rewards) + ']').format(*rewards),
+    # if car is on opp side or car is on ped side, get reward of -1.0
+    if rewards[3] < 0.5 or rewards[4] > 0.5:
+        reward = -1.0
+    else:
+        if action == 1 or action == 2:
+            reward = rewards[2] - 1.0
+        reward = rewards[2] / 10.0
     print ': {:7.4f}'.format(reward)
     return reward
+
+    # opp_r = -1.0 * (1 - rewards[3])
+    # ped_r = -1.0 * rewards[4]
+    # vec_r = rewards[5] / 10.0
+    # combi_r = opp_r + ped_r + vec_r
+    # return combi_r
 
 
 def resize_state(state):
@@ -135,6 +169,32 @@ def record(summary_writer, step_n, info):
         summary_writer.add_summary(summary, step_n)
 
 
+tf.app.flags.DEFINE_string("logdir",
+                           "/home/pirate03/PycharmProjects/hobotrl/playground/resnet/"
+                           "repeat_learn_q_v0_turn_learn_off",
+                           """save tmp model""")
+tf.app.flags.DEFINE_string("savedir",
+                           "/home/pirate03/hobotrl_data/playground/initialD/exp/"
+                           "docker005_no_stopping_static_middle_no_path_all_green/"
+                           "repeat_learn_q_v0_turn_learn_off",
+                           """records data""")
+tf.app.flags.DEFINE_string("readme", "Repeat learn_q_v0 to check if q model affects learning. "
+                                     "Turn learning on."
+                                     "use q loss to instead op_loss."
+                                     "Stop gradient on pi layer and conv layer"
+                                     "Stop gradient on conv layer and pi layer."
+                                     "InitialD waits until 40s."
+                                     "Use new reward function.", """readme""")
+tf.app.flags.DEFINE_float("gpu_fraction", 0.3, """gpu fraction""")
+tf.app.flags.DEFINE_float("discount_factor", 0.99, """actor critic discount factor""")
+tf.app.flags.DEFINE_integer("batch_size", 20, """actor critic discount factor""")
+tf.app.flags.DEFINE_float("lr", 0.01, """actor critic learning rate""")
+tf.app.flags.DEFINE_bool("use_pretrained_q", True, """learn q function or directly actor critic""")
+tf.app.flags.DEFINE_bool("is_dummy_action", False, "record rule based scenes")
+tf.app.flags.DEFINE_bool("learning_off", True, "learning on or off")
+FLAGS = tf.app.flags.FLAGS
+
+
 env = DrivingSimulatorEnv(
     address="10.31.40.197", port='9044',
     # address='localhost', port='22224',
@@ -159,7 +219,7 @@ env = DrivingSimulatorEnv(
     func_compile_reward=func_compile_reward,
     func_compile_action=func_compile_action,
     step_delay_target=0.5,
-    is_dummy_action=False)
+    is_dummy_action=FLAGS.is_dummy_action)
 
 
 # TODO: define these Gym related params insode DrivingSimulatorEnv
@@ -175,14 +235,6 @@ n_skip = 1
 n_ep = 0  # last ep in the last run, if restart use 0
 n_test = 10  # num of episode per test run (no exploration)
 state_shape = (256, 256, 9)
-tf.app.flags.DEFINE_string("logdir",
-                           "/home/pirate03/PycharmProjects/hobotrl/playground/resnet/resnet_pq_rename_learn_q",
-                           """save tmp model""")
-tf.app.flags.DEFINE_string("savedir",
-                           "/home/pirate03/hobotrl_data/playground/initialD/exp/"
-                           "record_rule_scenes_obj80_vec_rewards_docker005_no_early_stopping_all_green/resnet_pq_learn_q",
-                           """save tmp model""")
-FLAGS = tf.app.flags.FLAGS
 
 global_step = tf.get_variable(
             'global_step', [], dtype=tf.int32,
@@ -193,56 +245,72 @@ agent = hrl.ActorCritic(
             f_create_net=f_net,
             state_shape=state_shape,
             # ACUpdate arguments
-            discount_factor=0.9,
-            entropy=hrl.utils.CappedLinear(1e6, 1e-2, 1e-2),
+            discount_factor=FLAGS.discount_factor,
+            entropy=hrl.utils.CappedLinear(1e6, 1e-4, 1e-4),
             target_estimator=None,
             max_advantage=100.0,
             # optimizer arguments
-            network_optmizer=hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3), grad_clip=10.0),
+            network_optmizer=hrl.network.LocalOptimizer(tf.train.AdamOptimizer(FLAGS.lr), grad_clip=10.0),
             max_gradient=10.0,
             # sampler arguments
             sampler=None,
-            batch_size=8,
+            batch_size=FLAGS.batch_size,
             global_step=global_step,
         )
 
 config = tf.ConfigProto(
-        gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=0.4, allow_growth=True),
+        gpu_options=tf.GPUOptions(per_process_gpu_memory_fraction=FLAGS.gpu_fraction, allow_growth=True),
         allow_soft_placement=True,
         log_device_placement=False)
 
-# sv = agent.init_supervisor(
-#         graph=tf.get_default_graph(), worker_index=0,
-#         init_op=tf.global_variables_initializer(), save_dir=FLAGS.logdir
-#     )
-summary_writer = tf.summary.FileWriter(FLAGS.logdir, graph=tf.get_default_graph())
-
 os.mkdir(FLAGS.savedir)
-
-not_restore_var_names = {'optimizers/beta1_power:0', 'optimizers/beta2_power:0',
-                         'learn/q_logits/fc/weights:0', 'learn/q_logits/fc/biases:0',
-                         'learn/q_logits/fc/weights/Adam:0', 'learn/q_logits/fc/weights/Adam_1:0',
-                         'learn/q_logits/fc/biases/Adam:0', 'learn/q_logits/fc/biases/Adam_1:0',
-                         'global_step:0'}
-
-print "global_vars: "
-pprint(tf.global_variables())
-
-
 restore_var_list = []
-for var in tf.global_variables():
-    print "var_name: ", var.name
-    if var.name in not_restore_var_names:
-        pass
-    else:
-        restore_var_list.append(var)
-print "restore vars name: "
-pprint(restore_var_list)
+if FLAGS.use_pretrained_q:
+    for var in tf.global_variables():
+        print "var_name: ", var.name
+        if 'Adam' in var.name or 'optimizers/beta1_power' in var.name \
+                or 'optimizers/beta2_power' in var.name\
+                or var.name == 'global_step:0':
+            pass
+        else:
+            restore_var_list.append(var)
+else:
+    for var in tf.global_variables():
+        print "var_name: ", var.name
+        if 'Adam' in var.name or 'optimizers/beta1_power' in var.name \
+                or 'optimizers/beta2_power' in var.name\
+                or 'q_logits' in var.name\
+                or var.name == 'global_step:0':
+            pass
+        else:
+            restore_var_list.append(var)
+
 
 try:
-    momentum_opp = 0.0
-    momentum_ped = 0.0
-    with agent.create_session(config=config, save_dir=FLAGS.logdir, restore_var_list=restore_var_list) as sess:
+    with agent.create_session(config=config, save_dir=FLAGS.logdir, save_checkpoint_secs=1200,
+                              restore_var_list=restore_var_list) as sess:
+        summary_writer = SummaryWriterCache.get(FLAGS.logdir)
+        all_vars = tf.global_variables()
+        with open(FLAGS.logdir+"/readme.txt", "w") as f:
+            f.write("readme: {}\n".format(FLAGS.readme))
+            f.write("logdir: {}\n".format(FLAGS.logdir))
+            f.write("savedir: {}\n".format(FLAGS.savedir))
+            f.write("restore var names: \n")
+            for var_name in restore_var_list:
+                f.write("{}\n".format(var_name))
+            f.write("gpu_fraction: {}\n".format(FLAGS.gpu_fraction))
+            f.write("discount_factor: {}\n".format(FLAGS.discount_factor))
+            f.write("batch_size: {}\n".format(FLAGS.batch_size))
+            f.write("ac learning rate: {}\n".format(FLAGS.lr))
+            f.write("use pretrained q net: {}\n".format(FLAGS.use_pretrained_q))
+            f.write("learn off: {}\n".format(FLAGS.learning_off))
+            f.write("vars: \n")
+            for var in all_vars:
+                f.write("{}\n".format(var.name))
+                var_value = sess.run(var)
+                f.write("{}\n\n".format(var_value))
+
+        total_steps = 0
         while True:
             n_ep += 1
             n_steps = 0
@@ -252,22 +320,43 @@ try:
             recording_file = open(recording_filename, 'w')
             # all_scenes = []
             state = env.reset()
-            for i in range(stack_num-1):
-                state, reward, done, info = env.step(0)
-
+            # for i in range(stack_num-1):
+            #     state = resize_state(np.array(state))
+            #     action = 0
+            #     next_state, vec_reward, done, info = env.step(action)
+            #     next_state = resize_state(np.array(next_state))
+            #     reward = func_compile_reward_agent(vec_reward, action)
             print "========reset======\n" * 5
             while True:
                 s1 = time.time()
                 state = resize_state(np.array(state))
-                action = agent.act(state=state, evaluate=False, sess=sess)
+                # if n_steps >= stack_num-1:
+                #     action = agent.act(state=state, evaluate=False, sess=sess)
+                distribution = agent._policy._distribution.dist_run(np.asarray(state)[np.newaxis, :])
+                sample_i = []
+                for p in distribution:
+                    sample = np.random.choice(np.arange(3), p=p)
+                    sample_i.append(sample)
+                    # sample_i.append(np.argmax(p))
+                sample_i = np.asarray(sample_i)
+                action = sample_i[0]
+                str_p = ""
+                for tp in p.tolist():
+                    str_p += str(tp)
+                    str_p += ","
+                str_p += "\n"
+                # else:
+                #     str_p = "1.0, 0.0, 0.0,\n"
+                #     action = 0
                 next_state, vec_reward, done, info = env.step(action)
                 next_state = resize_state(np.array(next_state))
                 reward = func_compile_reward_agent(vec_reward, action)
-                img = state[:, :, :3]
+                img = state[:, :, 6:]
                 img_path = eps_dir + "/" + str(n_steps + 1).zfill(4) + \
                            "_" + str(action) + ".jpg"
                 cv2.imwrite(img_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
                 recording_file.write(str(n_steps) + ',' + str(action) + ',' + str(reward) + '\n')
+                recording_file.write(str_p)
                 vec_reward = np.mean(np.array(vec_reward), axis=0)
                 vec_reward = vec_reward.tolist()
                 str_reward = ""
@@ -276,15 +365,17 @@ try:
                     str_reward += ","
                 str_reward += "\n"
                 recording_file.write(str_reward)
+                recording_file.write("\n")
                 info = agent.step(state=state, action=action, reward=reward, next_state=next_state,
-                                  episode_done=done)
-                record(summary_writer, n_steps, info)
+                                  episode_done=done, learning_off=FLAGS.learning_off)
+                record(summary_writer, total_steps, info)
 
                 if done is True:
                     print "========Run Done=======\n"*5
                     break
                 state = next_state
                 n_steps += 1
+                total_steps += 1
 
             recording_file.close()
 
