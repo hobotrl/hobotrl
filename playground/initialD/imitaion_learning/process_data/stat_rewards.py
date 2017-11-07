@@ -312,9 +312,11 @@ if __name__ == "__main__":
                     # '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/resnet_pq_ac_stop_conv4_include_red_line_reward_records',
                     # '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/resnet_check_no_q_wait_40s_new_func_reward_learning_off_records',
                     # '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/repeat_learn_q_v0_turn_learn_on_only_q_loss_records'
-                    '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/repeat_learn_q_v0_turn_learn_off'
-                    ]
-    num_list = [500]
+                    # '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/repeat_learn_q_v0_turn_learn_off'
+        # '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/resnet_learn_q_wait40s_records'
+        '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/resnet_ac_with_q_learned_from_wait40s_records'
+    ]
+    num_list = [230]
     is_v2_list = [True]
     stat_list(obj_dir_list, num_list, is_v2_list)
 
