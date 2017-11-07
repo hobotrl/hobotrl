@@ -102,7 +102,7 @@ class NoisyPendulum(NoisyExperiment):
                  # noise_stddev=0.3,
                  noise_explore_param=(0, 0.2, 0.2),
                  # worker_explore_param=(0, 0.2, 0.2),
-                 worker_explore_param=(0, 0.2, hrl.utils.CappedLinear(1e5, 0.5, 0.02)),
+                 worker_explore_param=(0, 0.2, hrl.utils.CappedLinear(2e5, 0.2, 0.01)),
                  worker_entropy=1e-2,
                  network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3),
                                                                            grad_clip=10.0),
