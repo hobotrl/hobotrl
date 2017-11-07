@@ -174,12 +174,12 @@ def record(summary_writer, step_n, info):
 
 tf.app.flags.DEFINE_string("logdir",
                            "/home/pirate03/PycharmProjects/hobotrl/playground/resnet/"
-                           "resnet_learn_q_wait40s",
+                           "resnet_ac_with_q_learned_from_wait40s",
                            """save tmp model""")
 tf.app.flags.DEFINE_string("savedir",
                            "/home/pirate03/hobotrl_data/playground/initialD/exp/"
                            "docker005_no_stopping_static_middle_no_path_all_green/"
-                           "resnet_learn_q_wait40s_records",
+                           "resnet_ac_with_q_learned_from_wait40s_records",
                            """records data""")
 tf.app.flags.DEFINE_string("readme", "Repeat learn_q_v0 to check if q model affects learning. "
                                      "Turn learning on."
@@ -192,7 +192,7 @@ tf.app.flags.DEFINE_float("gpu_fraction", 0.4, """gpu fraction""")
 tf.app.flags.DEFINE_float("discount_factor", 0.99, """actor critic discount factor""")
 tf.app.flags.DEFINE_integer("batch_size", 16, """actor critic discount factor""")
 tf.app.flags.DEFINE_float("lr", 0.01, """actor critic learning rate""")
-tf.app.flags.DEFINE_bool("use_pretrained_q", False, """learn q function or directly actor critic""")
+tf.app.flags.DEFINE_bool("use_pretrained_q", True, """learn q function or directly actor critic""")
 tf.app.flags.DEFINE_bool("is_dummy_action", False, "record rule based scenes")
 tf.app.flags.DEFINE_bool("learning_off", False, "learning on or off")
 FLAGS = tf.app.flags.FLAGS
