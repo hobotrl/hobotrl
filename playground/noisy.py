@@ -29,7 +29,7 @@ def cosine(a, b, name=None):
 
 class TransitionPolicyGradientUpdater(NetworkUpdater):
 
-    def __init__(self, func_goal, func_value, net_se, target_estimator, achievable_weight=1e-1):
+    def __init__(self, func_goal, func_value, net_se, target_estimator, achievable_weight=1e-1, abs_goal=False):
         """
 
         :param func_goal: goal generator function
@@ -40,6 +40,8 @@ class TransitionPolicyGradientUpdater(NetworkUpdater):
         :type net_se: Network
         :param target_estimator:
         :type target_estimator: GAENStep
+        :param abs_goal: False if goal represents direction, True if goal represents state delta
+        :type abs_goal: bool
         """
         super(TransitionPolicyGradientUpdater, self).__init__()
         self._estimator = target_estimator
@@ -73,7 +75,11 @@ class TransitionPolicyGradientUpdater(NetworkUpdater):
             # cosine transition policy loss
             cos = cosine(goal_fact, goal_predict, name="cosine_goal")
             self._manager_cos = cos
-            self._manager_loss = tf.reduce_mean(cos * self._std_advantage)
+            self._manager_norm_delta = Utils.clipped_square(self._goal_fact_norm - self._goal_predict_norm)
+            if not abs_goal:
+                self._manager_loss = tf.reduce_mean(cos * self._std_advantage)
+            else:
+                self._manager_loss = tf.reduce_mean((cos - 1e-1 * self._manager_norm_delta) * self._std_advantage)
             # regularization: achievable goals
             # achievable_loss = tf.reduce_mean(Utils.clipped_square(
             #     tf.reduce_mean(norm_vector_scale(goal_fact), axis=0)
@@ -269,7 +275,7 @@ class ImaginaryGoalGradient(NetworkUpdater):
 
 class IKUpdater(NetworkUpdater):
 
-    def __init__(self, net_se, net_ik):
+    def __init__(self, net_se, net_ik, abs_goal=False):
         super(IKUpdater, self).__init__()
         state_shape = net_se.inputs[0].shape.as_list()
         se_shape = net_se["se"].op.shape.as_list()
@@ -283,12 +289,12 @@ class IKUpdater(NetworkUpdater):
             net_se_off = net_se([self._input_state], "off_se")
             net_next_se_off = net_se([self._input_next_state], "off_next_se")
             goal = net_next_se_off["se"].op - net_se_off["se"].op
-            # goal = norm_vector_scale(goal)
-            norm_scale = tf.stop_gradient(
-                tf.reduce_mean(tf.norm(self._input_goal, axis=-1))
-                / tf.reduce_mean(tf.norm(goal, axis=-1))
-            )
-            goal = goal * norm_scale
+            if not abs_goal:
+                norm_scale = tf.stop_gradient(
+                    tf.reduce_mean(tf.norm(self._input_goal, axis=-1))
+                    / tf.reduce_mean(tf.norm(goal, axis=-1))
+                )
+                goal = goal * norm_scale
             self._goal_norm = tf.norm(goal, axis=-1)
             net_ik_off = net_ik([net_se_off["se"].op, goal], "off_ik")
             action_off = net_ik_off["action"].op
@@ -426,18 +432,20 @@ class NoisySD(BaseDeepAgent):
             return sample
 
         self._on_data = TrajectoryOnSampler(interval=manager_horizon, sample_maker=make_sample)
-        self._off_data = TruncateTrajectorySampler(MapPlayback(capacity=replay_size),
-                                                   batch_size=batch_size,
-                                                   trajectory_length=batch_horizon,
-                                                   interval=sys.maxint,
-                                                   sample_maker=make_sample)
-
+        # self._off_data = TruncateTrajectorySampler(MapPlayback(capacity=replay_size),
+        #                                            batch_size=batch_size,
+        #                                            trajectory_length=batch_horizon,
+        #                                            interval=sys.maxint,
+        #                                            sample_maker=make_sample)
+        self._off_data = TransitionSampler(MapPlayback(capacity=replay_size), batch_size=batch_size,
+                                           interval=sys.maxint, sample_maker=make_sample)
         if network_optimizer is None:
             network_optimizer = LocalOptimizer(tf.contrib.opt.NadamOptimizer(1e-4), max_gradient)
         self._optimizer = network_optimizer
         func_goal = NetworkFunction(self.network["goal"], inputs=[self._input_state, self._input_noise])
         func_value = NetworkFunction(self.network["value"], [self._input_state])
         self._func_manager = func_goal
+        self._func_se = NetworkFunction(self.network.sub_net("se")["se"])
         goal_op = self.network["goal"].op
         self._func_worker = NetworkFunction(self.network["action"], inputs=[self._input_state, goal_op])
         self._func_worker_ac = NetworkFunction(outputs={
@@ -445,26 +453,22 @@ class NoisySD(BaseDeepAgent):
             "stddev": self.network["worker_stddev"],
         }, inputs=[self._input_state, goal_op])
 
-        # self._func_action = NetworkFunction(self.network["action"])
-        # self._func_action_with_goals = NetworkFunction({"action": self.network["action"],
-        #                                                 "sd": self.network["sd"],
-        #                                                 "norm_sd": self.network["norm_sd"],
-        #                                                 "goal": self.network["goal"],
-        #                                                 "noise": self.network["noise"]})
         if target_estimator is None:
             target_estimator = GAENStep(func_value, discount_factor)
 
         # algorithm hyperparameter
         # True if act by actor critic; False by IK
-        self._act_ac = True
+        self._act_ac = False
         # True if explore by noise net; False by plain ou noise
         self._explore_net = False
         # True if goal expressed in absolute delta; False in direction
-        self._abs_goal = False
+        self._abs_goal = True
         self._optimizer.add_updater(TransitionPolicyGradientUpdater(func_goal,
                                                                     func_value,
                                                                     self.network.sub_net("se"),
-                                                                    target_estimator), name="tpg", forward_pass="manager")
+                                                                    target_estimator,
+                                                                    abs_goal=self._abs_goal),
+                                    name="tpg", forward_pass="manager")
         if self._explore_net:
             self._optimizer.add_updater(DisentangleUpdater(
                 self.network.sub_net("se"),
@@ -490,9 +494,10 @@ class NoisySD(BaseDeepAgent):
             )
             self._pi_dist = NormalDistribution(self._pi_function, self._input_action)
             # self._worker_v_function = NetworkFunction(self.network["worker_value"], inputs=[self._input_state, self._input_noise])
+            # todo worker's state should be the concatenation of encoded_state and goal.
+
             func_worker_value = NetworkFunction(self.network["worker_value"], inputs=[self._input_state])
             worker_estimator = GAENStep(func_worker_value, discount_factor)
-            self._func_se = NetworkFunction(self.network.sub_net("se")["se"])
             self._func_ac_act = NetworkFunction(outputs={
                 "mean": self.network["worker_mean"],
                 "stddev": self.network["worker_stddev"],
@@ -601,6 +606,10 @@ class NoisySD(BaseDeepAgent):
         if manager_sample is not None:
             manager_batch.append(manager_sample)
         manager_batch = MapPlayback.to_columnwise(manager_batch)
+        if self._abs_goal:
+            # absolute goal saved in batch; relative goal need for training
+            manager_batch["goal"] = manager_batch["goal"] - self._func_se(manager_batch["state"])
+            off_batch["goal"] = off_batch["goal"] - self._func_se(off_batch["state"])
         self._optimizer.update("tpg", self.sess, manager_batch)
         if self._explore_net:
             self._optimizer.update("disentangle", self.sess, off_batch)
@@ -647,24 +656,41 @@ class NoisySD(BaseDeepAgent):
             else:
                 exploration = False
                 goal = self._func_manager(state[np.newaxis, :], n[np.newaxis, :])[0]
-            self._last_goal = goal
+            if self._abs_goal:
+                # save absolute target goal
+                se = self._func_se(state[np.newaxis, :])[0]
+                self._last_goal = se + goal
+            else:
+                # save directional goal
+                self._last_goal = goal
             self._last_input_noise = n
             self._last_goal_step = 0
         self._last_goal_step += 1
 
+    def get_relative_goal(self, state):
+        state_array = np.asarray(state)[np.newaxis, :]
+        if self._abs_goal:
+            se = self._func_se(state_array)[0]
+            goal = self._last_goal - se
+        else:
+            goal = self._last_goal
+        return goal
+
     def act_ac(self, state, **kwargs):
         self.check_goal(state, **kwargs)
-        result = self._func_worker_ac(np.asarray(state)[np.newaxis, :], self._last_goal[np.newaxis, :])
+        goal = self.get_relative_goal(state)
+        result = self._func_worker_ac(np.asarray(state)[np.newaxis, :], goal[np.newaxis, :])
         mean, stddev = result["mean"], result["stddev"]
-        logging.warning("step:%s, goal:%s, mean:%s, stddev:%s, n:%s", self._last_goal_step, self._last_goal, mean, stddev, self._last_input_noise)
+        logging.warning("step:%s, goal:%s, last_goal:%s, mean:%s, stddev:%s, n:%s", self._last_goal_step, goal, self._last_goal, mean, stddev, self._last_input_noise)
         action = self._pi_dist.do_sample(mean, stddev)[0]
         logging.warning("action:%s", action)
         return action
 
     def act_ik(self, state, **kwargs):
         self.check_goal(state, **kwargs)
-        action = self._func_worker(state[np.newaxis, :], self._last_goal[np.newaxis, :])[0]
+        goal = self.get_relative_goal(state)
+        action = self._func_worker(state[np.newaxis, :], goal[np.newaxis, :])[0]
         action_exp = self._noise_action.tick()
         action_all = OUExplorationPolicy.action_add(action, action_exp)
-        logging.warning("step:%s, goal:%s, action_ik:%s, action_noise:%s", self._last_goal_step, self._last_goal, action, action_all)
+        logging.warning("step:%s, goal:%s, last_goal:%s, action_ik:%s, action_noise:%s", self._last_goal_step, goal, self._last_goal, action, action_all)
         return action_all

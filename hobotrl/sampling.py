@@ -61,7 +61,7 @@ class TransitionSampler(Sampler):
         self._interval, self._batch_size, self._minimum_count = interval, batch_size, minimum_count
         self._step_n = 0
 
-    def step(self, state, action, reward, next_state, episode_done, **kwargs):
+    def step(self, state, action, reward, next_state, episode_done, force_sample=False, **kwargs):
         """
 
         :param state:
@@ -76,7 +76,8 @@ class TransitionSampler(Sampler):
         if not (state is None or action is None or reward is None or
                 next_state is None or episode_done is None):
             self._replay.push_sample(self._sample_maker(state, action, reward, next_state, episode_done, **kwargs))
-        if self._step_n % self._interval == 0 and self._replay.get_count() >= self._minimum_count:
+        if (self._step_n % self._interval == 0 or force_sample) \
+                and self._replay.get_count() >= self._minimum_count:
             return self._replay.sample_batch(self._batch_size)
         else:
             return None
