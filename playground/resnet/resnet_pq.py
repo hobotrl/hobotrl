@@ -61,8 +61,8 @@ class ResNet(object):
         probs = tf.nn.softmax(x)
         preds = tf.to_int32(tf.argmax(probs, 1))
         print "preds name {}".format(preds.name)
-        # return probs
-        return tf.stop_gradient(probs)
+        return probs
+        # return tf.stop_gradient(probs)
 
     def build_new_tower(self, images):
         with tf.variable_scope(tf.get_variable_scope()) as scope:
