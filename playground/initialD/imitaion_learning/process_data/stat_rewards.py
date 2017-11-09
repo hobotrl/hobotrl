@@ -43,6 +43,46 @@ def obj_rewards(obj_dir, num_eps):
     return vec_rewards
 
 
+def new_func(rewards, action):
+    if rewards[3] < 0.5 or rewards[4] > 0.5:
+        reward = -1.0
+    else:
+        if action == 1 or action == 2:
+            reward = rewards[2] - 1.0
+        reward = rewards[2] / 10.0
+    return reward
+
+
+def eps_new_func_reward(eps_dir):
+    f = open(eps_dir + "/" + "0000.txt", "r")
+    img_names = sorted(os.listdir(eps_dir))[1:]
+    lines = f.readlines()
+    stat_rewards = []
+    scarlar_rewards = []
+    for i, line in enumerate(lines):
+        if i % 2 == 1:
+            vec_rewards = map(float, line.split(',')[:-1])
+            stat_rewards.append(vec_rewards)
+            scarlar_rewards.append(new_func(vec_rewards, int(img_names[i/2].split('.')[0].split('_')[-1])))
+    for i in range(len(scarlar_rewards)):
+        stat_rewards[i].append(scarlar_rewards[i])
+
+    return filter(no_nan, stat_rewards)
+
+
+def obj_new_func_reward(obj_dir, num_eps):
+    eps_names = sorted(os.listdir(obj_dir))
+    rewards = []
+    i = 0
+    for eps_name in eps_names:
+        eps_dir = obj_dir + "/" +eps_name
+        rewards.append(eps_new_func_reward(eps_dir))
+        i += 1
+        if i >= num_eps:
+            break
+    return rewards
+
+
 def eps_rewards_v2(eps_dir):
     f = open(eps_dir + "/" + "0000.txt", "r")
     lines = f.readlines()
@@ -76,12 +116,6 @@ def obj_rewards_v2(obj_dir, num_eps=150):
     return obj_rewards
 
 
-# def eps_ave_reward(eps_dir):
-#     rewards = eps_rewards(eps_dir)
-#     rewards = np.array(rewards)
-#     rewards[:,-1] = rewards[:, 2] / 10.0 - (1 - rewards[:, 3])
-
-
 def obj_ave_eps_rewards_v2(obj_dir, num_eps=300):
     vec_rewards = obj_rewards_v2(obj_dir, num_eps)
     obj_ave_rewards = []
@@ -98,16 +132,19 @@ def disc_eps_reward(eps_vec_rewards, disc=0.99):
     return disc_reward
 
 
-def obj_disc_eps_rewards_v2(obj_dir, num_eps=300, disc=0.99):
-    obj_vec_rewards = obj_rewards_v2(obj_dir, num_eps)
+def obj_disc_eps_rewards(obj_dir, num_eps=300, disc=0.99, is_v2=True):
+    if is_v2:
+        obj_vec_rewards = obj_rewards_v2(obj_dir, num_eps)
+    else:
+        obj_vec_rewards = obj_new_func_reward(obj_dir, num_eps)
     obj_disc_rewards = []
     for eps_vec_rewards in obj_vec_rewards:
         obj_disc_rewards.append(disc_eps_reward(eps_vec_rewards, disc))
     return obj_disc_rewards
 
 
-def stat_obj_disc_eps_rewards_v2(obj_dir, num=300, disc=0.99):
-    reward = obj_disc_eps_rewards_v2(obj_dir, num, disc)
+def stat_obj_disc_eps_rewards(obj_dir, num=300, disc=0.99, is_v2=True):
+    reward = obj_disc_eps_rewards(obj_dir, num, disc, is_v2)
     for i in range(int(math.ceil(num / 100.0))):
         reward_between = reward[i*100:(i+1)*100]
         reward_to = reward[:(i+1)*100]
@@ -115,10 +152,10 @@ def stat_obj_disc_eps_rewards_v2(obj_dir, num=300, disc=0.99):
         print "{}: {} \n".format(min((i+1)*100, num), np.mean(reward_to, axis=0))
 
 
-def stat_obj_disc_eps_rewards_v2_list(obj_dir_list, num_list, disc_list):
-    for obj_dir, num, disc in zip(obj_dir_list, num_list, disc_list):
+def stat_obj_disc_eps_rewards_v2_list(obj_dir_list, num_list, disc_list, is_v2_list):
+    for obj_dir, num, disc, is_v2 in zip(obj_dir_list, num_list, disc_list, is_v2_list):
         print obj_dir, "\n"
-        stat_obj_disc_eps_rewards_v2(obj_dir, num, disc)
+        stat_obj_disc_eps_rewards(obj_dir, num, disc, is_v2)
 
 
 
@@ -330,14 +367,15 @@ if __name__ == "__main__":
                     # '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/resnet_check_no_q_wait_40s_new_func_reward_learning_off_records',
                     # '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/repeat_learn_q_v0_turn_learn_on_only_q_loss_records'
                     # '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/repeat_learn_q_v0_turn_learn_off'
+        '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/record_rule_docker005_all_green_obj80',
         '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/resnet_learn_q_wait40s_records',
         '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/resnet_ac_with_q_learned_from_wait40s_records'
     ]
-    num_list = [350, 1400]
-    # is_v2_list = [True]
+    num_list = [500, 350, 1500]
+    is_v2_list = [False, True, True]
     # stat_list(obj_dir_list, num_list, is_v2_list)
-    disc_list = [0.99, 0.99]
-    stat_obj_disc_eps_rewards_v2_list(obj_dir_list, num_list, disc_list=disc_list)
+    disc_list = [0.99, 0.99, 0.99]
+    stat_obj_disc_eps_rewards_v2_list(obj_dir_list, num_list, disc_list, is_v2_list)
 
 
     # obj_dir = "/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/resnet_ac_with_q_learned_from_wait40s_records"
