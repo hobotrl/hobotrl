@@ -6,6 +6,9 @@ import logging
 import tensorflow as tf
 import gym
 import argparse
+import os
+
+from utils import clone_params_dict, escape_path
 
 
 class Experiment(object):
@@ -84,6 +87,53 @@ class HelloWorld(Experiment):
         """
         print "hello experiment!"
 Experiment.register(HelloWorld, "first experiment")
+
+
+class GridSearch(Experiment):
+    def __init__(self, exp_class, parameters):
+        """
+        :param exp_class: subclass of Experiment to run
+        :type exp_class: class<Experiment>
+        :param parameters: dict of list, experiment parameters to search within, i.e.:
+            {
+                "entropy": [1e-2, 1e-3],
+                "learning_rate": [1e-3, 1e-4],
+                ...
+            }
+
+        """
+        super(GridSearch, self).__init__()
+        self._exp_class, self._parameters = exp_class, parameters
+
+    def run(self, args):
+        log_root = args.logdir
+        for parameter in self.product(self._parameters):
+            args.logdir = os.sep.join([log_root, self.labelize(parameter)])
+            with tf.Graph().as_default():
+                experiment = self._exp_class(**parameter)
+                experiment.run(args)
+
+    def product(self, parameters):
+        counts = dict([(k, len(parameters[k])) for k in parameters])
+        current = [[k, 0] for k in parameters]
+        while True:
+            parameter = dict([(k[0], parameters[k[0]][k[1]]) for k in current])
+            yield clone_params_dict(**parameter)
+            # to next
+            has_next = False
+            for i in range(len(current)-1, -1, -1):
+                field = current[i]
+                if field[1] < len(parameters[field[0]]) - 1:
+                    field[1] += 1
+                    has_next = True
+                    break
+                else:
+                    field[1] = 0
+            if not has_next:
+                break
+
+    def labelize(self, parameter):
+        return "_".join(["%s%s" % (f, escape_path(str(parameter[f]))) for f in parameter])
 
 
 if __name__ == "__main__":
