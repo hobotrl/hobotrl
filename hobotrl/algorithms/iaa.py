@@ -60,14 +60,21 @@ class ActorCriticUpdater(network.NetworkUpdater):
         return self._update_operation
 
     def update(self, sess, batch, *args, **kwargs):
-        state, action, reward, next_state, episode_done = batch["state"], \
-                                                          batch["action"], \
-                                                          batch["reward"], \
-                                                          batch["next_state"], \
-                                                          batch["episode_done"]
+        state, action, reward, next_state, episode_done, next_state1, next_state2, action1, action2, reward1, reward2 = \
+            batch["state"][0:-2, :, :, :], \
+            batch["action"][0:-2], \
+            batch["reward"][0:-2], \
+            batch["next_state"][0:-2, :, :, :], \
+            batch["episode_done"][0:-2], \
+            batch["state"][1:-1, :, :, :], \
+            batch["state"][2:, :, :, :], \
+            batch["action"][1:-1], \
+            batch["action"][2:], \
+            batch["reward"][1:-1], \
+            batch["reward"][2:]
         target_value = self._target_estimator.estimate(state, action, reward, next_state, episode_done)
-        feed_dict = self._v_function.input_dict(state)
-        feed_dict.update(self._policy_dist.dist_function().input_dict(state))
+        feed_dict = self._v_function.input_dict(state, action, action1, action2)
+        feed_dict.update(self._policy_dist.dist_function().input_dict(state, action, action1, action2))
         feed_more = {
             self._input_action: action,
             self._input_target_v: target_value,
@@ -126,32 +133,69 @@ class PolicyNetUpdater(network.NetworkUpdater):
         return self._update_operation
 
     def update(self, sess, batch, *args, **kwargs):
-        state, action, reward, next_state, episode_done = batch["state"], \
-                                                          batch["action"], \
-                                                          batch["reward"], \
-                                                          batch["next_state"], \
-                                                          batch["episode_done"]
-        feed_dict = self._rollout_action_function.input_dict(state)
+        state, action, reward, next_state, episode_done, next_state1, next_state2, action1, action2, reward1, reward2 = \
+            batch["state"][0:-2, :, :, :], \
+            batch["action"][0:-2], \
+            batch["reward"][0:-2], \
+            batch["next_state"][0:-2, :, :, :], \
+            batch["episode_done"][0:-2], \
+            batch["state"][1:-1, :, :, :], \
+            batch["state"][2:, :, :, :], \
+            batch["action"][1:-1], \
+            batch["action"][2:], \
+            batch["reward"][1:-1], \
+            batch["reward"][2:]
+        feed_dict = self._rollout_action_function.input_dict(state, action, action1, action2)
 
         return network.UpdateRun(feed_dict=feed_dict, fetch_dict={"rollout_loss": self._op_loss})
 
 
 class EnvModelUpdater(network.NetworkUpdater):
-    def __init__(self, next_state_function, reward_function, state_shape, entropy=1e-3):
+    def __init__(self, next_state_function, reward_function, next_state_function1, reward_function1,
+                 next_state_function2, reward_function2, state_shape, entropy=1e-3):
         super(EnvModelUpdater, self).__init__()
         self._next_state_function, self._reward_function = next_state_function, reward_function
+        self._next_state_function1, self._reward_function1 = next_state_function1, reward_function1
+        self._next_state_function2, self._reward_function2 = next_state_function2, reward_function2
         self._entropy = entropy
         with tf.name_scope("EnvModelUpdater"):
             with tf.name_scope("input"):
-                self._input_next_state = tf.placeholder(dtype=tf.float32, shape=[None] + list(state_shape), name="input_next_state")
+                self._input_next_state = tf.placeholder(dtype=tf.float32, shape=[None] + list(state_shape),
+                                                        name="input_next_state")
                 self._input_reward = tf.placeholder(dtype=tf.float32, shape=[None], name="input_reward")
+
+                self._input_next_state1 = tf.placeholder(dtype=tf.float32, shape=[None] + list(state_shape),
+                                                        name="input_next_state1")
+                self._input_reward1 = tf.placeholder(dtype=tf.float32, shape=[None], name="input_reward1")
+
+                self._input_next_state2 = tf.placeholder(dtype=tf.float32, shape=[None] + list(state_shape),
+                                                        name="input_next_state2")
+                self._input_reward2 = tf.placeholder(dtype=tf.float32, shape=[None], name="input_reward2")
 
             self.op_next_state = next_state_function.output().op
             self.op_reward = reward_function.output().op
 
+            self.op_next_state1 = next_state_function1.output().op
+            self.op_reward1 = reward_function1.output().op
+
+            self.op_next_state2 = next_state_function2.output().op
+            self.op_reward2 = reward_function2.output().op
+
             with tf.name_scope("env_model"):
-                self._env_loss = tf.reduce_mean(network.Utils.clipped_square(self.op_next_state - self._input_next_state[:,:,:,9:12]))
+                self._env_loss = tf.reduce_mean(
+                    network.Utils.clipped_square(self.op_next_state - self._input_next_state[:,:,:,9:12]))
                 self._reward_loss =tf.reduce_mean(network.Utils.clipped_square(self.op_reward - self._input_reward))
+
+                self._env_loss += tf.reduce_mean(
+                    network.Utils.clipped_square(self.op_next_state1 - self._input_next_state1[:, :, :, 9:12]))
+                self._reward_loss += tf.reduce_mean(network.Utils.clipped_square(self.op_reward1 - self._input_reward1))
+
+                self._env_loss += tf.reduce_mean(
+                    network.Utils.clipped_square(self.op_next_state2 - self._input_next_state2[:, :, :, 9:12]))
+                self._reward_loss += tf.reduce_mean(network.Utils.clipped_square(self.op_reward2 - self._input_reward2))
+
+                self._env_loss = self._env_loss / 6.0
+                self._reward_loss = self._reward_loss / 6.0
 
             self._op_loss = self._env_loss + self._reward_loss
         self._update_operation = network.MinimizeLoss(self._op_loss,
@@ -163,27 +207,43 @@ class EnvModelUpdater(network.NetworkUpdater):
         return self._update_operation
 
     def update(self, sess, batch, *args, **kwargs):
-        state, action, reward, next_state, episode_done = batch["state"], \
-                                                          batch["action"], \
-                                                          batch["reward"], \
-                                                          batch["next_state"], \
-                                                          batch["episode_done"]
-        feed_dict = self._next_state_function.input_dict(state, action)
+        state, action, reward, next_state, episode_done, next_state1, next_state2, action1, action2, reward1, reward2 = \
+            batch["state"][0:-2, :, :, :], \
+            batch["action"][0:-2], \
+            batch["reward"][0:-2], \
+            batch["next_state"][0:-2, :, :, :], \
+            batch["episode_done"][0:-2], \
+            batch["state"][1:-1, :, :, :], \
+            batch["state"][2:, :, :, :], \
+            batch["action"][1:-1], \
+            batch["action"][2:], \
+            batch["reward"][1:-1], \
+            batch["reward"][2:]
+        feed_dict = self._next_state_function.input_dict(state, action, action1, action2)
+        feed_dict.update(self._next_state_function1.input_dict(state, action, action1, action2))
+        feed_dict.update(self._next_state_function2.input_dict(state, action, action1, action2))
         feed_more = {
             self._input_next_state: next_state,
             self._input_reward: reward,
+            self._input_next_state1: next_state1,
+            self._input_reward1: reward1,
+            self._input_next_state2: next_state2,
+            self._input_reward2: reward2
         }
         feed_dict.update(feed_more)
         self.imshow_count += 1
         print "----------------%s-------------" % self.imshow_count
         if self.imshow_count % 2 == 0:
+            width = np.shape(state[0])[1]
             for i in range(len(reward) - 2):
-                pred_1 = self._next_state_function(np.reshape(state[i], (1, 80, 80, 12)), np.reshape(action[i], 1))[0]
-                pred_2 = self._next_state_function(np.reshape(np.concatenate((state[i][:, :, 3:12], pred_1), axis=2),
-                                                              (1, 80, 80, 12)), np.reshape(action[i + 1], 1))[0]
-                pred_3 = self._next_state_function(np.reshape(np.concatenate((state[i][:, :, 6:12], pred_1, pred_2), axis=2),
-                                                              (1, 80, 80, 12)), np.reshape(action[i + 2], 1))[0]
+                pred_1 = self._next_state_function(np.reshape(state[i], (1, width, width, 12)), np.reshape(action[i], 1),
+                                                   np.reshape(action1[i], 1), np.reshape(action2[i], 1))[0]
+                pred_2 = self._next_state_function1(np.reshape(state[i], (1, width, width, 12)), np.reshape(action[i], 1),
+                                                   np.reshape(action1[i], 1), np.reshape(action2[i], 1))[0]
+                pred_3 = self._next_state_function2(np.reshape(state[i], (1, width, width, 12)), np.reshape(action[i], 1),
+                                                   np.reshape(action1[i], 1), np.reshape(action2[i], 1))[0]
 
+                # saving for MsPacman
                 cv2.imwrite("./log/I2AMsPacman/Img/%s_%s_a_raw1.png" % (self.imshow_count,i),
                             cv2.cvtColor(state[i][:,:,0:3], cv2.COLOR_RGB2BGR))
                 cv2.imwrite("./log/I2AMsPacman/Img/%s_%s_a_raw2.png" % (self.imshow_count,i),
@@ -204,6 +264,28 @@ class EnvModelUpdater(network.NetworkUpdater):
                             cv2.cvtColor(next_state[i + 1][:, :, 9:12], cv2.COLOR_RGB2BGR))
                 cv2.imwrite("./log/I2AMsPacman/Img/%s_%s_g_ground_truth_3.png" % (self.imshow_count, i),
                             cv2.cvtColor(next_state[i + 2][:, :, 9:12], cv2.COLOR_RGB2BGR))
+
+                # saving for CarRacing
+                # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_a_raw1.png" % (self.imshow_count, i),
+                #             cv2.cvtColor(255 * state[i][:, :, 0:3].astype(np.float32), cv2.COLOR_RGB2BGR))
+                # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_a_raw2.png" % (self.imshow_count, i),
+                #             cv2.cvtColor(255 * state[i][:, :, 3:6].astype(np.float32), cv2.COLOR_RGB2BGR))
+                # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_a_raw3.png" % (self.imshow_count, i),
+                #             cv2.cvtColor(255 * state[i][:, :, 6:9].astype(np.float32), cv2.COLOR_RGB2BGR))
+                # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_a_raw4.png" % (self.imshow_count, i),
+                #             cv2.cvtColor(255 * state[i][:, :, 9:12].astype(np.float32), cv2.COLOR_RGB2BGR))
+                # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_b_pred_1.png" % (self.imshow_count, i),
+                #             cv2.cvtColor(255 * pred_1, cv2.COLOR_RGB2BGR))
+                # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_d_pred_2.png" % (self.imshow_count, i),
+                #             cv2.cvtColor(255 * pred_2, cv2.COLOR_RGB2BGR))
+                # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_f_pred_3.png" % (self.imshow_count, i),
+                #             cv2.cvtColor(255 * pred_3, cv2.COLOR_RGB2BGR))
+                # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_c_ground_truth_1.png" % (self.imshow_count, i),
+                #             cv2.cvtColor(255 * next_state[i][:, :, 9:12].astype(np.float32), cv2.COLOR_RGB2BGR))
+                # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_e_ground_truth_2.png" % (self.imshow_count, i),
+                #             cv2.cvtColor(255 * next_state[i + 1][:, :, 9:12].astype(np.float32), cv2.COLOR_RGB2BGR))
+                # cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_g_ground_truth_3.png" % (self.imshow_count, i),
+                #             cv2.cvtColor(255 * next_state[i + 2][:, :, 9:12].astype(np.float32), cv2.COLOR_RGB2BGR))
         return network.UpdateRun(feed_dict=feed_dict, fetch_dict={"env_model_loss": self._op_loss,
                                                                   "reward_loss": self._reward_loss,
                                                                   "observation_loss": self._env_loss})
@@ -250,6 +332,9 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
         def f_iaa(inputs):
             input_observation = inputs[0]
             input_action = inputs[1]
+            input_action1 = inputs[2]
+            input_action2 = inputs[3]
+
             se = network.Network([input_observation], f_se, var_scope="se_1")
             se = network.NetworkFunction(se["se"]).output().op
 
@@ -285,10 +370,20 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
             #                             off_value=0.0, axis=-1)
 
             env_model = env_model([[input_observation], input_action], name_scope="env_model")
-            # env_model = env_model([[se_1], [se_2], [se_3], [se_4], current_action], name_scope="env_model")
-
             out_next_state = network.NetworkFunction(env_model["next_state"]).output().op
             out_reward = network.NetworkFunction(env_model["reward"]).output().op
+
+            env_model1 = env_model([[
+                tf.concat([input_observation[:, :, :, 3:12], out_next_state], axis=3)], input_action1],
+                name_scope="env_model1")
+            out_next_state1 = network.NetworkFunction(env_model1["next_state"]).output().op
+            out_reward1 = network.NetworkFunction(env_model1["reward"]).output().op
+
+            env_model2 = env_model([[
+                tf.concat([input_observation[:, :, :, 6:12], out_next_state, out_next_state1], axis=3)], input_action2],
+                name_scope="env_model2")
+            out_next_state2 = network.NetworkFunction(env_model2["next_state"]).output().op
+            out_reward2 = network.NetworkFunction(env_model2["reward"]).output().op
 
             # out_action = rollout_action_function.output().op
             # out_next_state = next_state
@@ -340,7 +435,10 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
             v = network.NetworkFunction(ac["v"]).output().op
             pi_dist = network.NetworkFunction(ac["pi"]).output().op
 
-            return {"v": v, "pi": pi_dist, "rollout_action": out_action, "next_state": out_next_state, "reward": out_reward}
+            return {"v": v, "pi": pi_dist, "rollout_action": out_action,
+                    "next_state": out_next_state, "reward": out_reward,
+                    "next_state1": out_next_state1, "reward1": out_reward1,
+                    "next_state2": out_next_state2, "reward2": out_reward2}
 
         kwargs.update({
             "f_iaa": f_iaa,
@@ -390,8 +488,15 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
 
         self._rollout_action = network.NetworkFunction(self.network["rollout_action"])
         self._rollout_dist = distribution.DiscreteDistribution(self._rollout_action, self._input_action)
+
         self._next_state_function = network.NetworkFunction(self.network["next_state"])
         self._reward_function = network.NetworkFunction(self.network["reward"])
+
+        self._next_state_function1 = network.NetworkFunction(self.network["next_state1"])
+        self._reward_function1 = network.NetworkFunction(self.network["reward1"])
+
+        self._next_state_function2 = network.NetworkFunction(self.network["next_state2"])
+        self._reward_function2 = network.NetworkFunction(self.network["reward2"])
 
         if target_estimator is None:
             target_estimator = target_estimate.NStepTD(self._v_function, discount_factor)
@@ -411,6 +516,10 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
         network_optimizer.add_updater(
             EnvModelUpdater(next_state_function=self._next_state_function,
                             reward_function=self._reward_function,
+                            next_state_function1=self._next_state_function1,
+                            reward_function1=self._reward_function1,
+                            next_state_function2=self._next_state_function2,
+                            reward_function2=self._reward_function2,
                             state_shape=state_shape),
             name="env_model"
         )
@@ -421,15 +530,20 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
     def init_network(self, f_iaa, state_shape, num_action, *args, **kwargs):
         input_state = tf.placeholder(dtype=tf.float32, shape=[None] + list(state_shape), name="input_state")
         input_action = tf.placeholder(dtype=tf.uint8, shape=[None], name="input_action")
-        return network.Network([input_state, input_action], f_iaa, var_scope="learn")
+        input_action1 = tf.placeholder(dtype=tf.uint8, shape=[None], name="input_action1")
+        input_action2 = tf.placeholder(dtype=tf.uint8, shape=[None], name="input_action2")
+        return network.Network([input_state, input_action, input_action1, input_action2], f_iaa, var_scope="learn")
 
     def update_on_trajectory(self, batch):
-        self.network_optimizer.update("policy_net", self.sess, batch)
-        self.network_optimizer.update("env_model", self.sess, batch)
-        self.network_optimizer.update("ac", self.sess, batch)
-        self.network_optimizer.update("l2", self.sess)
-        info = self.network_optimizer.optimize_step(self.sess)
-        return info, {}
+        if (np.shape(batch["action"])[0] >= 3):
+            self.network_optimizer.update("policy_net", self.sess, batch)
+            self.network_optimizer.update("env_model", self.sess, batch)
+            self.network_optimizer.update("ac", self.sess, batch)
+            self.network_optimizer.update("l2", self.sess)
+            info = self.network_optimizer.optimize_step(self.sess)
+            return info, {}
+        else:
+            return {}, {}
 
     def set_session(self, sess):
         super(ActorCriticWithI2A, self).set_session(sess)

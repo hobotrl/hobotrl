@@ -199,8 +199,6 @@ class I2A(A3CExperimentWithI2A):
                 l2 = 1e-7
                 input_state = inputs[0]
                 input_reward = inputs[1]
-                print "-------------------------------------"
-                print input_state, "\n", input_reward
 
                 rse = hrl.utils.Network.conv2ds(input_state,
                                                shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
