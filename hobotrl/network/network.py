@@ -239,9 +239,12 @@ class Network(object):
         """
         return self._sub_nets[name]
 
-    def __call__(self, inputs, name_scope="", *args, **kwargs):
+    def __call__(self, inputs=None, name_scope="", *args, **kwargs):
         """
-        :param inputs:
+        create a network instance with the same graph architecture,
+            sharing parameter with this network.
+        :param inputs: inputs of newly created network.
+            If None, a new set of inputs are created, with the same shape/type of this network's inputs
         :param args:
         :param kwargs:
         :return: another network created by this network's network_creator and possibly share weights
@@ -249,6 +252,15 @@ class Network(object):
         # in order to share weight we need to get access to original abs_var_scope,
         # because current context variable_scope may be different.
         # so we have to derive current relative var_scope, from current var_scope and abs_var_scope
+        if inputs is None:
+            with tf.name_scope("input_%s" % name_scope):
+                if isinstance(self._inputs, list):
+                    inputs = [tf.placeholder(dtype=i.dtype, shape=i.shape) for i in self._inputs]
+                else:  # dict
+                    inputs = dict([(k,
+                                    tf.placeholder(dtype=self._inputs[k].dtype,
+                                                   shape=self._inputs[k].shape))
+                                   for k in self._inputs])
         return Network(inputs, self._f_creator, self.relative_var_scope, name_scope, True)
 
     @property

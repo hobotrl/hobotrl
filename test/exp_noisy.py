@@ -127,8 +127,12 @@ class NoisyPendulum(NoisyExperiment):
             def f(inputs):
                 input_state = inputs[0]
                 out = hrl.network.Utils.layer_fcs(input_state, [hidden_dim], se_dimension,
-                                                  activation, tf.nn.tanh, l2=l2)
-                return {"sd": out}
+                                                  activation, tf.nn.tanh, l2=l2, var_scope="sd")
+                stddev = hrl.network.Utils.layer_fcs(input_state, [hidden_dim], se_dimension,
+                                                   activation, None, l2=l2, var_scope="stddev")
+                stddev = 2.0 * (1.0 + hrl.tf_dependent.ops.atanh(stddev / 4.0))
+
+                return {"sd": out, "stddev": stddev}
             f_manager = f
 
         if f_explorer is None:
@@ -176,7 +180,7 @@ class NoisyPendulum(NoisyExperiment):
                                                    activation, tf.nn.tanh, l2=l2, var_scope="mean")
                 stddev = hrl.network.Utils.layer_fcs(input_se, [hidden_dim, hidden_dim], action_dimension,
                                                    activation, None, l2=l2, var_scope="stddev")
-                stddev = 2.0 * (1.0 + hrl.tf_dependent.ops.atanh(stddev / 4.0))
+                stddev = 2.0 * tf.sigmoid(stddev / 4.0)
                 return {"mean": mean, "stddev": stddev}
             f_pi = f
 
