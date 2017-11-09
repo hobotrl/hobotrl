@@ -25,8 +25,9 @@ ckpt_list = [
             # "/home/pirate03/PycharmProjects/hobotrl/playground/resnet/resnet_check_learn_q_wait_40s_new_func_reward",
             # "/home/pirate03/PycharmProjects/hobotrl/playground/resnet/resnet_check_learn_q_wait_40s_new_func_reward_no_q",
             # "/home/pirate03/PycharmProjects/hobotrl/playground/resnet/resnet_check_no_q_wait_40s_new_func_reward_learning_off",
-                "/mnt/a/rl.work/agents/hobotrl/log/A3CCarDiscrete",
-                "/home/pirate03/Downloads/A3CCarDiscrete2"
+            #     "/mnt/a/rl.work/agents/hobotrl/log/A3CCarDiscrete",
+            #     "/home/pirate03/Downloads/A3CCarDiscrete2",
+                "/home/pirate03/PycharmProjects/hobotrl/playground/resnet/resnet_ac_with_q_learned_from_wait40s",
              ]
 
 fnames = [
@@ -41,8 +42,9 @@ fnames = [
     # "resnet_check_learn_q_wait_40s_new_func_reward_2.txt",
     # "resnet_check_learn_q_wait_40s_new_func_reward_no_q_2.txt"
     # "resnet_check_no_q_wait_40s_new_func_reward_learning_off.txt"
-            "mnt_a_rl.work_agents_hobotrl_log_A3CCarDiscrete.txt",
-            "home_pirate03_Downloads_A3CCarDiscrete2.txt"
+    #         "mnt_a_rl.work_agents_hobotrl_log_A3CCarDiscrete.txt",
+    #         "home_pirate03_Downloads_A3CCarDiscrete2.txt",
+            "/home/pirate03/PycharmProjects/hobotrl/playground/resnet/resnet_ac_with_q_learned_from_wait40s/resnet_ac_with_q_learned_from_wait40s.txt"
 
          ]
 
@@ -54,6 +56,6 @@ for ckpt, file in zip(ckpt_list, files):
     for name in sorted(var_dict):
         print name
         # print var_dict[name]
-        file.write("%s\n"%(name))
-        # file.write("%s\n%s\n"%(name,var_dict[name]))
+        # file.write("%s\n"%(name))
+        file.write("%s\n%s\n"%(name,var_dict[name]))
     file.close()
