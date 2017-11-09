@@ -62,69 +62,64 @@ def eps_rewards_v2(eps_dir):
 
     return filter(no_nan, stat_rewards)
 
-
 def obj_rewards_v2(obj_dir, num_eps=150):
     eps_names = sorted(os.listdir(obj_dir))
-    vec_rewards = []
+    obj_rewards = []
     i = 0
     for eps_name in eps_names:
         eps_dir = obj_dir + "/" + eps_name
-        vc = eps_rewards_v2(eps_dir)
-        vec_rewards.append(vc)
+        eps_rewards = eps_rewards_v2(eps_dir)
+        obj_rewards.append(eps_rewards)
         i += 1
         if i >= num_eps:
             break
-    return vec_rewards
+    return obj_rewards
 
 
-def eps_vel(eps_dir):
-    f = open(eps_dir + "/" + "0000.txt", "r")
-    lines = f.readlines()
-    stat_vels = []
-    for i, line in enumerate(lines):
-        if i % 2 == 1:
-            vel = float(line.split(',')[2])
-            stat_vels.append(vel)
-    return filter(lambda x: False if np.isnan(x) else True, stat_vels)
+# def eps_ave_reward(eps_dir):
+#     rewards = eps_rewards(eps_dir)
+#     rewards = np.array(rewards)
+#     rewards[:,-1] = rewards[:, 2] / 10.0 - (1 - rewards[:, 3])
 
 
-def obj_vel(obj_dir, num_eps=300):
-    eps_names = sorted(os.listdir(obj_dir))
-    vec_rewards = []
-    i = 0
-    for eps_name in eps_names:
-        eps_dir = obj_dir + "/" + eps_name
-        vc = eps_vel(eps_dir)
-        vec_rewards.append(vc)
-        i += 1
-        if i >= num_eps:
-            break
-    return vec_rewards
+def obj_ave_eps_rewards_v2(obj_dir, num_eps=300):
+    vec_rewards = obj_rewards_v2(obj_dir, num_eps)
+    obj_ave_rewards = []
+    for eps_vec_r in vec_rewards:
+        obj_ave_rewards.append(np.mean(eps_vec_r, axis=0))
+    return np.mean(obj_ave_rewards, axis=0)
 
 
-def eps_vel_v2(eps_dir):
-    f = open(eps_dir + "/" + "0000.txt", "r")
-    lines = f.readlines()
-    stat_vels = []
-    for i, line in enumerate(lines):
-        if i % 4 == 2:
-            vel = float(line.split(',')[2])
-            stat_vels.append(vel)
-    return filter(lambda x: False if np.isnan(x) else True, stat_vels)
+def disc_eps_reward(eps_vec_rewards, disc=0.99):
+    disc_reward = 0.0
+    eps_vec_rewards = np.array(eps_vec_rewards)
+    for r in eps_vec_rewards[::-1]:
+        disc_reward = r + disc * disc_reward
+    return disc_reward
 
 
-def obj_vel_v2(obj_dir, num_eps=300):
-    eps_names = sorted(os.listdir(obj_dir))
-    vec_rewards = []
-    i = 0
-    for eps_name in eps_names:
-        eps_dir = obj_dir + "/" + eps_name
-        vc = eps_vel_v2(eps_dir)
-        vec_rewards.append(vc)
-        i += 1
-        if i >= num_eps:
-            break
-    return vec_rewards
+def obj_disc_eps_rewards_v2(obj_dir, num_eps=300, disc=0.99):
+    obj_vec_rewards = obj_rewards_v2(obj_dir, num_eps)
+    obj_disc_rewards = []
+    for eps_vec_rewards in obj_vec_rewards:
+        obj_disc_rewards.append(disc_eps_reward(eps_vec_rewards, disc))
+    return obj_disc_rewards
+
+
+def stat_obj_disc_eps_rewards_v2(obj_dir, num=300, disc=0.99):
+    reward = obj_disc_eps_rewards_v2(obj_dir, num, disc)
+    for i in range(int(math.ceil(num / 100.0))):
+        reward_between = reward[i*100:(i+1)*100]
+        reward_to = reward[:(i+1)*100]
+        print "{}-{}: {}".format(i*100, min((i+1)*100, num), np.mean(reward_between, axis=0))
+        print "{}: {} \n".format(min((i+1)*100, num), np.mean(reward_to, axis=0))
+
+
+def stat_obj_disc_eps_rewards_v2_list(obj_dir_list, num_list, disc_list):
+    for obj_dir, num, disc in zip(obj_dir_list, num_list, disc_list):
+        print obj_dir, "\n"
+        stat_obj_disc_eps_rewards_v2(obj_dir, num, disc)
+
 
 
 def stat(obj_dir, num, is_v2=True):
@@ -143,6 +138,28 @@ def stat(obj_dir, num, is_v2=True):
 def stat_list(obj_dir_list, num_list, is_v2_list):
     for obj_dir, num, is_v2 in zip(obj_dir_list, num_list, is_v2_list):
         stat(obj_dir, num, is_v2)
+
+
+import matplotlib.pyplot as plt
+
+def plot_box(obj_dir_list, num_list, is_v2_list, title_list=''):
+    print obj_dir_list
+
+    plt.title("reward comparision")
+    for i in range(len(obj_dir_list)):
+        if is_v2_list[i]:
+            obj_vec_rewards = obj_rewards_v2(obj_dir, num)
+        else:
+            obj_vec_rewards = obj_rewards(obj_dir, num)
+
+        obj_mean_rewards = []
+        for eps_vec_rewards in obj_vec_rewards:
+            obj_mean_rewards.append(np.mean(eps_vec_rewards, axis=0))
+
+    obj_mean_rewards = np.array(obj_mean_rewards)
+    plt.plot(range(1, num+1), obj_mean_rewards[:, 2], '.')
+    plt.ylabel('reward')
+    plt.show()
 
 
 
@@ -313,13 +330,18 @@ if __name__ == "__main__":
                     # '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/resnet_check_no_q_wait_40s_new_func_reward_learning_off_records',
                     # '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/repeat_learn_q_v0_turn_learn_on_only_q_loss_records'
                     # '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/repeat_learn_q_v0_turn_learn_off'
-        # '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/resnet_learn_q_wait40s_records'
+        '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/resnet_learn_q_wait40s_records',
         '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/resnet_ac_with_q_learned_from_wait40s_records'
     ]
-    num_list = [230]
-    is_v2_list = [True]
-    stat_list(obj_dir_list, num_list, is_v2_list)
+    num_list = [350, 1400]
+    # is_v2_list = [True]
+    # stat_list(obj_dir_list, num_list, is_v2_list)
+    disc_list = [0.99, 0.99]
+    stat_obj_disc_eps_rewards_v2_list(obj_dir_list, num_list, disc_list=disc_list)
 
 
+    # obj_dir = "/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/resnet_ac_with_q_learned_from_wait40s_records"
+    # num = 1400
+    # stat_obj_disc_eps_rewards_v2(obj_dir, num=num, disc=0.99)
 
-
+    # plot_box(obj_dir, num)
