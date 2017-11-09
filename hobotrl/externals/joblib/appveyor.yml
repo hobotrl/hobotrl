@@ -1,0 +1,45 @@
+environment:
+  # There is no need to run the build for all the Python version /
+  # architectures combo as the generated joblib wheel is the same on all
+  # platforms (universal wheel).
+  # We run the tests on 2 different target platforms for testing purpose only.
+  matrix:
+    - PYTHON: "C:\\Python27"
+      PYTHON_VERSION: "2.7.x"
+      PYTHON_ARCH: "32"
+
+    - PYTHON: "C:\\Python35-x64"
+      PYTHON_VERSION: "3.5.x"
+      PYTHON_ARCH: "64"
+
+matrix:
+    fast_finish: true
+
+
+install:
+  # Install Python (from the official .msi of http://python.org) and pip when
+  # not already installed.
+  - powershell ./continuous_integration/appveyor/install.ps1
+  - SET PATH=%PYTHON%;%PYTHON%\\Scripts;%PATH%
+
+  # Install the build and runtime dependencies of the project.
+  - pip install -r continuous_integration/appveyor/requirements.txt
+  - python setup.py bdist_wheel
+  - ps: ls dist
+
+  # Install the generated wheel package to test it
+  - pip install --pre --no-index --find-links dist/ joblib
+
+# Not a .NET project, we build in the install step instead
+build: false
+
+test_script:
+  - powershell ./continuous_integration/appveyor/test.ps1
+
+artifacts:
+  # Archive the generated wheel package in the ci.appveyor.com build report.
+  - path: dist\*
+
+on_success:
+#  - TODO: upload the content of dist/*.whl to a public wheelhouse
+  - codecov

@@ -8,6 +8,7 @@ import logging
 import gym
 import numpy as np
 import tensorflow as tf
+from tensorflow.python.training.summary_io import SummaryWriterCache
 import cv2
 from collections import deque
 
@@ -40,7 +41,7 @@ class EnvRunner(object):
         self.total_reward = 0.0
         self.summary_writer = None
         if logdir is not None:
-            self.summary_writer = tf.summary.FileWriter(logdir, graph=tf.get_default_graph())
+            self.summary_writer = SummaryWriterCache.get(logdir)
         self.render_once = True if render_once else False
 
     def step(self, evaluate=False):
