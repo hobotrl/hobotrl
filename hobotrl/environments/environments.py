@@ -969,14 +969,24 @@ class LazyFrames(object):
 
         This object should only be converted to numpy array before being passed to the model.
 
-        You'd not belive how complex the previous solution was."""
+        You'd not believe how complex the previous solution was."""
         self._frames = frames
+        self._array = None  # created the first time this is converted to array
 
     def __array__(self, dtype=None):
-        out = np.concatenate(self._frames, axis=2)
-        if dtype is not None:
-            out = out.astype(dtype)
+        if self._array is None:
+            out = np.concatenate(self._frames, axis=2)
+            if dtype is not None:
+                out = out.astype(dtype)
+            # self._array = out
+        else:
+            out = self._array
+
         return out
+
+    def __reduce__(self):
+        # discard self._array
+        return self.__class__, (self._frames,)
 
 
 class FrameStack(gym.Wrapper):
