@@ -1,31 +1,66 @@
-#
 # -*- coding: utf-8 -*-
 
 import os
-import json
+import time
 import logging
+import json
+import operator
+import Queue
+from threading import Thread
+import wrapt
 import numpy as np
+from externals.joblib import joblib
 
-scalar_type = [
+
+_SCALA_TYPE = [
     bool, int, float,
     np.int8, np.int16, np.int32, np.int64,
     np.uint8, np.uint16, np.uint32, np.uint64,
     np.float, np.float16, np.float32, np.float64]
 
-dtype_identitical = [
+_DTYPE_IDENTICAL = [
     np.int8, np.int16, np.int32, np.int64,
     np.uint8, np.uint16, np.uint32, np.uint64,
     np.float, np.float16, np.float32, np.float64]
 
-dtype_mapping = {
+_DTYPE_MAPPING = {
     bool: np.bool,
     int: np.int32,
     float: np.float32}
 
 
+def strip_args(arg_slots, kwarg_slots, args, kwargs):
+    """Strip arguments according to slot specification.
+    Strip arguments from `args` and `kwargs` accoding to slot specifications
+    and build a key-word argument dictionary.
+
+    Arguments are stripped from `args` according the slot order defined in
+    `arg_slots + kwarg_slots`. Then additional argument are stripped from
+    `kwargs` according to the slot names.
+
+    :param arg_slots: positional argument slots.
+    :param kwarg_slots: key-word argument slots
+    :param args: positional arguments.
+    :param kwargs:  key-word arguments.
+    :return:
+    """
+    ret_kwargs = {}
+    slots = arg_slots + kwarg_slots
+    for i, arg in enumerate(args):
+        ret_kwargs[slots[i]] = arg
+    for key, arg in kwargs.iteritems():
+        if key in slots:
+            ret_kwargs[key] = arg
+
+    return ret_kwargs
+
+
 class Playback(object):
+    _ARG_SLOTS = ('capacity',)
+    _KWARG_SLOTS = ('push_policy', 'pop_policy', 'augment_offset',
+                    'augment_scale')
     def __init__(self, capacity, push_policy="sequence", pop_policy="random",
-                 augment_offset=None, augment_scale=None):
+                 augment_offset=None, augment_scale=None, *args, **kwargs):
         """
         Stores ndarray, optionally apply transformation:
             (sample + offset) * scale
@@ -37,8 +72,10 @@ class Playback(object):
         :param augment_scale:
         """
         self.capacity = capacity
-        logging.warning("capacity:%s", capacity)
+        # logging.warning("[Playback.__init__()]: capacity: %s", capacity)
         self.data = None
+        self.sample_type = None
+        self.sample_shape = None
         self.push_policy = push_policy
         self.pop_policy = pop_policy
 
@@ -49,63 +86,73 @@ class Playback(object):
         self.pop_index = 0
 
     def get_count(self):
-        """
-        current count of samples stored
+        """Current count of samples stored
+
         :return:
         """
         return self.count
 
     def get_capacity(self):
-        """
-        maximum count of samples can be stored
+        """Maximum count of samples can be stored
         :return:
         """
+
         return self.capacity
 
     def reset(self):
-        """Clear all samples
+        """Clear all samples.
+
         :return:
         """
         self.count, self.push_index, self.pop_index = 0, 0, 0
+        self.data = None
 
     def add_sample(self, sample, index, sample_score=0):
-        """
-        add sample to specified position and modify self.count.
+        """Add sample to specified position and modify self.count.
+
         :param sample:
         :type sample: np.ndarray
         :param index:
         :param sample_score:
         :return:
         """
+        # Type and shape check
+        sample_class = type(sample)
+        if sample_class in _SCALA_TYPE: # scalar value
+            sample_shape = ()
+            if sample_class in _DTYPE_IDENTICAL:
+                sample_type = sample_class
+            else:
+                sample_type = _DTYPE_MAPPING[sample_class]
+        else:  # try cast as ndarray
+            try:
+                cast_sample = np.asarray(sample)
+                sample_shape = tuple(cast_sample.shape)
+                sample_type = cast_sample.dtype
+            except: # unknown type:
+                raise NotImplementedError(
+                    "Unsupported sample type:" + str(sample)
+                )
+        if self.sample_type is None:
+            self.sample_type = sample_type
+            self.sample_shape = sample_shape
+
+        # Lazy creation
         if self.data is None:
-            # lazy creation
+            logging.warning(
+                ("[Playback.add_sample()]: initializing data with: "
+                 "type: %s, shape: %s"), sample_type, sample_shape
+            )
+            self.data = [None] * self.capacity
 
-            logging.warning("initializing data with: %s, type: %s", sample, type(sample))
-            sample_class = type(sample)
-            if sample_class in scalar_type:
-                sample_shape = []  # scalar value
-                if sample_class in dtype_identitical:
-                    sample_type = sample_class
-                else:
-                    sample_type = dtype_mapping[sample_class]
-            else:  # try cast as ndarray
-                try:
-                    sample = np.asarray(sample)
-                    sample_shape = list(sample.shape)
-                    sample_type = sample.dtype
-                except:  # unknown type:
-                    raise NotImplementedError("unsupported sample type:" + str(sample))
-
-            self.data = np.zeros(
-                shape=([self.capacity] + sample_shape), dtype=sample_type)
-
-
+        # Place data
         self.data[index] = sample
         if self.count < self.capacity:
             self.count += 1
 
     def push_sample(self, sample, sample_score=0):
         """Put sample into buffer and increment push index by 1.
+
         :param sample:
         :param sample_score:
         :return:
@@ -115,6 +162,7 @@ class Playback(object):
 
     def next_batch_index(self, batch_size):
         """Generate sample index of the next batch.
+
         :param batch_size:
         :return:
         """
@@ -142,7 +190,12 @@ class Playback(object):
         :param index:
         :return:
         """
-        return (self.data[index] + self.augment_offset) * self.augment_scale
+        ret = np.zeros(shape=[len(index)] + list(self.sample_shape),
+                       dtype=self.sample_type)
+        for i1, i2 in enumerate(index):
+            ret[i1] = np.array(self.data[i2], copy=False)
+        # ret = np.stack([np.array(self.data[i], copy=False) for i in index])
+        return (ret + self.augment_offset) * self.augment_scale
 
     def sample_batch(self, batch_size):
         """Sample a batch of samples from buffer.
@@ -152,8 +205,8 @@ class Playback(object):
         return self.get_batch(self.next_batch_index(batch_size))
 
     def update_score(self, index, score):
-        """
-        dummy methods; for updating scores
+        """Dummy methods for updating scores.
+
         :param index:
         :param score:
         :return:
@@ -162,7 +215,6 @@ class Playback(object):
 
 
 class MapPlayback(Playback):
-
     def __init__(self, *args, **kwargs):
         """Stores map of ndarray.
         Contains a dummy inherited Playback and a dict of Playbacks
@@ -178,7 +230,7 @@ class MapPlayback(Playback):
         if self.augment_scale == 1:
             self.augment_scale = {}
 
-    def init_data_(self, sample):
+    def init_data(self, sample):
         """Initialize a dict of {key: Playback} as data."""
         self.data = dict(
             [(key, Playback(
@@ -190,7 +242,7 @@ class MapPlayback(Playback):
     def push_sample(self, sample, sample_score=0):
         # init key->Playback map
         if self.data is None:
-            self.init_data_(sample)
+            self.init_data(sample)
         # push sample iteratively into Playbacks
         self.add_sample(sample, self.push_index, sample_score)
         self.push_index = (self.push_index + 1) % self.capacity
@@ -198,12 +250,8 @@ class MapPlayback(Playback):
     def add_sample(self, sample, index, sample_score=0):
         if self.count < self.capacity:
             self.count += 1
-        if sample is None:
-            # If caller is push_sample do nothing further.
-            return
-        else:
-            for key in self.data:
-                self.data[key].add_sample(sample[key], index, sample_score)
+        for key in self.data:
+            self.data[key].add_sample(sample[key], index, sample_score)
 
     def get_batch(self, index):
         batch = dict([(key, self.data[key].get_batch(index)) for key in self.data])
@@ -279,9 +327,6 @@ class MapPlayback(Playback):
         for field in column_batch:
             column_batch[field] = np.asarray(column_batch[field])
         return column_batch
-
-
-import operator
 
 
 class SegmentTree(object):
@@ -435,6 +480,9 @@ class NearPrioritizedPlayback(MapPlayback):
     using field '_weight' as priority probability when sample batch from this playback;
     using field '_index' as sample index when sample batch from this playback, for later update_score()
     """
+    _ARG_SLOTS = ('capacity',)
+    _KWARG_SLOTS = ('augment_offset', 'augment_scale', 'evict_policy',
+                    'epsilon', 'priority_bias', 'importance_weight')
     def __init__(self, capacity, augment_offset={}, augment_scale={},
                  evict_policy="sequence", epsilon=1e-3,
                  priority_bias=1.0, importance_weight=1.0):
@@ -537,6 +585,8 @@ class NearPrioritizedPlayback(MapPlayback):
 
 
 class NPPlayback(MapPlayback):
+    _ARG_SLOTS = ('capacity',)
+    _KWARG_SLOTS = ('pn_ratio', 'push_policy', 'pop_policy')
     def __init__(self, capacity, pn_ratio=1.0, push_policy="sequence", pop_policy="random"):
         """
         divide MapPlayback into positive sample and negative sample.
@@ -614,274 +664,649 @@ class BalancedMapPlayback(MapPlayback):
     """MapPlayback with rebalanced action and done distribution.
     The current balancing method only support discrete action spaces.
     """
-    def __init__(self, num_actions, discount=0.995, upsample_bias=None,
-                 p_min=None, *args, **kwargs):
-        super(BalancedMapPlayback, self).__init__(*args, **kwargs)
-        self.NUM_ACTIONS = num_actions
-        self.DISCOUNT = discount
-        self.P_MIN = p_min if p_min is not None else (1e-3, 1e-2)
-        self.UPSAMPLE_BIAS = upsample_bias if upsample_bias is not None \
-            else tuple([1.0] * (self.NUM_ACTIONS + 1))
+    _ARG_SLOTS = ('num_actions',) + MapPlayback._ARG_SLOTS
+    _KWARG_SLOTS = ('upsample_bias', 'p_min') + MapPlayback._KWARG_SLOTS
+    def __init__(self, *args, **kwargs):
+        kwargs = strip_args(self._ARG_SLOTS, self._KWARG_SLOTS, args, kwargs)
+        sup_kwargs = strip_args(MapPlayback._ARG_SLOTS,
+                                MapPlayback._KWARG_SLOTS, [], kwargs)
+        super(BalancedMapPlayback, self).__init__(**sup_kwargs)
 
-        self.sample_prob =  num_actions * np.ones(self.capacity)
-        self.action_prob = 1.0/num_actions*np.ones(num_actions)
-        self.done_prob = 0.0
+        self.NUM_ACTIONS = kwargs['num_actions']
+        self.UPSAMPLE_BIAS = kwargs['upsample_bias'] if 'upsample_bias' in kwargs \
+            else tuple([1.0] * (self.NUM_ACTIONS + 1))
+        self.P_MIN = kwargs['p_min'] if 'p_min' in kwargs \
+            else (1e-3, 1e-2)
+
+        self.cache = {}
 
     def next_batch_index(self, batch_size):
         count = self.get_count()
         if count == 0:
             return super(BalancedMapPlayback, self).next_batch_index(batch_size)
         else:
-            p = self.sample_prob[:count] / np.sum(self.sample_prob[:count])
+            p = self.sample_prob[:count]
             return np.random.choice(
                 np.arange(count), size=batch_size, replace=True, p=p
             )
 
-    def push_sample(self, sample, **kwargs):
-        index = self.push_index
-
-        # Calculate un-normalized re-sampling weight for sample
-        assert 'action' in sample and 'episode_done' in sample
-        action = sample['action']
-        done = sample['episode_done']
-        self.sample_prob[index] = self.UPSAMPLE_BIAS[action] * \
-            np.sum(self.action_prob) / self.action_prob[action]
-        if done:
-            self.sample_prob[index] *= 1 / self.done_prob * \
-                                       self.UPSAMPLE_BIAS[-1]
-        else:
-            self.sample_prob[index] *= 1 / (1 - self.done_prob)
-
-        # Exponential moving averaged action and done probability
-        delta = np.zeros(self.NUM_ACTIONS)
-        delta[action] = 1
-        self.action_prob = self.action_prob * self.DISCOUNT + \
-                           delta*(1 - self.DISCOUNT)
-        cap = self.P_MIN[0]
-        self.action_prob[self.action_prob<cap] = cap
-        # self.action_prob /= np.sum(self.action_prob)
-
-        self.done_prob = self.done_prob*self.DISCOUNT + \
-                         float(done)*(1 - self.DISCOUNT)
-        cap = self.P_MIN[1]
-        self.done_prob = max(min(self.done_prob, 1-cap), cap)
-
-        print ("[BalancedMapPlayback.push_sample()]: "
-               "action {}, done {:.3f}, sample {:.3f}").format(
-                   self.action_prob, self.done_prob, self.sample_prob[index])
-
+    def push_sample(self, sample, *args, **kwargs):
+        self.cache = {}
         super(BalancedMapPlayback, self).push_sample(sample, **kwargs)
 
+    @property
+    def sample_prob(self):
+        if 'sample_prob' not in self.cache:
+            count = self.get_count()
+            p_action = self.action_prob / self.UPSAMPLE_BIAS[:-1]
+            data = np.array(self.data['action'].data[:count],
+                            dtype=np.uint8)
+            p_actions = p_action[data,]
+            p_done = np.array((1-self.done_prob, self.done_prob)) / \
+                np.array((1.0, self.UPSAMPLE_BIAS[-1]))
+            data = np.array(self.data['episode_done'].data[:count],
+                            dtype=np.uint8)
+            p_dones = p_done[data]
+            sample_prob = 1.0 / p_actions / p_dones
+            sample_prob /= np.sum(sample_prob)
+            self.cache['sample_prob'] = sample_prob
+        return self.cache['sample_prob']
 
-class CachedMapPlayback(MapPlayback):
+    @property
+    def done_prob(self):
+        if 'done_prob' not in self.cache:
+            count = self.get_count()
+            data = self.data['episode_done'].data[:count]
+            prob = 1.0 * sum(data) / self.count
+            cap = self.P_MIN[1]
+            prob = np.maximum(np.minimum(prob, 1-cap), cap)
+            self.cache['done_prob'] = prob
+        return self.cache['done_prob']
 
+    @property
+    def action_prob(self):
+        if 'action_prob' not in self.cache:
+            count = self.get_count()
+            data = np.array(self.data['action'].data[:count])
+            one_hot = np.arange(self.NUM_ACTIONS)[:, np.newaxis] == \
+                      data[np.newaxis, :]
+            cnt = np.sum(one_hot, axis=1)
+            prob = 1.0 * cnt / np.sum(cnt)
+            cap = self.P_MIN[0]
+            prob = np.maximum(np.minimum(prob, 1-cap), cap)
+            self.cache['action_prob'] = prob
+        return self.cache['action_prob']
+
+
+class PersistencyWrapper(wrapt.ObjectProxy):
+    """Pass-through Persistency Wrapper for Playbacks.
+    This wrapper class keeps a disk copy of the wrapped Playback. Saved data
+    can be loaded back to memory and the sampling and push related counters
+    are guaranteed to be consistent.
+
+    The `count` and `push_index` attributes are kept as meta data to keep
+    consistency of a resumed session. No other attributes (e.g. capacity) are
+    checked, which means the disk copy can be converted to any compatible
+    in-memory Playback.
+    """
     META_FILE = "meta.json"
-    NP_POSTFIX = ".npy"
+    DATA_FILE = "data.pkl"
+    def __init__(self, playback, path, *args, **kwargs):
+        """ Initialization.
 
-    def __init__(self, cache_path, *args, **kwargs):
-        super(CachedMapPlayback, self).__init__(*args, **kwargs)
-        # cache_path = kwargs["cache_path"]
-        self._path = cache_path
+        :param playback_cls: the playback instance to be wrapped.
+        :param path: path to persist data.
+        :param args: dummy
+        :param kwargs: dummy
+        """
+        super(PersistencyWrapper, self).__init__(playback)
+        self._path = path
         self._io_status = None  # None, init, loading, flushing, ready
-        self.init_()
+        self.load_meta()
 
-    def init_(self):
+    def load_meta(self):
         while True:
             if not os.path.isdir(self._path):
                 break
             meta_path = os.sep.join([self._path, self.META_FILE])
             if not os.path.isfile(meta_path):
                 break
-            data = json.loads(open(meta_path).read())
-            self.count = int(data["count"])
-            self.push_index = int(data["push_index"])
-            break
+            try:
+                logging.warning(
+                    "[PersistencyWrapper.__load_meta()]: "
+                    "loading meta data from path: %s", meta_path
+                )
+                data = json.loads(open(meta_path).read())
+                self.__wrapped__.count = int(data["count"])
+                self.__wrapped__.push_index = int(data["push_index"])
+                # logging.warning(
+                #     "[PersistencyWrapper.__load_meta()]: "
+                #     "loaded meta data: count {}, push_index {}".format(
+                #         self.__wrapped__.count,
+                #         self.__wrapped__.push_index
+                #     )
+                # )
+                break
+            except:
+                logging.warning(
+                    "[PersistencyWrapper.__load_meta()]: "
+                    "exception loading meta data, retry in one second."
+                )
+                time.sleep(1.0)
+
         self._io_status = "init"
 
     def load(self):
         self._io_status = "loading"
-        while True:
-            if not os.path.isdir(self._path):
-                break
-            paths = os.listdir(self._path)
-            paths = filter(lambda p: p.endswith(self.NP_POSTFIX), paths)
-            fields = [p[:-len(self.NP_POSTFIX)] for p in paths]
-            if len(fields) == 0:
-                break
-            self.init_data_(fields)
-            for field, path in zip(fields, paths):
-                self.data[field].data = np.load(os.sep.join([self._path, path]))
-            break
+        logging.warning(
+            "[PersistencyWrapper.load()]: "
+            "loading data from path %s...", self._path
+        )
+        self.load_meta()
+        if self.__wrapped__.count > 0:
+            try:
+                path = os.sep.join([self._path, self.DATA_FILE])
+                self.__wrapped__.data = joblib.load(path)
+                logging.warning(
+                    "[PersistencyWrapper.load()]: "
+                    "loaded data from {}.".format(path)
+                )
+            except:
+                logging.warning(
+                    "[PersistencyWrapper.load()]: "
+                    "load data from {} failed.".format(path)
+                )
+                raise Exception("loading data from {} failed.".format(path))
+        else:
+            pass
         self._io_status = "ready"
 
     def save(self):
+        """Save meta and data.
+        Save meta data after data is saved to make this a transaction.
+        """
         self._io_status = "flushing"
+        logging.warning(
+            "[PersistencyWrapper.save()] : "
+            "saving data to path %s...", self._path
+        )
         if not os.path.isdir(self._path):
             os.makedirs(self._path)
+
+        if self.data is not None:
+            path = os.sep.join([self._path, self.DATA_FILE])
+            joblib.dump(self.__wrapped__.data, path)
+
         meta_path = os.sep.join([self._path, self.META_FILE])
         with open(meta_path, mode="w") as f:
             f.write(json.dumps({
                 "count": self.count,
                 "push_index": self.push_index
             }))
-        if self.data is not None:
-            for field in self.data:
-                data = self.data[field].data
-                np.save(os.sep.join([self._path, field+self.NP_POSTFIX]), data)
+
         self._io_status = "ready"
 
     def release_mem(self):
         self._io_status = "init"
-        self.init_()
-        self.data = None
-        pass
+        logging.warning(
+            "[PersistencyWrapper.release_mem()]: "
+            "releasing cache memory...")
+
+    def reset(self):
+        self.release_mem()
+        self.__wrapped__.reset()
 
 
-class BigMapPlayback(Playback):
-
+class BigPlayback(Playback):
+    """Memory-cached Collection of Persisted Playbacks."""
     META_FILE = "meta.json"
-
+    _ARG_SLOTS = ('bucket_cls',)
+    _KWARG_SLOTS = ('bucket_size', 'cache_path', 'max_sample_epoch',
+                    'ratio_active') + Playback._ARG_SLOTS + \
+                   Playback._KWARG_SLOTS
     def __init__(self, *args, **kwargs):
-        """Stores maps of ndarray.
-        :param capacity:
-        :param push_policy:
-        :param pop_policy:
-        :param dtype:
-        :param bucket_size: size of a single bucket.
-            There will be at most 2 bucket of data swapped in memory simultaneously.
-        :param cache_path:
-            path under which to store swapped out data.
+        """Initialization."""
+        # Strip arguments
+        #  first strip arguments for myself.
+        self_kwargs = strip_args(self._ARG_SLOTS, self._KWARG_SLOTS, args, kwargs)
+        #  strip the stripped kwargs again for super class. use empty args to
+        #  avoid confusion.
+        sup_kwargs = strip_args(
+            Playback._ARG_SLOTS, Playback._KWARG_SLOTS, [], self_kwargs
+        )
+
+        # Build superclass
+        super(BigPlayback, self).__init__(**sup_kwargs)
+
+        # Initialize self attributes
+        self._bucket_cls = None  # class of buckets
+        self._bucket_size = self._bucket_count = None
+        self._cache_path = None
+        self._max_sample_epoch = None  # average sampling epoch for a bucket
+        self._max_active_buckets = None  # desired # of in memory buckets
+        self._buckets = []
+        self.__init_attrs(self_kwargs, kwargs)
+
+        # Initialize volatile data structures
+        self._push_bucket = 0
+        self._buckets_active = {}  # buckets that can be sampled from
+        self._buckets_maintained = {}
+        self._buckets_sample_quota = {}  # remaining sample quota for active buckets
+        self._buckets_to_save = Queue.Queue()
+        self._buckets_to_load = Queue.Queue()
+        self._close_flag = False
+        self.thread_io = Thread(
+            group=None, target=self.bucket_io, name='thread_io'
+        )
+        self.thread_io.start()
+
+        # Read back state from disk
+        self.__init_from_cache()
+
+    def push_sample(self, sample, sample_score=0):
+        """Push new sample into buffer.
+        This should be the only way new samples can be inserted into BigMap.
         """
-        sup_kwargs = self.pick_args(["capacity", "push_policy", "pop_policy", "augment_offset", "augment_scale"], args, kwargs)
-        super(BigMapPlayback, self).__init__(**sup_kwargs)
-        if "bucket_size" in kwargs:
-            self._bucket_size = kwargs["bucket_size"]
-            self._bucket_count = self.capacity / self._bucket_size
-            del kwargs["bucket_size"]
+        # Get the bucket id to push and the relative index inside that bucket
+        bucket_to_push, rel_index = divmod(self.push_index, self._bucket_size)
+        assert bucket_to_push == self._push_bucket
+        swap_flag = self._buckets[bucket_to_push].capacity == (rel_index + 1)
+
+        # do the actual sample insertion
+        while bucket_to_push not in self._buckets_active:
+            logging.warning("Waiting push bucket {} to be ready".format(bucket_to_push))
+            time.sleep(1.0)
+        self._buckets[bucket_to_push].push_sample(sample, sample_score)
+
+        # adjust push_bucket
+        if swap_flag:
+            self._buckets_to_save.put(self._push_bucket)
+            self._push_bucket = (self._push_bucket + 1) % self._bucket_count
+            self._buckets_to_load.put(
+                (self._push_bucket + 1) % self._bucket_count
+            )
+
+    def add_sample(self, sample, index, sample_score=0):
+        raise NotImplementedError(
+            'We do not support adding sample by index. Use push_sample().'
+        )
+
+    def get_batch(self, index):
+        ret = {}
+        # ret = []
+        for bkt_id, rel_index in index:
+            if len(rel_index) == 0:
+                continue
+            else:
+                # Sample from this bucket
+                bkt_ret = self._buckets[bkt_id].get_batch(rel_index)
+                for k, v in bkt_ret.iteritems():
+                    ret[k] = v if k not in ret else \
+                        np.concatenate([ret[k], bkt_ret[k]], axis=0)
+                # ret.extend(self._buckets[bkt_id].get_batch(rel_index))
+
+            # Modify sample quota for this bucket
+            # Leave current and next push bucket alone
+            if bkt_id == self._push_bucket or \
+               bkt_id == (self._push_bucket + 1) % self._bucket_count:
+                continue
+            # If this bucket has run out of quota, deactivate and release
+            # this bucket to signal IO thread to load a new bucket.
+            else:
+                self._buckets_sample_quota[bkt_id] -= len(rel_index)
+                if self._buckets_sample_quota[bkt_id] < 0:
+                    logging.warning(
+                        "[BigPlayback.playback()]: "
+                        "bucket {} has run out of quota.".format(bkt_id)
+                    )
+                    del self._buckets_active[bkt_id]
+                    if bkt_id in self._buckets_maintained:
+                        del self._buckets_maintained[bkt_id]
+                    self._buckets[bkt_id].release_mem()
+                    self.__maintain_active_buckets()
+        return ret
+
+    def next_batch_index(self, batch_size):
+        while True:
+            ret = self.__next_batch_index(batch_size)
+            if sum([len(idx) for _, idx in ret]) == batch_size:
+                return ret
+            else:
+                logging.warning(
+                    "[BigPlayback.next_batch_index]: "
+                    "number of samples < batch size, will retry in 0.1 sec."
+                )
+                time.sleep(0.1)
+
+    def __next_batch_index(self, batch_size):
+        # get an ordered list of active bucket ids.
+        list_bkt_active = [bkt_id for bkt_id in self._buckets_active]
+        cnt_bkt_active = [self._buckets[bkt_id].count for bkt_id in list_bkt_active]
+        sample_per_bkt = np.random.multinomial(
+            batch_size, 1.0 * np.array(cnt_bkt_active) / sum(cnt_bkt_active)
+        )
+        ret = []
+        for sub_size, bkt_id in zip(sample_per_bkt, list_bkt_active):
+            rel_index = tuple(self._buckets[bkt_id].next_batch_index(sub_size))
+            ret.append((bkt_id, rel_index))
+        return ret
+
+    def __init_attrs(self, self_kwargs, kwargs):
+        self._bucket_cls = self_kwargs['bucket_cls']
+
+        if "bucket_size" in self_kwargs:
+            self._bucket_size = self_kwargs["bucket_size"]
+            self._bucket_count = int(self.capacity / self._bucket_size)
         else:
-            self._bucket_count = 8
-            self._bucket_size = self.capacity / self._bucket_count
-        if "cache_path" in kwargs:
-            self._cache_path = kwargs["cache_path"]
-            del kwargs["cache_path"]
+            self._bucket_count = 10
+            self._bucket_size = int(self.capacity / self._bucket_count)
+        logging.warning(
+            "[BigPlayback.init()]: "
+            "Using {} buckets with size {}".format(
+                self._bucket_count, self._bucket_size
+            )
+        )
+
+        if "cache_path" in self_kwargs:
+            self._cache_path = self_kwargs["cache_path"]
         else:
-            self._cache_path = "."
-        if "epoch_count" in kwargs:
-            self._pop_epoch_count = kwargs["epoch_count"]
-            del kwargs["epoch_count"]
+            self._cache_path = "./ReplayMemoryData"
+        logging.warning(
+            "[BigPlayback.init()]: "
+            "Using cache path {}".format(self._cache_path)
+        )
+
+        if "max_sample_epoch" in self_kwargs:
+            self._max_sample_epoch = self_kwargs["max_sample_epoch"]
         else:
-            self._pop_epoch_count = 8
+            self._max_sample_epoch = 8
+        logging.warning(
+            "[BigPlayback.init()]: "
+            "Max average sample epoch per sample: {}.".format(
+                self._max_sample_epoch)
+        )
 
-        if len(args) > 0:
-            args = list(args)
-            args[0] = self._bucket_size  # capacity
-        elif "capacity" in kwargs:
-            kwargs["capacity"] = self._bucket_size
-        self._buckets = [CachedMapPlayback(os.sep.join([self._cache_path, str(i)]), *args, **kwargs) for i in range(self._bucket_count)]
-        # self._buckets = []
-        # for i in range(self._bucket_count):
-        #     kwargs.update({"cache_path": os.sep.join([self._cache_path, str(i)])})
-        #     self._buckets.append(CachedMapPlayback(*args, **kwargs))
+        if "ratio_active" in self_kwargs:
+            ratio_active = self_kwargs["ratio_active"]
+            assert 1.0/self._bucket_count <= ratio_active <= 1.0
+        else:
+            ratio_active = 1.0
+        self._max_active_buckets = int(self._bucket_count * ratio_active)
+        logging.warning(
+            "[BigPlayback.init()]: "
+            "Number of active buckets is {}.".format(
+                self._max_active_buckets)
+        )
 
-        self._push_bucket = self._pop_bucket = 0
-        self._pop_count = 0
-        self._last_push_index = 0
-        self.init_from_cache_()
+        # build buckets
+        sub_kwargs = strip_args(self._bucket_cls._ARG_SLOTS,
+                                self._bucket_cls._KWARG_SLOTS,
+                                [], kwargs)
+        sub_kwargs['capacity'] = self._bucket_size
+        for i in range(self._bucket_count):
+            sub_path = os.sep.join([self._cache_path, 'bucket_{}'.format(i)])
+            bucket = PersistencyWrapper(self._bucket_cls(**sub_kwargs), sub_path)
+            self._buckets.append(bucket)
 
-    def pick_args(self, fields, args, kwargs):
-        picked_args = {}
-        for i in range(len(args)):
-            picked_args[fields[i]] = args[i]
-        for f in fields:
-            if f in kwargs:
-                picked_args[f] = kwargs[f]
-        return picked_args
-
-    def init_from_cache_(self):
+    def __init_from_cache(self):
+        # Load meta data
         if not os.path.isdir(self._cache_path):
-            return
-        meta_path = os.sep.join([self._cache_path, self.META_FILE])
-        if not os.path.isfile(meta_path):
-            return
-        data = json.loads(open(meta_path).read())
-        self._push_bucket = int(data["push_bucket"])
-        self._pop_bucket = int(data["pop_bucket"])
-        self._buckets[self._push_bucket].load()
-        if self._pop_bucket != self._push_bucket:
-            self._buckets[self._pop_bucket].load()
+            logging.warning(
+                "[BigPlayback.init_from_cache_()]: "
+                "cache path {} does not exist.".format(self._cache_path)
+            )
+        else:
+            meta_path = os.sep.join([self._cache_path, self.META_FILE])
+            if not os.path.isfile(meta_path):
+                logging.warning(
+                    "[BigPlayback.init_from_cache_()]: "
+                    "meta file {} does not exist.".format(meta_path)
+                )
+            else:
+                data = json.loads(open(meta_path).read())
+                capacity = int(data['capacity'])
+                assert self.capacity == capacity
+                self._push_bucket = int(data["push_bucket"])
 
-    def save(self):
+        # Load bucket meta
+        for bkt in self._buckets:
+            bkt.load_meta()
+
+        # Load current and next push bucket
+        load_buckets = [self._push_bucket]
+        next_push_bucket = (self._push_bucket + 1) % self._bucket_count
+        load_buckets.append(next_push_bucket)
+        for bkt in load_buckets:
+            self._buckets_to_load.put(bkt)
+        while True:
+            if all([bid in self._buckets_active for bid in load_buckets]):
+                break
+            else:
+                logging.warning(
+                    "[BigPlayback.init_from_cache_()]: "
+                    "loading buckets {}".format(load_buckets)
+                )
+                time.sleep(1.0)
+        logging.warning(
+            "[BigPlayback.init_from_cache_()]: "
+            "loaded buckets {} to push at {} (global {}).".format(
+                self._push_bucket,
+                self._buckets[self._push_bucket].push_index,
+                self.push_index
+            )
+        )
+        self.__maintain_active_buckets()
+
+    def __maintain_active_buckets(self):
+        """Maintain a number of active buckets in memory.
+        This private method maintains a number of active buckets in memory.
+        It checks the diff between desired and actual amount of active
+        buckets, as well as the number of persisted buckets that can be
+        activated. Then it signal IO thread to load a number of buckets and
+        return without waiting.
+        """
+        # Is there enough active buckets inside memory? How many is due?
+        # Total number of buckets to load is the:
+        #  #(desired amount) - #(activated and maintained)
+
+        num_to_load = min(
+            self._max_active_buckets, int(self.count / self._bucket_size)
+        ) - len(set(
+            self._buckets_active.keys() + self._buckets_maintained.keys()
+        ))
+        if num_to_load <= 0:
+            return
+
+        # How many can be loaded from disk?
+        available_buckets = self.__check_persisted_buckets()
+        num_to_load = min(num_to_load, len(available_buckets))
+
+        # Sample from available buckets without replacement
+        if num_to_load > 0:
+            load_buckets = np.random.choice(
+                available_buckets, num_to_load, replace=False
+            )
+            logging.warning(
+                "[BigPlayback.__maintain_active_buckets()]: "
+                "maintaining active buckets. Buckets to load "
+                "are {}".format(load_buckets)
+            )
+            # put into load queue and let IO thread to load bucket.
+            for bkt in load_buckets:
+                self._buckets_to_load.put(bkt)
+                self._buckets_maintained[bkt] = True
+
+    def __save_meta(self):
         if not os.path.isdir(self._cache_path):
+            logging.warning(
+                "[BigPlayback.save()]:"
+                "making cache path {} .".format(self._cache_path)
+            )
             os.makedirs(self._cache_path)
         meta_path = os.sep.join([self._cache_path, self.META_FILE])
         with open(meta_path, mode="w") as f:
+            logging.warning(
+                "[BigPlayback.__save_meta()]: "
+                "writing to meta file {} .".format(meta_path)
+            )
             f.write(json.dumps({
+                "capacity": self.capacity,
                 "push_bucket": self._push_bucket,
-                "pop_bucket": self._pop_bucket
             }))
 
-    def push_sample(self, sample, sample_score=0):
-        self.check_push_bucket_()
-        self._buckets[self._push_bucket].push_sample(sample, sample_score)
+    def __check_persisted_buckets(self):
+        """Return ids of non-empty and non-active buckets."""
+        return [
+            bkt_id for bkt_id, bkt in enumerate(self._buckets)
+            if bkt.count > 0 and bkt not in self._buckets_active \
+            and bkt not in self._buckets_maintained
+        ]
 
-    def add_sample(self, sample, index, sample_score=0):
-        self.check_push_bucket_()
-        index = index - (self._bucket_size * self._push_bucket)
-        self._buckets[self._push_bucket].add_sample(sample, index, sample_score)
+    @property
+    def count(self):
+        """Count total number of samples in buckets.
+        This overrides the `count` attribute of super class Playback and is
+        calculated on-the-run to avoid meta inconsistency due to restart.
+        """
+        return sum([bkt.count for bkt in self._buckets])
 
-    def get_batch(self, index):
-        index = index - (self._bucket_size * self._pop_bucket)
-        batch = self._buckets[self._pop_bucket].get_batch(index)
-        self.check_pop_bucket_(len(index))
-        return batch
+    @property
+    def push_index(self):
+        """Calculate the next global index to push samples.
+        This overrides the `push_index` attribute of super class Playback and is
+        calculated on-the-run to avoid meta inconsistency due to restart.
+        """
+        return  self._bucket_size * self._push_bucket + \
+                self._buckets[self._push_bucket].push_index
 
-    def next_batch_index(self, batch_size):
-        index = self._buckets[self._pop_bucket].next_batch_index(batch_size)
-        index = index + (self._bucket_size * self._pop_bucket)
-        return index
+    @count.setter
+    def count(self, dummy):
+        logging.warning(
+            "[BigPlayback.count]: this is a dummy setter."
+        )
+        pass
+
+    @push_index.setter
+    def push_index(self, dummy):
+        logging.warning(
+            "[BigPlayback.push_index]: this is a dummy setter."
+        )
+        pass
+
+    def bucket_io(self):
+        """Thread function for bucket IO.
+        Monitors two queues: `self._buckets_to_save` and `self._buckets_to_load`.
+        Save/load bucket to/from disk from/to memory if there is bucket id data
+        in those tow queues.
+
+        When loading buckets to memory, also sets `self._buckets_active` and
+        assigns sampling quota to  `self._buckets_sample_quota` to
+        enable sampling from this bucket.
+
+        return from this thread if `self._close_flag` is set to True.
+        """
+        while True:
+            # Save buckets
+            try:
+                bkt = self._buckets_to_save.get_nowait()
+                logging.warning(
+                    "[BigPlayback.bucket_io()]: "
+                    "notified to save bucket {}.".format(bkt)
+                )
+                while True:
+                    try:
+                        self.__save_one(bkt)
+                        self._buckets_to_save.task_done()
+                        break
+                    except:
+                        logging.warning(
+                            "[BigPlayback.bucket_io()]: "
+                            "exception saving bucket, retry in one second."
+                        )
+                        time.sleep(1.0)
+            except Queue.Empty:
+                pass
+
+            # Load buckets
+            try:
+                bkt = self._buckets_to_load.get_nowait()
+                logging.warning(
+                    "[BigPlayback.bucket_io()]: "
+                    "notified to load bucket {}.".format(bkt)
+                )
+                while True:
+                    try:
+                        self.__load_one(bkt)
+                        self._buckets_to_load.task_done()
+                        break
+                    except:
+                        logging.warning(
+                            "[BigPlayback.bucket_io()]: "
+                            "exception loading bucket, retry in one second."
+                        )
+                        time.sleep(1.0)
+            except Queue.Empty:
+                pass
+
+            if self._close_flag:
+                break
+            else:
+                time.sleep(0.1)
+
+        logging.warning(
+            "[BigPlayback]: returning from IO thread."
+        )
+
+    def __load_one(self, bucket_id):
+        if bucket_id not in self._buckets_active:
+            logging.warning(
+                "[BigPlayback.__load_one()]: "
+                "going to load bucket {}.".format(bucket_id)
+            )
+            self._buckets[bucket_id].load()
+            self._buckets_active[bucket_id] = True
+            if bucket_id in self._buckets_maintained:
+                del self._buckets_maintained[bucket_id]
+        else:
+            logging.warning(
+                "[BigPlayback.__load_one()]: "
+                "not loading active bucket {}.".format(bucket_id)
+            )
+        # assign sampling quota to this bucket
+        self._buckets_sample_quota[bucket_id] = self._max_sample_epoch * \
+                                          self._buckets[bucket_id].capacity
+
+    def __save_one(self, bucket_id):
+        logging.warning(
+            "[BigPlayback.__save_one()]: "
+            "going to save bucket {}".format(bucket_id)
+        )
+        self._buckets[bucket_id].save()
+        # Sync meta to truly persist the saved meta.
+        # Otherwise the saved bucket data will be ignored in the next
+        #  load.
+        # TODO: still this won't fully prevent inconsistency btw. the
+        #  meta of BigPlayback and its buckets. Should double
+        #  check at initialization to prevent this.
+        self.__save_meta()
+
+    def close(self):
+        """Release memory and close IO thread."""
+        self.reset()             # release bucket memory
+        self._close_flag = True  # signal IO thread to return
+        self.thread_io.join()
 
     def reset(self):
+        """Release bucket memory and reset super class."""
         for bucket in self._buckets:
             bucket.release_mem()
-        self._push_bucket = self._pop_bucket = 0
+        self._push_bucket = 0
+        super(BigPlayback, self).reset()
 
-    def get_count(self):
-        return sum([b.get_count() for b in self._buckets])
+    def __enter__(self):
+        return self
 
-    def get_capacity(self):
-        return super(BigMapPlayback, self).get_capacity()
-
-    def check_push_bucket_(self):
-        current_push_index = self._buckets[self._push_bucket].push_index
-        if current_push_index < self._last_push_index:
-            # probably push_index rewinded from end of buffer to 0
-            self._buckets[self._push_bucket].save()
-            new_push = (self._push_bucket + 1) % self._bucket_count
-            self._buckets[new_push].load()
-            old_push = self._push_bucket
-            self._push_bucket = new_push
-            self._buckets[old_push].release_mem()
-            self._last_push_index = 0
-            logging.warning("push index: %s => %s", old_push, new_push)
-            self.save()
-        else:
-            self._last_push_index = current_push_index
-
-    def check_pop_bucket_(self, batch_size):
-        self._pop_count += batch_size
-        if self._pop_count / self._bucket_size > self._pop_epoch_count:
-            # re-select pop bucket
-            candidates = np.where([b.get_count() > batch_size for b in self._buckets])[0]
-            new_pop = np.random.choice(candidates)
-            logging.warning("pop index: %s => %s", self._pop_bucket, new_pop)
-            if new_pop != self._pop_bucket:
-                # load new_pop
-                self._buckets[new_pop].load()
-                # release old pop
-                if self._pop_bucket != self._push_bucket:  # cannot release while pushing!
-                    self._buckets[self._pop_bucket].release_mem()
-                self._pop_bucket = new_pop
-            self._pop_count = 0
-
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
 
 
