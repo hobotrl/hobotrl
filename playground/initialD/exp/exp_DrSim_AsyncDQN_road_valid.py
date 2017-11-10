@@ -21,7 +21,8 @@ sys.path.append('..')
 import hobotrl as hrl
 from hobotrl.environments import FrameStack
 from hobotrl.sampling import TransitionSampler
-from hobotrl.playback import BalancedMapPlayback
+# from hobotrl.playback import BalancedMapPlayback
+from hobotrl.playback_1 import BalancedMapPlayback, BigPlayback
 from hobotrl.async import AsynchronousAgent
 # initialD
 # from ros_environments.honda import DrivingSimulatorEnv
@@ -45,6 +46,7 @@ def func_compile_obs(obss):
 
 ALL_ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0,)]
 AGENT_ACTIONS = ALL_ACTIONS[:3]
+# AGENT_ACTIONS = ALL_ACTIONS
 def func_compile_action(action):
     ALL_ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0, )]
     return ALL_ACTIONS[action]
@@ -72,12 +74,9 @@ def func_compile_exp_agent(state, action, rewards, next_state, done):
     last_road_change = road_change
     speed = rewards[2]
     obs_risk = rewards[5]
-    
+
     ema_speed = 0.5*ema_speed + 0.5*speed
-    if rewards[6] > ema_dist:
-        ema_dist = 0.1 * ema_dist + 0.9 * rewards[6]
-    else:
-        ema_dist = 0.8 * ema_dist + 0.2 * rewards[6]
+    ema_dist = 1.0 if rewards[6] > 2.0 else 0.9 * ema_dist
     momentum_opp = (rewards[3]<0.5)*(momentum_opp+(1-rewards[3]))
     momentum_opp = min(momentum_opp, 20)
     momentum_ped = (rewards[4]>0.5)*(momentum_ped+rewards[4])
@@ -85,10 +84,11 @@ def func_compile_exp_agent(state, action, rewards, next_state, done):
 
     # road_change
     rewards[0] = -100*(
-        (road_change and ema_dist>1.0) or (road_change and momentum_ped > 0)
+        (road_change and ema_dist>0.2) or (road_change and momentum_ped > 0)
     )*(n_skip-cnt_skip)  # direct penalty
     # velocity
     rewards[2] *= 10
+    rewards[2] -= 10
     # opposite
     rewards[3] = -20*(0.9+0.1*momentum_opp)*(momentum_opp>1.0)
     # ped
@@ -106,15 +106,16 @@ def func_compile_exp_agent(state, action, rewards, next_state, done):
 
     if road_invalid_at_enter:
         print "[Early stopping] entered invalid road."
+        road_invalid_at_enter = False
         # done = True
 
-    if road_change and ema_dist > 1.0:
+    if road_change and ema_dist > 0.2:
         print "[Early stopping] turned onto intersection."
         done = True
 
     if road_change and momentum_ped>0:
         print "[Early stopping] ped onto intersection."
-        done = True        
+        done = True
 
     if obs_risk > 1.0:
         print "[Early stopping] hit obstacle."
@@ -251,20 +252,32 @@ global_step = tf.get_variable(
     'global_step', [], dtype=tf.int32,
     initializer=tf.constant_initializer(0), trainable=False)
 
+# 1 sample ~= 1MB @ 6x skipping
+replay_buffer = BigPlayback(
+    bucket_cls=BalancedMapPlayback,
+    cache_path="./ReplayBufferCache/experiment",
+    capacity=300000, bucket_size=100, ratio_active=0.02, max_sample_epoch=10,
+    num_actions=len(AGENT_ACTIONS), upsample_bias=(1,1,1,0.1)
+)
+
+gamma = 0.99
 _agent = hrl.DQN(
     f_create_q=f_net, state_shape=state_shape,
     # OneStepTD arguments
-    num_actions=len(AGENT_ACTIONS), discount_factor=0.9, ddqn=True,
+    num_actions=len(AGENT_ACTIONS), discount_factor=gamma, ddqn=True,
     # target network sync arguments
     target_sync_interval=1,
     target_sync_rate=target_sync_rate,
     # epsilon greeedy arguments
-    greedy_epsilon=0.05,
+    greedy_epsilon=0.2,
     # optimizer arguments
-    network_optimizer=hrl.network.LocalOptimizer(optimizer_td, 10.0),
+    network_optimizer=hrl.network.LocalOptimizer(optimizer_td, 1.0),
     # sampler arguments
     sampler=TransitionSampler(
-        BalancedMapPlayback(num_actions=len(AGENT_ACTIONS), capacity=10000, upsample_bias=(3,1,1,0.1)),
+        replay_buffer,
+        # BalancedMapPlayback(
+        #     num_actions=len(AGENT_ACTIONS), capacity=15000, upsample_bias=(1,1,1,0.1)
+        # ),
         batch_size=8, interval=1, minimum_count=1000
      ),
     # checkpoint
@@ -275,8 +288,10 @@ def log_info(update_info):
     global action_td_loss
     global agent
     global next_state
+    global next_action
     global ALL_ACTIONS
     global AGENT_ACTIONS
+    global n_env_steps
     global n_steps
     global done
     global cum_td_loss
@@ -306,7 +321,7 @@ def log_info(update_info):
             action_fraction *= 0.9
             action_fraction[s[0]] += 0.1
             action_td_loss[s[0]] = 0.9*action_td_loss[s[0]] + 0.1*s[3]
-            if cnt_skip==n_skip:
+            if cnt_skip==0:
                 # pass
                 print ("{} "+"{:8.5f} "*4+"{}").format(*s)
         # print action_fraction
@@ -323,7 +338,7 @@ def log_info(update_info):
         summary_proto.value.add(
             tag='q_vals_min',
             simple_value=np.min(q_vals))
-    if cnt_skip == n_skip:
+    if cnt_skip == 0 or n_steps == 0:
         next_q_vals_nt = agent._agent.learn_q(np.asarray(next_state)[np.newaxis, :])[0]
         for i, ac in enumerate(AGENT_ACTIONS):
             summary_proto.value.add(
@@ -364,6 +379,9 @@ def log_info(update_info):
                "average td_loss is {}. No exploration {}").format(
                    n_ep, n_steps, cum_reward,
                    cum_td_loss/n_steps, exploration_off)
+        n_env_steps += n_steps
+        summary_proto.value.add(tag='n_steps', simple_value=n_steps)
+        summary_proto.value.add(tag='n_env_steps', simple_value=n_env_steps)
         if not exploration_off:
             summary_proto.value.add(
                 tag='num_episode', simple_value=n_ep)
@@ -384,7 +402,7 @@ def log_info(update_info):
 
 n_interactive = 0
 n_skip = 6
-update_rate = 5.0
+update_rate = 4.0
 n_ep = 0  # last ep in the last run, if restart use 0
 n_test = 0  # num of episode per test run (no exploration)
 
@@ -397,77 +415,86 @@ try:
         init_op=tf.global_variables_initializer(),
         logdir='./experiment',
         save_summaries_secs=10,
-        save_model_secs=600)
+        save_model_secs=3600*3)
 
-    with sv.managed_session(config=config) as sess:
-        with AsynchronousAgent(agent=_agent, method='rate', rate=update_rate) as agent:
-            agent.set_session(sess)
-            action_fraction = np.ones(len(AGENT_ACTIONS), ) / (1.0 * len(AGENT_ACTIONS))
-            action_td_loss = np.zeros(len(AGENT_ACTIONS), )
+    with sv.managed_session(config=config) as sess, \
+         AsynchronousAgent(agent=_agent, method='rate', rate=update_rate) as agent:
+
+        agent.set_session(sess)
+        n_env_steps = 0
+        action_fraction = np.ones(len(AGENT_ACTIONS), ) / (1.0 * len(AGENT_ACTIONS))
+        action_td_loss = np.zeros(len(AGENT_ACTIONS), )
+        while True:
+            n_ep += 1
+            env.env.n_ep = n_ep  # TODO: do this systematically
+            exploration_off = (n_ep%n_test==0) if n_test >0 else False
+            learning_off = exploration_off
+            n_steps = 0
+            cnt_skip = int(n_skip * (1 + np.random.rand()))
+            reward = 0
+            skip_reward = 0
+            cum_td_loss = 0.0
+            cum_reward = 0.0
+            done = False
+            print "Episode {} with offset {}".format(n_ep, cnt_skip-n_skip)
+
+            last_road_change = False
+            road_invalid_at_enter = False
+            momentum_opp = 0.0
+            momentum_ped = 0.0
+            ema_speed = 10.0
+            ema_dist = 0.0
+            update_info = {}
+            t_infer, t_step, t_learn = 0, 0, 0
+
+            state  = env.reset()
+            action = agent.act(state, exploration=not exploration_off)
+            skip_action = action
+            next_state = state
+            next_action = action
+            log_info(update_info)
+
             while True:
-                n_ep += 1
-                env.env.n_ep = n_ep  # TODO: do this systematically
-                exploration_off = (n_ep%n_test==0) if n_test >0 else False
-                learning_off = exploration_off
-                n_steps = 0
-                cnt_skip = n_skip
-                skip_reward = 0
-                cum_td_loss = 0.0
-                cum_reward = 0.0
+                n_steps += 1
+                cnt_skip -= 1
+                update_info = {}
+                t_learn, t_infer, t_step = 0, 0, 0
 
-                last_road_change = False
-                road_invalid_at_enter = False
-                momentum_opp = 0.0
-                momentum_ped = 0.0
-                ema_speed = 10.0
-                ema_dist = 0.0
+                # Env step
+                t = time.time()
+                next_state, reward, done, info = env.step(skip_action)
+                t_step = time.time() - t
+                state, action, reward, next_state, done = \
+                func_compile_exp_agent(state, action, reward, next_state, done)
+                flag_tail = done
+                skip_reward += reward
 
-                state  = env.reset()
-                action = agent.act(state, exploration=not exploration_off)
-                skip_action = action
-
-                while True:
-                    n_steps += 1
-                    cnt_skip -= 1
-                    update_info = {}
-                    t_learn, t_infer, t_step = 0, 0, 0
-
-                    # Env step
+                if cnt_skip==0 or done:
+                    # average rewards during skipping
+                    skip_reward /= (n_skip - cnt_skip)
+                    print skip_reward,
+                    # add tail for non-early-stops
+                    skip_reward += flag_tail * gamma * skip_reward/ (1-gamma)
+                    print skip_reward
+                    update_info = agent.step(
+                        sess=sess, state=state, action=action,
+                        reward=skip_reward, next_state=next_state,
+                        episode_done=done
+                    )
                     t = time.time()
-                    next_state, reward, done, info = env.step(skip_action)
-                    t_step = time.time() - t
-                    state, action, reward, next_state, done = \
-                            func_compile_exp_agent(state, action, reward, next_state, done)
-                    flag_tail = done
-                    skip_reward += reward
+                    next_action = agent.act(next_state, exploration=not exploration_off)
+                    t_infer += time.time() - t
+                    skip_reward = 0
+                    state, action = next_state, next_action  # s',a' -> s,a
+                    skip_action = next_action
+                else:
+                    skip_action = 3  # no op during skipping
 
-                    if cnt_skip==0 or done:
-                        # average rewards during skipping
-                        skip_reward /= (n_skip - cnt_skip)
-                        print skip_reward,
-                        # add tail for non-early-stops
-                        skip_reward += flag_tail * 0.9 * skip_reward/ (1-0.9)
-                        print skip_reward
-                        update_info = agent.step(
-                            sess=sess, state=state, action=action,
-                            reward=skip_reward, next_state=next_state,
-                            episode_done=done
-                        )
-                        t = time.time()
-                        next_action = agent.act(next_state, exploration=not exploration_off)
-                        t_infer += time.time() - t
-                        cnt_skip = n_skip
-                        skip_reward = 0
-                        state, action = next_state, next_action  # s',a' -> s,a
-                        skip_action = next_action
-                    else:
-                        skip_action = 3  # no op during skipping
-
-                    sv.summary_computed(sess, summary=log_info(update_info))
-
-                    # print "Agent step learn {} sec, infer {} sec".format(t_learn, t_infer)
-                    if done:
-                        break
+                sv.summary_computed(sess, summary=log_info(update_info))
+                cnt_skip = n_skip if cnt_skip == 0 else cnt_skip
+                # print "Agent step learn {} sec, infer {} sec".format(t_learn, t_infer)
+                if done:
+                    break
 except Exception as e:
     print e.message
     traceback.print_exc()
@@ -477,6 +504,7 @@ finally:
     print "Tidying up..."
     # kill orphaned monitor daemon process
     env.env.exit()
+    replay_buffer.close()
     os.killpg(os.getpgid(os.getpid()), signal.SIGKILL)
     print "="*30
 

@@ -10,6 +10,7 @@ setup(name='hobotrl',
           'numpy>=1.10.4',
           # 'tensorflow >= 1.0.0',
           'httplib2',
+          'wrapt'
       ],
       description="Reinforcement Learning Algorithm libraries and experiment collections from Hobot RLer",
       author="Hobot RLer",
