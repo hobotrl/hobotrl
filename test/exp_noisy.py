@@ -8,7 +8,7 @@ import gym
 
 from playground.noisy import NoisySD
 from playground.noisy_dpg import NoisyDPG
-from hobotrl.experiment import Experiment
+from hobotrl.experiment import Experiment, GridSearch
 import hobotrl as hrl
 
 
@@ -37,6 +37,12 @@ class NoisyExperiment(Experiment):
                  worker_entropy=1e-2,
                  network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3), grad_clip=10.0),
                  replay_size=1000,
+                 act_ac=False,
+                 intrinsic_weight=0.0,
+                 explore_net=False,
+                 abs_goal=True,
+                 manager_ac=False,
+                 achievable_weight=1e-1,
                  ):
         super(NoisyExperiment, self).__init__()
         self._env, self._f_se, self._f_manager, self._f_explorer, self._f_ik, self._f_value, self._f_model, self._f_pi, \
@@ -49,6 +55,10 @@ class NoisyExperiment(Experiment):
             noise_dimension, se_dimension, manager_horizon, manager_interval, batch_size, batch_horizon, \
             noise_stddev, noise_explore_param, worker_explore_param, \
             network_optimizer_ctor, replay_size, worker_entropy
+        self._act_ac, self._intrinsic_weight, self._explore_net, \
+            self._abs_goal, self._manager_ac, self._achievable_weight = \
+            act_ac, intrinsic_weight, explore_net, \
+            abs_goal, manager_ac, achievable_weight
 
     def run(self, args):
 
@@ -81,6 +91,12 @@ class NoisyExperiment(Experiment):
             batch_size=self._batch_size,
             batch_horizon=self._batch_horizon,
             replay_size=self._replay_size,
+            act_ac=self._act_ac,
+            intrinsic_weight=self._intrinsic_weight,
+            explore_net=self._explore_net,
+            abs_goal=self._abs_goal,
+            manager_ac=self._manager_ac,
+            achievable_weight=self._achievable_weight,
             global_step=global_step,
         )
         config = tf.ConfigProto()
@@ -106,7 +122,14 @@ class NoisyPendulum(NoisyExperiment):
                  worker_entropy=1e-2,
                  network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3),
                                                                            grad_clip=10.0),
-                 replay_size=1000):
+                 replay_size=1000,
+                 act_ac=False,
+                 intrinsic_weight=0.0,
+                 explore_net=False,
+                 abs_goal=True,
+                 manager_ac=False,
+                 achievable_weight=1e-3,
+                 ):
         if env is None:
             env = gym.make("Pendulum-v0")
             env = hrl.envs.AugmentEnvWrapper(env, reward_decay=discount_factor, reward_scale=0.1)
@@ -188,8 +211,22 @@ class NoisyPendulum(NoisyExperiment):
                                             episode_n, discount_factor,
                                             noise_dimension, se_dimension, manager_horizon, manager_interval, batch_size, batch_horizon,
                                             noise_stddev, noise_explore_param, worker_explore_param, worker_entropy,
-                                            network_optimizer_ctor, replay_size)
+                                            network_optimizer_ctor, replay_size,
+                                            act_ac, intrinsic_weight, explore_net, abs_goal, manager_ac, achievable_weight)
 Experiment.register(NoisyPendulum, "Noisy explore for pendulum")
+
+
+class NoisyPendulumSearch(GridSearch):
+    def __init__(self):
+        super(NoisyPendulumSearch, self).__init__(NoisyPendulum, {
+            "act_ac": [True, False],
+            "intrinsic_weight": [0.0, 1.0],
+            "explore_net": [True, False],
+            "abs_goal": [True, False],
+            "manager_ac": [True, False],
+            "achievable_weight": [1e-1, 1e-3]
+        })
+Experiment.register(NoisyPendulumSearch, "Noisy explore for pendulum")
 
 
 class NoisyDPGExperiment(Experiment):
@@ -394,6 +431,16 @@ class NoisyDPGBipedal(NoisyDPGPendulum):
                                               network_optimizer_ctor, target_sync_interval, target_sync_rate,
                                               replay_size)
 Experiment.register(NoisyDPGBipedal, "Noisy DPG explore for bipedal")
+
+
+class NoisyDPGBipedalSearch(GridSearch):
+    def __init__(self):
+        super(NoisyDPGBipedalSearch, self).__init__(NoisyDPGBipedal, {
+            "noise_stddev": [hrl.utils.CappedLinear(5e5, 0.2, 0.05), hrl.utils.CappedLinear(1e6, 0.5, 0.02)],
+            "noise_weight": [1e-1, 1e-3],
+            "ou_params": [(0.0, 0.2, 0.2), (0.0, 0.2, hrl.utils.CappedLinear(5e5, 0.2, 0.02))],
+        })
+Experiment.register(NoisyDPGBipedalSearch, "Noisy DPG explore for bipedal")
 
 
 if __name__ == '__main__':
