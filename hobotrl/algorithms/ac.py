@@ -146,7 +146,7 @@ class ActorCriticUpdater(network.NetworkUpdater):
             "entropy": self._policy_dist.entropy(),
             "log_prob": self._policy_dist.log_prob(),
         }
-        if isinstance(self._policy_dist, hrl.tf_dependent.distribution.TFNormalDistribution):
+        if isinstance(self._policy_dist, hrl.tf_dependent.distribution.NormalDistribution):
             fetch_dict.update({
                 "stddev": self._policy_dist.stddev(),
                 "mean": self._policy_dist.mean()
@@ -286,7 +286,7 @@ class ActorCritic(sampling.TrajectoryBatchUpdate,
                 outputs={"mean": self.network["mean"], "stddev": self.network["stddev"]},
                 inputs=self.network.inputs
             )
-            self._pi_distribution = distribution.TFNormalDistribution(self._pi_function, self._input_action)
+            self._pi_distribution = distribution.NormalDistribution(self._pi_function, self._input_action)
             self._v_function = network.NetworkFunction(self.network["v"])
             # continuous action: mean / stddev for normal distribution
         if target_estimator is None:

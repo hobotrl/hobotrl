@@ -123,7 +123,7 @@ class ACConPendulumSearch(hrl.experiment.GridSearch):
         super(ACConPendulumSearch, self).__init__(ACContinuousPendulum, {
             "entropy": [CappedLinear(1e4, 1e-1, 1e-2), CappedLinear(1e5, 1e-2, 1e-3), 1e-1],
             "batch_size": [16, 100],
-            "episode_n": [100],
+            "episode_n": [2000],
         })
 Experiment.register(ACConPendulumSearch, "continuous actor critic for Pendulum")
 

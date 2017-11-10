@@ -428,6 +428,12 @@ class NoisySD(BaseDeepAgent):
                  batch_size=32,
                  batch_horizon=4,
                  replay_size=1000,
+                 act_ac=False,          # True if act by actor critic; False by IK
+                 intrinsic_weight=0.0,
+                 explore_net=False,     # True if explore by noise net; False by plain ou noise
+                 abs_goal=True,         # True if goal expressed in absolute delta; False in direction
+                 manager_ac=False,      # True if manager trained with actor critic
+                 achievable_weight=1e-1,
                  *args, **kwargs):
         kwargs.update({
             "f_se": f_se,  # state encoder
@@ -460,14 +466,14 @@ class NoisySD(BaseDeepAgent):
 
         # algorithm hyperparameter
         # True if act by actor critic; False by IK
-        self._act_ac = True
-        self._intrinsic_weight = 0.0
+        self._act_ac = act_ac
+        self._intrinsic_weight = intrinsic_weight
         # True if explore by noise net; False by plain ou noise
-        self._explore_net = False
+        self._explore_net = explore_net
         # True if goal expressed in absolute delta; False in direction
-        self._abs_goal = True
+        self._abs_goal = abs_goal
         # True if manager trained with actor critic
-        self._manager_ac = False
+        self._manager_ac = manager_ac
 
         super(NoisySD, self).__init__(*args, **kwargs)
 
@@ -521,7 +527,7 @@ class NoisySD(BaseDeepAgent):
                                                               manager_entropy)
                                         , name="manager_ac", forward_pass="manager")
         self._optimizer.add_updater(AchievableUpdator(func_goal, self.network.sub_net("se")),
-                                    weight=1e-1, name="achievable", forward_pass="manager")
+                                    weight=achievable_weight, name="achievable", forward_pass="manager")
         if self._explore_net:
             self._optimizer.add_updater(DisentangleUpdater(
                 self.network.sub_net("se"),
