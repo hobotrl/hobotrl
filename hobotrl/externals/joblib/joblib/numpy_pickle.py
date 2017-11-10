@@ -266,7 +266,6 @@ class NumpyPickler(Pickler):
             if type(obj) is self.np.memmap:
                 # Pickling doesn't work with memmapped arrays
                 obj = self.np.asanyarray(obj)
-
             # The array wrapper is pickled instead of the real array.
             wrapper = self._create_array_wrapper(obj)
             if id(obj) in self.array_memo:
@@ -293,6 +292,7 @@ class NumpyPickler(Pickler):
     def clear_memo(self):
         super(NumpyPickler, self).clear_memo()
         self.array_memo = {}
+
 
 class NumpyUnpickler(Unpickler):
     """A subclass of the Unpickler to unpickle our numpy pickles.
