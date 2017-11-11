@@ -37,7 +37,6 @@ class NodeMonitor(object):
             else:
                 if self._state[name]:
                     self._state[name] = False
-            print self._state[name]
             self.pubs[name].publish(
                 self._state[name] is None or self._state[name]
             )
