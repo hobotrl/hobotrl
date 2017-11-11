@@ -3,6 +3,7 @@
 import os
 import time
 import logging
+import traceback
 import json
 import operator
 import Queue
@@ -817,11 +818,12 @@ class PersistencyWrapper(wrapt.ObjectProxy):
                         "[PersistencyWrapper.load()]: "
                         "data file {} does not exist yet.".format(path)
                     )                    
-            except:
+            except Exception, e:
                 logging.warning(
                     "[PersistencyWrapper.load()]: "
                     "load data from {} failed.".format(path)
                 )
+                logging.warning(traceback.format_exc())
                 raise Exception("loading data from {} failed.".format(path))
         else:
             pass
@@ -895,8 +897,8 @@ class BigPlayback(Playback):
 
         # Initialize volatile data structures
         self._push_bucket = 0
-        self._buckets_active = {}  # buckets that can be sampled from
-        self._buckets_maintained = {}
+        self._buckets_active = {i: False for i in range(len(self._buckets))}
+        self._buckets_maintained = {i: False for i in range(len(self._buckets))}
         self._buckets_sample_quota = {}  # remaining sample quota for active buckets
         self._buckets_to_save = Queue.Queue()
         self._buckets_to_load = Queue.Queue()
@@ -919,7 +921,7 @@ class BigPlayback(Playback):
         swap_flag = self._buckets[bucket_to_push].capacity == (rel_index + 1)
 
         # do the actual sample insertion
-        while bucket_to_push not in self._buckets_active:
+        while not self._buckets_active[bucket_to_push]:
             logging.warning("Waiting push bucket {} to be ready".format(bucket_to_push))
             time.sleep(1.0)
         self._buckets[bucket_to_push].push_sample(sample, sample_score)
@@ -965,9 +967,8 @@ class BigPlayback(Playback):
                         "[BigPlayback.playback()]: "
                         "bucket {} has run out of quota.".format(bkt_id)
                     )
-                    del self._buckets_active[bkt_id]
-                    if bkt_id in self._buckets_maintained:
-                        del self._buckets_maintained[bkt_id]
+                    self._buckets_active[bkt_id] = False
+                    self._buckets_maintained[bkt_id] = False
                     self._buckets[bkt_id].release_mem()
                     self.__maintain_active_buckets()
         return ret
@@ -986,7 +987,7 @@ class BigPlayback(Playback):
 
     def __next_batch_index(self, batch_size):
         # get an ordered list of active bucket ids.
-        list_bkt_active = [bkt_id for bkt_id in self._buckets_active]
+        list_bkt_active = [k for k, v in self._buckets_active.iteritems() if v]
         cnt_bkt_active = [self._buckets[bkt_id].count for bkt_id in list_bkt_active]
         sample_per_bkt = np.random.multinomial(
             batch_size, 1.0 * np.array(cnt_bkt_active) / sum(cnt_bkt_active)
@@ -1114,12 +1115,14 @@ class BigPlayback(Playback):
         # Is there enough active buckets inside memory? How many is due?
         # Total number of buckets to load is the:
         #  #(desired amount) - #(activated and maintained)
-
-        num_to_load = min(
-            self._max_active_buckets, int(self.count / self._bucket_size)
-        ) - len(set(
-            self._buckets_active.keys() + self._buckets_maintained.keys()
-        ))
+        a_bkts = [k for k, v in self._buckets_active.iteritems() if v]
+        m_bkts = [k for k, v in self._buckets_maintained.iteritems() if v]
+        print "============="
+        print a_bkts
+        print m_bkts
+        num_to_load = min(self._max_active_buckets,
+                          int(self.count / self._bucket_size))
+        num_to_load -= len(set(a_bkts + m_bkts))
         if num_to_load <= 0:
             return
 
@@ -1132,6 +1135,7 @@ class BigPlayback(Playback):
             load_buckets = np.random.choice(
                 available_buckets, num_to_load, replace=False
             )
+            load_buckets.sort()
             logging.warning(
                 "[BigPlayback.__maintain_active_buckets()]: "
                 "maintaining active buckets. Buckets to load "
@@ -1163,9 +1167,10 @@ class BigPlayback(Playback):
     def __check_persisted_buckets(self):
         """Return ids of non-empty and non-active buckets."""
         return [
-            bkt_id for bkt_id, bkt in enumerate(self._buckets)
-            if bkt.count > 0 and bkt not in self._buckets_active \
-            and bkt not in self._buckets_maintained
+            bid for bid, bkt in enumerate(self._buckets)
+            if bkt.count > 0 \
+               and not self._buckets_active[bid] \
+               and not self._buckets_maintained[bid]
         ]
 
     @property
@@ -1224,7 +1229,10 @@ class BigPlayback(Playback):
                         self.__save_one(bkt)
                         self._buckets_to_save.task_done()
                         break
-                    except:
+                    except Exception, e:
+                        logging.warning(
+                            traceback.format_exc()
+                        )
                         logging.warning(
                             "[BigPlayback.bucket_io()]: "
                             "exception saving bucket, retry in one second."
@@ -1245,7 +1253,10 @@ class BigPlayback(Playback):
                         self.__load_one(bkt)
                         self._buckets_to_load.task_done()
                         break
-                    except:
+                    except Exception, e:
+                        logging.warning(
+                            traceback.format_exc()
+                        )
                         logging.warning(
                             "[BigPlayback.bucket_io()]: "
                             "exception loading bucket, retry in one second."
@@ -1271,8 +1282,8 @@ class BigPlayback(Playback):
         self._buckets[bucket_id].load()
         self._buckets_active[bucket_id] = True
         # assign sampling quota to this bucket
-        self._buckets_sample_quota[bucket_id] = self._max_sample_epoch * \
-                                          self._buckets[bucket_id].capacity
+        self._buckets_sample_quota[bucket_id] = \
+            self._max_sample_epoch * self._buckets[bucket_id].count
 
     def __save_one(self, bucket_id):
         logging.warning(
