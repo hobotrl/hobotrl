@@ -806,11 +806,17 @@ class PersistencyWrapper(wrapt.ObjectProxy):
         if self.__wrapped__.count > 0:
             try:
                 path = os.sep.join([self._path, self.DATA_FILE])
-                self.__wrapped__.data = joblib.load(path)
-                logging.warning(
-                    "[PersistencyWrapper.load()]: "
-                    "loaded data from {}.".format(path)
-                )
+                if os.path.isfile(path):
+                    self.__wrapped__.data = joblib.load(path)
+                    logging.warning(
+                        "[PersistencyWrapper.load()]: "
+                        "loaded data from {}.".format(path)
+                    )
+                else:
+                    logging.warning(
+                        "[PersistencyWrapper.load()]: "
+                        "data file {} does not exist yet.".format(path)
+                    )                    
             except:
                 logging.warning(
                     "[PersistencyWrapper.load()]: "
@@ -1258,20 +1264,12 @@ class BigPlayback(Playback):
         )
 
     def __load_one(self, bucket_id):
-        if bucket_id not in self._buckets_active:
-            logging.warning(
-                "[BigPlayback.__load_one()]: "
-                "going to load bucket {}.".format(bucket_id)
-            )
-            self._buckets[bucket_id].load()
-            self._buckets_active[bucket_id] = True
-            if bucket_id in self._buckets_maintained:
-                del self._buckets_maintained[bucket_id]
-        else:
-            logging.warning(
-                "[BigPlayback.__load_one()]: "
-                "not loading active bucket {}.".format(bucket_id)
-            )
+        logging.warning(
+            "[BigPlayback.__load_one()]: "
+            "going to load bucket {}.".format(bucket_id)
+        )
+        self._buckets[bucket_id].load()
+        self._buckets_active[bucket_id] = True
         # assign sampling quota to this bucket
         self._buckets_sample_quota[bucket_id] = self._max_sample_epoch * \
                                           self._buckets[bucket_id].capacity
