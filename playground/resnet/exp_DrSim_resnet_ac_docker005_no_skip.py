@@ -376,7 +376,6 @@ try:
 
                 if n_steps % n_skip == 0 or done:
                     skip_num = n_skip if n_steps % n_skip == 0 else n_steps % n_skip
-                    skip_reward /= skip_num
                     # l1 = time.time()
                     info = agent.step(state=skip_state, action=skip_action, reward=skip_reward, next_state=state,
                                       episode_done=done, learning_off=FLAGS.learning_off)
