@@ -418,6 +418,7 @@ try:
             summary = tf.Summary()
             summary.value.add(tag="episode_total_reward", simple_value=total_reward)
             summary_writer.add_summary(summary, n_ep)
+            recording_file.close()
 
 
 except Exception as e:
