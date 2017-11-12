@@ -56,11 +56,11 @@ def f_net(inputs):
     return {"pi": pi, "q": q}
 
 
-ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']]
+ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0, )]
 
 
 def func_compile_action(action):
-    ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']]
+    ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0, )]
     return ACTIONS[action]
 
 
@@ -99,7 +99,7 @@ def func_compile_action(action):
 #     return reward
 
 
-def func_compile_reward_agent(rewards, action=0):
+def func_compile_reward_agent(rewards):
     """
     :param rewards: rewards[0]: obstacle???
                     rewards[1]: distance_to_planning_line
@@ -116,8 +116,8 @@ def func_compile_reward_agent(rewards, action=0):
     if rewards[3] < 0.5 or rewards[4] > 0.5:
         reward = -1.0
     else:
-        if action == 1 or action == 2:
-            reward = rewards[2] - 1.0
+        # if action == 1 or action == 2:
+        #     reward = rewards[2] - 1.0
         reward = rewards[2] / 10.0
     print ': {:7.4f}'.format(reward)
     return reward
@@ -174,27 +174,27 @@ def record(summary_writer, step_n, info):
 
 tf.app.flags.DEFINE_string("logdir",
                            "/home/pirate03/PycharmProjects/hobotrl/playground/resnet/"
-                           "resnet_ac_with_q_learned_from_wait40s",
+                           "resnet_learn_q_frame_skip",
                            """save tmp model""")
 tf.app.flags.DEFINE_string("savedir",
                            "/home/pirate03/hobotrl_data/playground/initialD/exp/"
                            "docker005_no_stopping_static_middle_no_path_all_green/"
-                           "resnet_ac_with_q_learned_from_wait40s_records",
+                           "resnet_learn_q_frame_skip_records",
                            """records data""")
-tf.app.flags.DEFINE_string("readme", "Repeat learn_q_v0 to check if q model affects learning. "
+tf.app.flags.DEFINE_string("readme", "learn q with frame skipping. Shorten step_delay_target."
                                      "Turn learning on."
                                      "use q loss to instead op_loss."
                                      "Stop gradient on pi layer and conv layer"
-                                     "Stop gradient on conv layer and pi layer."
                                      "InitialD waits until 40s."
                                      "Use new reward function.", """readme""")
 tf.app.flags.DEFINE_float("gpu_fraction", 0.4, """gpu fraction""")
 tf.app.flags.DEFINE_float("discount_factor", 0.99, """actor critic discount factor""")
-tf.app.flags.DEFINE_integer("batch_size", 16, """actor critic discount factor""")
+tf.app.flags.DEFINE_integer("batch_size", 4, """actor critic discount factor""")
 tf.app.flags.DEFINE_float("lr", 0.01, """actor critic learning rate""")
-tf.app.flags.DEFINE_bool("use_pretrained_q", True, """learn q function or directly actor critic""")
+tf.app.flags.DEFINE_bool("use_pretrained_q", False, """learn q function or directly actor critic""")
 tf.app.flags.DEFINE_bool("is_dummy_action", False, "record rule based scenes")
 tf.app.flags.DEFINE_bool("learning_off", False, "learning on or off")
+tf.app.flags.DEFINE_float("step_delay_target", 0.4, "learning on or off")
 FLAGS = tf.app.flags.FLAGS
 
 
@@ -221,7 +221,7 @@ env = DrivingSimulatorEnv(
     func_compile_obs=func_compile_obs,
     func_compile_reward=func_compile_reward,
     func_compile_action=func_compile_action,
-    step_delay_target=0.5,
+    step_delay_target=FLAGS.step_delay_target,
     is_dummy_action=FLAGS.is_dummy_action)
 
 
@@ -234,9 +234,8 @@ env.action_space = Discrete(len(ACTIONS))
 env = FrameStack(env, 3)
 
 n_interactive = 0
-n_skip = 1
+n_skip = 3
 n_ep = 0  # last ep in the last run, if restart use 0
-n_test = 10  # num of episode per test run (no exploration)
 state_shape = (256, 256, 9)
 
 global_step = tf.get_variable(
@@ -307,6 +306,7 @@ try:
             f.write("ac learning rate: {}\n".format(FLAGS.lr))
             f.write("use pretrained q net: {}\n".format(FLAGS.use_pretrained_q))
             f.write("learn off: {}\n".format(FLAGS.learning_off))
+            f.write("step_delay_target: {}\n".format(FLAGS.step_delay_target))
             f.write("vars: \n")
             for var in all_vars:
                 f.write("{}\n".format(var.name))
@@ -317,49 +317,49 @@ try:
         while True:
             n_ep += 1
             n_steps = 0
+            total_reward = 0.0
             eps_dir = FLAGS.savedir + "/" + str(n_ep).zfill(4)
             os.mkdir(eps_dir)
             recording_filename = eps_dir + "/" + "0000.txt"
             recording_file = open(recording_filename, 'w')
-            # all_scenes = []
             state = env.reset()
-            # for i in range(stack_num-1):
-            #     state = resize_state(np.array(state))
-            #     action = 0
-            #     next_state, vec_reward, done, info = env.step(action)
-            #     next_state = resize_state(np.array(next_state))
-            #     reward = func_compile_reward_agent(vec_reward, action)
+            state = resize_state(np.array(state))
+            skip_state = state
+            skip_reward = 0.0
+
+            distribution = agent._policy._distribution.dist_run(np.asarray(state)[np.newaxis, :])
+            sample_i = []
+            for p in distribution:
+                sample = np.random.choice(np.arange(3), p=p)
+                sample_i.append(sample)
+                # sample_i.append(np.argmax(p))
+            sample_i = np.asarray(sample_i)
+            action = sample_i[0]
+            skip_action = action
+
+            str_p = ""
+            for tp in p.tolist():
+                str_p += str(tp)
+                str_p += ","
+            str_p += "\n"
+
             print "========reset======\n" * 5
             while True:
-                s1 = time.time()
-                state = resize_state(np.array(state))
-                # if n_steps >= stack_num-1:
-                #     action = agent.act(state=state, evaluate=False, sess=sess)
-                distribution = agent._policy._distribution.dist_run(np.asarray(state)[np.newaxis, :])
-                sample_i = []
-                for p in distribution:
-                    sample = np.random.choice(np.arange(3), p=p)
-                    sample_i.append(sample)
-                    # sample_i.append(np.argmax(p))
-                sample_i = np.asarray(sample_i)
-                action = sample_i[0]
-                str_p = ""
-                for tp in p.tolist():
-                    str_p += str(tp)
-                    str_p += ","
-                str_p += "\n"
-                # else:
-                #     str_p = "1.0, 0.0, 0.0,\n"
-                #     action = 0
-                next_state, vec_reward, done, info = env.step(action)
+                # t1 = time.time()
+                # print "start time: ", t1
+                next_state, vec_reward, done, _ = env.step(action)
+                # t2 = time.time()
+                # print "step time: ", t2 - t1
                 next_state = resize_state(np.array(next_state))
-                reward = func_compile_reward_agent(vec_reward, action)
+                reward = func_compile_reward_agent(vec_reward)
+                total_reward = FLAGS.discount_factor * total_reward + reward
+                skip_reward += reward
                 img = state[:, :, 6:]
                 img_path = eps_dir + "/" + str(n_steps + 1).zfill(4) + \
                            "_" + str(action) + ".jpg"
                 cv2.imwrite(img_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
                 recording_file.write(str(n_steps) + ',' + str(action) + ',' + str(reward) + '\n')
-                recording_file.write(str_p)
+
                 vec_reward = np.mean(np.array(vec_reward), axis=0)
                 vec_reward = vec_reward.tolist()
                 str_reward = ""
@@ -367,20 +367,57 @@ try:
                     str_reward += str(r)
                     str_reward += ","
                 str_reward += "\n"
+                recording_file.write(str_p)
                 recording_file.write(str_reward)
                 recording_file.write("\n")
-                info = agent.step(state=state, action=action, reward=reward, next_state=next_state,
-                                  episode_done=done, learning_off=FLAGS.learning_off)
-                record(summary_writer, total_steps, info)
+                n_steps += 1
+                total_steps += 1
+                state = next_state
+
+                if n_steps % n_skip == 0 or done:
+                    skip_num = n_skip if n_steps % n_skip == 0 else n_steps % n_skip
+                    skip_reward /= skip_num
+                    # l1 = time.time()
+                    info = agent.step(state=skip_state, action=skip_action, reward=skip_reward, next_state=state,
+                                      episode_done=done, learning_off=FLAGS.learning_off)
+                    # l2 = time.time()
+                    # print "agent learn time: ", l2-l1
+                    record(summary_writer, total_steps, info)
+
+                    distribution = agent._policy._distribution.dist_run(np.asarray(state)[np.newaxis, :])
+                    sample_i = []
+                    for p in distribution:
+                        sample = np.random.choice(np.arange(3), p=p)
+                        sample_i.append(sample)
+                        # sample_i.append(np.argmax(p))
+                    sample_i = np.asarray(sample_i)
+                    action = sample_i[0]
+
+                    str_p = ""
+                    for tp in p.tolist():
+                        str_p += str(tp)
+                        str_p += ","
+                    str_p += "\n"
+
+                    skip_state = state
+                    skip_reward = 0.0
+                    skip_action = action
+                else:
+                    action = 3
+                    str_p = "0.0, 0.0, 0.0 \n"
+
+
+                # t3 = time.time()
+                # print "loop time: ", t3 - t1
 
                 if done is True:
                     print "========Run Done=======\n"*5
                     break
-                state = next_state
-                n_steps += 1
-                total_steps += 1
 
-            recording_file.close()
+
+            summary = tf.Summary()
+            summary.value.add(tag="episode_total_reward", simple_value=total_reward)
+            summary_writer.add_summary(summary, n_ep)
 
 
 except Exception as e:
