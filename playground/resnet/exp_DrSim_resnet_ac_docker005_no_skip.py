@@ -114,11 +114,11 @@ def func_compile_reward_agent(rewards):
     print (' ' * 10 + 'R: [' + '{:4.2f} ' * len(rewards) + ']').format(*rewards),
     # if car is on opp side or car is on ped side, get reward of -1.0
     if rewards[3] < 0.5 or rewards[4] > 0.5:
-        reward = -1.0
+        reward = -0.1
     else:
         # if action == 1 or action == 2:
         #     reward = rewards[2] - 1.0
-        reward = rewards[2] / 10.0
+        reward = rewards[2] / 100.0
     print ': {:7.4f}'.format(reward)
     return reward
 
@@ -174,14 +174,15 @@ def record(summary_writer, step_n, info):
 
 tf.app.flags.DEFINE_string("logdir",
                            "/home/pirate03/PycharmProjects/hobotrl/playground/resnet/"
-                           "resnet_learn_q_frame_skip",
+                           "resnet_learn_q_frame_skip_scale_reward",
                            """save tmp model""")
 tf.app.flags.DEFINE_string("savedir",
                            "/home/pirate03/hobotrl_data/playground/initialD/exp/"
                            "docker005_no_stopping_static_middle_no_path_all_green/"
-                           "resnet_learn_q_frame_skip_records",
+                           "resnet_learn_q_frame_skip_scale_reward_records",
                            """records data""")
 tf.app.flags.DEFINE_string("readme", "learn q with frame skipping. Shorten step_delay_target."
+                                     "Scale return."
                                      "Turn learning on."
                                      "use q loss to instead op_loss."
                                      "Stop gradient on pi layer and conv layer"
