@@ -1117,9 +1117,6 @@ class BigPlayback(Playback):
         #  #(desired amount) - #(activated and maintained)
         a_bkts = [k for k, v in self._buckets_active.iteritems() if v]
         m_bkts = [k for k, v in self._buckets_maintained.iteritems() if v]
-        print "============="
-        print a_bkts
-        print m_bkts
         num_to_load = min(self._max_active_buckets,
                           int(self.count / self._bucket_size))
         num_to_load -= len(set(a_bkts + m_bkts))
@@ -1217,58 +1214,67 @@ class BigPlayback(Playback):
         return from this thread if `self._close_flag` is set to True.
         """
         while True:
-            # Save buckets
             try:
-                bkt = self._buckets_to_save.get_nowait()
+                # Save buckets
+                try:
+                    bkt = self._buckets_to_save.get_nowait()
+                    logging.warning(
+                        "[BigPlayback.bucket_io()]: "
+                        "notified to save bucket {}.".format(bkt)
+                    )
+                    while True:
+                        try:
+                            self.__save_one(bkt)
+                            self._buckets_to_save.task_done()
+                            break
+                        except Exception, e:
+                            logging.warning(
+                                traceback.format_exc()
+                            )
+                            logging.warning(
+                                "[BigPlayback.bucket_io()]: "
+                                "exception saving bucket, retry in one second."
+                            )
+                            time.sleep(1.0)
+                except Queue.Empty:
+                    pass
+
+                # Load buckets
+                try:
+                    bkt = self._buckets_to_load.get_nowait()
+                    logging.warning(
+                        "[BigPlayback.bucket_io()]: "
+                        "notified to load bucket {}.".format(bkt)
+                    )
+                    while True:
+                        try:
+                            self.__load_one(bkt)
+                            self._buckets_to_load.task_done()
+                            break
+                        except Exception, e:
+                            logging.warning(
+                                traceback.format_exc()
+                            )
+                            logging.warning(
+                                "[BigPlayback.bucket_io()]: "
+                                "exception loading bucket, retry in one second."
+                            )
+                            time.sleep(1.0)
+                except Queue.Empty:
+                    pass
+            except:
                 logging.warning(
                     "[BigPlayback.bucket_io()]: "
-                    "notified to save bucket {}.".format(bkt)
+                    "step exception:"
                 )
-                while True:
-                    try:
-                        self.__save_one(bkt)
-                        self._buckets_to_save.task_done()
-                        break
-                    except Exception, e:
-                        logging.warning(
-                            traceback.format_exc()
-                        )
-                        logging.warning(
-                            "[BigPlayback.bucket_io()]: "
-                            "exception saving bucket, retry in one second."
-                        )
-                        time.sleep(1.0)
-            except Queue.Empty:
-                pass
-
-            # Load buckets
-            try:
-                bkt = self._buckets_to_load.get_nowait()
                 logging.warning(
-                    "[BigPlayback.bucket_io()]: "
-                    "notified to load bucket {}.".format(bkt)
+                    traceback.format_exc()
                 )
-                while True:
-                    try:
-                        self.__load_one(bkt)
-                        self._buckets_to_load.task_done()
-                        break
-                    except Exception, e:
-                        logging.warning(
-                            traceback.format_exc()
-                        )
-                        logging.warning(
-                            "[BigPlayback.bucket_io()]: "
-                            "exception loading bucket, retry in one second."
-                        )
-                        time.sleep(1.0)
-            except Queue.Empty:
-                pass
-
-            if self._close_flag:
-                break
-            else:
-                time.sleep(0.1)
+            finally:
+                if self._close_flag:
+                    break
+                else:
+                    time.sleep(0.1)
 
         logging.warning(
             "[BigPlayback]: returning from IO thread."
