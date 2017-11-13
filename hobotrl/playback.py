@@ -773,10 +773,10 @@ class PersistencyWrapper(wrapt.ObjectProxy):
             if not os.path.isfile(meta_path):
                 break
             try:
-                logging.warning(
-                    "[PersistencyWrapper.__load_meta()]: "
-                    "loading meta data from path: %s", meta_path
-                )
+                # logging.warning(
+                #     "[PersistencyWrapper.__load_meta()]: "
+                #     "loading meta data from path: %s", meta_path
+                # )
                 data = json.loads(open(meta_path).read())
                 self.__wrapped__.count = int(data["count"])
                 self.__wrapped__.push_index = int(data["push_index"])
@@ -799,20 +799,20 @@ class PersistencyWrapper(wrapt.ObjectProxy):
 
     def load(self):
         self._io_status = "loading"
-        logging.warning(
-            "[PersistencyWrapper.load()]: "
-            "loading data from path %s...", self._path
-        )
+        # logging.warning(
+        #     "[PersistencyWrapper.load()]: "
+        #     "loading data from path %s...", self._path
+        # )
         self.load_meta()
         if self.__wrapped__.count > 0:
             try:
                 path = os.sep.join([self._path, self.DATA_FILE])
                 if os.path.isfile(path):
                     self.__wrapped__.data = joblib.load(path)
-                    logging.warning(
-                        "[PersistencyWrapper.load()]: "
-                        "loaded data from {}.".format(path)
-                    )
+                    # logging.warning(
+                    #     "[PersistencyWrapper.load()]: "
+                    #     "loaded data from {}.".format(path)
+                    # )
                 else:
                     logging.warning(
                         "[PersistencyWrapper.load()]: "
@@ -834,10 +834,10 @@ class PersistencyWrapper(wrapt.ObjectProxy):
         Save meta data after data is saved to make this a transaction.
         """
         self._io_status = "flushing"
-        logging.warning(
-            "[PersistencyWrapper.save()] : "
-            "saving data to path %s...", self._path
-        )
+        # logging.warning(
+        #     "[PersistencyWrapper.save()] : "
+        #     "saving data to path %s...", self._path
+        # )
         if not os.path.isdir(self._path):
             os.makedirs(self._path)
 
@@ -856,9 +856,11 @@ class PersistencyWrapper(wrapt.ObjectProxy):
 
     def release_mem(self):
         self._io_status = "init"
-        logging.warning(
-            "[PersistencyWrapper.release_mem()]: "
-            "releasing cache memory...")
+        self.__wrapped__.reset()
+        self.load_meta()
+        # logging.warning(
+        #     "[PersistencyWrapper.release_mem()]: "
+        #     "releasing cache memory...")
 
     def reset(self):
         self.release_mem()
@@ -926,6 +928,11 @@ class BigPlayback(Playback):
             time.sleep(1.0)
         self._buckets[bucket_to_push].push_sample(sample, sample_score)
 
+        # adjust sample quota and activate sampling if quota > 0
+        self._buckets_sample_quota[bucket_to_push] += self._max_sample_epoch
+        if self._buckets_sample_quota[bucket_to_push] > 0:
+            self._buckets_active[bucket_to_push] = True
+
         # adjust push_bucket
         if swap_flag:
             self._buckets_to_save.put(self._push_bucket)
@@ -954,20 +961,21 @@ class BigPlayback(Playback):
                 # ret.extend(self._buckets[bkt_id].get_batch(rel_index))
 
             # Modify sample quota for this bucket
-            # Leave current and next push bucket alone
-            if bkt_id == self._push_bucket or \
-               bkt_id == (self._push_bucket + 1) % self._bucket_count:
-                continue
-            # If this bucket has run out of quota, deactivate and release
-            # this bucket to signal IO thread to load a new bucket.
-            else:
-                self._buckets_sample_quota[bkt_id] -= len(rel_index)
-                if self._buckets_sample_quota[bkt_id] < 0:
-                    logging.warning(
-                        "[BigPlayback.playback()]: "
-                        "bucket {} has run out of quota.".format(bkt_id)
-                    )
-                    self._buckets_active[bkt_id] = False
+            self._buckets_sample_quota[bkt_id] -= len(rel_index)
+            # check activation state
+            if self._buckets_sample_quota[bkt_id] < 0:
+                logging.warning(
+                    "[BigPlayback.playback()]: "
+                    "bucket {} has run out of quota.".format(bkt_id)
+                )
+                # deactivate this bucket
+                self._buckets_active[bkt_id] = False
+                # Leave current and next push bucket alone
+                if bkt_id == self._push_bucket or \
+                   bkt_id == (self._push_bucket + 1) % self._bucket_count:
+                    continue
+                # release mem and signal IO thread to load a new bucket.
+                else:
                     self._buckets_maintained[bkt_id] = False
                     self._buckets[bkt_id].release_mem()
                     self.__maintain_active_buckets()
@@ -1281,10 +1289,10 @@ class BigPlayback(Playback):
         )
 
     def __load_one(self, bucket_id):
-        logging.warning(
-            "[BigPlayback.__load_one()]: "
-            "going to load bucket {}.".format(bucket_id)
-        )
+        # logging.warning(
+        #     "[BigPlayback.__load_one()]: "
+        #     "going to load bucket {}.".format(bucket_id)
+        # )
         self._buckets[bucket_id].load()
         self._buckets_active[bucket_id] = True
         # assign sampling quota to this bucket
@@ -1292,10 +1300,10 @@ class BigPlayback(Playback):
             self._max_sample_epoch * self._buckets[bucket_id].count
 
     def __save_one(self, bucket_id):
-        logging.warning(
-            "[BigPlayback.__save_one()]: "
-            "going to save bucket {}".format(bucket_id)
-        )
+        # logging.warning(
+        #     "[BigPlayback.__save_one()]: "
+        #     "going to save bucket {}".format(bucket_id)
+        # )
         self._buckets[bucket_id].save()
         # Sync meta to truly persist the saved meta.
         # Otherwise the saved bucket data will be ignored in the next
