@@ -13,7 +13,7 @@ class NodeMonitor(object):
     """ROS node status monitor.
     Monitors
     """
-    def __init__(self, node_names, rate, topic_prefix='rl/node_up'):
+    def __init__(self, node_names, rate, topic_prefix='/rl/node_up'):
         self._node_names = node_names
         self._rate = rate
         self._state = {name: None for name in self._node_names}
