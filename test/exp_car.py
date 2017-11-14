@@ -10,130 +10,9 @@ import gym
 import cv2
 import matplotlib.colors as colors
 from exp_algorithms import *
-import hobotrl.environments as envs
+from car import *
 from hobotrl.tf_dependent.ops import atanh
-
-
-class CarDiscreteWrapper(gym.Wrapper):
-    """
-    Wraps car env into discrete action control problem
-    """
-
-    def __init__(self, env, steer_n, speed_n):
-        super(CarDiscreteWrapper, self).__init__(env)
-        self.steer_n, self.speed_n = steer_n, speed_n
-        self.env = env
-        self.action_n = steer_n * speed_n
-        self.action_space = gym.spaces.discrete.Discrete(self.action_n)
-
-    def __getattr__(self, name):
-        print("getattr:", name, " @ ", id(self.env))
-        if name == "action_space":
-            print("getattr: action_space:", name)
-            return self.action_space
-        else:
-            return getattr(self.env, name)
-
-    def _step(self, action):
-        action_c = self.action_d2c(action)
-        next_state, reward, done, info = self.env.step(action_c)
-
-        return next_state, reward, done, info
-
-    def action_c2d(self, action):
-        """
-        continuous action to discrete action
-        :param action:
-        :return:
-        """
-        steer_i = int((action[0] - (-1.0)) / 2.0 * self.steer_n)
-        steer_i = self.steer_n - 1 if steer_i >= self.steer_n else steer_i
-        if abs(action[1]) > abs(action[2]):
-            speed_action = action[1]
-        else:
-            speed_action = -action[2]
-        speed_i = int((speed_action - (-1.0)) / 2.0 * self.speed_n)
-        speed_i = self.speed_n - 1 if speed_i >= self.speed_n else speed_i
-        return steer_i * self.speed_n + speed_i
-
-    def action_d2c(self, action):
-        steer_i = int(action / self.speed_n)
-        speed_i = action % self.speed_n
-        action_c = np.asarray([0., 0., 0.])
-        action_c[0] = float(steer_i) / self.steer_n * 2 - 1.0 + 1.0 / self.steer_n
-        speed_c = float(speed_i) / self.speed_n * 2 - 1.0 + 1.0 / self.speed_n
-        if speed_c >= 0:
-            action_c[1], action_c[2] = speed_c, 0
-        else:
-            action_c[1], action_c[2] = 0, -speed_c
-        return action_c
-
-
-class CarContinuousWrapper(gym.Wrapper):
-
-    def __init__(self, env):
-        super(CarContinuousWrapper, self).__init__(env)
-        self.action_space = gym.spaces.Box(-1.0, 1.0, [2])
-
-    def _step(self, action):
-        env_action = np.zeros(3)
-        env_action[0] = action[0]
-        if action[1] > 0:
-            env_action[1], env_action[2] = action[1], 0
-        else:
-            env_action[1], env_action[2] = 0, -action[1]
-        return self.env.step(env_action)
-
-
-class CarGrassWrapper(gym.Wrapper):
-
-    def __init__(self, env, grass_penalty=0.5):
-        super(CarGrassWrapper, self).__init__(env)
-        self.grass_penalty = grass_penalty
-
-    def _step(self, action):
-
-        ob, reward, done, info = self.env.step(action)
-        if (ob[71:76, 47:49, 0] > 200).all():  # red car visible
-            front = (ob[70, 47:49, 1] > 200).all()
-            back = (ob[76, 47:49, 1] > 200).all()
-            left = (ob[71:74, 46, 1] > 200).all()
-            right = (ob[71:74, 49, 1] > 200).all()
-            if front and back and left and right:
-                reward -= self.grass_penalty
-        return ob, reward, done, info
-
-
-class ProcessFrame96H(gym.ObservationWrapper):
-    def __init__(self, env=None):
-        super(ProcessFrame96H, self).__init__(env)
-        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(96, 96, 1))
-
-    def _observation(self, obs):
-        return ProcessFrame96H.process(obs)
-
-    @staticmethod
-    def process(frame):
-        if list(frame.shape) == [96, 96, 3]:
-            pass
-        else:
-            assert False, "Unknown resolution."
-        img = frame
-        img = colors.rgb_to_hsv(img / 255.0)
-        img = np.transpose(img, axes=[2, 0, 1])[0]
-        img = (img * 255).astype(np.uint8).reshape((96, 96, 1))
-        return img
-
-
-def wrap_car(env, steer_n, speed_n):
-    """Apply a common set of wrappers for Atari games."""
-    env = CarDiscreteWrapper(env, steer_n, speed_n)
-    env = envs.MaxAndSkipEnv(env, skip=2, max_len=1)
-    # env = ProcessFrame96H(env)
-    env = envs.FrameStack(env, 4)
-    env = envs.ScaledRewards(env, 0.1)
-    env = envs.ScaledFloatFrame(env)
-    return env
+from hobotrl.environments.environments import *
 
 
 class A3CCarExp(ACOOExperiment):
@@ -202,11 +81,11 @@ class A3CCarContinuous(A3CExperiment):
             env = gym.make("CarRacing-v0")
             env = CarGrassWrapper(env, grass_penalty=0.5)
             env = CarContinuousWrapper(env)
-            env = envs.MaxAndSkipEnv(env, skip=2, max_len=1)
+            env = MaxAndSkipEnv(env, skip=2, max_len=1)
             # env = ProcessFrame96H(env)
-            env = envs.FrameStack(env, 4)
-            env = envs.ScaledRewards(env, 0.1)
-            env = envs.ScaledFloatFrame(env)
+            env = FrameStack(env, 4)
+            env = ScaledRewards(env, 0.1)
+            env = ScaledFloatFrame(env)
         if f_create_net is None:
             dim_action = env.action_space.shape[-1]
 
@@ -284,36 +163,6 @@ class A3CCarDiscrete2(A3CExperiment):
 Experiment.register(A3CCarDiscrete2, "continuous A3C for CarRacing")
 
 
-class A3CToyCarDiscrete(A3CCarDiscrete2):
-    def __init__(self, env=None, f_create_net=None, episode_n=10000, learning_rate=5e-5, discount_factor=0.95,
-                 entropy=hrl.utils.CappedLinear(1e6, 1e-1, 5e-3),
-                 batch_size=32):
-        if env is None:
-            env = hrl.envs.ToyCarEnv()
-            env = wrap_car(env, 5, 5)
-            # gym.wrappers.Monitor(env, "./log/video", video_callable=lambda idx: True, force=True)
-        super(A3CToyCarDiscrete, self).__init__(env, f_create_net, episode_n, learning_rate, discount_factor, entropy,
-                                              batch_size)
-Experiment.register(A3CToyCarDiscrete, "Discrete A3C for Toy Car Env")
-
-
-class A3CToyCarContinuous(A3CCarContinuous):
-    def __init__(self, env=None, f_create_net=None, episode_n=10000, learning_rate=5e-5, discount_factor=0.95,
-                 entropy=hrl.utils.CappedLinear(1e6, 2e-4, 5e-5),
-                 batch_size=32):
-        if env is None:
-            env = hrl.envs.ToyCarEnv()
-            env = CarContinuousWrapper(env)
-            env = envs.MaxAndSkipEnv(env, skip=2, max_len=1)
-            # env = ProcessFrame96H(env)
-            env = envs.FrameStack(env, 4)
-            env = envs.ScaledRewards(env, 0.1)
-            env = envs.ScaledFloatFrame(env)
-        super(A3CToyCarContinuous, self).__init__(env, f_create_net, episode_n, learning_rate, discount_factor, entropy,
-                                              batch_size)
-Experiment.register(A3CToyCarContinuous, "Continuous A3C for Toy Car Env")
-
-
 class DDPGCar(DPGExperiment):
     def __init__(self, env=None, f_net_ddp=None, f_net_dqn=None, episode_n=10000,
                  optimizer_ddp_ctor=lambda: tf.train.AdamOptimizer(learning_rate=1e-4),
@@ -360,11 +209,11 @@ class DDPGCar(DPGExperiment):
             env = gym.make("CarRacing-v0")
             env = CarGrassWrapper(env, grass_penalty=0.5)
             env = CarContinuousWrapper(env)
-            env = envs.MaxAndSkipEnv(env, skip=2, max_len=1)
-            env = envs.FrameStack(env, 4)
-            env = envs.ScaledRewards(env, 0.1)
-            env = envs.ScaledFloatFrame(env)
-            env = envs.AugmentEnvWrapper(env,reward_decay=gamma)
+            env = MaxAndSkipEnv(env, skip=2, max_len=1)
+            env = FrameStack(env, 4)
+            env = ScaledRewards(env, 0.1)
+            env = ScaledFloatFrame(env)
+            env = AugmentEnvWrapper(env,reward_decay=gamma)
 
         super(DDPGCar, self).__init__(env, f_net_ddp, f_net_dqn, episode_n, optimizer_ddp_ctor, optimizer_dqn_ctor,
                                       target_sync_rate, ddp_update_interval, ddp_sync_interval, dqn_update_interval,
@@ -409,6 +258,96 @@ class DQNCarRacing(DQNExperiment):
                                            network_optimizer_ctor)
 
 Experiment.register(DQNCarRacing, "DQN for CarRacing, tuned with ddqn, duel network, etc.")
+
+
+class ADQNCarRacing(ADQNExperiment):
+    def __init__(self, env=None, f_create_q=None, episode_n=10000, discount_factor=0.99, ddqn=True, target_sync_interval=100,
+                 target_sync_rate=1.0, update_interval=4, replay_size=1000, batch_size=32,
+                 greedy_epsilon=hrl.utils.CappedLinear(1e5, 0.1, 0.05),
+                 learning_rate=1e-4):
+
+        if env is None:
+            env = gym.make("CarRacing-v0")
+            env = wrap_car(env, 3, 3)
+        if f_create_q is None:
+            dim_action = env.action_space.n
+            activation = tf.nn.elu
+
+            def create_q(inputs):
+                l2 = 1e-7
+                input_state = inputs[0]
+                se = hrl.utils.Network.conv2ds(input_state,
+                                               shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
+                                               out_flatten=True,
+                                               activation=activation,
+                                               l2=l2,
+                                               var_scope="se")
+
+                v = hrl.utils.Network.layer_fcs(se, [256], 1,
+                                                activation_hidden=activation,
+                                                l2=l2,
+                                                activation_out=None,
+                                                var_scope="v")
+                a = hrl.utils.Network.layer_fcs(se, [256], dim_action,
+                                                 activation_hidden=activation,
+                                                 activation_out=None,
+                                                 l2=l2,
+                                                 var_scope="a")
+                a = a - tf.reduce_mean(a, axis=-1, keep_dims=True)
+                q = v + a
+                return {"q": q}
+
+            f_create_q = create_q
+
+        super(ADQNCarRacing, self).__init__(env, f_create_q, episode_n, discount_factor, ddqn, target_sync_interval,
+                                            target_sync_rate, update_interval, replay_size, batch_size, greedy_epsilon,
+                                            learning_rate)
+Experiment.register(ADQNCarRacing, "Asynchronuous DQN for CarRacing, tuned with ddqn, duel network, etc.")
+
+
+class AOTDQNCarRacing(AOTDQNExperiment):
+    def __init__(self, env=None, f_create_q=None, episode_n=1000, discount_factor=0.99, ddqn=True,
+                 target_sync_interval=100, target_sync_rate=1.0,
+                 update_interval=8, replay_size=1000, batch_size=8,
+                 lower_weight=1.0, upper_weight=1.0, neighbour_size=8,
+                 greedy_epsilon=hrl.utils.CappedLinear(1e5, 0.1, 0.05),
+                 learning_rate=1e-4):
+        if env is None:
+            env = gym.make("CarRacing-v0")
+            env = wrap_car(env, 3, 3)
+        if f_create_q is None:
+            dim_action = env.action_space.n
+            activation = tf.nn.elu
+
+            def create_q(inputs):
+                l2 = 1e-7
+                input_state = inputs[0]
+                se = hrl.utils.Network.conv2ds(input_state,
+                                               shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
+                                               out_flatten=True,
+                                               activation=activation,
+                                               l2=l2,
+                                               var_scope="se")
+
+                v = hrl.utils.Network.layer_fcs(se, [256], 1,
+                                                activation_hidden=activation,
+                                                l2=l2,
+                                                activation_out=None,
+                                                var_scope="v")
+                a = hrl.utils.Network.layer_fcs(se, [256], dim_action,
+                                                 activation_hidden=activation,
+                                                 activation_out=None,
+                                                 l2=l2,
+                                                 var_scope="a")
+                a = a - tf.reduce_mean(a, axis=-1, keep_dims=True)
+                q = v + a
+                return {"q": q}
+
+            f_create_q = create_q
+        super(AOTDQNCarRacing, self).__init__(env, f_create_q, episode_n, discount_factor, ddqn, target_sync_interval,
+                                              target_sync_rate, update_interval, replay_size, batch_size, lower_weight,
+                                              upper_weight, neighbour_size, greedy_epsilon, learning_rate)
+Experiment.register(AOTDQNCarRacing, "Asynchronuous OTDQN for CarRacing, tuned with ddqn, duel network, etc.")
 
 
 if __name__ == '__main__':

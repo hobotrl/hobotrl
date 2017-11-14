@@ -103,6 +103,90 @@ class DQNExperiment(Experiment):
             runner.episode(self._episode_n)
 
 
+class ADQNExperiment(Experiment):
+
+    def __init__(self, env,
+                 f_create_q,
+                 episode_n=1000,
+                 discount_factor=0.99,
+                 ddqn=False,
+                 # target network sync arguments
+                 target_sync_interval=100,
+                 target_sync_rate=1.0,
+                 # sampler arguments
+                 update_interval=4,
+                 replay_size=1000,
+                 batch_size=32,
+                 # epsilon greedy arguments
+                 greedy_epsilon=0.3,
+                 learning_rate=1e-4,
+                 ):
+        self._env, self._f_create_q, self._episode_n, \
+            self._discount_factor, \
+            self._ddqn, \
+            self._target_sync_interval, \
+            self._target_sync_rate, \
+            self._update_interval, \
+            self._replay_size, \
+            self._batch_size, \
+            self._greedy_epsilon, \
+            self._learning_rate = \
+            env, f_create_q, episode_n, \
+            discount_factor, \
+            ddqn, \
+            target_sync_interval, \
+            target_sync_rate, \
+            update_interval, \
+            replay_size, \
+            batch_size, \
+            greedy_epsilon, \
+            learning_rate
+
+        super(ADQNExperiment, self).__init__()
+
+    def run(self, args):
+        state_shape = list(self._env.observation_space.shape)
+
+        def create_optimizer():
+            return tf.train.AdamOptimizer(self._learning_rate)
+
+        def create_agent(n_optimizer, global_step):
+            # all ScheduledParam hyper parameters are mutable objects.
+            # so we will not want to use same object for different Agent instances.
+            agent = dqn.DQN(
+                f_create_q=self._f_create_q,
+                state_shape=state_shape,
+                # OneStepTD arguments
+                num_actions=self._env.action_space.n,
+                discount_factor=self._discount_factor,
+                ddqn=self._ddqn,
+                # target network sync arguments
+                target_sync_interval=self._target_sync_interval,
+                target_sync_rate=self._target_sync_rate,
+                # sampler arguments
+                update_interval=self._update_interval,
+                replay_size=self._replay_size,
+                batch_size=self._batch_size,
+                # epsilon greedy arguments
+                greedy_epsilon=self._greedy_epsilon,
+                network_optimizer=n_optimizer,
+                global_step=global_step
+            )
+            return agent
+
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+
+        agent = hrl.async.ClusterAgent(create_agent, create_optimizer, args.cluster, args.job, args.index, args.logdir)
+        with agent.create_session(config=config) as sess:
+            agent.set_session(sess)
+            runner = hrl.envs.EnvRunner(self._env, agent, reward_decay=self._discount_factor,  max_episode_len=1000,
+                                        evaluate_interval=sys.maxint, render_interval=args.render_interval,
+                                        render_once=args.render_once,
+                                        logdir=args.logdir if args.index == 0 else None)
+            runner.episode(self._episode_n)
+
+
 class PERDQNExperiment(Experiment):
 
     def __init__(self, env,
@@ -198,7 +282,10 @@ class OTDQNExperiment(Experiment):
                  # sampler arguments
                  update_interval=4,
                  replay_size=1000,
-                 batch_size=32,
+                 batch_size=8,
+                 lower_weight=1.0,
+                 upper_weight=1.0,
+                 neighbour_size=8,
                  # epsilon greedy arguments
                  greedy_epsilon=0.3,
                  network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3), grad_clip=10.0)
@@ -212,7 +299,8 @@ class OTDQNExperiment(Experiment):
             self._replay_size, \
             self._batch_size, \
             self._greedy_epsilon, \
-            self._network_optimizer_ctor = \
+            self._network_optimizer_ctor, \
+            self._lower_weight, self._upper_weight, self._neighbour_size = \
             env, f_create_q, episode_n, \
             discount_factor, \
             ddqn, \
@@ -222,7 +310,8 @@ class OTDQNExperiment(Experiment):
             replay_size, \
             batch_size, \
             greedy_epsilon, \
-            network_optimizer_ctor
+            network_optimizer_ctor, \
+            lower_weight, upper_weight, neighbour_size
 
         super(OTDQNExperiment, self).__init__()
 
@@ -233,8 +322,11 @@ class OTDQNExperiment(Experiment):
             'global_step', [], dtype=tf.int32,
              initializer=tf.constant_initializer(0), trainable=False
         )
-        agent = hrl.algorithms.ot.DQN(
+        agent = hrl.algorithms.ot.OTDQN(
             f_create_q=self._f_create_q,
+            lower_weight=self._lower_weight,
+            upper_weight=self._upper_weight,
+            neighbour_size=self._neighbour_size,
             state_shape=state_shape,
             # OneStepTD arguments
             num_actions=self._env.action_space.n,
@@ -248,7 +340,7 @@ class OTDQNExperiment(Experiment):
             replay_size=self._replay_size,
             batch_size=self._batch_size,
             # epsilon greedy arguments
-            greedy_epsilon=hrl.utils.CappedLinear(1e5, 0.5, 0.1),
+            greedy_epsilon=self._greedy_epsilon,
             network_optmizer=self._network_optimizer_ctor(),
             global_step=global_step
         )
@@ -261,6 +353,98 @@ class OTDQNExperiment(Experiment):
                 render_interval=sys.maxint, logdir=args.logdir,
                 render_once=True,
             )
+            return runner.episode(self._episode_n)
+
+
+class AOTDQNExperiment(Experiment):
+    def __init__(self,
+                 env,
+                 f_create_q,
+                 episode_n=1000,
+                 discount_factor=0.99,
+                 ddqn=False,
+                 # target network sync arguments
+                 target_sync_interval=100,
+                 target_sync_rate=1.0,
+                 # sampler arguments
+                 update_interval=4,
+                 replay_size=1000,
+                 batch_size=8,
+                 lower_weight=1.0,
+                 upper_weight=1.0,
+                 neighbour_size=8,
+                 # epsilon greedy arguments
+                 greedy_epsilon=0.3,
+                 learning_rate=1e-4,
+                 ):
+        super(AOTDQNExperiment, self).__init__()
+        self._env, self._f_create_q, self._episode_n, \
+            self._discount_factor, \
+            self._ddqn, \
+            self._target_sync_interval, \
+            self._target_sync_rate, \
+            self._update_interval, \
+            self._replay_size, \
+            self._batch_size, \
+            self._greedy_epsilon, \
+            self._learning_rate, \
+            self._lower_weight, self._upper_weight, self._neighbour_size = \
+            env, f_create_q, episode_n, \
+            discount_factor, \
+            ddqn, \
+            target_sync_interval, \
+            target_sync_rate, \
+            update_interval, \
+            replay_size, \
+            batch_size, \
+            greedy_epsilon, \
+            learning_rate, \
+            lower_weight, upper_weight, neighbour_size
+
+    def run(self, args):
+        state_shape = list(self._env.observation_space.shape)
+
+        def create_optimizer():
+            return tf.train.AdamOptimizer(self._learning_rate)
+
+        def create_agent(n_optimizer, global_step):
+            # all ScheduledParam hyper parameters are mutable objects.
+            # so we will not want to use same object for different Agent instances.
+            self._greedy_epsilon = hrl.utils.clone_params(self._greedy_epsilon)
+            agent = hrl.algorithms.ot.OTDQN(
+                f_create_q=self._f_create_q,
+                lower_weight=self._lower_weight,
+                upper_weight=self._upper_weight,
+                neighbour_size=self._neighbour_size,
+                state_shape=state_shape,
+                # OneStepTD arguments
+                num_actions=self._env.action_space.n,
+                discount_factor=self._discount_factor,
+                ddqn=self._ddqn,
+                # target network sync arguments
+                target_sync_interval=self._target_sync_interval,
+                target_sync_rate=self._target_sync_rate,
+                # sampler arguments
+                update_interval=self._update_interval,
+                replay_size=self._replay_size,
+                batch_size=self._batch_size,
+                # epsilon greedy arguments
+                greedy_epsilon=self._greedy_epsilon,
+                network_optmizer=n_optimizer,
+                global_step=global_step
+            )
+            return agent
+
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+
+        agent = hrl.async.ClusterAgent(create_agent, create_optimizer, args.cluster, args.job, args.index, args.logdir)
+        with agent.create_session(config=config) as sess:
+            agent.set_session(sess)
+            runner = hrl.envs.EnvRunner(self._env, agent, reward_decay=self._discount_factor,  max_episode_len=1000,
+                                        evaluate_interval=sys.maxint, render_interval=args.render_interval,
+                                        render_once=args.render_once,
+                                        logdir=args.logdir if args.index == 0 else None)
             runner.episode(self._episode_n)
 
 

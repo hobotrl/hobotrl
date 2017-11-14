@@ -34,6 +34,7 @@ class TestOTDQN(unittest.TestCase):
             # OneStepTD arguments
             num_actions=env.action_space.n,
             discount_factor=0.99,
+            ddqn=False,
             # target network sync arguments
             target_sync_interval=100,
             target_sync_rate=1.0,
