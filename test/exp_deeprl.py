@@ -12,7 +12,7 @@ import exp_algorithms as alg
 
 class ACPendulum(ACExperiment):
 
-    def __init__(self, env=None, f_create_net=None, episode_n=2000, discount_factor=0.9, entropy=1e-1,
+    def __init__(self, env=None, f_create_net=None, episode_n=2000, discount_factor=0.9, entropy=3e-2,
                  network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3),
                                                                            grad_clip=10.0), batch_size=8):
         if env is None:
@@ -74,36 +74,41 @@ Experiment.register(ACOOPendulum, "discrete actor critic for Pendulum")
 
 
 class ACContinuousPendulum(ACExperiment):
-    def __init__(self, env=None, f_create_net=None, episode_n=2000, discount_factor=0.9, entropy=1e-2,
+    def __init__(self, env=None, f_create_net=None, episode_n=2000, discount_factor=0.9,
+                 # entropy=CappedLinear(1e5, 1e-1, 1e-2),
+                 entropy=3e-2,
                  network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3),
-                                                                           grad_clip=10.0), batch_size=8):
+                                                                           grad_clip=10.0), batch_size=16):
         if env is None:
             env = gym.make("Pendulum-v0")
             env = hrl.envs.AugmentEnvWrapper(env, reward_decay=discount_factor, reward_scale=0.1)
         dim_action = env.action_space.shape[-1]
         if f_create_net is None:
             def f_net_sigmoid(inputs):
-                l2 = 1e-4
+                l2 = 1e-8
                 state = inputs[0]
                 v = hrl.network.Utils.layer_fcs(state, [200, 100], 1, l2=l2, var_scope="v")
                 v = tf.squeeze(v, axis=1)
                 mean = hrl.network.Utils.layer_fcs(state, [200, 100], dim_action,
+                                                   activation_hidden=tf.nn.elu,
                                                    activation_out=tf.tanh,
                                                  l2=l2, var_scope="mean")
                 stddev = hrl.network.Utils.layer_fcs(state, [200, 100], dim_action,
+                                                     activation_hidden=tf.nn.elu,
                                                      activation_out=lambda x: 2.0 * tf.sigmoid(x / 2.0),
                                                      l2=l2, var_scope="stddev")
+                stddev = 0.1 * stddev + tf.stop_gradient(0.9 * stddev)
                 return {"v": v, "mean": mean, "stddev": stddev}
 
             def f_net(inputs):
-                l2 = 1e-4
+                l2 = 1e-8
                 state = inputs[0]
                 v = hrl.network.Utils.layer_fcs(state, [200, 100], 1, l2=l2, var_scope="v")
                 v = tf.squeeze(v, axis=1)
                 mean = hrl.network.Utils.layer_fcs(state, [200, 100], dim_action, activation_out=tf.tanh,
                                                    l2=l2, var_scope="mean")
                 stddev = hrl.network.Utils.layer_fcs(state, [200, 100], dim_action,
-                                                     activation_out=lambda x: tf.nn.softplus(x/8.0),
+                                                     activation_out=lambda x: tf.nn.softplus(x/4.0),
                                                      l2=l2, var_scope="stddev")
                 return {"v": v, "mean": mean, "stddev": stddev}
             f_create_net = f_net_sigmoid
@@ -111,6 +116,16 @@ class ACContinuousPendulum(ACExperiment):
         super(ACContinuousPendulum, self).__init__(env, f_create_net, episode_n, discount_factor, entropy,
                                                    network_optimizer_ctor, batch_size)
 Experiment.register(ACContinuousPendulum, "continuous actor critic for Pendulum")
+
+
+class ACConPendulumSearch(hrl.experiment.GridSearch):
+    def __init__(self):
+        super(ACConPendulumSearch, self).__init__(ACContinuousPendulum, {
+            "entropy": [CappedLinear(1e4, 1e-1, 1e-2), CappedLinear(1e5, 1e-2, 1e-3), 1e-1],
+            "batch_size": [16, 100],
+            "episode_n": [2000],
+        })
+Experiment.register(ACConPendulumSearch, "continuous actor critic for Pendulum")
 
 
 class DQNPendulum(DQNExperiment):
@@ -278,60 +293,83 @@ class PERDQNPendulum(alg.PERDQNExperiment):
 Experiment.register(PERDQNPendulum, "Prioritized Exp Replay with DQN, for Pendulum")
 
 
-class OTDQNPendulum(Experiment):
+class OTDQNPendulum(OTDQNExperiment):
+
     """
     converges on Pendulum.
     However, in Pendulum, weight_upper > 0 hurts performance.
     should verify on more difficult problems
     """
-    def run(self, args):
-        discount_factor = 0.9
-        K = 8
-        batch_size = 4
-        weight_lower = 0.0
-        weight_upper = 0.0
-        target_sync_interval = 10
-        target_sync_rate = 0.01
-        replay_size = 1000
 
-        env = gym.make("Pendulum-v0")
-        env = hrl.envs.C2DEnvWrapper(env, [5])
-        env = hrl.envs.AugmentEnvWrapper(env, reward_decay=discount_factor, reward_scale=0.1)
-
-        optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
-
-        training_params = (optimizer_td, target_sync_rate, 10.0)
-
-        def f_net(inputs):
-            input_state = inputs[0]
-            fc_out = hrl.utils.Network.layer_fcs(input_state, [200, 200], env.action_space.n,
-                                                 activation_hidden=tf.nn.relu, activation_out=None, l2=1e-4)
-            return {"q": fc_out}
-
-        state_shape = list(env.observation_space.shape)
-        global_step = tf.get_variable('global_step', [],
-                                      dtype=tf.int32,
-                                      initializer=tf.constant_initializer(0),
-                                      trainable=False)
-        agent = ot.OTDQN(
-            f_create_q=f_net,
-            lower_weight=weight_lower, upper_weight=weight_upper, neighbour_size=K,
-            state_shape=state_shape, num_actions=env.action_space.n, discount_factor=discount_factor,
-            target_sync_interval=target_sync_interval, target_sync_rate=target_sync_rate,
-            greedy_epsilon=0.2,
-            network_optimizer=None, max_gradient=10.0,
-            update_interval=2,
-            replay_size=replay_size, batch_size=batch_size, sampler=None,
-            global_step=global_step
-        )
-        config = tf.ConfigProto()
-        config.gpu_options.allow_growth = True
-        with agent.create_session(config=config, save_dir=args.logdir) as sess:
-            agent.set_session(sess)
-            runner = hrl.envs.EnvRunner(env, agent, reward_decay=discount_factor,
-                                        evaluate_interval=sys.maxint, render_interval=args.render_interval,
-                                        logdir=args.logdir)
-            runner.episode(500)
+    def __init__(self, env=None, f_create_q=None, episode_n=1000,
+                 discount_factor=0.99, ddqn=False, target_sync_interval=100,
+                 target_sync_rate=1.0, update_interval=4, replay_size=1000, batch_size=8, lower_weight=1.0,
+                 upper_weight=1.0, neighbour_size=8, greedy_epsilon=0.2,
+                 network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3),
+                                                                           grad_clip=10.0)):
+        if env is None:
+            env = gym.make("Pendulum-v0")
+            env = hrl.envs.C2DEnvWrapper(env, [5])
+            env = hrl.envs.AugmentEnvWrapper(env, reward_decay=discount_factor, reward_scale=0.1)
+        if f_create_q is None:
+            def f_net(inputs):
+                input_state = inputs[0]
+                fc_out = hrl.utils.Network.layer_fcs(input_state, [200, 200], env.action_space.n,
+                                                     activation_hidden=tf.nn.relu, activation_out=None, l2=1e-4)
+                return {"q": fc_out}
+            f_create_q = f_net
+        super(OTDQNPendulum, self).__init__(env, f_create_q, episode_n, discount_factor, ddqn, target_sync_interval,
+                                            target_sync_rate, update_interval, replay_size, batch_size, lower_weight,
+                                            upper_weight, neighbour_size, greedy_epsilon, network_optimizer_ctor)
+    #
+    # def run(self, args):
+    #     discount_factor = 0.9
+    #     K = 8
+    #     batch_size = 4
+    #     weight_lower = 0.0
+    #     weight_upper = 0.0
+    #     target_sync_interval = 10
+    #     target_sync_rate = 0.01
+    #     replay_size = 1000
+    #
+    #     env = gym.make("Pendulum-v0")
+    #     env = hrl.envs.C2DEnvWrapper(env, [5])
+    #     env = hrl.envs.AugmentEnvWrapper(env, reward_decay=discount_factor, reward_scale=0.1)
+    #
+    #     optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
+    #
+    #     training_params = (optimizer_td, target_sync_rate, 10.0)
+    #
+    #     def f_net(inputs):
+    #         input_state = inputs[0]
+    #         fc_out = hrl.utils.Network.layer_fcs(input_state, [200, 200], env.action_space.n,
+    #                                              activation_hidden=tf.nn.relu, activation_out=None, l2=1e-4)
+    #         return {"q": fc_out}
+    #
+    #     state_shape = list(env.observation_space.shape)
+    #     global_step = tf.get_variable('global_step', [],
+    #                                   dtype=tf.int32,
+    #                                   initializer=tf.constant_initializer(0),
+    #                                   trainable=False)
+    #     agent = ot.OTDQN(
+    #         f_create_q=f_net,
+    #         lower_weight=weight_lower, upper_weight=weight_upper, neighbour_size=K,
+    #         state_shape=state_shape, num_actions=env.action_space.n, discount_factor=discount_factor,
+    #         target_sync_interval=target_sync_interval, target_sync_rate=target_sync_rate,
+    #         greedy_epsilon=0.2,
+    #         network_optimizer=None, max_gradient=10.0,
+    #         update_interval=2,
+    #         replay_size=replay_size, batch_size=batch_size, sampler=None,
+    #         global_step=global_step
+    #     )
+    #     config = tf.ConfigProto()
+    #     config.gpu_options.allow_growth = True
+    #     with agent.create_session(config=config, save_dir=args.logdir) as sess:
+    #         agent.set_session(sess)
+    #         runner = hrl.envs.EnvRunner(env, agent, reward_decay=discount_factor,
+    #                                     evaluate_interval=sys.maxint, render_interval=args.render_interval,
+    #                                     logdir=args.logdir)
+    #         runner.episode(500)
 
 Experiment.register(OTDQNPendulum, "Optimaly Tightening DQN for Pendulum")
 
@@ -1143,6 +1181,73 @@ class PPOPendulum(PPOExperiment):
         super(PPOPendulum, self).__init__(env, f_create_net, episode_n, discount_factor, entropy, clip_epsilon,
                                           epoch_per_step, network_optimizer_ctor, batch_size, horizon)
 Experiment.register(PPOPendulum, "PPO for Pendulum")
+
+
+class PPOBipedal(PPOExperiment):
+    def __init__(self, env=None, f_create_net=None, episode_n=10000,
+                 discount_factor=0.9, entropy=5e-4, clip_epsilon=0.2,
+                 epoch_per_step=1,
+                 network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(3e-4),
+                                                                           grad_clip=10.0),
+                 batch_size=16,
+                 horizon=256):
+        if env is None:
+            env = gym.make("BipedalWalker-v2")
+            env = hrl.envs.AugmentEnvWrapper(env, reward_decay=discount_factor, reward_scale=0.1)
+        if f_create_net is None:
+            dim_action = env.action_space.shape[-1]
+
+            def f_net(inputs):
+                l2 = 1e-8
+                state = inputs[0]
+                v = hrl.network.Utils.layer_fcs(state, [200, 100], 1, l2=l2, var_scope="v")
+                v = tf.squeeze(v, axis=1)
+                mean = hrl.network.Utils.layer_fcs(state, [200, 100], dim_action,
+                                                   # activation_out=None,
+                                                   activation_out=lambda x: tf.tanh(x / 4.0),
+                                                   l2=l2, var_scope="mean")
+                stddev = hrl.network.Utils.layer_fcs(state, [200, 100], dim_action,
+                                                     # activation_out=None,
+                                                     activation_out=lambda x: 4.0 * tf.sigmoid(x / 4.0),
+                                                     l2=l2, var_scope="stddev")
+                return {"v": v, "mean": mean, "stddev": stddev}
+            f_create_net = f_net
+
+        super(PPOBipedal, self).__init__(env, f_create_net, episode_n, discount_factor, entropy, clip_epsilon,
+                                          epoch_per_step, network_optimizer_ctor, batch_size, horizon)
+Experiment.register(PPOBipedal, "PPO for BipedalWalker")
+
+
+class ACBipedal(ACExperiment):
+
+    def __init__(self, env=None, f_create_net=None, episode_n=20000, discount_factor=0.9,
+                 entropy=CappedLinear(1e6, 1e-4, 1e-5),
+                 network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3),
+                                                                           grad_clip=10.0), batch_size=16):
+        if env is None:
+            env = gym.make("BipedalWalker-v2")
+            env = hrl.envs.AugmentEnvWrapper(env, reward_decay=discount_factor, reward_scale=0.1)
+        if f_create_net is None:
+            dim_action = env.action_space.shape[-1]
+
+            def f_net(inputs):
+                l2 = 1e-8
+                state = inputs[0]
+                v = hrl.network.Utils.layer_fcs(state, [200, 100], 1, l2=l2, var_scope="v")
+                v = tf.squeeze(v, axis=1)
+                mean = hrl.network.Utils.layer_fcs(state, [200, 100], dim_action,
+                                                   # activation_out=None,
+                                                   activation_out=lambda x: tf.tanh(x / 4.0),
+                                                   l2=l2, var_scope="mean")
+                stddev = hrl.network.Utils.layer_fcs(state, [200, 100], dim_action,
+                                                     # activation_out=None,
+                                                     activation_out=lambda x: 2.0 * tf.sigmoid(x / 4.0),
+                                                     l2=l2, var_scope="stddev")
+                return {"v": v, "mean": mean, "stddev": stddev}
+            f_create_net = f_net
+        super(ACBipedal, self).__init__(env, f_create_net, episode_n, discount_factor, entropy,
+                                         network_optimizer_ctor, batch_size)
+Experiment.register(ACBipedal, "actor critic for BipedalWalker")
 
 
 if __name__ == '__main__':

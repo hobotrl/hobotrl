@@ -69,9 +69,13 @@ class OUExplorationPolicy(Policy):
         self._action_shape = [action_function.output().op.shape.as_list()[-1]]
         self._ou_noise = OUNoise(self._action_shape, mu, theta, sigma)
 
+    @staticmethod
+    def action_add(action, noise):
+        return action + np.abs(np.sign(noise) - action) * np.tanh(noise)
+
     def act(self, state, **kwargs):
         action = self._action_function(np.asarray(state)[np.newaxis, :])[0]
-        return action + self._ou_noise.tick()
+        return self.action_add(action, self._ou_noise.tick())
 
 
 class StochasticPolicy(Policy):

@@ -9,6 +9,7 @@ both mixin-style and non-... usages.
 3. ExperienceReplay
 """
 
+import re
 import math
 import numpy as np
 from numpy import max
@@ -260,6 +261,10 @@ class NP(object):
         oh = np.zeros(shape=list(array.shape)+[num])
         oh[np.arange(array.size), array] = 1
         return oh
+
+
+def escape_path(string):
+    return re.sub("[^0-9a-zA-Z\\-_\\.]", "", string)
 
 
 class hashable_list(list):
@@ -560,6 +565,11 @@ def clone_params(*params):
     return params[0] if len(params) == 1 else params
 
 
+def clone_params_dict(**params):
+    params = dict([(k, params[k].clone() if isinstance(params[k], ScheduledParam) else params[k]) for k in params])
+    return params
+
+
 class ScheduledParam(FloatParam):
 
     @staticmethod
@@ -567,7 +577,7 @@ class ScheduledParam(FloatParam):
         """ T.__new__(S, ...) -> a new object with type S, a subtype of T """
         return float.__new__(S, 0)
 
-    def __init__(self, schedule, int_handle=None):
+    def __init__(self, schedule, int_handle=None, **schedule_params):
         """
         :param schedule: function(n) -> value
         :param int_handle: IntHandle object
@@ -575,11 +585,12 @@ class ScheduledParam(FloatParam):
         """
         self._schedule = schedule
         self._n = int_handle
+        self._schedule_params = schedule_params
         x = schedule(0)
         super(ScheduledParam, self).__init__(x)
 
     def clone(self):
-        return ScheduledParam(self._schedule, self._n)
+        return ScheduledParam(self._schedule, self._n, **self._schedule_params)
 
     @property
     def value(self):
@@ -588,7 +599,9 @@ class ScheduledParam(FloatParam):
         return super(ScheduledParam, self).value
 
     def __str__(self):
-        return "[%d]%f" % (self._n.value(), self._value)
+        value_str = "" if self._n is None else "-[][%d]%f" % (self._n.value(), self._value)
+        param_str = "-".join(["{}{:.2e}".format(k, self._schedule_params[k]) for k in self._schedule_params])
+        return param_str + value_str
 
     def set_int_handle(self, int_handle):
         self._n = int_handle
@@ -644,11 +657,12 @@ class ScheduledParamCollector(object):
 
 class CappedLinear(ScheduledParam):
     def __init__(self, step, start, end, stepper=None):
-        super(CappedLinear, self).__init__(lambda n: end if n > step else start + (end - start) * n / step, stepper)
+        super(CappedLinear, self).__init__(lambda n: end if n > step else start + (end - start) * n / step, stepper,
+                                           step=step, start=start, end=end)
 
 
 class Cosine(ScheduledParam):
     def __init__(self, step, start, end, stepper=None):
         super(Cosine, self).__init__(lambda n: start + (1 - math.cos(math.pi * 2 * n / step)) * (end - start)/2,
-                                     stepper)
+                                     stepper, step=step, start=start, end=end)
 
