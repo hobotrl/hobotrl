@@ -1,11 +1,17 @@
 #
 # -*- coding: utf-8 -*-
 
-import sys
+import itertools
 import logging
+import os
+import sys
+import traceback
+
 import tensorflow as tf
 import gym
 import argparse
+
+from utils import clone_params_dict, escape_path
 
 
 class Experiment(object):
@@ -84,6 +90,62 @@ class HelloWorld(Experiment):
         """
         print "hello experiment!"
 Experiment.register(HelloWorld, "first experiment")
+
+
+class GridSearch(Experiment):
+    def __init__(self, exp_class, parameters):
+        """
+        :param exp_class: subclass of Experiment to run
+        :type exp_class: class<Experiment>
+        :param parameters: dict of list, experiment parameters to search within, i.e.:
+            {
+                "entropy": [1e-2, 1e-3],
+                "learning_rate": [1e-3, 1e-4],
+                ...
+            }
+            or list of dict-of-list, representing multiple groups of parameters:
+            [
+            {
+                "entropy": [1e-2, 1e-3],
+                "learning_rate": [1e-3, 1e-4],
+                ...
+            },
+            {
+                "batch_size": [32, 64],
+                ...
+            }
+            ]
+
+        """
+        super(GridSearch, self).__init__()
+        self._exp_class, self._parameters = exp_class, parameters
+
+    def run(self, args):
+        log_root = args.logdir
+        for parameter in self.product(self._parameters):
+            label = self.labelize(parameter)
+            args.logdir = os.sep.join([log_root, label])
+            with tf.Graph().as_default():
+                experiment = self._exp_class(**parameter)
+                try:
+                    rewards = experiment.run(args)
+                except Exception, e:
+                    type_, value_, traceback_ = sys.exc_info()
+                    traceback_ = traceback.format_tb(traceback_)
+                    traceback_ = "\n".join(traceback_)
+                    logging.warning("experiment[%s] failed:%s, %s, %s", label, type_, value_, traceback_)
+
+    def product(self, parameters):
+        if isinstance(parameters, dict):
+            parameters = [parameters]
+        for param in parameters:
+            names = param.keys()
+            valuelists = [param[n] for n in names]
+            for values in itertools.product(*valuelists):
+                yield clone_params_dict(**dict(zip(names, values)))
+
+    def labelize(self, parameter):
+        return "_".join(["%s%s" % (f, escape_path(str(parameter[f]))) for f in parameter])
 
 
 if __name__ == "__main__":

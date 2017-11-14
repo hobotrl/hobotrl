@@ -256,7 +256,6 @@ class ActorCritic(sampling.TrajectoryBatchUpdate,
             "max_gradient": max_gradient,
             "batch_size": batch_size,
         })
-        print "network_optimizer:", network_optimizer
         if network_optimizer is None:
             network_optimizer = network.LocalOptimizer(grad_clip=max_gradient)
         if sampler is None:
