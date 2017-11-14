@@ -251,7 +251,7 @@ class Network(object):
 class NP(object):
     @staticmethod
     def one_hot(array, num):
-        oh = np.zeros(shape=array.shape+[num])
+        oh = np.zeros(shape=list(array.shape)+[num])
         oh[np.arange(array.size), array] = 1
         return oh
 

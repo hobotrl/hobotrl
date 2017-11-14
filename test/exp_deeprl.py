@@ -293,60 +293,83 @@ class PERDQNPendulum(alg.PERDQNExperiment):
 Experiment.register(PERDQNPendulum, "Prioritized Exp Replay with DQN, for Pendulum")
 
 
-class OTDQNPendulum(Experiment):
+class OTDQNPendulum(OTDQNExperiment):
+
     """
     converges on Pendulum.
     However, in Pendulum, weight_upper > 0 hurts performance.
     should verify on more difficult problems
     """
-    def run(self, args):
-        discount_factor = 0.9
-        K = 8
-        batch_size = 4
-        weight_lower = 0.0
-        weight_upper = 0.0
-        target_sync_interval = 10
-        target_sync_rate = 0.01
-        replay_size = 1000
 
-        env = gym.make("Pendulum-v0")
-        env = hrl.envs.C2DEnvWrapper(env, [5])
-        env = hrl.envs.AugmentEnvWrapper(env, reward_decay=discount_factor, reward_scale=0.1)
-
-        optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
-
-        training_params = (optimizer_td, target_sync_rate, 10.0)
-
-        def f_net(inputs):
-            input_state = inputs[0]
-            fc_out = hrl.utils.Network.layer_fcs(input_state, [200, 200], env.action_space.n,
-                                                 activation_hidden=tf.nn.relu, activation_out=None, l2=1e-4)
-            return {"q": fc_out}
-
-        state_shape = list(env.observation_space.shape)
-        global_step = tf.get_variable('global_step', [],
-                                      dtype=tf.int32,
-                                      initializer=tf.constant_initializer(0),
-                                      trainable=False)
-        agent = ot.OTDQN(
-            f_create_q=f_net,
-            lower_weight=weight_lower, upper_weight=weight_upper, neighbour_size=K,
-            state_shape=state_shape, num_actions=env.action_space.n, discount_factor=discount_factor,
-            target_sync_interval=target_sync_interval, target_sync_rate=target_sync_rate,
-            greedy_epsilon=0.2,
-            network_optimizer=None, max_gradient=10.0,
-            update_interval=2,
-            replay_size=replay_size, batch_size=batch_size, sampler=None,
-            global_step=global_step
-        )
-        config = tf.ConfigProto()
-        config.gpu_options.allow_growth = True
-        with agent.create_session(config=config, save_dir=args.logdir) as sess:
-            agent.set_session(sess)
-            runner = hrl.envs.EnvRunner(env, agent, reward_decay=discount_factor,
-                                        evaluate_interval=sys.maxint, render_interval=args.render_interval,
-                                        logdir=args.logdir)
-            runner.episode(500)
+    def __init__(self, env=None, f_create_q=None, episode_n=1000,
+                 discount_factor=0.99, ddqn=False, target_sync_interval=100,
+                 target_sync_rate=1.0, update_interval=4, replay_size=1000, batch_size=8, lower_weight=1.0,
+                 upper_weight=1.0, neighbour_size=8, greedy_epsilon=0.2,
+                 network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3),
+                                                                           grad_clip=10.0)):
+        if env is None:
+            env = gym.make("Pendulum-v0")
+            env = hrl.envs.C2DEnvWrapper(env, [5])
+            env = hrl.envs.AugmentEnvWrapper(env, reward_decay=discount_factor, reward_scale=0.1)
+        if f_create_q is None:
+            def f_net(inputs):
+                input_state = inputs[0]
+                fc_out = hrl.utils.Network.layer_fcs(input_state, [200, 200], env.action_space.n,
+                                                     activation_hidden=tf.nn.relu, activation_out=None, l2=1e-4)
+                return {"q": fc_out}
+            f_create_q = f_net
+        super(OTDQNPendulum, self).__init__(env, f_create_q, episode_n, discount_factor, ddqn, target_sync_interval,
+                                            target_sync_rate, update_interval, replay_size, batch_size, lower_weight,
+                                            upper_weight, neighbour_size, greedy_epsilon, network_optimizer_ctor)
+    #
+    # def run(self, args):
+    #     discount_factor = 0.9
+    #     K = 8
+    #     batch_size = 4
+    #     weight_lower = 0.0
+    #     weight_upper = 0.0
+    #     target_sync_interval = 10
+    #     target_sync_rate = 0.01
+    #     replay_size = 1000
+    #
+    #     env = gym.make("Pendulum-v0")
+    #     env = hrl.envs.C2DEnvWrapper(env, [5])
+    #     env = hrl.envs.AugmentEnvWrapper(env, reward_decay=discount_factor, reward_scale=0.1)
+    #
+    #     optimizer_td = tf.train.GradientDescentOptimizer(learning_rate=0.001)
+    #
+    #     training_params = (optimizer_td, target_sync_rate, 10.0)
+    #
+    #     def f_net(inputs):
+    #         input_state = inputs[0]
+    #         fc_out = hrl.utils.Network.layer_fcs(input_state, [200, 200], env.action_space.n,
+    #                                              activation_hidden=tf.nn.relu, activation_out=None, l2=1e-4)
+    #         return {"q": fc_out}
+    #
+    #     state_shape = list(env.observation_space.shape)
+    #     global_step = tf.get_variable('global_step', [],
+    #                                   dtype=tf.int32,
+    #                                   initializer=tf.constant_initializer(0),
+    #                                   trainable=False)
+    #     agent = ot.OTDQN(
+    #         f_create_q=f_net,
+    #         lower_weight=weight_lower, upper_weight=weight_upper, neighbour_size=K,
+    #         state_shape=state_shape, num_actions=env.action_space.n, discount_factor=discount_factor,
+    #         target_sync_interval=target_sync_interval, target_sync_rate=target_sync_rate,
+    #         greedy_epsilon=0.2,
+    #         network_optimizer=None, max_gradient=10.0,
+    #         update_interval=2,
+    #         replay_size=replay_size, batch_size=batch_size, sampler=None,
+    #         global_step=global_step
+    #     )
+    #     config = tf.ConfigProto()
+    #     config.gpu_options.allow_growth = True
+    #     with agent.create_session(config=config, save_dir=args.logdir) as sess:
+    #         agent.set_session(sess)
+    #         runner = hrl.envs.EnvRunner(env, agent, reward_decay=discount_factor,
+    #                                     evaluate_interval=sys.maxint, render_interval=args.render_interval,
+    #                                     logdir=args.logdir)
+    #         runner.episode(500)
 
 Experiment.register(OTDQNPendulum, "Optimaly Tightening DQN for Pendulum")
 

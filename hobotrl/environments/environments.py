@@ -84,6 +84,7 @@ class EnvRunner(object):
         :param n:
         :return:
         """
+        rewards = []
         for i in range(n):
             self.episode_n += 1
             self.state = self.env.reset()
@@ -103,6 +104,8 @@ class EnvRunner(object):
             logging.warning("Episode %d finished after %d steps, total reward=%f", self.episode_n, t + 1,
                                 self.total_reward)
             self.record({"episode_total_reward": self.total_reward})
+            rewards.append(self.total_reward)
+        return rewards
 
 
 class EnvRunner2(object):

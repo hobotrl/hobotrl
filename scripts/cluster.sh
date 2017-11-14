@@ -4,10 +4,14 @@
 #
 
 print_help() {
-    echo "usage: . ./scripts/cluster.sh exp_file exp_name [worker_n [device_n]] [--logdir dir] [extra_args]"
+    echo "usage: . ./scripts/cluster.sh exp_file exp_name [worker_n [device_n]] [--start_port 2242] [--start_device 0] [--log_dir dir] [extra_args]"
 	echo "extra_args will be passed directly to experiment"
 }
 
+# reset defaults
+log_dir=""
+start_port=2242
+start_device=0
 
 POSITIONAL=()
 
@@ -23,6 +27,11 @@ case $key in
     ;;
     --start_port)
     start_port="$2"
+    shift # past argument
+    shift # past value
+    ;;
+    --start_device)
+    start_device="$2"
     shift # past argument
     shift # past value
     ;;
@@ -49,10 +58,6 @@ if [[ "$log_dir" = "" ]]; then
 	log_dir=./log/$exp_name
 fi
 
-if [[ "$start_port" = "" ]]; then
-    start_port=2242
-fi
-
 worker_n=4
 device_n=4
 
@@ -77,7 +82,7 @@ end_i=$(expr $worker_n - 1)
 echo "job $exp_name with worker: [ 0 .. $end_i ]"
 for i in $(seq 0 $end_i)
 do
-	device=$(expr $i % $device_n)
+	device=$(expr $i % $device_n + $start_device)
     CUDA_VISIBLE_DEVICES=$device python $exp_file run --name $exp_name --cluster "$cluster" --job worker --index $i --logdir $log_dir $extra_arg > $log_dir/worker.$i.txt 2>&1 &
 done
 
