@@ -174,12 +174,12 @@ def record(summary_writer, step_n, info):
 
 tf.app.flags.DEFINE_string("logdir",
                            "/home/pirate03/PycharmProjects/hobotrl/playground/resnet/"
-                           "resnet_learn_q_frame_skip_scale_reward",
+                           "resnet_frame_skip_scale_reward_ac",
                            """save tmp model""")
 tf.app.flags.DEFINE_string("savedir",
                            "/home/pirate03/hobotrl_data/playground/initialD/exp/"
                            "docker005_no_stopping_static_middle_no_path_all_green/"
-                           "resnet_learn_q_frame_skip_scale_reward_records",
+                           "resnet_frame_skip_scale_reward_ac_records",
                            """records data""")
 tf.app.flags.DEFINE_string("readme", "learn q with frame skipping. Shorten step_delay_target."
                                      "Scale return."
@@ -249,7 +249,7 @@ agent = hrl.ActorCritic(
             state_shape=state_shape,
             # ACUpdate arguments
             discount_factor=FLAGS.discount_factor,
-            entropy=hrl.utils.CappedLinear(1e6, 1e-4, 1e-4),
+            entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4),
             target_estimator=None,
             max_advantage=100.0,
             # optimizer arguments
