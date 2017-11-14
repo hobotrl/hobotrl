@@ -196,6 +196,7 @@ tf.app.flags.DEFINE_string("readme", "learn q with frame skipping. Shorten step_
                                      "Stop gradient on pi layer and conv layer"
                                      "InitialD waits until 40s."
                                      "Use new reward function.", """readme""")
+tf.app.flags.DEFINE_string("port", '7004', "Docker port")
 tf.app.flags.DEFINE_float("gpu_fraction", 0.4, """gpu fraction""")
 tf.app.flags.DEFINE_float("discount_factor", 0.99, """actor critic discount factor""")
 tf.app.flags.DEFINE_integer("batch_size", 4, """actor critic discount factor""")
@@ -210,7 +211,7 @@ FLAGS = tf.app.flags.FLAGS
 
 
 env = DrivingSimulatorEnv(
-    address="10.31.40.197", port='7004',
+    address="10.31.40.197", port=FLAGS.port,
     # address='localhost', port='22224',
     backend_cmds=gen_backend_cmds(),
     defs_obs=[
@@ -367,7 +368,8 @@ try:
                 # print "step time: ", t2 - t1
                 next_state = resize_state(np.array(next_state))
                 reward = func_compile_reward_agent(vec_reward)
-                total_reward = FLAGS.discount_factor * total_reward + reward
+                unscaled_reward = reward * 10.0
+                total_reward = FLAGS.discount_factor * total_reward + unscaled_reward
                 skip_reward += reward
                 img = state[:, :, 6:]
                 img_path = eps_dir + "/" + str(n_steps + 1).zfill(4) + \
