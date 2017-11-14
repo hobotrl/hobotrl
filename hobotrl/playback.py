@@ -922,24 +922,27 @@ class BigPlayback(Playback):
         assert bucket_to_push == self._push_bucket
         swap_flag = self._buckets[bucket_to_push].capacity == (rel_index + 1)
 
-        # do the actual sample insertion
-        while not self._buckets_active[bucket_to_push]:
-            logging.warning("Waiting push bucket {} to be ready".format(bucket_to_push))
-            time.sleep(1.0)
-        self._buckets[bucket_to_push].push_sample(sample, sample_score)
-
         # adjust sample quota and activate sampling if quota > 0
         self._buckets_sample_quota[bucket_to_push] += self._max_sample_epoch
         if self._buckets_sample_quota[bucket_to_push] > 0:
             self._buckets_active[bucket_to_push] = True
 
+        # do the actual sample insertion
+        while self._buckets[bucket_to_push]._io_status != 'ready':
+            logging.warning("Waiting push bucket {} to be ready".format(bucket_to_push))
+            time.sleep(1.0)
+        self._buckets[bucket_to_push].push_sample(sample, sample_score)
+
         # adjust push_bucket
         if swap_flag:
             self._buckets_to_save.put(self._push_bucket)
-            self._push_bucket = (self._push_bucket + 1) % self._bucket_count
-            self._buckets_to_load.put(
-                (self._push_bucket + 1) % self._bucket_count
-            )
+            nxt_push_bucket = (self._push_bucket + 1) % self._bucket_count
+            self._push_bucket = nxt_push_bucket
+
+            nxt_push_bucket = (self._push_bucket + 1) % self._bucket_count
+            self._buckets_maintained[nxt_push_bucket] = True
+            self._buckets_to_load.put(nxt_push_bucket)
+
 
     def add_sample(self, sample, index, sample_score=0):
         raise NotImplementedError(
@@ -961,7 +964,8 @@ class BigPlayback(Playback):
                 # ret.extend(self._buckets[bkt_id].get_batch(rel_index))
 
             # Modify sample quota for this bucket
-            self._buckets_sample_quota[bkt_id] -= len(rel_index)
+            if not self._push_bucket == 0:  # starting case
+                self._buckets_sample_quota[bkt_id] -= len(rel_index)
             # check activation state
             if self._buckets_sample_quota[bkt_id] < 0:
                 logging.warning(
@@ -1092,6 +1096,7 @@ class BigPlayback(Playback):
         next_push_bucket = (self._push_bucket + 1) % self._bucket_count
         load_buckets.append(next_push_bucket)
         for bkt in load_buckets:
+            self._buckets_maintained[bkt] = True
             self._buckets_to_load.put(bkt)
         while True:
             if all([bid in self._buckets_active for bid in load_buckets]):
@@ -1148,8 +1153,8 @@ class BigPlayback(Playback):
             )
             # put into load queue and let IO thread to load bucket.
             for bkt in load_buckets:
-                self._buckets_to_load.put(bkt)
                 self._buckets_maintained[bkt] = True
+                self._buckets_to_load.put(bkt)
 
     def __save_meta(self):
         if not os.path.isdir(self._cache_path):
