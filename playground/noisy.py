@@ -434,6 +434,7 @@ class NoisySD(BaseDeepAgent):
                  abs_goal=True,         # True if goal expressed in absolute delta; False in direction
                  manager_ac=False,      # True if manager trained with actor critic
                  achievable_weight=1e-1,
+                 disentangle_weight=1.0,
                  *args, **kwargs):
         kwargs.update({
             "f_se": f_se,  # state encoder
@@ -462,6 +463,7 @@ class NoisySD(BaseDeepAgent):
             "noise_explore_param": noise_explore_param,
             "worker_explore_param": worker_explore_param,
             "worker_entropy": worker_entropy,
+            "disentangle_weight": disentangle_weight,
         })
 
         # algorithm hyperparameter
@@ -533,7 +535,7 @@ class NoisySD(BaseDeepAgent):
                 self.network.sub_net("se"),
                 self.network.sub_net("noise"),
                 stddev=noise_stddev,
-            ), name="disentangle")
+            ), weight=disentangle_weight, name="disentangle")
         if not self._act_ac:
             self._optimizer.add_updater(IKUpdater(
                 self.network.sub_net("se"),
@@ -717,12 +719,17 @@ class NoisySD(BaseDeepAgent):
                 n = self._noise_source.tick()
             else:
                 n = np.zeros(self._noise_source._shape, dtype=np.float32)
-            if not self._explore_net and np.random.rand() < 0.2:
-                exploration = True
-                goal = np.random.normal(0.0, 1.0, goal_shape)
+            if self._manager_ac:
+                result = self._manager_pi_function(state[np.newaxis, :])
+                mean, stddev = result["mean"], result["stddev"]
+                goal = self._manager_pi_dist.do_sample(mean, stddev)[0]
             else:
-                exploration = False
-                goal = self._func_manager(state[np.newaxis, :], n[np.newaxis, :])[0]
+                if not self._explore_net and np.random.rand() < 0.2:
+                    exploration = True
+                    goal = np.random.normal(0.0, 1.0, goal_shape)
+                else:
+                    exploration = False
+                    goal = self._func_manager(state[np.newaxis, :], n[np.newaxis, :])[0]
             if self._abs_goal:
                 # save absolute target goal
                 se = self._func_se(state[np.newaxis, :])[0]

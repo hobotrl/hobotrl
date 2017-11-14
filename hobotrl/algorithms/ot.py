@@ -50,7 +50,7 @@ class TrajectoryFitQ(network.FitTargetQ):
 class OTDQN(DQN):
     def __init__(self, f_create_q,
                  lower_weight, upper_weight, neighbour_size,
-                 state_shape, num_actions, discount_factor,
+                 state_shape, num_actions, discount_factor, ddqn,
                  target_sync_interval, target_sync_rate,
                  greedy_epsilon,
                  network_optimizer=None, max_gradient=10.0,
@@ -60,7 +60,7 @@ class OTDQN(DQN):
         if sampler is None:
             sampler = TruncateTrajectorySampler(MapPlayback(replay_size), batch_size, neighbour_size, update_interval)
         self._lower_weight, self._upper_weight = lower_weight, upper_weight
-        super(OTDQN, self).__init__(f_create_q, state_shape, num_actions, discount_factor, False,
+        super(OTDQN, self).__init__(f_create_q, state_shape, num_actions, discount_factor, ddqn,
                                     target_sync_interval, target_sync_rate, greedy_epsilon,
                                     network_optimizer, max_gradient, update_interval, replay_size,
                                     batch_size, sampler, *args, **kwargs)

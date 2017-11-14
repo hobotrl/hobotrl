@@ -1,12 +1,15 @@
 #
 # -*- coding: utf-8 -*-
 
-import sys
+import itertools
 import logging
+import os
+import sys
+import traceback
+
 import tensorflow as tf
 import gym
 import argparse
-import os
 
 from utils import clone_params_dict, escape_path
 
@@ -100,6 +103,18 @@ class GridSearch(Experiment):
                 "learning_rate": [1e-3, 1e-4],
                 ...
             }
+            or list of dict-of-list, representing multiple groups of parameters:
+            [
+            {
+                "entropy": [1e-2, 1e-3],
+                "learning_rate": [1e-3, 1e-4],
+                ...
+            },
+            {
+                "batch_size": [32, 64],
+                ...
+            }
+            ]
 
         """
         super(GridSearch, self).__init__()
@@ -108,29 +123,26 @@ class GridSearch(Experiment):
     def run(self, args):
         log_root = args.logdir
         for parameter in self.product(self._parameters):
-            args.logdir = os.sep.join([log_root, self.labelize(parameter)])
+            label = self.labelize(parameter)
+            args.logdir = os.sep.join([log_root, label])
             with tf.Graph().as_default():
                 experiment = self._exp_class(**parameter)
-                experiment.run(args)
+                try:
+                    rewards = experiment.run(args)
+                except Exception, e:
+                    type_, value_, traceback_ = sys.exc_info()
+                    traceback_ = traceback.format_tb(traceback_)
+                    traceback_ = "\n".join(traceback_)
+                    logging.warning("experiment[%s] failed:%s, %s, %s", label, type_, value_, traceback_)
 
     def product(self, parameters):
-        counts = dict([(k, len(parameters[k])) for k in parameters])
-        current = [[k, 0] for k in parameters]
-        while True:
-            parameter = dict([(k[0], parameters[k[0]][k[1]]) for k in current])
-            yield clone_params_dict(**parameter)
-            # to next
-            has_next = False
-            for i in range(len(current)-1, -1, -1):
-                field = current[i]
-                if field[1] < len(parameters[field[0]]) - 1:
-                    field[1] += 1
-                    has_next = True
-                    break
-                else:
-                    field[1] = 0
-            if not has_next:
-                break
+        if isinstance(parameters, dict):
+            parameters = [parameters]
+        for param in parameters:
+            names = param.keys()
+            valuelists = [param[n] for n in names]
+            for values in itertools.product(*valuelists):
+                yield clone_params_dict(**dict(zip(names, values)))
 
     def labelize(self, parameter):
         return "_".join(["%s%s" % (f, escape_path(str(parameter[f]))) for f in parameter])
