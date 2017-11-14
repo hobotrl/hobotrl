@@ -44,8 +44,16 @@ def f_net(inputs):
     pprint(tf.global_variables())
     print "========\n"*5
     res = resnet_pq.ResNet(3, name="train")
-    pi = res.build_tower(state)
-    q = res.build_new_tower(state)
+    if FLAGS.is_learn_q:
+        pi = res.build_tower(state, stop_conv=True, stop_fc=True)
+        q = res.build_new_tower(state, stop_conv=True)
+    else:
+        if FLAGS.is_fine_tune:
+            pi = res.build_tower(state, stop_conv=True, stop_fc=False)
+            q = res.build_new_tower(state, stop_conv=True)
+        else:
+            pi = res.build_tower(state, stop_conv=False, stop_fc=False)
+            q = res.build_new_tower(state, stop_conv=False)
 
     print "========\n"*5
 
@@ -192,7 +200,9 @@ tf.app.flags.DEFINE_float("gpu_fraction", 0.4, """gpu fraction""")
 tf.app.flags.DEFINE_float("discount_factor", 0.99, """actor critic discount factor""")
 tf.app.flags.DEFINE_integer("batch_size", 4, """actor critic discount factor""")
 tf.app.flags.DEFINE_float("lr", 0.01, """actor critic learning rate""")
-tf.app.flags.DEFINE_bool("use_pretrained_q", False, """learn q function or directly actor critic""")
+tf.app.flags.DEFINE_bool("is_learn_q", False, """learn q or not""")
+tf.app.flags.DEFINE_bool("is_fine_tune", False, """Stop gradient on conv layer if fine tune""")
+# tf.app.flags.DEFINE_bool("use_pretrained_q", False, """learn q function or directly actor critic""")
 tf.app.flags.DEFINE_bool("is_dummy_action", False, "record rule based scenes")
 tf.app.flags.DEFINE_bool("learning_off", False, "learning on or off")
 tf.app.flags.DEFINE_float("step_delay_target", 0.4, "learning on or off")
@@ -249,7 +259,7 @@ agent = hrl.ActorCritic(
             state_shape=state_shape,
             # ACUpdate arguments
             discount_factor=FLAGS.discount_factor,
-            entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4),
+            entropy=hrl.utils.CappedLinear(1e6, 1e-2, 1e-4),
             target_estimator=None,
             max_advantage=100.0,
             # optimizer arguments
@@ -259,6 +269,7 @@ agent = hrl.ActorCritic(
             sampler=None,
             batch_size=FLAGS.batch_size,
             global_step=global_step,
+            is_learn_q=FLAGS.is_learn_q
         )
 
 config = tf.ConfigProto(
@@ -268,7 +279,7 @@ config = tf.ConfigProto(
 
 os.mkdir(FLAGS.savedir)
 restore_var_list = []
-if FLAGS.use_pretrained_q:
+if not FLAGS.is_learn_q:
     for var in tf.global_variables():
         print "var_name: ", var.name
         if 'Adam' in var.name or 'optimizers/beta1_power' in var.name \
@@ -305,7 +316,10 @@ try:
             f.write("discount_factor: {}\n".format(FLAGS.discount_factor))
             f.write("batch_size: {}\n".format(FLAGS.batch_size))
             f.write("ac learning rate: {}\n".format(FLAGS.lr))
-            f.write("use pretrained q net: {}\n".format(FLAGS.use_pretrained_q))
+            f.write("is_learn_q: {} \n".format(FLAGS.is_learn_q))
+            f.write("is_fine_tune: {} \n".format(FLAGS.is_fine_tune))
+
+            # f.write("use pretrained q net: {}\n".format(FLAGS.use_pretrained_q))
             f.write("learn off: {}\n".format(FLAGS.learning_off))
             f.write("step_delay_target: {}\n".format(FLAGS.step_delay_target))
             f.write("vars: \n")
