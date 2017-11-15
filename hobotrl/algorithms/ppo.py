@@ -5,7 +5,7 @@ import tensorflow as tf
 import numpy as np
 
 
-from hobotrl.playback import BatchIterator, MapPlayback
+from hobotrl.playback import BatchIterator, MapPlayback, to_columnwise, to_rowwise
 import hobotrl.network as network
 import hobotrl.sampling as sampling
 import hobotrl.target_estimate as target_estimate
@@ -243,7 +243,7 @@ class PPO(sampling.TrajectoryBatchUpdate,
                 info = self.network_optimizer.optimize_step(self.sess)
                 infos.append(info)
         self._old_network_syncer.sync(self.sess, 1.0)
-        return MapPlayback.to_columnwise(infos), {}
+        return to_columnwise(infos), {}
 
     def set_session(self, sess):
         super(PPO, self).set_session(sess)

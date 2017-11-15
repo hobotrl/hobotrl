@@ -13,6 +13,7 @@ from exp_algorithms import *
 from car import *
 from hobotrl.tf_dependent.ops import atanh
 from hobotrl.environments.environments import *
+from hobotrl.playback import Playback, BigPlayback
 
 
 class A3CCarExp(ACOOExperiment):
@@ -308,7 +309,7 @@ Experiment.register(ADQNCarRacing, "Asynchronuous DQN for CarRacing, tuned with 
 class AOTDQNCarRacing(AOTDQNExperiment):
     def __init__(self, env=None, f_create_q=None, episode_n=1000, discount_factor=0.99, ddqn=True,
                  target_sync_interval=100, target_sync_rate=1.0,
-                 update_interval=8, replay_size=1000, batch_size=8,
+                 update_interval=8, replay_size=10000, batch_size=8,
                  lower_weight=1.0, upper_weight=1.0, neighbour_size=8,
                  greedy_epsilon=hrl.utils.CappedLinear(1e5, 0.1, 0.05),
                  learning_rate=1e-4):
@@ -344,9 +345,33 @@ class AOTDQNCarRacing(AOTDQNExperiment):
                 return {"q": q}
 
             f_create_q = create_q
+
+        max_traj_length = 500
+        def f(args):
+            bucket_size = 4
+            traj_count = replay_size / max_traj_length
+            bucket_count = traj_count / bucket_size
+            active_bucket = 2
+            ratio = 1.0 * active_bucket / bucket_count
+            memory = BigPlayback(
+                bucket_cls=Playback,
+                bucket_size=bucket_size,
+                max_sample_epoch=8,
+                capacity=traj_count,
+                active_ratio=ratio,
+                cache_path=os.sep.join([args.logdir, "cache", str(args.index)])
+            )
+            sampler = sampling.TruncateTrajectorySampler2(memory, replay_size / max_traj_length, max_traj_length, batch_size, neighbour_size, update_interval)
+            return sampler
+
+        def f_simple(args):
+            sampler = sampling.TruncateTrajectorySampler2(None, replay_size / max_traj_length, max_traj_length, batch_size, neighbour_size, update_interval)
+            return sampler
+
         super(AOTDQNCarRacing, self).__init__(env, f_create_q, episode_n, discount_factor, ddqn, target_sync_interval,
                                               target_sync_rate, update_interval, replay_size, batch_size, lower_weight,
-                                              upper_weight, neighbour_size, greedy_epsilon, learning_rate)
+                                              upper_weight, neighbour_size, greedy_epsilon, learning_rate,
+                                              sampler_creator=f_simple)
 Experiment.register(AOTDQNCarRacing, "Asynchronuous OTDQN for CarRacing, tuned with ddqn, duel network, etc.")
 
 
