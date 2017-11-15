@@ -922,11 +922,6 @@ class BigPlayback(Playback):
         assert bucket_to_push == self._push_bucket
         swap_flag = self._buckets[bucket_to_push].capacity == (rel_index + 1)
 
-        # adjust sample quota and activate sampling if quota > 0
-        self._buckets_sample_quota[bucket_to_push] += self._max_sample_epoch
-        if self._buckets_sample_quota[bucket_to_push] > 0:
-            self._buckets_active[bucket_to_push] = True
-
         # do the actual sample insertion
         while self._buckets[bucket_to_push]._io_status != 'ready':
             logging.warning("Waiting push bucket {} to be ready".format(bucket_to_push))
@@ -963,39 +958,38 @@ class BigPlayback(Playback):
                         np.concatenate([ret[k], bkt_ret[k]], axis=0)
                 # ret.extend(self._buckets[bkt_id].get_batch(rel_index))
 
-            # Modify sample quota for this bucket
-            if not self._push_bucket == 0:  # starting case
+            # Leave current and next push bucket alone
+            if bkt_id == self._push_bucket or \
+               bkt_id == (self._push_bucket + 1) % self._bucket_count:
+                continue
+            else:
+                # Modify sample quota for this bucket
                 self._buckets_sample_quota[bkt_id] -= len(rel_index)
-            # check activation state
-            if self._buckets_sample_quota[bkt_id] < 0:
-                logging.warning(
-                    "[BigPlayback.playback()]: "
-                    "bucket {} has run out of quota.".format(bkt_id)
-                )
-                # deactivate this bucket
-                self._buckets_active[bkt_id] = False
-                # Leave current and next push bucket alone
-                if bkt_id == self._push_bucket or \
-                   bkt_id == (self._push_bucket + 1) % self._bucket_count:
-                    continue
-                # release mem and signal IO thread to load a new bucket.
-                else:
+                # check activation state
+                if self._buckets_sample_quota[bkt_id] < 0:
+                    logging.warning(
+                        "[BigPlayback.playback()]: "
+                        "bucket {} has run out of quota.".format(bkt_id)
+                    )
+                    # deactivate this bucket
+                    self._buckets_active[bkt_id] = False
+
+                    # release mem and signal IO thread to load a new bucket.
                     self._buckets_maintained[bkt_id] = False
                     self._buckets[bkt_id].release_mem()
                     self.__maintain_active_buckets()
         return ret
 
     def next_batch_index(self, batch_size):
-        while True:
-            ret = self.__next_batch_index(batch_size)
-            if sum([len(idx) for _, idx in ret]) == batch_size:
-                return ret
-            else:
-                logging.warning(
-                    "[BigPlayback.next_batch_index]: "
-                    "number of samples < batch size, will retry in 0.1 sec."
-                )
-                time.sleep(0.1)
+        ret = self.__next_batch_index(batch_size)
+        if sum([len(idx) for _, idx in ret]) == batch_size:
+            return ret
+        else:
+            logging.warning(
+                "[BigPlayback.next_batch_index]: "
+                "number of samples < batch size."
+            )
+            return []
 
     def __next_batch_index(self, batch_size):
         # get an ordered list of active bucket ids.
