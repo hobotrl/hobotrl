@@ -13,21 +13,116 @@ import numpy as np
 from externals.joblib import joblib
 
 
-_SCALA_TYPE = [
-    bool, int, float,
-    np.int8, np.int16, np.int32, np.int64,
-    np.uint8, np.uint16, np.uint32, np.uint64,
-    np.float, np.float16, np.float32, np.float64]
+def to_rowwise(batch):
+    """
+    convert column-wise batch to row-wise
+    column wise:
+        {
+            'field_a': [a0, a1, ...],
+            'field_b': [b0, b1, ...],
+        }
+    row wise:[{'field_a': a0, 'field_b': b0}, {'field_a': a1, 'field_b': b1}, ...]
+    :param batch:
+    :return:
+    """
+    batch_size = 0
+    for i in batch:
+        batch_size = len(batch[i])
+        break
 
-_DTYPE_IDENTICAL = [
-    np.int8, np.int16, np.int32, np.int64,
-    np.uint8, np.uint16, np.uint32, np.uint64,
-    np.float, np.float16, np.float32, np.float64]
+    row_batch = [{} for _ in range(batch_size)]
+    for field in batch:
+        data = batch[field]
+        for i in range(len(data)):
+            row_batch[i][field] = data[i]
+    return row_batch
 
-_DTYPE_MAPPING = {
-    bool: np.bool,
-    int: np.int32,
-    float: np.float32}
+
+def shape_of(value):
+    if isinstance(value, np.ndarray):
+        return value.shape
+    return ()
+
+
+def to_columnwise(batch):
+    """
+    convert  row-wise batch to column-wise
+    row wise:[{'field_a': a0, 'field_b': b0}, {'field_a': a1, 'field_b': b1}, ...]
+    column wise:
+        {
+            'field_a': [a0, a1, ...],
+            'field_b': [b0, b1, ...],
+        }
+    :param batch:
+    :return:
+    """
+    column_batch = {}
+    column_shape = {}
+    batch_size = len(batch)
+    if batch_size == 0:
+        return column_batch
+    for field in batch[0]:
+        column_batch[field] = []
+    for i in range(batch_size):
+        sample = batch[i]
+        for field in sample:
+            column_batch[field].append(np.asarray(sample[field]))
+            if field not in column_shape:
+                column_shape[field] = shape_of(sample[field])
+            else:
+                if column_shape[field] != shape_of(sample[field]):
+                    logging.error("column[%s] shape mismatch: old:%s, new:%s",
+                                  field, column_shape[field], shape_of(sample[field]))
+    for field in column_batch:
+        try:
+            column_batch[field] = np.asarray(column_batch[field])
+        except Exception, e:
+            logging.warning("[%s]:type:%s, value:%s", field, type(column_batch[field]), column_batch[field])
+            raise e
+    return column_batch
+
+
+class Trajectory(object):
+    def __init__(self, max_length=1000):
+        super(Trajectory, self).__init__()
+        self._max_length = max_length
+        self._steps = []
+        self._finalized = False
+
+    def transition(self, state, action, reward, next_state, episode_done, **kwargs):
+        if not self._finalized:
+            kwargs.update({
+                "state": state,
+                "action": action,
+                "reward": reward,
+                "next_state": next_state,
+                "episode_done": episode_done
+            })
+            self._steps.append(kwargs)
+            self._finalized = episode_done or len(self._steps) >= self._max_length
+        else:
+            raise ValueError("cannot append further transitions!length:%d, finalized:%s"
+                             % (len(self._steps), self._finalized))
+
+    @property
+    def finalized(self):
+        return self._finalized
+
+    def __len__(self):
+        return len(self._steps)
+
+    def sample_trajectory(self, start=0, length=None):
+        if length is None:
+            # sample as long as possible
+            end = len(self._steps)
+        else:
+            # honor length over start
+            end = min(start + length, len(self._steps))
+            start = end - length
+        trajectory = self._steps[start:end]
+        trajectory = to_columnwise(trajectory)
+        trajectory["_index"] = np.array(range(start, end))
+        return trajectory
 
 
 def strip_args(arg_slots, kwarg_slots, args, kwargs):
@@ -54,6 +149,27 @@ def strip_args(arg_slots, kwarg_slots, args, kwargs):
             ret_kwargs[key] = arg
 
     return ret_kwargs
+
+
+_SCALA_TYPE = [
+    bool, int, float,
+    np.int8, np.int16, np.int32, np.int64,
+    np.uint8, np.uint16, np.uint32, np.uint64,
+    np.float, np.float16, np.float32, np.float64]
+
+_DTYPE_IDENTICAL = [
+    np.int8, np.int16, np.int32, np.int64,
+    np.uint8, np.uint16, np.uint32, np.uint64,
+    np.float, np.float16, np.float32, np.float64]
+
+_DTYPE_MAPPING = {
+    bool: np.bool,
+    int: np.int32,
+    float: np.float32}
+
+_DTYPE_UNCHANGED = [
+    Trajectory
+]
 
 
 class Playback(object):
@@ -117,29 +233,30 @@ class Playback(object):
         :param sample_score:
         :return:
         """
-        # Type and shape check
-        sample_class = type(sample)
-        if sample_class in _SCALA_TYPE: # scalar value
-            sample_shape = ()
-            if sample_class in _DTYPE_IDENTICAL:
-                sample_type = sample_class
-            else:
-                sample_type = _DTYPE_MAPPING[sample_class]
-        else:  # try cast as ndarray
-            try:
-                cast_sample = np.asarray(sample)
-                sample_shape = tuple(cast_sample.shape)
-                sample_type = cast_sample.dtype
-            except: # unknown type:
-                raise NotImplementedError(
-                    "Unsupported sample type:" + str(sample)
-                )
-        if self.sample_type is None:
-            self.sample_type = sample_type
-            self.sample_shape = sample_shape
-
         # Lazy creation
         if self.data is None:
+            # Type and shape check
+            sample_class = type(sample)
+            if sample_class in _SCALA_TYPE:  # scalar value
+                sample_shape = ()
+                if sample_class in _DTYPE_IDENTICAL:
+                    sample_type = sample_class
+                else:
+                    sample_type = _DTYPE_MAPPING[sample_class]
+            elif sample_class in _DTYPE_UNCHANGED:
+                sample_type, sample_shape = None, None
+            else:  # try cast as ndarray
+                try:
+                    cast_sample = np.asarray(sample)
+                    sample_shape = tuple(cast_sample.shape)
+                    sample_type = cast_sample.dtype
+                except:  # unknown type:
+                    raise NotImplementedError(
+                        "Unsupported sample type:" + str(sample)
+                    )
+            if self.sample_type is None:
+                self.sample_type = sample_type
+                self.sample_shape = sample_shape
             logging.warning(
                 ("[Playback.add_sample()]: initializing data with: "
                  "type: %s, shape: %s"), sample_type, sample_shape
@@ -191,12 +308,17 @@ class Playback(object):
         :param index:
         :return:
         """
-        ret = np.zeros(shape=[len(index)] + list(self.sample_shape),
-                       dtype=self.sample_type)
-        for i1, i2 in enumerate(index):
-            ret[i1] = np.array(self.data[i2], copy=False)
-        # ret = np.stack([np.array(self.data[i], copy=False) for i in index])
-        return (ret + self.augment_offset) * self.augment_scale
+        if self.sample_shape is not None and self.sample_type is not None:
+            ret = np.zeros(shape=[len(index)] + list(self.sample_shape),
+                           dtype=self.sample_type)
+            for i1, i2 in enumerate(index):
+                ret[i1] = np.array(self.data[i2], copy=False)
+            return (ret + self.augment_offset) * self.augment_scale
+        else:
+            ret = [None] * len(index)
+            for i1, i2 in enumerate(index):
+                ret[i1] = self.data[i2]
+            return ret
 
     def sample_batch(self, batch_size):
         """Sample a batch of samples from buffer.
@@ -269,65 +391,6 @@ class MapPlayback(Playback):
             for i in self.data:
                 self.data[i].reset()
             self.count, self.push_index, self.pop_index = 0, 0, 0
-
-    @staticmethod
-    def to_rowwise(batch):
-        """
-        convert column-wise batch to row-wise
-        column wise:
-            {
-                'field_a': [a0, a1, ...],
-                'field_b': [b0, b1, ...],
-            }
-        row wise:[{'field_a': a0, 'field_b': b0}, {'field_a': a1, 'field_b': b1}, ...]
-        :param batch:
-        :return:
-        """
-        batch_size = 0
-        for i in batch:
-            batch_size = len(batch[i])
-            break
-
-        row_batch = [{} for _ in range(batch_size)]
-        for field in batch:
-            data = batch[field]
-            for i in range(len(data)):
-                row_batch[i][field] = data[i]
-        return row_batch
-
-    @staticmethod
-    def to_columnwise(batch):
-        """
-        convert  row-wise batch to column-wise
-        row wise:[{'field_a': a0, 'field_b': b0}, {'field_a': a1, 'field_b': b1}, ...]
-        column wise:
-            {
-                'field_a': [a0, a1, ...],
-                'field_b': [b0, b1, ...],
-            }
-        :param batch:
-        :return:
-        """
-        column_batch = {}
-        column_shape = {}
-        batch_size = len(batch)
-        if batch_size == 0:
-            return column_batch
-        for field in batch[0]:
-            column_batch[field] = []
-        for i in range(batch_size):
-            sample = batch[i]
-            for field in sample:
-                column_batch[field].append(sample[field])
-                if field not in column_shape:
-                    column_shape[field] = sample[field].shape
-                else:
-                    if column_shape[field] != sample[field].shape:
-                        logging.error("column[%s] shape mismatch: old:%s, new:%s",
-                                      field, column_shape[field], sample[field].shape)
-        for field in column_batch:
-            column_batch[field] = np.asarray(column_batch[field])
-        return column_batch
 
 
 class SegmentTree(object):
@@ -644,7 +707,7 @@ class BatchIterator(object):
         :param mini_size: mini batch size, >=1
         """
         super(BatchIterator, self).__init__()
-        self._data, self._batch_size = MapPlayback.to_rowwise(batch), mini_size
+        self._data, self._batch_size = to_rowwise(batch), mini_size
         self._size = len(self._data)
         self._batch_size = min(self._batch_size, self._size)
         self._next_index = 0
@@ -658,7 +721,7 @@ class BatchIterator(object):
 
         next_index = min(self._next_index, self._size - self._batch_size)
         self._next_index += self._batch_size
-        return MapPlayback.to_columnwise(self._data[next_index:next_index+self._batch_size])
+        return to_columnwise(self._data[next_index:next_index+self._batch_size])
 
 
 class BalancedMapPlayback(MapPlayback):

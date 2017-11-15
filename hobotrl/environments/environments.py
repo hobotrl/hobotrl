@@ -991,6 +991,12 @@ class LazyFrames(object):
         # discard self._array
         return self.__class__, (self._frames,)
 
+    @property
+    def shape(self):
+        if len(self._frames) == 0:
+            return []
+        return [len(self._frames)] + list(self._frames[0].shape)
+
 
 class FrameStack(gym.Wrapper):
     def __init__(self, env, k):
