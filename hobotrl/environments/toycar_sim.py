@@ -10,7 +10,11 @@ from gym.envs.box2d.car_racing import *
 
 
 ROAD_COLOR[0], ROAD_COLOR[1], ROAD_COLOR[2] = [0.0, 0.8, 0.0]
-# ZOOM = 3.0
+
+ZOOM = 1.0      # larger value moves camera nearer to the ground
+STATE_W = 192   # less than Atari 160x192
+STATE_H = 192
+
 # WINDOW_W = 640
 # WINDOW_H = 640
 
