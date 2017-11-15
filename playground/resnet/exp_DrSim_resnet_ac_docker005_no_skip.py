@@ -196,10 +196,10 @@ tf.app.flags.DEFINE_string("readme", "learn q with frame skipping. Shorten step_
                                      "Stop gradient on pi layer and conv layer"
                                      "InitialD waits until 40s."
                                      "Use new reward function.", """readme""")
-tf.app.flags.DEFINE_string("port", '7004', "Docker port")
+tf.app.flags.DEFINE_string("port", '7014', "Docker port")
 tf.app.flags.DEFINE_float("gpu_fraction", 0.4, """gpu fraction""")
 tf.app.flags.DEFINE_float("discount_factor", 0.99, """actor critic discount factor""")
-tf.app.flags.DEFINE_integer("batch_size", 4, """actor critic discount factor""")
+tf.app.flags.DEFINE_integer("batch_size", 8, """actor critic discount factor""")
 tf.app.flags.DEFINE_float("lr", 0.01, """actor critic learning rate""")
 tf.app.flags.DEFINE_bool("is_learn_q", False, """learn q or not""")
 tf.app.flags.DEFINE_bool("is_fine_tune", False, """Stop gradient on conv layer if fine tune""")
@@ -333,7 +333,7 @@ try:
         while True:
             n_ep += 1
             n_steps = 0
-            total_reward = 0.0
+            unscaled_rewards = []
             eps_dir = FLAGS.savedir + "/" + str(n_ep).zfill(4)
             os.mkdir(eps_dir)
             recording_filename = eps_dir + "/" + "0000.txt"
@@ -368,8 +368,7 @@ try:
                 # print "step time: ", t2 - t1
                 next_state = resize_state(np.array(next_state))
                 reward = func_compile_reward_agent(vec_reward)
-                unscaled_reward = reward * 10.0
-                total_reward = FLAGS.discount_factor * total_reward + unscaled_reward
+                unscaled_rewards.append(reward * 10.0)
                 skip_reward += reward
                 img = state[:, :, 6:]
                 img_path = eps_dir + "/" + str(n_steps + 1).zfill(4) + \
@@ -430,7 +429,9 @@ try:
                     print "========Run Done=======\n"*5
                     break
 
-
+            total_reward = 0.0
+            for r in unscaled_rewards[::-1]:
+                total_reward = FLAGS.discount_factor * total_reward + r
             summary = tf.Summary()
             summary.value.add(tag="episode_total_reward", simple_value=total_reward)
             summary_writer.add_summary(summary, n_ep)

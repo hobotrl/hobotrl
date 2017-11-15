@@ -29,6 +29,8 @@ from playground.initialD.ros_environments.clients import DrivingSimulatorEnvClie
 from gym.spaces import Discrete, Box
 import cv2
 import os
+from tensorflow.python.training.summary_io import SummaryWriterCache
+
 
 # Environment
 def func_compile_reward(rewards):
@@ -46,37 +48,62 @@ def func_compile_action(action):
     ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0, )] + [(ord('1'),)]
     return ACTIONS[action]
 
-def func_compile_reward_agent(rewards, action=0):
-    global momentum_ped
-    global momentum_opp
-    rewards = np.mean(np.array(rewards), axis=0)
-    rewards = rewards.tolist()
-    rewards.append(np.logical_or(action==1, action==2))
-    print (' '*10+'R: ['+'{:4.2f} '*len(rewards)+']').format(*rewards),
+# def func_compile_reward_agent(rewards, action=0):
+#     global momentum_ped
+#     global momentum_opp
+#     rewards = np.mean(np.array(rewards), axis=0)
+#     rewards = rewards.tolist()
+#     rewards.append(np.logical_or(action==1, action==2))
+#     print (' '*10+'R: ['+'{:4.2f} '*len(rewards)+']').format(*rewards),
+#
+#     # obstacle
+#     rewards[0] *= 0.0
+#     # distance to
+#     # rewards[1] *= -10.0*(rewards[1]>2.0)
+#     rewards[1] *= 0.0
+#     # velocity
+#     rewards[2] *= 10
+#     # opposite
+#     momentum_opp = (rewards[3]<0.5)*(momentum_opp+(1-rewards[3]))
+#     momentum_opp = min(momentum_opp, 20)
+#     rewards[3] = -20*(0.9+0.1*momentum_opp)*(momentum_opp>1.0)
+#     # ped
+#     momentum_ped = (rewards[4]>0.5)*(momentum_ped+rewards[4])
+#     momentum_ped = min(momentum_ped, 12)
+#     rewards[4] = -40*(0.9+0.1*momentum_ped)*(momentum_ped>1.0)
+#     # obs factor
+#     rewards[5] *= -100.0
+#     # steering
+#     rewards[6] *= -10.0
+#     reward = np.sum(rewards)/100.0
+#     print '{:6.4f}, {:6.4f}'.format(momentum_opp, momentum_ped),
+#     print ': {:7.4f}'.format(reward)
+#     return reward
 
-    # obstacle
-    rewards[0] *= 0.0
-    # distance to
-    # rewards[1] *= -10.0*(rewards[1]>2.0)
-    rewards[1] *= 0.0
-    # velocity
-    rewards[2] *= 10
-    # opposite
-    momentum_opp = (rewards[3]<0.5)*(momentum_opp+(1-rewards[3]))
-    momentum_opp = min(momentum_opp, 20)
-    rewards[3] = -20*(0.9+0.1*momentum_opp)*(momentum_opp>1.0)
-    # ped
-    momentum_ped = (rewards[4]>0.5)*(momentum_ped+rewards[4])
-    momentum_ped = min(momentum_ped, 12)
-    rewards[4] = -40*(0.9+0.1*momentum_ped)*(momentum_ped>1.0)
-    # obs factor
-    rewards[5] *= -100.0
-    # steering
-    rewards[6] *= -10.0
-    reward = np.sum(rewards)/100.0
-    print '{:6.4f}, {:6.4f}'.format(momentum_opp, momentum_ped),
+
+def func_compile_reward_agent(rewards):
+    """
+    :param rewards: rewards[0]: obstacle???
+                    rewards[1]: distance_to_planning_line
+                    rewards[2]: velocity, 0-8.5
+                    rewards[3]: oppsite reward, 0.0 if car is on oppsite else 1.0
+                    rewards[4]: pedestrain reward, 1.0 if car is on pedestrain else 0.0
+                    rewards[5]: obs factor???
+    :param action:
+    :return:
+    """
+    rewards = np.mean(np.array(rewards), axis=0)
+    print (' ' * 10 + 'R: [' + '{:4.2f} ' * len(rewards) + ']').format(*rewards),
+    # if car is on opp side or car is on ped side, get reward of -1.0
+    if rewards[3] < 0.5 or rewards[4] > 0.5:
+        reward = -0.1
+    else:
+        # if action == 1 or action == 2:
+        #     reward = rewards[2] - 1.0
+        reward = rewards[2] / 100.0
     print ': {:7.4f}'.format(reward)
     return reward
+
 
 
 # def func_compile_reward_agent(rewards, action=0):
@@ -189,7 +216,7 @@ def gen_backend_cmds():
     return backend_cmds
 
 env = DrivingSimulatorEnv(
-    address="10.31.40.197", port='9034',
+    address="10.31.40.197", port='7014',
     # address='localhost', port='22224',
     backend_cmds=gen_backend_cmds(),
     defs_obs=[
@@ -220,24 +247,22 @@ env.metadata = {}
 env.action_space = Discrete(len(ACTIONS))
 # env = FrameStack(env, 3)
 
-n_interactive = 0
-n_skip = 3
-n_additional_learn = 4
-n_ep = 0  # last ep in the last run, if restart use 0
-n_test = 10  # num of episode per test run (no exploration)
 
 
+tf.app.flags.DEFINE_string("logdir",
+                           "/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_static_forsee_have_planning_path_wait10s_all_green/"
+                           "summary_v2",
+                           """save tmp model""")
 tf.app.flags.DEFINE_string("savedir",
-                           "/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_part_green/"
-                           "record_rule_scenes_vec_rewards_obj80_docker005/"
-                           "v2",
+                           "/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_static_forsee_have_planning_path_wait10s_all_green/"
+                           "records_v2",
                            """records data""")
-tf.app.flags.DEFINE_string("readme", "Record rule scenes which is part green."
+tf.app.flags.DEFINE_string("readme", "Record rule scenes which is all green."
+                                     "Forests far away."
                                      "InitialD waits until 40s."
-                                     "Use old reward function.", """readme""")
-tf.app.flags.DEFINE_float("gpu_fraction", 0.3, """gpu fraction""")
-
-
+                                     "Use new reward function.", """readme""")
+tf.app.flags.DEFINE_float("gpu_fraction", 0.4, """gpu fraction""")
+tf.app.flags.DEFINE_float("discount_factor", 0.99, """discount factor""")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -245,16 +270,15 @@ try:
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
 
-    action_fraction = np.ones(len(ACTIONS),) / (1.0*len(ACTIONS))
-    action_td_loss = np.zeros(len(ACTIONS),)
-    momentum_opp = 0.0
-    momentum_ped = 0.0
-    # ema_speed = 10.0
+    summary_writer = SummaryWriterCache.get(FLAGS.logdir)
+
+    n_ep = 0  # last ep in the last run, if restart use 0
+
     while True:
         n_ep += 1
         env.n_ep = n_ep  # TODO: do this systematically
         n_steps = 0
-        cnt_skip = n_skip
+        unscaled_rewards = []
         cum_td_loss = 0.0
         cum_reward = 0.0
         state_rule_action = env.reset()
@@ -272,7 +296,8 @@ try:
             # Env step
             next_state_rule_action, vec_reward, done, info = env.step(4)
             next_state, next_rule_action = next_state_rule_action
-            reward = func_compile_reward_agent(vec_reward, rule_action)
+            reward = func_compile_reward_agent(vec_reward)
+            unscaled_rewards.append(reward * 10.0)
             recording_file.write(str(n_steps)+","+str(rule_action)+","+str(reward)+"\n")
             vec_reward = np.mean(np.array(vec_reward), axis=0)
             vec_reward = vec_reward.tolist()
@@ -287,6 +312,13 @@ try:
             state, rule_action = next_state, next_rule_action  # s',a' -> s,a
             if done:
                 break
+
+        total_reward = 0.0
+        for r in unscaled_rewards[::-1]:
+            total_reward = FLAGS.discount_factor * total_reward + r
+        summary = tf.Summary()
+        summary.value.add(tag="episode_total_reward", simple_value=total_reward)
+        summary_writer.add_summary(summary, n_ep)
         recording_file.close()
 
 except Exception as e:
