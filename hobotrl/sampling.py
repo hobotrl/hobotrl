@@ -170,7 +170,7 @@ class TruncateTrajectorySampler(Sampler):
             max_try = 8
             for i in range(max_try):
                 batch = self._replay.sample_batch(batch_size)
-                batch = playback.MapPlayback.to_rowwise(batch)
+                batch = playback.to_rowwise(batch)
                 traj = [self._trajectory_near(sample) for sample in batch]
                 traj = filter(lambda x: x is not None, traj)
                 trajectories.extend(traj)
@@ -226,7 +226,7 @@ class TruncateTrajectorySampler(Sampler):
         if max_end - min_start < self._trajectory_length:
             # not enough samples near sample_i, because of episode_done's
             return None
-        nearby_row = playback.MapPlayback.to_rowwise(nearby)
+        nearby_row = playback.to_rowwise(nearby)
         if max_end < sample_i + self._trajectory_length / 2:
             end = sample_i_nearby + (max_end - sample_i)
             result = nearby_row[end - self._trajectory_length + 1: end + 1]
@@ -236,11 +236,82 @@ class TruncateTrajectorySampler(Sampler):
         else:
             end = sample_i_nearby + self._trajectory_length / 2
             result = nearby_row[end - self._trajectory_length + 1: end + 1]
-        return playback.MapPlayback.to_columnwise(result)
+        return playback.to_columnwise(result)
 
     def _get_batch(self, start, end):
         return self._replay.get_batch((np.arange(start, end + 1) + self._replay.get_capacity())
                                       % self._replay.get_capacity())
+
+
+class TruncateTrajectorySampler2(Sampler):
+    """Sample {batch_size} trajectories of length {trajectory_length} in every
+    {interval} steps."""
+    def __init__(self, replay_memory=None, trajectory_count=100, max_trajectory_length=1000,
+                 batch_size=8, trajectory_length=8, interval=4, sample_maker=None):
+        """
+        sample  trajectories from replay memory
+        :param replay_memory:
+        :type replay_memory: playback.Playback
+        :param interval:
+        :param sample_maker: callable to make samples
+        """
+        super(TruncateTrajectorySampler2, self).__init__()
+        if sample_maker is None:
+            sample_maker = default_make_sample
+        if replay_memory is None:
+            replay_memory = playback.Playback(trajectory_count)
+        self._replay = replay_memory
+        self._sample_maker = sample_maker
+        self._batch_size, self._trajectory_length, self._max_trajectory_length, self._interval = \
+            batch_size, trajectory_length, max_trajectory_length, interval
+        self._step_n = 0
+        self._current_trajectory = None
+
+    def step(self, state, action, reward, next_state, episode_done, force_sample=False, **kwargs):
+        """
+        :param state:
+        :param action:
+        :param reward:
+        :param next_state:
+        :param episode_done:
+        :param force_sample: boolean, True if sample batch immediately ignoring interval setting.
+        :param kwargs:
+        :return: list of dict, each dict is a column-wise batch of transitions in a trajectory
+        """
+        self._step_n += 1
+        if self._current_trajectory is None:
+            self._current_trajectory = playback.Trajectory(max_length=self._max_trajectory_length)
+        self._current_trajectory.transition(
+            **self._sample_maker(state, action, reward, next_state, episode_done, **kwargs))
+        if self._current_trajectory.finalized:
+            self._replay.push_sample(self._current_trajectory)
+            self._current_trajectory = playback.Trajectory(max_length=self._max_trajectory_length)
+        if (self._step_n % self._interval == 0 or force_sample) \
+                and self._step_n > self._batch_size * self._trajectory_length * 4:
+            # now make some sample!
+            batch_size = self._batch_size
+            truncated = []
+            max_try = 8
+            for i in range(max_try):
+                trajectories = self._replay.sample_batch(batch_size)
+                counts = [len(t) if len(t) >= self._trajectory_length else 0 for t in trajectories]
+                total = np.sum(counts, dtype=np.float32)
+                if total == 0:
+                    # no valid trajectory
+                    continue
+                prob = counts / total
+                indices = np.random.choice(len(counts), [batch_size], True, prob)
+                selected = [trajectories[i] for i in indices]
+                truncated = [s.sample_trajectory(np.random.randint(len(s)-self._trajectory_length+1), length=self._trajectory_length)
+                             for s in selected]
+                break
+            if len(truncated) < self._batch_size:
+                # sample failed
+                print "sample failed!"
+                return None
+            return truncated
+        else:
+            return None
 
 
 class ImmutablePlayback(playback.Playback):

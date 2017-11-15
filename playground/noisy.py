@@ -10,7 +10,7 @@ import tensorflow as tf
 from hobotrl.sampling import *
 from hobotrl.network import *
 from hobotrl.tf_dependent.base import BaseDeepAgent
-from hobotrl.playback import MapPlayback
+from hobotrl.playback import MapPlayback, to_rowwise, to_columnwise
 from hobotrl.target_estimate import GAENStep
 from hobotrl.policy import OUNoise
 from hobotrl.policy import OUExplorationPolicy
@@ -651,7 +651,7 @@ class NoisySD(BaseDeepAgent):
             return {}
         # on / off batch are synced
         # pick samples according to goal_step
-        rows = MapPlayback.to_rowwise(on_batch)
+        rows = to_rowwise(on_batch)
         manager_batch = []
         manager_sample = None
         for sample in rows:
@@ -670,7 +670,7 @@ class NoisySD(BaseDeepAgent):
                         manager_sample = None
         if manager_sample is not None:
             manager_batch.append(manager_sample)
-        manager_batch = MapPlayback.to_columnwise(manager_batch)
+        manager_batch = to_columnwise(manager_batch)
         if self._abs_goal:
             # absolute goal saved in batch; relative goal need for training
             manager_batch["goal"] = manager_batch["goal"] - self._func_se(manager_batch["state"])

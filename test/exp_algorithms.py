@@ -153,6 +153,7 @@ class ADQNExperiment(Experiment):
         def create_agent(n_optimizer, global_step):
             # all ScheduledParam hyper parameters are mutable objects.
             # so we will not want to use same object for different Agent instances.
+            self._greedy_epsilon = hrl.utils.clone_params(self._greedy_epsilon)
             agent = dqn.DQN(
                 f_create_q=self._f_create_q,
                 state_shape=state_shape,
@@ -288,7 +289,8 @@ class OTDQNExperiment(Experiment):
                  neighbour_size=8,
                  # epsilon greedy arguments
                  greedy_epsilon=0.3,
-                 network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3), grad_clip=10.0)
+                 network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3), grad_clip=10.0),
+                 **kwargs
                  ):
         self._env, self._f_create_q, self._episode_n, \
             self._discount_factor, \
@@ -312,6 +314,7 @@ class OTDQNExperiment(Experiment):
             greedy_epsilon, \
             network_optimizer_ctor, \
             lower_weight, upper_weight, neighbour_size
+        self._kwargs = kwargs
 
         super(OTDQNExperiment, self).__init__()
 
@@ -342,7 +345,8 @@ class OTDQNExperiment(Experiment):
             # epsilon greedy arguments
             greedy_epsilon=self._greedy_epsilon,
             network_optmizer=self._network_optimizer_ctor(),
-            global_step=global_step
+            global_step=global_step,
+            **self._kwargs
         )
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
@@ -376,6 +380,8 @@ class AOTDQNExperiment(Experiment):
                  # epsilon greedy arguments
                  greedy_epsilon=0.3,
                  learning_rate=1e-4,
+                 sampler_creator=None,
+                 **kwargs
                  ):
         super(AOTDQNExperiment, self).__init__()
         self._env, self._f_create_q, self._episode_n, \
@@ -400,6 +406,15 @@ class AOTDQNExperiment(Experiment):
             greedy_epsilon, \
             learning_rate, \
             lower_weight, upper_weight, neighbour_size
+        if sampler_creator is None:
+            def f(args):
+                max_traj_length = 200
+                sampler = sampling.TruncateTrajectorySampler2(None, replay_size / max_traj_length, max_traj_length,
+                                                              batch_size, neighbour_size, update_interval)
+                return sampler
+            sampler_creator = f
+        self._sampler_creator = sampler_creator
+        self._kwargs = kwargs
 
     def run(self, args):
         state_shape = list(self._env.observation_space.shape)
@@ -411,6 +426,7 @@ class AOTDQNExperiment(Experiment):
             # all ScheduledParam hyper parameters are mutable objects.
             # so we will not want to use same object for different Agent instances.
             self._greedy_epsilon = hrl.utils.clone_params(self._greedy_epsilon)
+            sampler = self._sampler_creator(args)
             agent = hrl.algorithms.ot.OTDQN(
                 f_create_q=self._f_create_q,
                 lower_weight=self._lower_weight,
@@ -431,7 +447,9 @@ class AOTDQNExperiment(Experiment):
                 # epsilon greedy arguments
                 greedy_epsilon=self._greedy_epsilon,
                 network_optmizer=n_optimizer,
-                global_step=global_step
+                global_step=global_step,
+                sampler=sampler,
+                **self._kwargs
             )
             return agent
 
