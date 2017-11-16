@@ -21,9 +21,9 @@ sys.path.append('..')
 import hobotrl as hrl
 from hobotrl.environments import FrameStack
 from hobotrl.sampling import TransitionSampler
-# from hobotrl.playback import BalancedMapPlayback
-from hobotrl.playback_1 import BalancedMapPlayback, BigPlayback
+from hobotrl.playback import BalancedMapPlayback, BigPlayback
 from hobotrl.async import AsynchronousAgent
+from hobotrl.utils import CappedLinear
 # initialD
 # from ros_environments.honda import DrivingSimulatorEnv
 from ros_environments.clients import DrivingSimulatorEnvClient as DrivingSimulatorEnv
@@ -98,7 +98,7 @@ def func_compile_exp_agent(state, action, rewards, next_state, done):
     # dist
     rewards[6] *= 0.0
     # steering
-    rewards[-1] *= -40.0
+    rewards[-1] *= -40  # -3
     reward = np.sum(rewards)/100.0
     print '{:4.2f}, {:4.2f}, {:4.2f}, {:4.2f}'.format(
         road_invalid_at_enter, momentum_opp, momentum_ped, ema_dist),
@@ -153,7 +153,6 @@ def gen_backend_cmds():
     return backend_cmds
 
 env = DrivingSimulatorEnv(
-    # address="10.31.40.197", port='6003',
     address='localhost', port='6003',
     backend_cmds=gen_backend_cmds(),
     defs_obs=[
@@ -244,7 +243,13 @@ def f_net(inputs):
 
     return {"q": q}
 
-optimizer_td = tf.train.AdamOptimizer(learning_rate=1e-4)
+lr = tf.get_variable(
+    'learning_rate', [], dtype=tf.float32,
+    initializer=tf.constant_initializer(1e-3), trainable=False
+)
+lr_in = tf.placeholder(dtype=tf.float32)
+op_set_lr = tf.assign(lr, lr_in)
+optimizer_td = tf.train.AdamOptimizer(learning_rate=lr)
 target_sync_rate = 1e-3
 state_shape = env.observation_space.shape
 graph = tf.get_default_graph()
@@ -256,11 +261,11 @@ global_step = tf.get_variable(
 replay_buffer = BigPlayback(
     bucket_cls=BalancedMapPlayback,
     cache_path="./ReplayBufferCache/experiment",
-    capacity=300000, bucket_size=100, ratio_active=0.02, max_sample_epoch=10,
+    capacity=300000, bucket_size=100, ratio_active=0.05, max_sample_epoch=2,
     num_actions=len(AGENT_ACTIONS), upsample_bias=(1,1,1,0.1)
 )
 
-gamma = 0.99
+gamma = 0.9
 _agent = hrl.DQN(
     f_create_q=f_net, state_shape=state_shape,
     # OneStepTD arguments
@@ -269,19 +274,19 @@ _agent = hrl.DQN(
     target_sync_interval=1,
     target_sync_rate=target_sync_rate,
     # epsilon greeedy arguments
-    greedy_epsilon=0.2,
+    # greedy_epsilon=0.025,
+    # greedy_epsilon=0.05,
+    # greedy_epsilon=0.075,
+    # greedy_epsilon=0.2,  # 0.2 -> 0.15 -> 0.1
+    # greedy_epsilon=CappedLinear(10000, 0.5, 0.05),
+    greedy_epsilon=CappedLinear(10000, 0.1, 0.025),
     # optimizer arguments
     network_optimizer=hrl.network.LocalOptimizer(optimizer_td, 1.0),
     # sampler arguments
-    sampler=TransitionSampler(
-        replay_buffer,
-        # BalancedMapPlayback(
-        #     num_actions=len(AGENT_ACTIONS), capacity=15000, upsample_bias=(1,1,1,0.1)
-        # ),
-        batch_size=8, interval=1, minimum_count=1000
-     ),
+    sampler=TransitionSampler(replay_buffer, batch_size=8, interval=1, minimum_count=103),
     # checkpoint
-    global_step=global_step)
+    global_step=global_step
+ )
 
 def log_info(update_info):
     global action_fraction
@@ -291,6 +296,7 @@ def log_info(update_info):
     global next_action
     global ALL_ACTIONS
     global AGENT_ACTIONS
+    global n_agent_steps
     global n_env_steps
     global n_steps
     global done
@@ -303,6 +309,7 @@ def log_info(update_info):
     global t_learn
     global t_infer
     global t_step
+    global flag_success
     summary_proto = tf.Summary()
     # modify info dict keys
     k_del = []
@@ -318,14 +325,8 @@ def log_info(update_info):
             update_info['target_q'], update_info['td_losses'],
             update_info['reward'], update_info['done'])
         for s in prt_str:
-            action_fraction *= 0.9
-            action_fraction[s[0]] += 0.1
-            action_td_loss[s[0]] = 0.9*action_td_loss[s[0]] + 0.1*s[3]
             if cnt_skip==0:
-                # pass
-                print ("{} "+"{:8.5f} "*4+"{}").format(*s)
-        # print action_fraction
-        # print action_td_loss
+                print ("{} "+"{:10.5f} "*4+"{}").format(*s)
     for tag in update_info:
         summary_proto.value.add(
             tag=tag, simple_value=np.mean(update_info[tag]))
@@ -363,12 +364,13 @@ def log_info(update_info):
                 sym = '|x|' if i==max_idx else ' x '
             else:
                 sym = '| |' if i==max_idx else '   '
-            p_str += '{}{:3d}: {:.4f} '.format(sym, a, v)
+            p_str += '{}{:3d}: {:8.4f} '.format(sym, a, v)
         print p_str
 
     cum_td_loss += update_info['td_loss'] if 'td_loss' in update_info \
         and update_info['td_loss'] is not None else 0
-    cum_reward += reward
+    if not done:
+        cum_reward += reward
 
     summary_proto.value.add(tag='t_infer', simple_value=t_infer)
     summary_proto.value.add(tag='t_learn', simple_value=t_learn)
@@ -382,27 +384,21 @@ def log_info(update_info):
         n_env_steps += n_steps
         summary_proto.value.add(tag='n_steps', simple_value=n_steps)
         summary_proto.value.add(tag='n_env_steps', simple_value=n_env_steps)
-        if not exploration_off:
-            summary_proto.value.add(
-                tag='num_episode', simple_value=n_ep)
-            summary_proto.value.add(
-                tag='cum_reward', simple_value=cum_reward)
-            summary_proto.value.add(
-                tag='per_step_reward', simple_value=cum_reward/n_steps)
-        else:
-            summary_proto.value.add(
-                tag='num_episode_noexplore', simple_value=n_ep)
-            summary_proto.value.add(
-                tag='cum_reward_noexplore',
-                simple_value=cum_reward)
-            summary_proto.value.add(
-                tag='per_step_reward_noexplore', simple_value=cum_reward/n_steps)
+        summary_proto.value.add(tag='n_agent_steps', simple_value=n_agent_steps)
+        summary_proto.value.add(
+            tag='num_episode', simple_value=n_ep)
+        summary_proto.value.add(
+            tag='cum_reward', simple_value=cum_reward)
+        summary_proto.value.add(
+            tag='per_step_reward', simple_value=cum_reward/n_steps)
+        summary_proto.value.add(
+            tag='flag_success', simple_value=flag_success)
 
     return summary_proto
 
 n_interactive = 0
 n_skip = 6
-update_rate = 4.0
+update_rate = 6.0
 n_ep = 0  # last ep in the last run, if restart use 0
 n_test = 0  # num of episode per test run (no exploration)
 
@@ -415,13 +411,16 @@ try:
         init_op=tf.global_variables_initializer(),
         logdir='./experiment',
         save_summaries_secs=10,
-        save_model_secs=3600*3)
+        save_model_secs=900)
 
     with sv.managed_session(config=config) as sess, \
          AsynchronousAgent(agent=_agent, method='rate', rate=update_rate) as agent:
 
         agent.set_session(sess)
+        sess.run(op_set_lr, feed_dict={lr_in: 1e-4})
+        print "Using learning rate {}".format(sess.run(lr))
         n_env_steps = 0
+        n_agent_steps = 0
         action_fraction = np.ones(len(AGENT_ACTIONS), ) / (1.0 * len(AGENT_ACTIONS))
         action_td_loss = np.zeros(len(AGENT_ACTIONS), )
         while True:
@@ -430,13 +429,11 @@ try:
             exploration_off = (n_ep%n_test==0) if n_test >0 else False
             learning_off = exploration_off
             n_steps = 0
-            cnt_skip = int(n_skip * (1 + np.random.rand()))
             reward = 0
             skip_reward = 0
             cum_td_loss = 0.0
             cum_reward = 0.0
             done = False
-            print "Episode {} with offset {}".format(n_ep, cnt_skip-n_skip)
 
             last_road_change = False
             road_invalid_at_enter = False
@@ -449,9 +446,12 @@ try:
 
             state  = env.reset()
             action = agent.act(state, exploration=not exploration_off)
+            n_agent_steps += 1
             skip_action = action
             next_state = state
             next_action = action
+            # cnt_skip = 1 if next_action == 0 else n_skip
+            cnt_skip = int(n_skip * (1 + np.random.rand()))  # randome start offset to enforce randomness on phase
             log_info(update_info)
 
             while True:
@@ -463,19 +463,19 @@ try:
                 # Env step
                 t = time.time()
                 next_state, reward, done, info = env.step(skip_action)
+                flag_success = done
                 t_step = time.time() - t
                 state, action, reward, next_state, done = \
-                func_compile_exp_agent(state, action, reward, next_state, done)
+                    func_compile_exp_agent(state, action, reward, next_state, done)
                 flag_tail = done
+                flag_success = True if flag_success and reward > 0.0 else False
                 skip_reward += reward
 
                 if cnt_skip==0 or done:
                     # average rewards during skipping
                     skip_reward /= (n_skip - cnt_skip)
-                    print skip_reward,
                     # add tail for non-early-stops
                     skip_reward += flag_tail * gamma * skip_reward/ (1-gamma)
-                    print skip_reward
                     update_info = agent.step(
                         sess=sess, state=state, action=action,
                         reward=skip_reward, next_state=next_state,
@@ -483,6 +483,7 @@ try:
                     )
                     t = time.time()
                     next_action = agent.act(next_state, exploration=not exploration_off)
+                    n_agent_steps += 1
                     t_infer += time.time() - t
                     skip_reward = 0
                     state, action = next_state, next_action  # s',a' -> s,a
@@ -491,7 +492,12 @@ try:
                     skip_action = 3  # no op during skipping
 
                 sv.summary_computed(sess, summary=log_info(update_info))
-                cnt_skip = n_skip if cnt_skip == 0 else cnt_skip
+                if cnt_skip == 0:
+                    if next_action == 0:
+                        cnt_skip = 1
+                        # cnt_skip = n_skip
+                    else:
+                        cnt_skip = n_skip
                 # print "Agent step learn {} sec, infer {} sec".format(t_learn, t_infer)
                 if done:
                     break
