@@ -1038,6 +1038,36 @@ class ScaledFloatFrame(gym.ObservationWrapper):
         # return np.array(obs).astype(np.float32) / 255.0
 
 
+class DistorFrame(gym.ObservationWrapper):  #ProcessFrame84
+    def __init__(self, env=None):
+        super(DistorFrame, self).__init__(env)
+
+    def _observation(self, obs):
+        return DistorFrame.process(obs)
+
+    @staticmethod
+    def process(frame):
+
+        def fx(y,x):
+            cen = 48.0
+            return cen+(x-cen)/2.0+np.abs(x-cen)*(x-cen)/(2*48.0)
+
+        def fy(y,x):
+            cen = 55.0
+            return cen+(y-cen)/2.0+np.abs(y-cen)*(y-cen)/(2*48.0)
+
+        mapx = np.fromfunction(fx,(96,96),dtype=np.float32)
+        mapy = np.fromfunction(fy,(96,96),dtype=np.float32)
+        #normalize mapy
+        mapy = 96*mapy/(mapy.max() -mapy.min()) -mapy.min();
+        dst = cv2.remap(np.asarray(frame), mapx, mapy, cv2.INTER_LINEAR)
+        dst_disp = cv2.resize(dst, (296, 296), interpolation=cv2.INTER_LINEAR)
+        last_frame = dst_disp[:,:,0:3]
+        cv2.imshow("image", last_frame)
+        cv2.waitKey(10)
+        return dst
+
+
 def wrap_dqn(env):
     """Apply a common set of wrappers for Atari games."""
     assert 'NoFrameskip' in env.spec.id
