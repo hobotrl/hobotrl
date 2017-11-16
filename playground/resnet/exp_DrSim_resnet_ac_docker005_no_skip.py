@@ -182,12 +182,12 @@ def record(summary_writer, step_n, info):
 
 tf.app.flags.DEFINE_string("logdir",
                            "/home/pirate03/PycharmProjects/hobotrl/playground/resnet/"
-                           "resnet_frame_skip_scale_reward_ac",
+                           "resnet_frame_skip_scale_reward_direct_ac",
                            """save tmp model""")
 tf.app.flags.DEFINE_string("savedir",
                            "/home/pirate03/hobotrl_data/playground/initialD/exp/"
                            "docker005_no_stopping_static_middle_no_path_all_green/"
-                           "resnet_frame_skip_scale_reward_ac_records",
+                           "resnet_frame_skip_scale_reward_direct_ac_records",
                            """records data""")
 tf.app.flags.DEFINE_string("readme", "learn q with frame skipping. Shorten step_delay_target."
                                      "Scale return."
@@ -196,10 +196,10 @@ tf.app.flags.DEFINE_string("readme", "learn q with frame skipping. Shorten step_
                                      "Stop gradient on pi layer and conv layer"
                                      "InitialD waits until 40s."
                                      "Use new reward function.", """readme""")
-tf.app.flags.DEFINE_string("port", '7014', "Docker port")
-tf.app.flags.DEFINE_float("gpu_fraction", 0.4, """gpu fraction""")
+tf.app.flags.DEFINE_string("port", '7034', "Docker port")
+tf.app.flags.DEFINE_float("gpu_fraction", 0.6, """gpu fraction""")
 tf.app.flags.DEFINE_float("discount_factor", 0.99, """actor critic discount factor""")
-tf.app.flags.DEFINE_integer("batch_size", 8, """actor critic discount factor""")
+tf.app.flags.DEFINE_integer("batch_size", 64, """actor critic discount factor""")
 tf.app.flags.DEFINE_float("lr", 0.01, """actor critic learning rate""")
 tf.app.flags.DEFINE_bool("is_learn_q", False, """learn q or not""")
 tf.app.flags.DEFINE_bool("is_fine_tune", False, """Stop gradient on conv layer if fine tune""")
