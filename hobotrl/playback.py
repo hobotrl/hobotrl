@@ -897,10 +897,10 @@ class PersistencyWrapper(wrapt.ObjectProxy):
         Save meta data after data is saved to make this a transaction.
         """
         self._io_status = "flushing"
-        # logging.warning(
-        #     "[PersistencyWrapper.save()] : "
-        #     "saving data to path %s...", self._path
-        # )
+        logging.info(
+            "[PersistencyWrapper.save()] : "
+            "saving data to path %s...", self._path
+        )
         if not os.path.isdir(self._path):
             os.makedirs(self._path)
 
@@ -911,8 +911,8 @@ class PersistencyWrapper(wrapt.ObjectProxy):
         meta_path = os.sep.join([self._path, self.META_FILE])
         with open(meta_path, mode="w") as f:
             f.write(json.dumps({
-                "count": self.count,
-                "push_index": self.push_index
+                "count": self.__wrapped__.count,
+                "push_index": self.__wrapped__.push_index
             }))
 
         self._io_status = "ready"
@@ -964,6 +964,7 @@ class BigPlayback(Playback):
         self._push_bucket = 0
         self._buckets_active = {i: False for i in range(len(self._buckets))}
         self._buckets_maintained = {i: False for i in range(len(self._buckets))}
+        self._buckets_saving = {i: False for i in range(len(self._buckets))}
         self._buckets_sample_quota = {}  # remaining sample quota for active buckets
         self._buckets_to_save = Queue.Queue()
         self._buckets_to_load = Queue.Queue()
@@ -989,13 +990,30 @@ class BigPlayback(Playback):
         while self._buckets[bucket_to_push]._io_status != 'ready':
             logging.warning("Waiting push bucket {} to be ready".format(bucket_to_push))
             time.sleep(1.0)
-        self._buckets[bucket_to_push].push_sample(sample, sample_score)
+
+        logging.info(
+            "[BigPlayback.push_sample()]: "
+            "push into bucket {} @ {}".format(bucket_to_push, self._buckets[bucket_to_push].push_index)
+        )
+
+        try:
+            self._buckets[bucket_to_push].push_sample(sample, sample_score)
+        except:
+            logging.warning(
+                traceback.format_exc()
+            )
+
 
         # adjust push_bucket
         if swap_flag:
+            self._buckets_saving[self._push_bucket] = True
             self._buckets_to_save.put(self._push_bucket)
             nxt_push_bucket = (self._push_bucket + 1) % self._bucket_count
             self._push_bucket = nxt_push_bucket
+            logging.info(
+                "[BigPlayback.push_sample()]: "
+                "forwarding push index to {}".format(self._push_bucket)
+            )
 
             nxt_push_bucket = (self._push_bucket + 1) % self._bucket_count
             self._buckets_maintained[nxt_push_bucket] = True
@@ -1022,8 +1040,11 @@ class BigPlayback(Playback):
                 # ret.extend(self._buckets[bkt_id].get_batch(rel_index))
 
             # Leave current and next push bucket alone
-            if bkt_id == self._push_bucket or \
-               bkt_id == (self._push_bucket + 1) % self._bucket_count:
+            if bkt_id == (self._push_bucket - 1) % self._bucket_count or \
+                bkt_id == self._push_bucket or \
+                bkt_id == (self._push_bucket + 1) % self._bucket_count:
+                continue
+            elif self._buckets_saving[bkt_id]:
                 continue
             else:
                 # Modify sample quota for this bucket
@@ -1031,7 +1052,7 @@ class BigPlayback(Playback):
                 # check activation state
                 if self._buckets_sample_quota[bkt_id] < 0:
                     logging.warning(
-                        "[BigPlayback.playback()]: "
+                        "[BigPlayback.get_batch()]: "
                         "bucket {} has run out of quota.".format(bkt_id)
                     )
                     # deactivate this bucket
@@ -1059,7 +1080,8 @@ class BigPlayback(Playback):
         list_bkt_active = [k for k, v in self._buckets_active.iteritems() if v]
         cnt_bkt_active = [self._buckets[bkt_id].count for bkt_id in list_bkt_active]
         sample_per_bkt = np.random.multinomial(
-            batch_size, 1.0 * np.array(cnt_bkt_active) / sum(cnt_bkt_active)
+            batch_size,
+            1.0 * np.array(cnt_bkt_active) / (sum(cnt_bkt_active) + 1e-5)
         )
         ret = []
         for sub_size, bkt_id in zip(sample_per_bkt, list_bkt_active):
@@ -1187,8 +1209,9 @@ class BigPlayback(Playback):
         #  #(desired amount) - #(activated and maintained)
         a_bkts = [k for k, v in self._buckets_active.iteritems() if v]
         m_bkts = [k for k, v in self._buckets_maintained.iteritems() if v]
-        num_to_load = min(self._max_active_buckets,
-                          int(self.count / self._bucket_size))
+        num_to_load = min(
+            self._max_active_buckets, int(self.count / self._bucket_size)
+        )
         num_to_load -= len(set(a_bkts + m_bkts))
         if num_to_load <= 0:
             return
@@ -1374,6 +1397,7 @@ class BigPlayback(Playback):
         #  meta of BigPlayback and its buckets. Should double
         #  check at initialization to prevent this.
         self.__save_meta()
+        self._buckets_saving[bucket_id] = False
 
     def close(self):
         """Release memory and close IO thread."""
