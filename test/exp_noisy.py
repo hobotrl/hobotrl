@@ -121,7 +121,7 @@ class NoisyPendulum(NoisyExperiment):
                  f_value=None, f_model=None, f_pi=None,
                  episode_n=2000, discount_factor=0.9,
                  noise_dimension=2, manager_horizon=16, manager_interval=4, batch_size=8, batch_horizon=4,
-                 noise_stddev=hrl.utils.CappedLinear(1e5, 0.5, 0.05),
+                 noise_stddev=hrl.utils.CappedLinear(1e5, 1.0, 0.05),
                  # noise_stddev=0.3,
                  noise_explore_param=(0, 0.2, 0.2),
                  # worker_explore_param=(0, 0.2, 0.2),
@@ -135,8 +135,8 @@ class NoisyPendulum(NoisyExperiment):
                  explore_net=False,
                  abs_goal=True,
                  manager_ac=False,
-                 achievable_weight=1e-3,
-                 disentangle_weight=1.0,
+                 achievable_weight=1e-2,
+                 disentangle_weight=1e-4,
                  **kwargs
                  ):
         if env is None:
@@ -148,10 +148,13 @@ class NoisyPendulum(NoisyExperiment):
         activation = tf.nn.elu
         hidden_dim = 32
         if f_se is None:
+
             def f(inputs):
                 input_state = inputs[0]
                 out = hrl.network.Utils.layer_fcs(input_state, [], se_dimension,
                                                   None, None, l2=l2)
+                gradient_scale = 1.0
+                out = out * gradient_scale + tf.stop_gradient(out * (1.0 - gradient_scale))
                 return {"se": out}
 
             def fd(inputs):
@@ -260,18 +263,6 @@ class NoisyPendulumSearch(GridSearch):
             "manager_entropy": [1e-1, 1e-2, CappedLinear(2e5, 1e-1, 1e-2), CappedLinear(2e5, 1e-2, 1e-3)],
 
         round 4: manager_ac longer
-            "episode_n": [10000],
-            "abs_goal": [True],
-            "act_ac": [False],
-            "explore_net": [False],
-            "manager_ac": [True],
-            "achievable_weight": [1e-3],
-            "worker_explore_param":  [(0, 0.2, CappedLinear(2e5, 0.2, 0.01)), (0, 0.2, CappedLinear(2e5, 0.5, 0.1))],
-            "manager_entropy": [1e-2, CappedLinear(2e5, 1e-2, 1e-3)],
-
-    """
-    def __init__(self):
-        super(NoisyPendulumSearch, self).__init__(NoisyPendulum, {
             "episode_n": [5000],
             "abs_goal": [True],
             "act_ac": [False],
@@ -280,6 +271,18 @@ class NoisyPendulumSearch(GridSearch):
             "achievable_weight": [1e-3],
             "worker_explore_param":  [(0, 0.2, CappedLinear(2e5, 0.2, 0.01)), (0, 0.2, CappedLinear(2e5, 0.5, 0.1))],
             "manager_entropy": [1e-2, CappedLinear(2e5, 1e-2, 1e-3), CappedLinear(5e5, 1e-2, 1e-4)],
+        round 5: abs_goal; momentum
+    """
+    def __init__(self):
+        super(NoisyPendulumSearch, self).__init__(NoisyPendulum, {
+            "episode_n": [2000],
+            "abs_goal": [True],
+            "explicit_momentum": [True, False],
+            "act_ac": [False],
+            "explore_net": [False],
+            "manager_ac": [False],
+            "achievable_weight": [1e-1, 1e-3],
+            "worker_explore_param":  [(0, 0.2, CappedLinear(2e5, 0.2, 0.01)), (0, 0.2, CappedLinear(2e5, 0.5, 0.1))],
         })
 Experiment.register(NoisyPendulumSearch, "Noisy explore for pendulum")
 

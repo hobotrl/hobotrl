@@ -29,9 +29,8 @@ def cosine(a, b, name=None):
 
 class TransitionPolicyGradientUpdater(NetworkUpdater):
 
-    def __init__(self, func_goal, func_value, net_se, target_estimator, abs_goal=False):
+    def __init__(self, func_goal, func_value, net_se, net_momentum, target_estimator, abs_goal=False):
         """
-
         :param func_goal: goal generator function
         :type func_goal: NetworkFunction
         :param func_value: function computing value
@@ -63,9 +62,9 @@ class TransitionPolicyGradientUpdater(NetworkUpdater):
             self._advantage = tf.stop_gradient(advantage)
             _mean, _var = tf.nn.moments(advantage, axes=[0])
             self._std_advantage = tf.stop_gradient(advantage / (tf.sqrt(_var) + 1.0))
-
+            net_momentum = net_momentum([net_se["se"].op], name_scope="momentum_tpg")  # clone net
             net_se_next = net_se([self._input_next_state], "next_se")
-            goal_fact = tf.stop_gradient(net_se_next["se"].op - net_se["se"].op)
+            goal_fact = tf.stop_gradient(net_se_next["se"].op - net_se["se"].op - net_momentum["sd"].op)
             goal_predict = func_goal.output().op
             self._goal_predict_norm = tf.norm(goal_predict, axis=-1)
             self._goal_fact = goal_fact
@@ -121,15 +120,16 @@ class TransitionPolicyGradientUpdater(NetworkUpdater):
         return network.UpdateRun(feed_dict=feed_dict, fetch_dict=fetch_dict)
 
 
-class AchievableUpdator(NetworkUpdater):
-    def __init__(self, func_goal, net_se):
-        super(AchievableUpdator, self).__init__()
+class AchievableUpdater(NetworkUpdater):
+    def __init__(self, func_goal, net_se, net_momentum):
+        super(AchievableUpdater, self).__init__()
         self._func_goal = func_goal
         self._net_state = net_se(name_scope="state")
         self._net_next_state = net_se(name_scope="next_state")
-        self._goal_fact = self._net_next_state["se"].op - self._net_state["se"].op
+        net_momentum = net_momentum([self._net_state["se"].op], name_scope="achievable_momentum")
+        self._goal_fact = tf.stop_gradient(self._net_next_state["se"].op - self._net_state["se"].op - net_momentum["sd"].op)
         self._goal_predict = func_goal.output().op
-        self._achievable_loss = tf.reduce_mean(Utils.clipped_square(self._goal_fact - self._goal_predict))
+        self._achievable_loss = tf.reduce_mean(tf.square(self._goal_fact - self._goal_predict))
         self._update_operation = network.MinimizeLoss(self._achievable_loss,
                                                       var_list=func_goal.variables)
 
@@ -199,7 +199,7 @@ class DisentangleUpdater(NetworkUpdater):
     
 
 class ModelUpdater(NetworkUpdater):
-    def __init__(self, net_se, net_model, reward_weight=1.0):
+    def __init__(self, net_se, net_model, net_momentum, reward_weight=1.0):
         super(ModelUpdater, self).__init__()
         state_shape = net_se.inputs[0].shape.as_list()
         se_shape = net_se["se"].op.shape.as_list()
@@ -209,21 +209,27 @@ class ModelUpdater(NetworkUpdater):
             self._input_next_state = tf.placeholder(dtype=tf.float32, shape=state_shape, name="St1")
             self._input_action = tf.placeholder(dtype=tf.float32, shape=action_shape, name="action")
             self._input_reward = tf.placeholder(dtype=tf.float32, shape=[None], name="reward")
+            self._input_episode_done = tf.placeholder(dtype=tf.float32, shape=[None], name="episode_done")
         with tf.name_scope("forward_model"):
             se = net_se([self._input_state])["se"].op
             next_se = net_se([self._input_next_state])["se"].op
             self._goal_fact = tf.stop_gradient(next_se - se)
             logging.warning("ModelUpdater model input:%s", [se, self._input_action])
             net = net_model([se, self._input_action])
-            self._goal_predict = net["sd"].op
+            net_momentum = net_momentum([se], name_scope="model_momentum")
+            op_momentum = net_momentum["sd"].op
+            self._goal_predict = net["sd"].op + op_momentum
             self._goal_loss = tf.reduce_mean(
                 tf.reduce_sum(
                     Utils.clipped_square(self._goal_fact - self._goal_predict)
                 ))
             self._reward_loss = tf.reduce_mean(Utils.clipped_square(self._input_reward - net["r"].op))
+            self._op_momentum = op_momentum
+            self._momentum_norm = tf.norm(op_momentum)
             self._loss = self._goal_loss + reward_weight * self._reward_loss
         self._update_operation = network.MinimizeLoss(self._loss,
-                                                      var_list=net_se.variables + net_model.variables)
+                                                      var_list=net_se.variables + net_model.variables
+                                                        + net_momentum.variables)
 
     def declare_update(self):
         return self._update_operation
@@ -246,6 +252,8 @@ class ModelUpdater(NetworkUpdater):
                                                                   "action": self._input_action,
                                                                   "loss_reward": self._reward_loss,
                                                                   "loss_goal": self._goal_loss,
+                                                                  "momentum": self._op_momentum,
+                                                                  "momentum_norm": self._momentum_norm,
                                                                   "loss": self._loss})
 
 
@@ -253,7 +261,7 @@ class ImaginaryGoalGradient(NetworkUpdater):
     """
     update IK with imaginary goals
     """
-    def __init__(self, net_se, net_model, net_ik, func_goal=None):
+    def __init__(self, net_se, net_model, net_ik, net_momentum, func_goal=None):
         super(ImaginaryGoalGradient, self).__init__()
         self._func_goal = func_goal
         state_shape = net_se.inputs[0].shape.as_list()
@@ -306,7 +314,7 @@ class ImaginaryGoalGradient(NetworkUpdater):
 
 class IKUpdater(NetworkUpdater):
 
-    def __init__(self, net_se, net_ik, abs_goal=False):
+    def __init__(self, net_se, net_ik, net_momentum, abs_goal=False):
         super(IKUpdater, self).__init__()
         state_shape = net_se.inputs[0].shape.as_list()
         se_shape = net_se["se"].op.shape.as_list()
@@ -326,6 +334,8 @@ class IKUpdater(NetworkUpdater):
                     / tf.reduce_mean(tf.norm(goal, axis=-1))
                 )
                 goal = goal * norm_scale
+            else:
+                goal = goal - net_momentum([net_se_off["se"].op], name_scope="ik_momentum")["sd"].op
             self._goal_norm = tf.norm(goal, axis=-1)
             net_ik_off = net_ik([net_se_off["se"].op, goal], "off_ik")
             action_off = net_ik_off["action"].op
@@ -433,6 +443,7 @@ class NoisySD(BaseDeepAgent):
                  explore_net=False,     # True if explore by noise net; False by plain ou noise
                  abs_goal=True,         # True if goal expressed in absolute delta; False in direction
                  manager_ac=False,      # True if manager trained with actor critic
+                 explicit_momentum=False,
                  achievable_weight=1e-1,
                  disentangle_weight=1.0,
                  *args, **kwargs):
@@ -476,6 +487,8 @@ class NoisySD(BaseDeepAgent):
         self._abs_goal = abs_goal
         # True if manager trained with actor critic
         self._manager_ac = manager_ac
+        # True if model transition momentum in TM, Manager, IK.
+        self._explicit_momentum = explicit_momentum
 
         super(NoisySD, self).__init__(*args, **kwargs)
 
@@ -496,6 +509,8 @@ class NoisySD(BaseDeepAgent):
             network_optimizer = LocalOptimizer(tf.contrib.opt.NadamOptimizer(1e-4), max_gradient)
         self._optimizer = network_optimizer
         func_goal = NetworkFunction(self.network["goal"], inputs=[self._input_state, self._input_noise])
+        net_momentum = self.network.sub_net("momentum")(name_scope="func_momentum")
+        self._func_momentum = NetworkFunction(net_momentum["sd"])
         func_value = NetworkFunction(self.network["value"], [self._input_state])
         self._func_manager = func_goal
         self._func_se = NetworkFunction(self.network.sub_net("se")["se"])
@@ -513,6 +528,7 @@ class NoisySD(BaseDeepAgent):
             self._optimizer.add_updater(TransitionPolicyGradientUpdater(func_goal,
                                                                         func_value,
                                                                         self.network.sub_net("se"),
+                                                                        self.network.sub_net("momentum"),
                                                                         target_estimator,
                                                                         abs_goal=self._abs_goal),
                                         name="tpg", forward_pass="manager")
@@ -528,7 +544,8 @@ class NoisySD(BaseDeepAgent):
                                                               target_estimator,
                                                               manager_entropy)
                                         , name="manager_ac", forward_pass="manager")
-        self._optimizer.add_updater(AchievableUpdator(func_goal, self.network.sub_net("se")),
+        self._optimizer.add_updater(AchievableUpdater(func_goal, self.network.sub_net("se"),
+                                                      self.network.sub_net("momentum")),
                                     weight=achievable_weight, name="achievable", forward_pass="manager")
         if self._explore_net:
             self._optimizer.add_updater(DisentangleUpdater(
@@ -539,14 +556,20 @@ class NoisySD(BaseDeepAgent):
         if not self._act_ac:
             self._optimizer.add_updater(IKUpdater(
                 self.network.sub_net("se"),
-                self.network.sub_net("ik")), name="ik")
+                self.network.sub_net("ik"),
+                self.network.sub_net("momentum"),
+                self._abs_goal
+            ), name="ik")
             self._optimizer.add_updater(ModelUpdater(
                 self.network.sub_net("se"),
-                self.network.sub_net("model")), name="model")
+                self.network.sub_net("model"),
+                self.network.sub_net("momentum"),
+            ), name="model")
             self._optimizer.add_updater(ImaginaryGoalGradient(
                 self.network.sub_net("se"),
                 self.network.sub_net("model"),
-                self.network.sub_net("ik"), func_goal=None), name="imagine")
+                self.network.sub_net("ik"),
+                self.network.sub_net("momentum"), func_goal=None), name="imagine")
         else:
             # worker  pi
             self._pi_function = network.NetworkFunction(
@@ -590,6 +613,12 @@ class NoisySD(BaseDeepAgent):
             state_encoder_net = Network([input_state], f_se, "state_encoder")
             encoded_state = state_encoder_net["se"].op
             manager_net = Network([encoded_state], f_manager, "manager")
+            if self._explicit_momentum:
+                transition_momentum = Network([encoded_state], f_manager, "transition_momentum")
+            else:
+                def f_zero(inputs):
+                    return {"sd": tf.zeros_like(inputs[0])}
+                transition_momentum = Network([encoded_state], f_zero, "transition_momentum")
             sd = manager_net["sd"].op
             norm_sd = norm_vector_scale(sd)
             noise_generator_net = Network([tf.stop_gradient(encoded_state), self._input_noise], f_explorer, "noise")
@@ -627,6 +656,7 @@ class NoisySD(BaseDeepAgent):
                        "worker_value": worker_value_net,
                        "worker_pi": worker_pi_net,
                        "model": model_net,
+                       "momentum": transition_momentum,
                    }
             # on: manager, value, state encoder noise
             # off: noise, IK, model
@@ -673,8 +703,12 @@ class NoisySD(BaseDeepAgent):
         manager_batch = to_columnwise(manager_batch)
         if self._abs_goal:
             # absolute goal saved in batch; relative goal need for training
-            manager_batch["goal"] = manager_batch["goal"] - self._func_se(manager_batch["state"])
-            off_batch["goal"] = off_batch["goal"] - self._func_se(off_batch["state"])
+            se = self._func_se(manager_batch["state"])
+            momentum = self._func_momentum(se)
+            manager_batch["goal"] = manager_batch["goal"] - se - momentum
+            se = self._func_se(off_batch["state"])
+            momentum = self._func_momentum(se)
+            off_batch["goal"] = off_batch["goal"] - se - momentum
         manager_batch["action"] = manager_batch["goal"]
         if self._manager_ac:
             self._optimizer.update("manager_ac", self.sess, manager_batch)
@@ -692,6 +726,7 @@ class NoisySD(BaseDeepAgent):
             # recalculate reward for worker
             goal_truth = self._func_se(on_batch["next_state"]) - self._func_se(on_batch["state"])
             goal = on_batch["goal"]
+            # todo momentum?
             org_reward = on_batch["reward"]
             reward = np.sum(goal * goal_truth, axis=-1)
             norm1 = np.linalg.norm(goal, axis=-1)
@@ -732,8 +767,9 @@ class NoisySD(BaseDeepAgent):
                     goal = self._func_manager(state[np.newaxis, :], n[np.newaxis, :])[0]
             if self._abs_goal:
                 # save absolute target goal
-                se = self._func_se(state[np.newaxis, :])[0]
-                self._last_goal = se + goal
+                se = self._func_se(state[np.newaxis, :])
+                momentum = self._func_momentum(se)[0]
+                self._last_goal = se[0] + momentum + goal
             else:
                 # save directional goal
                 self._last_goal = goal
@@ -744,8 +780,9 @@ class NoisySD(BaseDeepAgent):
     def get_relative_goal(self, state):
         state_array = np.asarray(state)[np.newaxis, :]
         if self._abs_goal:
-            se = self._func_se(state_array)[0]
-            goal = self._last_goal - se
+            se = self._func_se(state_array)
+            momentum = self._func_momentum(se)[0]
+            goal = self._last_goal - momentum - se[0]
         else:
             goal = self._last_goal
         return goal
@@ -768,3 +805,8 @@ class NoisySD(BaseDeepAgent):
         action_all = OUExplorationPolicy.action_add(action, action_exp)
         logging.warning("step:%s, goal:%s, last_goal:%s, action_ik:%s, action_noise:%s", self._last_goal_step, goal, self._last_goal, action, action_all)
         return action_all
+
+    def set_session(self, sess):
+        super(NoisySD, self).set_session(sess)
+        if self._func_momentum is not None:
+            self._func_momentum.set_session(sess)
