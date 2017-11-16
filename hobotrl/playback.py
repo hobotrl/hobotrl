@@ -963,7 +963,7 @@ class BigPlayback(Playback):
         # Initialize volatile data structures
         self._push_bucket = 0
         self._buckets_active = {i: False for i in range(len(self._buckets))}
-        self._buckets_maintained = {i: False for i in range(len(self._buckets))}
+        self._buckets_loading = {i: False for i in range(len(self._buckets))}
         self._buckets_saving = {i: False for i in range(len(self._buckets))}
         self._buckets_sample_quota = {}  # remaining sample quota for active buckets
         self._buckets_to_save = Queue.Queue()
@@ -988,7 +988,10 @@ class BigPlayback(Playback):
 
         # do the actual sample insertion
         while self._buckets[bucket_to_push]._io_status != 'ready':
-            logging.warning("Waiting push bucket {} to be ready".format(bucket_to_push))
+            logging.warning(
+                "[BigPlayback.push_sample()]: "
+                "Waiting push bucket {} to be ready".format(bucket_to_push)
+            )
             time.sleep(1.0)
 
         logging.info(
@@ -1016,7 +1019,7 @@ class BigPlayback(Playback):
             )
 
             nxt_push_bucket = (self._push_bucket + 1) % self._bucket_count
-            self._buckets_maintained[nxt_push_bucket] = True
+            self._buckets_loading[nxt_push_bucket] = True
             self._buckets_to_load.put(nxt_push_bucket)
 
     def add_sample(self, sample, index, sample_score=0):
@@ -1054,7 +1057,6 @@ class BigPlayback(Playback):
                     self._buckets_active[bkt_id] = False
 
                     # release mem and signal IO thread to load a new bucket.
-                    self._buckets_maintained[bkt_id] = False
                     self._buckets[bkt_id].release_mem()
                     self.__maintain_active_buckets()
         return self._merge_batches(ret)
@@ -1195,7 +1197,7 @@ class BigPlayback(Playback):
         next_push_bucket = (self._push_bucket + 1) % self._bucket_count
         load_buckets.append(next_push_bucket)
         for bkt in load_buckets:
-            self._buckets_maintained[bkt] = True
+            self._buckets_loading[bkt] = True
             self._buckets_to_load.put(bkt)
         while True:
             if all([bid in self._buckets_active for bid in load_buckets]):
@@ -1228,7 +1230,7 @@ class BigPlayback(Playback):
         # Total number of buckets to load is the:
         #  #(desired amount) - #(activated and maintained)
         a_bkts = [k for k, v in self._buckets_active.iteritems() if v]
-        m_bkts = [k for k, v in self._buckets_maintained.iteritems() if v]
+        m_bkts = [k for k, v in self._buckets_loading.iteritems() if v]
         num_to_load = min(
             self._max_active_buckets, int(self.count / self._bucket_size)
         )
@@ -1253,7 +1255,7 @@ class BigPlayback(Playback):
             )
             # put into load queue and let IO thread to load bucket.
             for bkt in load_buckets:
-                self._buckets_maintained[bkt] = True
+                self._buckets_loading[bkt] = True
                 self._buckets_to_load.put(bkt)
 
     def __save_meta(self):
@@ -1280,7 +1282,8 @@ class BigPlayback(Playback):
             bid for bid, bkt in enumerate(self._buckets)
             if bkt.count > 0 \
                and not self._buckets_active[bid] \
-               and not self._buckets_maintained[bid]
+               and not self._buckets_loading[bid] \
+               and not self._buckets_saving[bid]
         ]
 
     @property
@@ -1335,20 +1338,19 @@ class BigPlayback(Playback):
                         "[BigPlayback.bucket_io()]: "
                         "notified to save bucket {}.".format(bkt)
                     )
-                    while True:
-                        try:
-                            self.__save_one(bkt)
-                            self._buckets_to_save.task_done()
-                            break
-                        except Exception, e:
-                            logging.warning(
-                                traceback.format_exc()
-                            )
-                            logging.warning(
-                                "[BigPlayback.bucket_io()]: "
-                                "exception saving bucket, retry in one second."
-                            )
-                            time.sleep(1.0)
+                    try:
+                        self.__save_one(bkt)
+                    except:
+                        logging.warning(traceback.format_exc())
+                        logging.warning(
+                            "[BigPlayback.bucket_io()]: "
+                            "exception saving bucket {}.".format(bkt)
+                        )
+                    finally:
+                        # deactivate this bucket no matter what
+                        # if the transaction is not finished leave as is.
+                        self._buckets_saving[bkt] = False
+                        self._buckets_to_save.task_done()
                 except Queue.Empty:
                     pass
 
@@ -1359,20 +1361,17 @@ class BigPlayback(Playback):
                         "[BigPlayback.bucket_io()]: "
                         "notified to load bucket {}.".format(bkt)
                     )
-                    while True:
-                        try:
-                            self.__load_one(bkt)
-                            self._buckets_to_load.task_done()
-                            break
-                        except Exception, e:
-                            logging.warning(
-                                traceback.format_exc()
-                            )
-                            logging.warning(
-                                "[BigPlayback.bucket_io()]: "
-                                "exception loading bucket, retry in one second."
-                            )
-                            time.sleep(1.0)
+                    try:
+                        self.__load_one(bkt)
+                    except:
+                        logging.warning(traceback.format_exc())
+                        logging.warning(
+                            "[BigPlayback.bucket_io()]: "
+                            "exception loading bucket {}.".format(bkt)
+                        )
+                    finally:
+                        self._buckets_loading[bkt] = False
+                        self._buckets_to_load.task_done()
                 except Queue.Empty:
                     pass
             except:
@@ -1399,10 +1398,11 @@ class BigPlayback(Playback):
         #     "going to load bucket {}.".format(bucket_id)
         # )
         self._buckets[bucket_id].load()
-        self._buckets_active[bucket_id] = True
+
         # assign sampling quota to this bucket
         self._buckets_sample_quota[bucket_id] = \
             self._max_sample_epoch * self._buckets[bucket_id].count
+        self._buckets_active[bucket_id] = True
 
     def __save_one(self, bucket_id):
         # logging.warning(
@@ -1417,7 +1417,6 @@ class BigPlayback(Playback):
         #  meta of BigPlayback and its buckets. Should double
         #  check at initialization to prevent this.
         self.__save_meta()
-        self._buckets_saving[bucket_id] = False
 
     def close(self):
         """Release memory and close IO thread."""
