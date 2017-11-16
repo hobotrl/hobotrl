@@ -259,7 +259,7 @@ class Playback(object):
                 self.sample_shape = sample_shape
             logging.warning(
                 ("[Playback.add_sample()]: initializing data with: "
-                 "type: %s, shape: %s"), sample_type, sample_shape
+                 "class:%s, type: %s, shape: %s"), sample_class, sample_type, sample_shape
             )
             self.data = [None] * self.capacity
 
@@ -1001,25 +1001,20 @@ class BigPlayback(Playback):
             self._buckets_maintained[nxt_push_bucket] = True
             self._buckets_to_load.put(nxt_push_bucket)
 
-
     def add_sample(self, sample, index, sample_score=0):
         raise NotImplementedError(
             'We do not support adding sample by index. Use push_sample().'
         )
 
     def get_batch(self, index):
-        ret = {}
-        # ret = []
+        ret = []
         for bkt_id, rel_index in index:
             if len(rel_index) == 0:
                 continue
             else:
                 # Sample from this bucket
                 bkt_ret = self._buckets[bkt_id].get_batch(rel_index)
-                for k, v in bkt_ret.iteritems():
-                    ret[k] = v if k not in ret else \
-                        np.concatenate([ret[k], bkt_ret[k]], axis=0)
-                # ret.extend(self._buckets[bkt_id].get_batch(rel_index))
+                ret.append(bkt_ret)
 
             # Leave current and next push bucket alone
             if bkt_id == self._push_bucket or \
@@ -1041,7 +1036,32 @@ class BigPlayback(Playback):
                     self._buckets_maintained[bkt_id] = False
                     self._buckets[bkt_id].release_mem()
                     self.__maintain_active_buckets()
-        return ret
+        return self._merge_batches(ret)
+
+    def _merge_batches(self, batches):
+        """
+        supports batches from MapPlayback or Playback.
+        :param batches:
+        :return:
+        """
+        if len(batches) == 0:
+            return {}
+        if isinstance(batches[0], dict):
+            # column-wise batch; concat each column
+            ret = {}
+            for bkt_ret in batches:
+                for k, v in bkt_ret.iteritems():
+                    ret[k] = [] if k not in ret else ret[k]
+                    ret[k].append(v)
+            for k in ret:
+                ret[k] = np.concatenate(ret[k], axis=0)
+            return ret
+        elif isinstance(batches[0], list):
+            # concat into a list
+            return sum(batches, [])
+        elif isinstance(batches[0], np.ndarray):
+            # concat into a larger batch
+            return np.concatenate(batches, axis=0)
 
     def next_batch_index(self, batch_size):
         ret = self.__next_batch_index(batch_size)

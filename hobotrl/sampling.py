@@ -3,6 +3,9 @@
 # TODO: semantically sampling is a management class of playback buffers. Is it
 # better to arrange it as a submodule in playback?
 
+import logging
+
+
 import numpy as np
 import playback
 
@@ -179,7 +182,7 @@ class TruncateTrajectorySampler(Sampler):
                     break
             if len(trajectories) < self._batch_size:
                 # sample failed
-                print "sample failed!"
+                logging.warning("sample failed!")
                 return None
             return trajectories
         else:
