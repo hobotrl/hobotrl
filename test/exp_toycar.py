@@ -8,6 +8,7 @@ sys.path.append(".")
 from exp_algorithms import *
 from car import *
 from hobotrl.environments import *
+from hobotrl.environments.toycar_sim import ToyCarEnv
 from exp_car import *
 
 
@@ -27,7 +28,7 @@ class A3CToyCarDiscrete(A3CCarDiscrete2):
                  entropy=hrl.utils.CappedLinear(1e6, 1e-1, 5e-3),
                  batch_size=32):
         if env is None:
-            env = hrl.envs.ToyCarEnv()
+            env = ToyCarEnv()
             env = wrap_car(env, 5, 5)
             # gym.wrappers.Monitor(env, "./log/video", video_callable=lambda idx: True, force=True)
         super(A3CToyCarDiscrete, self).__init__(env, f_create_net, episode_n, learning_rate, discount_factor, entropy,
@@ -40,7 +41,7 @@ class A3CToyCarContinuous(A3CCarContinuous):
                  entropy=hrl.utils.CappedLinear(1e6, 2e-4, 5e-5),
                  batch_size=32):
         if env is None:
-            env = hrl.envs.ToyCarEnv()
+            env = ToyCarEnv()
             env = CarContinuousWrapper(env)
             env = MaxAndSkipEnv(env, skip=2, max_len=1)
             # env = ProcessFrame96H(env)
