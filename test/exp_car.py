@@ -309,7 +309,7 @@ Experiment.register(ADQNCarRacing, "Asynchronuous DQN for CarRacing, tuned with 
 class AOTDQNCarRacing(AOTDQNExperiment):
     def __init__(self, env=None, f_create_q=None, episode_n=1000, discount_factor=0.99, ddqn=True,
                  target_sync_interval=100, target_sync_rate=1.0,
-                 update_interval=8, replay_size=10000, batch_size=8,
+                 update_interval=8, replay_size=100000, batch_size=8,
                  lower_weight=1.0, upper_weight=1.0, neighbour_size=8,
                  greedy_epsilon=hrl.utils.CappedLinear(1e5, 0.1, 0.05),
                  learning_rate=1e-4):
@@ -348,15 +348,17 @@ class AOTDQNCarRacing(AOTDQNExperiment):
 
         max_traj_length = 500
         def f(args):
-            bucket_size = 4
+            bucket_size = 8
             traj_count = replay_size / max_traj_length
             bucket_count = traj_count / bucket_size
-            active_bucket = 2
+            active_bucket = 4
             ratio = 1.0 * active_bucket / bucket_count
+            transition_epoch = 8
+            trajectory_epoch = transition_epoch * max_traj_length
             memory = BigPlayback(
                 bucket_cls=Playback,
                 bucket_size=bucket_size,
-                max_sample_epoch=8,
+                max_sample_epoch=trajectory_epoch,
                 capacity=traj_count,
                 active_ratio=ratio,
                 cache_path=os.sep.join([args.logdir, "cache", str(args.index)])
@@ -371,7 +373,7 @@ class AOTDQNCarRacing(AOTDQNExperiment):
         super(AOTDQNCarRacing, self).__init__(env, f_create_q, episode_n, discount_factor, ddqn, target_sync_interval,
                                               target_sync_rate, update_interval, replay_size, batch_size, lower_weight,
                                               upper_weight, neighbour_size, greedy_epsilon, learning_rate,
-                                              sampler_creator=f_simple)
+                                              sampler_creator=f)
 Experiment.register(AOTDQNCarRacing, "Asynchronuous OTDQN for CarRacing, tuned with ddqn, duel network, etc.")
 
 

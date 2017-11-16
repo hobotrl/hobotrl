@@ -264,7 +264,7 @@ class NP(object):
 
 
 def escape_path(string):
-    return re.sub("[^0-9a-zA-Z\\-_\\.]", "", string)
+    return re.sub("[^0-9a-zA-Z\\-_\\.]", "_", string)
 
 
 class hashable_list(list):
