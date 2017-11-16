@@ -277,10 +277,10 @@ class NoisyPendulumSearch(GridSearch):
         super(NoisyPendulumSearch, self).__init__(NoisyPendulum, {
             "episode_n": [2000],
             "abs_goal": [True],
-            "explicit_momentum": [True, False],
+            "explicit_momentum": [True],
             "act_ac": [False],
             "explore_net": [False],
-            "manager_ac": [False],
+            "manager_ac": [False, True],
             "achievable_weight": [1e-1, 1e-3],
             "worker_explore_param":  [(0, 0.2, CappedLinear(2e5, 0.2, 0.01)), (0, 0.2, CappedLinear(2e5, 0.5, 0.1))],
         })
