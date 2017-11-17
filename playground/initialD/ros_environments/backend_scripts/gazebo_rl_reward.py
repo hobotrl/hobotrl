@@ -9,9 +9,10 @@ Reward components:
     2. '/rl/distance_to_longestpath': perpendicular distance to the closest
         point from ego car to '/path/longest'.
     3. '/rl/car_velocity': car speed.
-    3. '/rl/last_on_opposite_path': whether car is on opposite lane.
-    4. '/rl/on_pedestrian': whether ego car is on pedestrian lane.
-    5. '/rl/obs_factor': directional obstacle risk factor.
+    4. '/rl/car_velocity_front': car speed along longest path.
+    5. '/rl/last_on_opposite_path': whether car is on opposite lane.
+    6. '/rl/on_pedestrian': whether ego car is on pedestrian lane.
+    7. '/rl/obs_factor': directional obstacle risk factor.
 :author: Gang XU, Jingchu LIU
 :date: 2017-09-06
 """
@@ -22,6 +23,7 @@ import zmq
 import numpy as np
 from numpy import linalg as LA
 import cv2
+import matplotlib.pyplot as plt
 # ROS
 import rospy
 import rospkg
@@ -44,6 +46,7 @@ class RewardFunction:
         self.car_euler = np.zeros((3,))
         # 3. distance to longest_path
         self.last_dist_longestpath = 0.0
+        self.last_yaw_longestpath = 0.0
         # 4. obstacle related
         # distance threshold to be considered as collision
         # note: distance is calculated with geometric center, so has to take
@@ -67,10 +70,14 @@ class RewardFunction:
             '/rl/distance_to_longestpath', Float32, queue_size=100)
         self.pub_car_velocity = rospy.Publisher(
             '/rl/car_velocity', Float32, queue_size=100)
+        self.pub_car_velocity_f = rospy.Publisher(
+            '/rl/car_velocity_front', Float32, queue_size=100)
         self.pub_on_opp = rospy.Publisher(
             "/rl/last_on_opposite_path", Int16, queue_size=100)
         self.pub_on_pedestrian = rospy.Publisher(
             '/rl/on_pedestrian', Bool, queue_size=100)
+        self.pub_on_pedestrian_tilt = rospy.Publisher(
+            '/rl/on_pedestrian_tilt', Bool, queue_size=100)
         rospy.Subscriber('/path/longest', Path, self.longest_path_callback)
         rospy.Subscriber('/obstacles', Obstacles, self.obstacles_callback)
         rospy.Subscriber('/car/status', CarStatus, self.car_status_callback)
@@ -88,7 +95,13 @@ class RewardFunction:
         self.car_euler = euler_from_quaternion(
             (data.orientation.x, data.orientation.y,
              data.orientation.z, data.orientation.w))
-        self.pub_car_velocity.publish(data.speed)
+        speed = data.speed
+        speed_f = np.abs(speed * np.dot(
+            (np.cos(self.car_euler[2]), np.sin(self.car_euler[2])),
+            (np.cos(self.last_yaw_longestpath), np.sin(self.last_yaw_longestpath))
+        ))
+        self.pub_car_velocity.publish(speed)
+        self.pub_car_velocity_f.publish(speed_f)
 
     def longest_path_callback(self, data):
         """Callback for '/path/longest'
@@ -112,6 +125,7 @@ class RewardFunction:
             )
             # use svd to find the approximate tangent direction of longest path
             approx_dir = np.linalg.svd(path_points-np.mean(path_points,axis=0))[2][0]
+            self.last_yaw_longestpath = np.arctan2(approx_dir[1], approx_dir[0])
             # perpendicular distance is then the norm of vector
             #   (car_pos - pos_point) x approx_dir, x is cross product
             self.last_dist_longestpath = np.linalg.norm(
@@ -172,6 +186,12 @@ class RewardFunction:
         #   Since Ped lane is the outmost lane, if we take a patch of image
         #   centered around ego car, then there will a considerable portions
         #   of black pixels, i.e. RGB =(0,0,0).
+        patch, sum_sq = self._patch_topdown(img)
+        _, _ = self._patch_tilted(img)
+        ped_factor = np.sum(np.mean(patch, axis=2)<10.0)/(1.0*sum_sq)
+        self.pub_on_pedestrian.publish(ped_factor>0.05)
+
+    def _patch_topdown(self, img):
         offset_y = int(-375/1400.0*img.shape[0])
         offset_x = int(0/1400.0*img.shape[0])
         low = int(np.floor(650/1400.0*img.shape[0]))
@@ -180,8 +200,18 @@ class RewardFunction:
         patch = img[
             (offset_x+low):(offset_x+high),
             (offset_y+low):(offset_y+high), :]
-        ped_factor = np.sum(np.mean(patch, axis=2)<10.0)/(1.0*sum_sq)
-        self.pub_on_pedestrian.publish(ped_factor>0.05)
+        return patch, sum_sq
+
+    def _patch_tilted(self, img):
+        offset_y = int(0/1400.0*img.shape[0])
+        offset_x = int(+180/1400.0*img.shape[0])
+        low = int(np.floor(650/1400.0*img.shape[0]))
+        high = int(np.ceil(750/1400.0*img.shape[0]))
+        sum_sq = (high-low)**2
+        patch = img[
+            (offset_x+low):(offset_x+high),
+            (offset_y+low):(offset_y+high), :]
+        return patch, sum_sq
 
     def on_opp_callback(self, data):
         self.last_on_opp = data.data
