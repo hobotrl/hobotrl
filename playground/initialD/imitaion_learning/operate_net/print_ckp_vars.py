@@ -27,7 +27,9 @@ ckpt_list = [
             # "/home/pirate03/PycharmProjects/hobotrl/playground/resnet/resnet_check_no_q_wait_40s_new_func_reward_learning_off",
             #     "/mnt/a/rl.work/agents/hobotrl/log/A3CCarDiscrete",
             #     "/home/pirate03/Downloads/A3CCarDiscrete2",
-                "/home/pirate03/PycharmProjects/hobotrl/playground/resnet/resnet_ac_with_q_learned_from_wait40s",
+            #     "/home/pirate03/PycharmProjects/hobotrl/playground/resnet/resnet_ac_with_q_learned_from_wait40s",
+    # "/home/pirate03/PycharmProjects/hobotrl/playground/resnet/docker005_resnet_frame_skip_learn_q"
+    "/home/pirate03/PycharmProjects/hobotrl/playground/resnet/docker006_resnet_frame_skip_learn_q"
              ]
 
 fnames = [
@@ -44,7 +46,9 @@ fnames = [
     # "resnet_check_no_q_wait_40s_new_func_reward_learning_off.txt"
     #         "mnt_a_rl.work_agents_hobotrl_log_A3CCarDiscrete.txt",
     #         "home_pirate03_Downloads_A3CCarDiscrete2.txt",
-            "/home/pirate03/PycharmProjects/hobotrl/playground/resnet/resnet_ac_with_q_learned_from_wait40s/resnet_ac_with_q_learned_from_wait40s.txt"
+    #         "/home/pirate03/PycharmProjects/hobotrl/playground/resnet/resnet_ac_with_q_learned_from_wait40s/resnet_ac_with_q_learned_from_wait40s.txt"
+    # "/home/pirate03/PycharmProjects/hobotrl/playground/resnet/docker005_resnet_frame_skip_learn_q/resnet.txt"
+    "/home/pirate03/PycharmProjects/hobotrl/playground/resnet/docker006_resnet_frame_skip_learn_q/resnet.txt"
 
          ]
 

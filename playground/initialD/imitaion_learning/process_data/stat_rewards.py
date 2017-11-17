@@ -43,19 +43,16 @@ def obj_rewards(obj_dir, num_eps):
     return vec_rewards
 
 
-def new_func(rewards, action):
+def new_func(rewards):
     if rewards[3] < 0.5 or rewards[4] > 0.5:
         reward = -1.0
     else:
-        if action == 1 or action == 2:
-            reward = rewards[2] - 1.0
         reward = rewards[2] / 10.0
     return reward
 
 
 def eps_new_func_reward(eps_dir):
     f = open(eps_dir + "/" + "0000.txt", "r")
-    img_names = sorted(os.listdir(eps_dir))[1:]
     lines = f.readlines()
     stat_rewards = []
     scarlar_rewards = []
@@ -63,7 +60,7 @@ def eps_new_func_reward(eps_dir):
         if i % 2 == 1:
             vec_rewards = map(float, line.split(',')[:-1])
             stat_rewards.append(vec_rewards)
-            scarlar_rewards.append(new_func(vec_rewards, int(img_names[i/2].split('.')[0].split('_')[-1])))
+            scarlar_rewards.append(new_func(vec_rewards))
     for i in range(len(scarlar_rewards)):
         stat_rewards[i].append(scarlar_rewards[i])
 
@@ -92,8 +89,7 @@ def eps_rewards_v2(eps_dir):
         if i % 4 == 2:
             vec_rewards = map(float, line.split(',')[:-1])
             stat_rewards.append(vec_rewards)
-        elif i % 4 == 0:
-            scarlar_rewards.append(float(line.split("\n")[0].split(",")[-1]))
+            scarlar_rewards.append(new_func(vec_rewards))
         else:
             pass
 
@@ -164,7 +160,7 @@ def stat(obj_dir, num, is_v2=True):
     if is_v2:
         reward = obj_rewards_v2(obj_dir, num)
     else:
-        reward = obj_rewards(obj_dir, num)
+        reward = obj_new_func_reward(obj_dir, num)
     for i in range(int(math.ceil(num / 100.0))):
         reward_between = [v for vs in reward[i*100:(i+1)*100] for v in vs]
         reward_to = [v for vs in reward[:(i+1)*100] for v in vs]
@@ -175,6 +171,24 @@ def stat(obj_dir, num, is_v2=True):
 def stat_list(obj_dir_list, num_list, is_v2_list):
     for obj_dir, num, is_v2 in zip(obj_dir_list, num_list, is_v2_list):
         stat(obj_dir, num, is_v2)
+
+
+def stat_eps_ave(obj_dir, num, is_v2=True):
+    print obj_dir
+    if is_v2:
+        reward = obj_rewards_v2(obj_dir, num)
+    else:
+        reward = obj_new_func_reward(obj_dir, num)
+    for i in range(int(math.ceil(num / 100.0))):
+        reward_between = [np.mean(vs, axis=0) for vs in reward[i*100:(i+1)*100]]
+        reward_to = [np.mean(vs, axis=0) for vs in reward[:(i+1)*100]]
+        print "{}-{}: {}".format(i*100, min((i+1)*100, num), np.mean(reward_between, axis=0))
+        print "{}: {} \n".format(min((i+1)*100, num), np.mean(reward_to, axis=0))
+
+def stat_eps_ave_list(obj_dir_list, num_list, is_v2_list):
+    for obj_dir, num, is_v2 in zip(obj_dir_list, num_list, is_v2_list):
+        stat_eps_ave(obj_dir, num, is_v2)
+
 
 
 import matplotlib.pyplot as plt
@@ -364,18 +378,28 @@ if __name__ == "__main__":
                     # '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/resnet_check_learn_q_wait_40s_new_func_reward_records',
                     # '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/resnet_check_learn_q_wait_40s_new_func_reward_no_q_records',
                     # '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/resnet_pq_ac_stop_conv4_include_red_line_reward_records',
-                    # '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/resnet_check_no_q_wait_40s_new_func_reward_learning_off_records',
+                    '/home/pirate03/work/agents/recording_data/resnet_check_no_q_wait_40s_new_func_reward_learning_off_records',
                     # '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/repeat_learn_q_v0_turn_learn_on_only_q_loss_records'
                     # '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/repeat_learn_q_v0_turn_learn_off'
         '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/record_rule_docker005_all_green_obj80',
-        '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/resnet_learn_q_wait40s_records',
-        '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/resnet_ac_with_q_learned_from_wait40s_records'
+        '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/wait_40s/resnet_learn_q_wait40s_records',
+        '/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/wait_40s/resnet_ac_with_q_learned_from_wait40s_records',
+        "/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/resnet_frame_skip_scale_reward_ac_records",
+        "/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/resnet_frame_skip_scale_reward_test_model_records",
+        "/home/pirate03/hobotrl_data/playground/initialD/exp/docker006_frame_skip/learn_q_records",
+        "/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/resnet_frame_skip_scale_reward_wrong_total_reward/ac_records",
+        "/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/resnet_frame_skip_scale_reward_wrong_total_reward/learn_q_records"
     ]
-    num_list = [500, 350, 1500]
-    is_v2_list = [False, True, True]
-    # stat_list(obj_dir_list, num_list, is_v2_list)
-    disc_list = [0.99, 0.99, 0.99]
-    stat_obj_disc_eps_rewards_v2_list(obj_dir_list, num_list, disc_list, is_v2_list)
+    num_list = [600, 500, 350, 1000, 650, 250, 300, 300, 900]
+    is_v2_list = [True, False, True, True, True, True, True, True, True]
+    print "zhankai eps: "
+    stat_list(obj_dir_list, num_list, is_v2_list)
+
+    # print "\n\n"
+    # print "eps ave: "
+    # stat_eps_ave_list(obj_dir_list, num_list, is_v2_list)
+    # disc_list = [0.99, 0.99, 0.99, 0.99]
+    # stat_obj_disc_eps_rewards_v2_list(obj_dir_list, num_list, disc_list, is_v2_list)
 
 
     # obj_dir = "/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/resnet_ac_with_q_learned_from_wait40s_records"
