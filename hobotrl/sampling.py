@@ -149,19 +149,20 @@ class TruncateTrajectorySampler(Sampler):
 
         self._step_n = 0
 
-    def step(self, state, action, reward, next_state, episode_done, **kwargs):
+    def step(self, state, action, reward, next_state, episode_done, force_sample=False, **kwargs):
         """
         :param state:
         :param action:
         :param reward:
         :param next_state:
         :param episode_done:
+        :param force_sample: boolean, True if sample batch immediately ignoring interval setting.
         :param kwargs:
         :return: list of dict, each dict is a column-wise batch of transitions in a trajectory
         """
         self._step_n += 1
         self._replay.push_sample(self._sample_maker(state, action, reward, next_state, episode_done, **kwargs))
-        if self._step_n % self._interval == 0 \
+        if (self._step_n % self._interval == 0 or force_sample) \
                 and self._replay.get_count() > self._batch_size * self._trajectory_length * 4:
             batch_size = self._batch_size
             trajectories = []
@@ -239,6 +240,95 @@ class TruncateTrajectorySampler(Sampler):
     def _get_batch(self, start, end):
         return self._replay.get_batch((np.arange(start, end + 1) + self._replay.get_capacity())
                                       % self._replay.get_capacity())
+
+
+class ImmutablePlayback(playback.Playback):
+    def __init__(self, playback):
+        """
+        Used with CompositeSampler to support multiple sampling methods on the same data set:
+
+        ```
+            playback = ImmutablePlayback(playback)
+            transition = TransitionSampler(playback, ...)
+            trajectory = TruncateTrajectorySampler(playback, ...)
+            sampler = CompositeSampler(playback, {"transition": transition, "trajectory": trajectory})
+
+            sampler.step(...)
+            # should return {"transition": {...}, "trajectory": {...}}
+        ```
+        :param playback:
+        """
+        super(ImmutablePlayback, self).__init__(1, "sequence", "random", None, None)
+        self._playback = playback
+
+    def push_sample(self, sample, sample_score=0, force=False):
+        if not force:
+            return
+        super(ImmutablePlayback, self).push_sample(sample, sample_score)
+
+    def next_batch_index(self, batch_size):
+        return super(ImmutablePlayback, self).next_batch_index(batch_size)
+
+    def get_count(self):
+        return super(ImmutablePlayback, self).get_count()
+
+    def add_sample(self, sample, index, sample_score=0, force=False):
+        if not force:
+            return
+        super(ImmutablePlayback, self).add_sample(sample, index, sample_score)
+
+    def get_capacity(self):
+        return super(ImmutablePlayback, self).get_capacity()
+
+    def sample_batch(self, batch_size):
+        return super(ImmutablePlayback, self).sample_batch(batch_size)
+
+    def reset(self, force=False):
+        if not force:
+            return
+        super(ImmutablePlayback, self).reset()
+
+    def update_score(self, index, score, force=False):
+        if not force:
+            return
+        super(ImmutablePlayback, self).update_score(index, score)
+
+    def get_batch(self, index):
+        return super(ImmutablePlayback, self).get_batch(index)
+
+
+class CompositeSampler(Sampler):
+    def __init__(self, playback, samplers, sampler_maker=None):
+        """
+        A composite sampler supports multiple sampling methods on the same data set.
+        see @{ImmutablePlayback}
+        :param playback:
+        :type playback: playback.Playback
+        :param samplers:
+        :type samplers: dict(str, Sampler)
+        """
+        super(CompositeSampler, self).__init__()
+        self._playback = ImmutablePlayback(playback)
+        self._samplers = samplers
+        self._maker = sampler_maker if sampler_maker is not None else default_make_sample
+
+    def step(self, state, action, reward, next_state, episode_done, **kwargs):
+        self._playback.push_sample(self._maker(state, action, reward, next_state, episode_done, **kwargs), force=True)
+        result = {}
+        for name in self._samplers:
+            sampler = self._samplers[name]
+            sample = sampler.step(state, action, reward, next_state, episode_done, **kwargs)
+            if sample is not None:
+                result[name] = sample
+
+        result = None if result == {} else result
+        return result
+
+    def post_step(self, batch, info):
+        for name in batch:
+            sampler = self._samplers[name]
+            if name in info:
+                sampler.post_step(batch[name], info[name])
 
 
 class SamplerAgentMixin(object):

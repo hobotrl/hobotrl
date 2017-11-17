@@ -43,13 +43,23 @@ def func_compile_action(action):
     ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0, )]
     return ACTIONS[action]
 
-def func_compile_reward_agent(rewards, action=0):
+def func_compile_exp_agent(state, action, rewards, next_state, done):
     global momentum_ped
     global momentum_opp
+    global ema_speed
+
+    # Compile reward
     rewards = np.mean(np.array(rewards), axis=0)
     rewards = rewards.tolist()
     rewards.append(np.logical_or(action==1, action==2))
     print (' '*10+'R: ['+'{:4.2f} '*len(rewards)+']').format(*rewards),
+
+    speed = rewards[2]
+    ema_speed = 0.5*ema_speed + 0.5*speed
+    longest_penalty = rewards[1]
+    obs_risk = rewards[5]
+    momentum_opp = (rewards[3]<0.5)*(momentum_opp+(1-rewards[3]))
+    momentum_opp = min(momentum_opp, 20)
 
     # obstacle
     rewards[0] *= 0.0
@@ -58,8 +68,6 @@ def func_compile_reward_agent(rewards, action=0):
     # velocity
     rewards[2] *= 10
     # opposite
-    momentum_opp = (rewards[3]<0.5)*(momentum_opp+(1-rewards[3]))
-    momentum_opp = min(momentum_opp, 20)
     rewards[3] = -20*(0.9+0.1*momentum_opp)*(momentum_opp>1.0)
     # ped
     momentum_ped = (rewards[4]>0.5)*(momentum_ped+rewards[4])
@@ -72,7 +80,20 @@ def func_compile_reward_agent(rewards, action=0):
     reward = np.sum(rewards)/100.0
     print '{:6.4f}, {:6.4f}'.format(momentum_opp, momentum_ped),
     print ': {:7.4f}'.format(reward)
-    return reward
+
+    # early stopping
+    if ema_speed < 0.1:
+        if longest_penalty > 0.5:
+            print "[Early stopping] stuck at intersection."
+            done = True
+        if obs_risk > 0.2:
+            print "[Early stopping] stuck at obstacle."
+            done = True
+        if momentum_ped>1.0:
+            print "[Early stopping] stuck on pedestrain."
+            done = True
+
+    return state, action, reward, next_state, done
 
 def gen_backend_cmds():
     # ws_path = '/home/lewis/Projects/catkin_ws_pirate03_lowres350/'
@@ -103,8 +124,8 @@ def gen_backend_cmds():
     return backend_cmds
 
 env = DrivingSimulatorEnv(
-    # address="10.31.40.204", port='22224',
-    address='localhost', port='22230',
+    address="10.31.40.197", port='6003',
+    # address='localhost', port='6003',
     backend_cmds=gen_backend_cmds(),
     defs_obs=[
         ('/training/image/compressed', 'sensor_msgs.msg.CompressedImage'),
@@ -241,8 +262,9 @@ def log_info(update_info):
             action_fraction *= 0.9
             action_fraction[s[0]] += 0.1
             action_td_loss[s[0]] = 0.9*action_td_loss[s[0]] + 0.1*s[3]
-            #if cnt_skip==n_skip:
-            #    print ("{} "+"{:8.5f} "*4+"{}").format(*s)
+            if cnt_skip==n_skip:
+                pass
+                # print ("{} "+"{:8.5f} "*4+"{}").format(*s)
         # print action_fraction
         # print action_td_loss
     for tag in update_info:
@@ -299,17 +321,21 @@ def log_info(update_info):
                 tag='num_episode', simple_value=n_ep)
             summary_proto.value.add(
                 tag='cum_reward', simple_value=cum_reward)
+            summary_proto.value.add(
+                tag='per_step_reward', simple_value=cum_reward/n_steps)
         else:
             summary_proto.value.add(
-                tag='num_episode_noexpolore', simple_value=n_ep)
+                tag='num_episode_noexplore', simple_value=n_ep)
             summary_proto.value.add(
-                tag='cum_reward_noexpolore',
+                tag='cum_reward_noexplore',
                 simple_value=cum_reward)
+            summary_proto.value.add(
+                tag='per_step_reward_noexplore', simple_value=cum_reward/n_steps)
 
     return summary_proto
 
 n_interactive = 0
-n_skip = 3
+n_skip = 8
 n_additional_learn = 4
 n_ep = 0  # last ep in the last run, if restart use 0
 n_test = 10  # num of episode per test run (no exploration)
@@ -331,6 +357,7 @@ try:
         action_td_loss = np.zeros(len(ACTIONS),)
         momentum_opp = 0.0
         momentum_ped = 0.0
+        ema_speed = 10.0
         while True:
             n_ep += 1
             env.env.n_ep = n_ep  # TODO: do this systematically
@@ -341,14 +368,17 @@ try:
             skip_reward = 0
             cum_td_loss = 0.0
             cum_reward = 0.0
-            state, action  = env.reset(), 0
+            state  = env.reset()
+            # action = 0  # default no-op at start
+            action = agent.act(state, exploration=not exploration_off)
+            skip_action = action
             while True:
                 n_steps += 1
                 # Env step
-                next_state, reward, done, info = env.step(action)
-                reward = func_compile_reward_agent(reward, action)
+                next_state, reward, done, info = env.step(skip_action)
+                state, action, reward, next_state, done = func_compile_exp_agent(
+                    state, action, reward, next_state, done)
                 skip_reward += reward
-                # done = (reward < -0.9) or done  # heuristic early stopping
                 # agent step
                 cnt_skip -= 1
                 update_info = {}
@@ -368,6 +398,7 @@ try:
                     cnt_skip = n_skip
                     skip_reward = 0
                     state, action = next_state, next_action  # s',a' -> s,a
+                    skip_action = next_action
                 else:
                     if not learning_off:
                         t = time.time()
@@ -376,7 +407,7 @@ try:
                             reward=None, next_state=None,
                             episode_done=None)
                         t_learn += time.time() - t
-                    next_action = action
+                    skip_action = 3  # no op during skipping
                 sv.summary_computed(sess, summary=log_info(update_info))
                 # addtional learning steps
                 if not learning_off:

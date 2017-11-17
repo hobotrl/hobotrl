@@ -115,6 +115,8 @@ class Utils(object):
     @staticmethod
     def relative_var_scope(abs_var_scope):
         current = tf.get_variable_scope().name
+        if current == "":
+            return abs_var_scope
         if abs_var_scope.find(current) != 0:
             raise IndexError("cannot access scope[%s] from current scope[%s]!" % (abs_var_scope, current))
         if current == abs_var_scope:
@@ -152,6 +154,7 @@ class NetworkSymbol(object):
         :type network: Network
         """
         super(NetworkSymbol, self).__init__()
+        op = op.op if isinstance(op, NetworkSymbol) else op
         self._op, self._name, self._network = op, name, network
 
     @property
@@ -282,6 +285,9 @@ class Network(object):
 
     def set_session(self, sess):
         self._sess = sess
+        if self._sub_nets is not None:
+            for name in self._sub_nets:
+                self._sub_nets[name].set_session(sess)
 
 
 class NetworkSyncer(object):
@@ -400,7 +406,6 @@ class NetworkFunction(Function):
 
     @property
     def session(self):
-
         sess = self._sess if self._sess is not None else self._network.session
         return sess
 
@@ -472,6 +477,10 @@ class UpdateOperation(object):
 class MinimizeLoss(UpdateOperation):
     def __init__(self, op_loss, var_list=None):
         super(MinimizeLoss, self).__init__(op_loss, var_list)
+
+    def __str__(self):
+        string = super(MinimizeLoss, self).__str__()
+        return string + "["+str(self.op_loss)+"]"
 
 
 class ApplyGradient(UpdateOperation):

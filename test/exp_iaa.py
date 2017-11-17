@@ -32,7 +32,7 @@ class I2A(A3CExperimentWithI2A):
                 input_state = inputs[0]
                 se_conv = hrl.utils.Network.conv2ds(input_state,
                                                shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
-                                               out_flatten=False,
+                                               out_flatten=True,
                                                activation=tf.nn.relu,
                                                l2=l2,
                                                var_scope="se")
@@ -41,25 +41,25 @@ class I2A(A3CExperimentWithI2A):
             def create_ac(inputs):
                 l2 = 1e-7
                 input_feature = inputs[0]
-
-                ac_feature = hrl.utils.Network.conv2ds(input_feature,
-                                                   shape=[(32, 3, 1)],
-                                                   out_flatten=True,
-                                                   activation=tf.nn.relu,
-                                                   l2=l2,
-                                                   var_scope="conv_ac")
-                se_linear = hrl.utils.Network.layer_fcs(ac_feature, [], 200,
+                #
+                # ac_feature = hrl.utils.Network.conv2ds(input_feature,
+                #                                    shape=[(32, 3, 1)],
+                #                                    out_flatten=True,
+                #                                    activation=tf.nn.relu,
+                #                                    l2=l2,
+                #                                    var_scope="conv_ac")
+                se_linear = hrl.utils.Network.layer_fcs(input_feature, [256], 256,
                                                         activation_hidden=tf.nn.relu,
                                                         activation_out=tf.nn.relu,
                                                         l2=l2,
                                                         var_scope="se_linear")
 
-                v = hrl.utils.Network.layer_fcs(se_linear, [256], 1,
+                v = hrl.utils.Network.layer_fcs(se_linear, [], 1,
                                                 activation_hidden=tf.nn.relu,
                                                 l2=l2,
                                                 var_scope="v")
                 v = tf.squeeze(v, axis=1)
-                pi = hrl.utils.Network.layer_fcs(se_linear, [256], dim_action,
+                pi = hrl.utils.Network.layer_fcs(se_linear, [], dim_action,
                                                  activation_hidden=tf.nn.relu,
                                                  activation_out=tf.nn.softmax,
                                                  l2=l2,
@@ -93,9 +93,9 @@ class I2A(A3CExperimentWithI2A):
 
                 input_action = inputs[1]
                 input_action = tf.one_hot(indices=input_action, depth=dim_action, on_value=1.0, off_value=0.0, axis=-1)
-                input_action_tiled = tf.image.resize_images(tf.reshape(input_action, [-1, 1, 1, dim_action]),
-                                                      [((((dim_observation[0]+1)/2+1)/2+1)/2+1)/2,
-                                                       ((((dim_observation[1]+1)/2+1)/2+1)/2+1)/2])
+                # input_action_tiled = tf.image.resize_images(tf.reshape(input_action, [-1, 1, 1, dim_action]),
+                #                                       [((((dim_observation[0]+1)/2+1)/2+1)/2+1)/2,
+                #                                        ((((dim_observation[1]+1)/2+1)/2+1)/2+1)/2])
 
                 conv_1 = hrl.utils.Network.conv2ds(input_state,
                                                shape=[(32, 8, 4)],
@@ -199,8 +199,6 @@ class I2A(A3CExperimentWithI2A):
                 l2 = 1e-7
                 input_state = inputs[0]
                 input_reward = inputs[1]
-                print "-------------------------------------"
-                print input_state, "\n", input_reward
 
                 rse = hrl.utils.Network.conv2ds(input_state,
                                                shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],

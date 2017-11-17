@@ -161,8 +161,8 @@ class EnvModelUpdater(network.NetworkUpdater):
                                                         name="input_next_state")
                 self._input_reward = tf.placeholder(dtype=tf.float32, shape=[None], name="input_reward")
 
-            self.op_next_frame = next_frame_function.output().op
-            self.op_reward = reward_function.output().op
+                self.op_next_frame = next_frame_function.output().op
+                self.op_reward = reward_function.output().op
 
             with tf.name_scope("env_model"):
                 self._env_loss = tf.reduce_mean(
@@ -205,6 +205,7 @@ class EnvModelUpdater(network.NetworkUpdater):
         if self.imshow_count % 2 == 0:
             width = np.shape(state[0])[1]
             for i in range(len(reward) - 2):
+
                 pred_1 = self._next_frame_function(np.reshape(state[i], (1, width, width, 12)), np.reshape(action[i], 1),
                                                    np.reshape(action1[i], 1), np.reshape(action2[i], 1))
                 # pred_2 = self._next_frame_function1(np.reshape(state[i], (1, width, width, 12)), np.reshape(action[i], 1),
@@ -255,6 +256,7 @@ class EnvModelUpdater(network.NetworkUpdater):
                             cv2.cvtColor(255 * next_state[i + 1][:, :, 9:12].astype(np.float32), cv2.COLOR_RGB2BGR))
                 cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_g_ground_truth_3.png" % (self.imshow_count, i),
                             cv2.cvtColor(255 * next_state[i + 2][:, :, 9:12].astype(np.float32), cv2.COLOR_RGB2BGR))
+
         return network.UpdateRun(feed_dict=feed_dict, fetch_dict={"env_model_loss": self._op_loss,
                                                                   "reward_loss": self._reward_loss,
                                                                   "observation_loss": self._env_loss})
@@ -374,6 +376,8 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
             out_reward_concat = tf.concat([out_reward, out_reward1, out_reward2], axis=0)
 
             # out_action = rollout_action_function.output().op
+            # out_next_state = next_state
+            # out_reward = reward
 
             # for i in range(3):
             #     for j in range(3):
@@ -381,25 +385,26 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
             #         rollout_action_function = network.NetworkFunction(current_rollout["rollout_action"])
             #
             #         rollout_action_dist = tf.contrib.distributions.Categorical(rollout_action_function.output().op)
-            #         rollout_action = rollout_action_dist.sample()
-            #         current_action = tf.one_hot(indices=rollout_action, depth=rollout_action_dist.event_size, on_value=1.0, off_value=0.0, axis=-1)
+            #         current_action = rollout_action_dist.sample()
+            #         # current_action = tf.one_hot(indices=rollout_action, depth=rollout_action_dist.event_size, on_value=1.0, off_value=0.0, axis=-1)
             #
             #         env_model = env_model([[current_state], current_action], name_scope="env_model_%d_%d" %(i,j))
             #
             #         next_state = network.NetworkFunction(env_model["next_state"]).output().op
             #         reward = network.NetworkFunction(env_model["reward"]).output().op
             #
-            #         if j == 0:
+            #         if i == 0 and j == 0:
             #             out_action = rollout_action_function.output().op
-            #             out_next_state = next_state
-            #             out_reward = reward
+            #         if j == 0:
+            #             # out_next_state = next_state
+            #             # out_reward = reward
             #             encode_states = next_state
             #             rollout_reward = reward
             #         else:
             #             encode_states = tf.concat([next_state, encode_states], axis=3)
             #             rollout_reward = tf.concat([rollout_reward, reward], axis=0)
             #
-            #         current_state = next_state
+            #         current_state = tf.concat([current_state[:,:,:,3:12], next_state], axis=3)
             #
             #     encode_state = encode_states
             #     # input_reward = rollout_reward
@@ -531,6 +536,7 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
             return info, {}
         else:
             print "get out"
+
             return {}, {}
 
     def set_session(self, sess):
