@@ -216,7 +216,7 @@ def gen_backend_cmds():
     return backend_cmds
 
 env = DrivingSimulatorEnv(
-    address="10.31.40.197", port='7014',
+    address="10.31.40.197", port='9004',
     # address='localhost', port='22224',
     backend_cmds=gen_backend_cmds(),
     defs_obs=[

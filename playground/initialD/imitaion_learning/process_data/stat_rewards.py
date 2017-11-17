@@ -388,10 +388,11 @@ if __name__ == "__main__":
         "/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/resnet_frame_skip_scale_reward_test_model_records",
         "/home/pirate03/hobotrl_data/playground/initialD/exp/docker006_frame_skip/learn_q_records",
         "/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/resnet_frame_skip_scale_reward_wrong_total_reward/ac_records",
-        "/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/resnet_frame_skip_scale_reward_wrong_total_reward/learn_q_records"
+        "/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/resnet_frame_skip_scale_reward_wrong_total_reward/learn_q_records",
+        "/home/pirate03/hobotrl_data/playground/initialD/exp/docker005_no_stopping_static_middle_no_path_all_green/resnet_frame_skip_scale_reward_ac_v2_records"
     ]
-    num_list = [600, 500, 350, 1000, 650, 250, 300, 300, 900]
-    is_v2_list = [True, False, True, True, True, True, True, True, True]
+    num_list = [600, 500, 350, 1000, 650, 250, 300, 300, 900, 260]
+    is_v2_list = [True, False, True, True, True, True, True, True, True, True]
     print "zhankai eps: "
     stat_list(obj_dir_list, num_list, is_v2_list)
 
