@@ -187,9 +187,11 @@ class RewardFunction:
         #   centered around ego car, then there will a considerable portions
         #   of black pixels, i.e. RGB =(0,0,0).
         patch, sum_sq = self._patch_topdown(img)
-        _, _ = self._patch_tilted(img)
         ped_factor = np.sum(np.mean(patch, axis=2)<10.0)/(1.0*sum_sq)
         self.pub_on_pedestrian.publish(ped_factor>0.05)
+        patch, sum_sq = self._patch_tilted(img)
+        ped_factor = np.sum(np.mean(patch, axis=2)<10.0)/(1.0*sum_sq)
+        self.pub_on_pedestrian_tilt.publish(ped_factor>0.05)
 
     def _patch_topdown(self, img):
         offset_y = int(-375/1400.0*img.shape[0])
