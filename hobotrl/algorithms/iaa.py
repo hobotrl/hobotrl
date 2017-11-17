@@ -211,7 +211,7 @@ class EnvModelUpdater(network.NetworkUpdater):
                     r_predict.append(net_trans["reward"].op)
                     r_predict_loss.append(network.Utils.clipped_square(r_predict[-1] - rn[i]))
                     logging.warning("[%s]: state:%s, frame:%s", i, se0.shape, f0.shape)
-                    f_predict.append(net_decoder([se0, f0], name_scope="frame_decoder%d" % i)["next_frame"].op)
+                    f_predict.append(net_decoder([cur_goal, f0], name_scope="frame_decoder%d" % i)["next_frame"].op)
                     f_predict_loss.append(network.Utils.clipped_square(f_predict[-1] - fn[i]))
                     if transition_loss_weight > 0:
                         transition_loss.append(network.Utils.clipped_square(ses_predict[-1] - sen[i])
