@@ -122,7 +122,7 @@ def func_compile_reward_agent(rewards):
     print (' ' * 10 + 'R: [' + '{:4.2f} ' * len(rewards) + ']').format(*rewards),
     # if car is on opp side or car is on ped side, get reward of -1.0
     if rewards[3] < 0.5 or rewards[4] > 0.5:
-        reward = -0.1
+        reward = -0.01
     else:
         # if action == 1 or action == 2:
         #     reward = rewards[2] - 1.0
@@ -167,7 +167,8 @@ def gen_backend_cmds():
         # 5. start simulation restarter backend
         ['python', backend_path+'rviz_restart.py', 'honda_dynamic_obs.launch'],
         # 6. [optional] video capture
-        ['python', backend_path+'non_stop_data_capture.py', 0]
+        ['python', backend_path+'non_stop_data_capture.py', 0],
+        ['python', backend_path+'node_monitor.py', '--node_name', '/control', '--rate', 10.0]
     ]
     return backend_cmds
 
@@ -182,30 +183,29 @@ def record(summary_writer, step_n, info):
 
 tf.app.flags.DEFINE_string("logdir",
                            "/home/pirate03/PycharmProjects/hobotrl/playground/resnet/"
-                           "resnet_frame_skip_scale_reward_ac_v3",
+                           "resnet_frame_skip_scale_reward_ac_v2_test_model",
                            """save tmp model""")
 tf.app.flags.DEFINE_string("savedir",
                            "/home/pirate03/hobotrl_data/playground/initialD/exp/"
                            "docker005_no_stopping_static_middle_no_path_all_green/"
-                           "resnet_frame_skip_scale_reward_ac_v3_records",
+                           "resnet_frame_skip_scale_reward_ac_v2_test_model",
                            """records data""")
-tf.app.flags.DEFINE_string("readme", "learn q with frame skipping. Shorten step_delay_target."
-                                     "Scale return."
-                                     "Turn learning on."
+tf.app.flags.DEFINE_string("readme", "test model learned with frame skipping and scale reward."
+                                     "Turn learning off."
                                      "use q loss to instead op_loss."
                                      "Stop gradient on pi layer and conv layer"
                                      "InitialD waits until 40s."
                                      "Use new reward function.", """readme""")
 tf.app.flags.DEFINE_string("port", '7024', "Docker port")
-tf.app.flags.DEFINE_float("gpu_fraction", 0.6, """gpu fraction""")
+tf.app.flags.DEFINE_float("gpu_fraction", 0.3, """gpu fraction""")
 tf.app.flags.DEFINE_float("discount_factor", 0.99, """actor critic discount factor""")
-tf.app.flags.DEFINE_integer("batch_size", 64, """actor critic discount factor""")
+tf.app.flags.DEFINE_integer("batch_size", 4, """actor critic discount factor""")
 tf.app.flags.DEFINE_float("lr", 0.01, """actor critic learning rate""")
 tf.app.flags.DEFINE_bool("is_learn_q", False, """learn q or not""")
 tf.app.flags.DEFINE_bool("is_fine_tune", True, """Stop gradient on conv layer if fine tune""")
 # tf.app.flags.DEFINE_bool("use_pretrained_q", False, """learn q function or directly actor critic""")
 tf.app.flags.DEFINE_bool("is_dummy_action", False, "record rule based scenes")
-tf.app.flags.DEFINE_bool("learning_off", False, "learning on or off")
+tf.app.flags.DEFINE_bool("learning_off", True, "learning on or off")
 tf.app.flags.DEFINE_float("step_delay_target", 0.4, "learning on or off")
 FLAGS = tf.app.flags.FLAGS
 
@@ -225,6 +225,7 @@ env = DrivingSimulatorEnv(
         ('/rl/last_on_opposite_path', 'std_msgs.msg.Int16'),
         ('/rl/on_pedestrian', 'std_msgs.msg.Bool'),
         ('/rl/obs_factor', 'std_msgs.msg.Float32'),
+        ('/rl/node_up/control', 'std_msgs.msg.Bool')
     ],
     defs_action=[('/autoDrive_KeyboardMode', 'std_msgs.msg.Char')],
     rate_action=10.0,
@@ -260,7 +261,7 @@ agent = hrl.ActorCritic(
             state_shape=state_shape,
             # ACUpdate arguments
             discount_factor=FLAGS.discount_factor,
-            entropy=hrl.utils.CappedLinear(5e4, 1e-2, 0.0),
+            entropy=hrl.utils.CappedLinear(4e4, 1e-2, 0.0),
             target_estimator=None,
             max_advantage=100.0,
             # optimizer arguments
@@ -344,13 +345,15 @@ try:
             skip_reward = 0.0
 
             distribution = agent._policy._distribution.dist_run(np.asarray(state)[np.newaxis, :])
-            sample_i = []
-            for p in distribution:
-                sample = np.random.choice(np.arange(3), p=p)
-                sample_i.append(sample)
-                # sample_i.append(np.argmax(p))
-            sample_i = np.asarray(sample_i)
-            action = sample_i[0]
+            # sample_i = []
+            # for p in distribution:
+            #     sample = np.random.choice(np.arange(3), p=p)
+            #     sample_i.append(sample)
+            #     # sample_i.append(np.argmax(p))
+            # sample_i = np.asarray(sample_i)
+            # action = sample_i[0]
+            p = distribution[0]
+            action = np.argmax(p)
             skip_action = action
 
             str_p = ""
@@ -368,7 +371,7 @@ try:
                 # print "step time: ", t2 - t1
                 next_state = resize_state(np.array(next_state))
                 reward = func_compile_reward_agent(vec_reward)
-                unscaled_rewards.append(reward * 10.0)
+                unscaled_rewards.append(10.0*reward)
                 skip_reward += reward
                 img = state[:, :, 6:]
                 img_path = eps_dir + "/" + str(n_steps + 1).zfill(4) + \
@@ -377,6 +380,9 @@ try:
                 recording_file.write(str(n_steps) + ',' + str(action) + ',' + str(reward) + '\n')
 
                 vec_reward = np.mean(np.array(vec_reward), axis=0)
+                if vec_reward[6] < 0.5:
+                    done = True
+
                 vec_reward = vec_reward.tolist()
                 str_reward = ""
                 for r in vec_reward:
@@ -400,13 +406,15 @@ try:
                     record(summary_writer, total_steps, info)
 
                     distribution = agent._policy._distribution.dist_run(np.asarray(state)[np.newaxis, :])
-                    sample_i = []
-                    for p in distribution:
-                        sample = np.random.choice(np.arange(3), p=p)
-                        sample_i.append(sample)
-                        # sample_i.append(np.argmax(p))
-                    sample_i = np.asarray(sample_i)
-                    action = sample_i[0]
+                    # sample_i = []
+                    # for p in distribution:
+                    #     sample = np.random.choice(np.arange(3), p=p)
+                    #     sample_i.append(sample)
+                    #     # sample_i.append(np.argmax(p))
+                    # sample_i = np.asarray(sample_i)
+                    # action = sample_i[0]
+                    p = distribution[0]
+                    action = np.argmax(p)
 
                     str_p = ""
                     for tp in p.tolist():
