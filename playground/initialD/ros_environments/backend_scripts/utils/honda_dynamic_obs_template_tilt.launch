@@ -1,0 +1,30 @@
+<?xml version="1.4"?>
+
+<launch>
+
+<param name="/route" type="str" value="to be filled" />
+<param name="/use_sim_time" type="bool" value="true"/>
+<param name="/map/filename" type="str" value="$(find map_api)/data/honda_wider.xodr"/>
+<param name="/obstacles3/filename" type="str" value="to be filled"/>
+<param name="/signals/filename" type="str" value="$(find planning)/config/honda.signals"/>
+<param name="/car/dest_coord_x" type="double" value="to be filled"/>
+<param name="/car/dest_coord_y" type="double" value="to be filled"/>
+
+
+<include file="$(find simulator)/launch/simulator_ground.launch" pass_all_args="true">
+	<arg name="car_pos" value="to be filled"/>
+	<arg name="car_model" value="-sdf -file $(find simulator)/models/car/car.sdf -model car "/>
+</include>
+
+<include file="$(find control)/launch/honda_control.launch"/>
+<include file="$(find planning)/launch/camera_output_tilt.launch"/>
+
+<node name="car_frame" pkg="planning" type="car_frame" output="screen" respawn="true"/>
+
+<node name="keyboard_node" pkg="keyboard" type="keyboard_node" output="screen" launch-prefix="xterm -e"/>
+
+<node name="mapviewer" pkg="simulator" type="mapviewer" output="screen"/>
+
+<node name="rviz" pkg="rviz" type="rviz" args="-d $(find planning)/config/honda_image.rviz" output="screen" respawn="true"/>
+
+</launch>
