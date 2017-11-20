@@ -243,19 +243,20 @@ def f_net(inputs):
 
     return {"q": q}
 
-lr = tf.get_variable(
-    'learning_rate', [], dtype=tf.float32,
-    initializer=tf.constant_initializer(1e-3), trainable=False
-)
-lr_in = tf.placeholder(dtype=tf.float32)
-op_set_lr = tf.assign(lr, lr_in)
-optimizer_td = tf.train.AdamOptimizer(learning_rate=lr)
 target_sync_rate = 1e-3
 state_shape = env.observation_space.shape
 graph = tf.get_default_graph()
+# lr = tf.get_variable(
+#     'learning_rate', [], dtype=tf.float32,
+#     initializer=tf.constant_initializer(1e-3), trainable=False
+# )
+# lr_in = tf.placeholder(dtype=tf.float32)
+# op_set_lr = tf.assign(lr, lr_in)
+optimizer_td = tf.train.AdamOptimizer(learning_rate=1e-4)
 global_step = tf.get_variable(
     'global_step', [], dtype=tf.int32,
     initializer=tf.constant_initializer(0), trainable=False)
+op_global_step_set = tf.assign(global_step, 247200)
 
 # 1 sample ~= 1MB @ 6x skipping
 replay_buffer = BigPlayback(
@@ -278,8 +279,8 @@ _agent = hrl.DQN(
     # greedy_epsilon=0.05,
     # greedy_epsilon=0.075,
     # greedy_epsilon=0.2,  # 0.2 -> 0.15 -> 0.1
-    # greedy_epsilon=CappedLinear(10000, 0.5, 0.05),
-    greedy_epsilon=CappedLinear(10000, 0.1, 0.025),
+    greedy_epsilon=CappedLinear(10000, 0.15, 0.05),
+    # greedy_epsilon=CappedLinear(10000, 0.1, 0.025),
     # optimizer arguments
     network_optimizer=hrl.network.LocalOptimizer(optimizer_td, 1.0),
     # sampler arguments
@@ -411,14 +412,15 @@ try:
         init_op=tf.global_variables_initializer(),
         logdir='./experiment',
         save_summaries_secs=10,
-        save_model_secs=900)
+        save_model_secs=3600)
 
     with sv.managed_session(config=config) as sess, \
          AsynchronousAgent(agent=_agent, method='rate', rate=update_rate) as agent:
 
         agent.set_session(sess)
-        sess.run(op_set_lr, feed_dict={lr_in: 1e-4})
-        print "Using learning rate {}".format(sess.run(lr))
+        sess.run(op_global_step_set)
+        # sess.run(op_set_lr, feed_dict={lr_in: 1e-4})
+        # print "Using learning rate {}".format(sess.run(lr))
         n_env_steps = 0
         n_agent_steps = 0
         action_fraction = np.ones(len(AGENT_ACTIONS), ) / (1.0 * len(AGENT_ACTIONS))
@@ -494,8 +496,8 @@ try:
                 sv.summary_computed(sess, summary=log_info(update_info))
                 if cnt_skip == 0:
                     if next_action == 0:
-                        cnt_skip = 1
-                        # cnt_skip = n_skip
+                        # cnt_skip = 1
+                        cnt_skip = n_skip
                     else:
                         cnt_skip = n_skip
                 # print "Agent step learn {} sec, infer {} sec".format(t_learn, t_infer)
