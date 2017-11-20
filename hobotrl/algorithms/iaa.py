@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import os
 import logging
 import tensorflow as tf
 import numpy as np
@@ -152,10 +153,10 @@ class PolicyNetUpdater(network.NetworkUpdater):
 
 
 class EnvModelUpdater(network.NetworkUpdater):
-    def __init__(self, net_se, net_transition, net_decoder, state_shape, next_frame_function, reward_function,
-                 depth=3, transition_loss_weight=1.0):
+    def __init__(self, net_se, net_transition, net_decoder, state_shape,
+                 depth=3, transition_loss_weight=0.0):
         super(EnvModelUpdater, self).__init__()
-        self._next_frame_function, self._reward_function = next_frame_function, reward_function
+        self._depth = depth
         with tf.name_scope("EnvModelUpdater"):
             with tf.name_scope("input"):
                 self._input_action = tf.placeholder(dtype=tf.uint8, shape=[None],
@@ -206,25 +207,26 @@ class EnvModelUpdater(network.NetworkUpdater):
                     goal = net_trans["next_state"].op
                     cur_goal = goal if cur_goal is None else cur_goal + goal
                     goalfrom0_predict.append(cur_goal)
-                    cur_se = cur_se + goal
+                    cur_se = se0 + cur_goal
                     ses_predict.append(cur_se)
                     r_predict.append(net_trans["reward"].op)
                     r_predict_loss.append(network.Utils.clipped_square(r_predict[-1] - rn[i]))
-                    logging.warning("[%s]: state:%s, frame:%s", i, se0.shape, f0.shape)
                     f_predict.append(net_decoder([cur_goal, f0], name_scope="frame_decoder%d" % i)["next_frame"].op)
+                    logging.warning("[%s]: state:%s, frame:%s, predicted_frame:%s", i, se0.shape, f0.shape, f_predict[-1].shape)
                     f_predict_loss.append(network.Utils.clipped_square(f_predict[-1] - fn[i]))
                     if transition_loss_weight > 0:
                         transition_loss.append(network.Utils.clipped_square(ses_predict[-1] - sen[i])
                                                * transition_loss_weight)
-                self._reward_loss = tf.reduce_mean(tf.add_n(r_predict_loss))
-                self._env_loss = tf.reduce_mean(tf.add_n(f_predict_loss))
+                self._reward_loss = tf.reduce_mean(tf.add_n(r_predict_loss) / depth)
+                self._env_loss = tf.reduce_mean(tf.add_n(f_predict_loss) / depth)
                 if transition_loss_weight > 0:
-                    self._transition_loss = tf.reduce_mean(tf.add_n(transition_loss))
+                    self._transition_loss = tf.reduce_mean(tf.add_n(transition_loss) / depth)
                 else:
                     self._transition_loss = 0
                 self._env_loss = self._env_loss / 2.0 * 255.0
                 self._reward_loss = self._reward_loss / 2.0
                 self._op_loss = self._env_loss + self._reward_loss + self._transition_loss
+            self._s0, self._f0, self._fn, self._f_predict = s0, f0, fn, f_predict
 
         self._update_operation = network.MinimizeLoss(self._op_loss,
                                                       var_list=net_transition.variables +
@@ -246,77 +248,18 @@ class EnvModelUpdater(network.NetworkUpdater):
         }
         self.imshow_count += 1
         logging.warning("----------------%s-------------" % self.imshow_count)
+        fetch_dict = {"env_model_loss": self._op_loss,
+                      "reward_loss": self._reward_loss,
+                      "observation_loss": self._env_loss,
+                      "transition_loss": self._transition_loss}
         if self.imshow_count % 500 == 0:
-            state, action, reward, next_state, episode_done, next_state1, next_state2, action1, action2, reward1, reward2 = \
-                batch["state"][0:-2, :, :, :], \
-                batch["action"][0:-2], \
-                batch["reward"][0:-2], \
-                batch["next_state"][0:-2, :, :, :], \
-                batch["episode_done"][0:-2], \
-                batch["next_state"][1:-1, :, :, :], \
-                batch["next_state"][2:, :, :, :], \
-                batch["action"][1:-1], \
-                batch["action"][2:], \
-                batch["reward"][1:-1], \
-                batch["reward"][2:]
-            width = np.shape(state[0])[1]
-            for i in range(len(reward) - 2):
-
-                pred_1 = self._next_frame_function(np.reshape(state[i], (1, width, width, 12)), np.reshape(action[i], 1),
-                                                   np.reshape(action1[i], 1), np.reshape(action2[i], 1))
-                # pred_2 = self._next_frame_function1(np.reshape(state[i], (1, width, width, 12)), np.reshape(action[i], 1),
-                #                                    np.reshape(action1[i], 1), np.reshape(action2[i], 1))[0]
-                # pred_3 = self._next_frame_function2(np.reshape(state[i], (1, width, width, 12)), np.reshape(action[i], 1),
-                #                                    np.reshape(action1[i], 1), np.reshape(action2[i], 1))[0]
-
-                # saving for MsPacman
-                # cv2.imwrite("./log/I2AMsPacman/Img/%s_%s_a_raw1.png" % (self.imshow_count,i),
-                #             cv2.cvtColor(state[i][:,:,0:3], cv2.COLOR_RGB2BGR))
-                # cv2.imwrite("./log/I2AMsPacman/Img/%s_%s_a_raw2.png" % (self.imshow_count,i),
-                #             cv2.cvtColor(state[i][:,:,3:6], cv2.COLOR_RGB2BGR))
-                # cv2.imwrite("./log/I2AMsPacman/Img/%s_%s_a_raw3.png" % (self.imshow_count,i),
-                #             cv2.cvtColor(state[i][:,:,6:9], cv2.COLOR_RGB2BGR))
-                # cv2.imwrite("./log/I2AMsPacman/Img/%s_%s_a_raw4.png" % (self.imshow_count,i),
-                #             cv2.cvtColor(state[i][:,:,9:12], cv2.COLOR_RGB2BGR))
-                # cv2.imwrite("./log/I2AMsPacman/Img/%s_%s_b_pred_1.png" % (self.imshow_count,i),
-                #             cv2.cvtColor(pred_1, cv2.COLOR_RGB2BGR))
-                # cv2.imwrite("./log/I2AMsPacman/Img/%s_%s_d_pred_2.png" % (self.imshow_count,i),
-                #             cv2.cvtColor(pred_2, cv2.COLOR_RGB2BGR))
-                # cv2.imwrite("./log/I2AMsPacman/Img/%s_%s_f_pred_3.png" % (self.imshow_count,i),
-                #             cv2.cvtColor(pred_3, cv2.COLOR_RGB2BGR))
-                # cv2.imwrite("./log/I2AMsPacman/Img/%s_%s_c_ground_truth_1.png" % (self.imshow_count, i),
-                #             cv2.cvtColor(next_state[i][:, :, 9:12], cv2.COLOR_RGB2BGR))
-                # cv2.imwrite("./log/I2AMsPacman/Img/%s_%s_e_ground_truth_2.png" % (self.imshow_count, i),
-                #             cv2.cvtColor(next_state[i + 1][:, :, 9:12], cv2.COLOR_RGB2BGR))
-                # cv2.imwrite("./log/I2AMsPacman/Img/%s_%s_g_ground_truth_3.png" % (self.imshow_count, i),
-                #             cv2.cvtColor(next_state[i + 2][:, :, 9:12], cv2.COLOR_RGB2BGR))
-
-                # saving for CarRacing
-                cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_a_raw1.png" % (self.imshow_count, i),
-                            cv2.cvtColor(255 * state[i][:, :, 0:3].astype(np.float32), cv2.COLOR_RGB2BGR))
-                cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_a_raw2.png" % (self.imshow_count, i),
-                            cv2.cvtColor(255 * state[i][:, :, 3:6].astype(np.float32), cv2.COLOR_RGB2BGR))
-                cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_a_raw3.png" % (self.imshow_count, i),
-                            cv2.cvtColor(255 * state[i][:, :, 6:9].astype(np.float32), cv2.COLOR_RGB2BGR))
-                cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_a_raw4.png" % (self.imshow_count, i),
-                            cv2.cvtColor(255 * state[i][:, :, 9:12].astype(np.float32), cv2.COLOR_RGB2BGR))
-                cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_b_pred_1.png" % (self.imshow_count, i),
-                            cv2.cvtColor(255 * pred_1[0], cv2.COLOR_RGB2BGR))
-                cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_d_pred_2.png" % (self.imshow_count, i),
-                            cv2.cvtColor(255 * pred_1[1], cv2.COLOR_RGB2BGR))
-                cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_f_pred_3.png" % (self.imshow_count, i),
-                            cv2.cvtColor(255 * pred_1[2], cv2.COLOR_RGB2BGR))
-                cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_c_ground_truth_1.png" % (self.imshow_count, i),
-                            cv2.cvtColor(255 * next_state[i][:, :, 9:12].astype(np.float32), cv2.COLOR_RGB2BGR))
-                cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_e_ground_truth_2.png" % (self.imshow_count, i),
-                            cv2.cvtColor(255 * next_state[i + 1][:, :, 9:12].astype(np.float32), cv2.COLOR_RGB2BGR))
-                cv2.imwrite("./log/I2ACarRacing/Img/%s_%s_g_ground_truth_3.png" % (self.imshow_count, i),
-                            cv2.cvtColor(255 * next_state[i + 2][:, :, 9:12].astype(np.float32), cv2.COLOR_RGB2BGR))
-
-        return network.UpdateRun(feed_dict=feed_dict, fetch_dict={"env_model_loss": self._op_loss,
-                                                                  "reward_loss": self._reward_loss,
-                                                                  "observation_loss": self._env_loss,
-                                                                  "transition_loss": self._transition_loss})
+            fetch_dict["s0"] = self._s0
+            for i in range(self._depth):
+                fetch_dict.update({
+                    "f%d" % i: self._fn[i],
+                    "f%d_predict" % i: self._f_predict[i]
+                })
+        return network.UpdateRun(feed_dict=feed_dict, fetch_dict=fetch_dict)
 
 
 class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
@@ -335,6 +278,7 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                  rollout_lane=3,
                  model_train_depth=3,
                  batch_size=32,
+                 log_dir="./log/img",
                  *args, **kwargs):
         """
         :param f_create_net: function: f_create_net(inputs) => {"pi": dist_pi, "q": q_values},
@@ -494,7 +438,8 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                     }
                     # "next_frame1": out_frame1, "reward1": out_reward1,
                     # "next_frame2": out_frame2, "reward2": out_reward2}
-
+        self._log_dir = log_dir
+        self._rollout_depth = rollout_depth
         kwargs.update({
             "f_iaa": f_iaa,
             "state_shape": state_shape,
@@ -576,8 +521,7 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                 net_se=self.network.sub_net("se"),
                 net_transition=self.network.sub_net("transition"),
                 net_decoder=self.network.sub_net("state_decoder"),
-                next_frame_function=self._next_frame_function,
-                reward_function=self._reward_function,
+                depth=self._rollout_depth,
                 state_shape=state_shape),
             name="env_model"
         )
@@ -596,12 +540,38 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
         # self.network_optimizer.update("policy_net", self.sess, batch)
         print "------------------------"
         print np.shape(batch["action"])[0]
-        if (np.shape(batch["action"])[0] >= 3):
+        if (np.shape(batch["action"])[0] >= self._rollout_depth):
             print "get in"
             self.network_optimizer.update("env_model", self.sess, batch)
             self.network_optimizer.update("ac", self.sess, batch)
             self.network_optimizer.update("l2", self.sess)
             info = self.network_optimizer.optimize_step(self.sess)
+            prefix = "EnvModelUpdater/env_model/"
+            if prefix+"s0" in info:
+                s0 = info[prefix + "s0"]
+
+                path_prefix = os.sep.join([self._log_dir, "Img", ""])
+                if not os.path.isdir(path_prefix):
+                    os.makedirs(path_prefix)
+                logging.warning("writing images to %s", path_prefix)
+                for i in range(len(s0)):
+                    s = s0[i]
+                    frame_n = s.shape[-1] / 3
+                    for j in range(frame_n):
+                        f = s[:, :,  3 * j: 3 * j + 3]
+                        cv2.imwrite(path_prefix + "%d_%03d_f0_%d.png" % (self.step_n, i, j),
+                                    cv2.cvtColor(255 * f.astype(np.float32), cv2.COLOR_RGB2BGR))
+                    for d in range(self._rollout_depth):
+                        fn = info[prefix + "f%d" % d][i]
+                        fn_predict = info[prefix + "f%d_predict" % d][i]
+
+                        cv2.imwrite(path_prefix + "%d_%03d_f%d.png" % (self.step_n, i, d+1),
+                                    cv2.cvtColor(255 * fn.astype(np.float32), cv2.COLOR_RGB2BGR))
+                        cv2.imwrite(path_prefix + "%d_%03d_f%d_predict.png" % (self.step_n, i, d+1),
+                                    cv2.cvtColor(255 * fn_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
+                del info[prefix + "s0"]
+                for d in range(self._rollout_depth):
+                    del info[prefix + "f%d" % d], info[prefix + "f%d_predict" % d]
             return info, {}
         else:
             print "get out"
