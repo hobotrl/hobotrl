@@ -186,7 +186,7 @@ def lane_sign(cur, nxt, dict_junc, dict_pred, dict_succ):
 
 def gen_single_car(
     list_route, dict_junc, dict_pred, dict_succ, dict_length, dict_width,
-    v_range=None, period_range=None):
+    v_range=None, period_range=None, route_ids=None):
     """Randomly generate params for a single car.
 
     :param list_route: list of candidate route. Each is list of route ids.
@@ -199,7 +199,8 @@ def gen_single_car(
     :param period_range:
     """
     # randomly select a route
-    route_ids = list_route[np.random.choice(range(len(list_route)))]
+    if route_ids is None:
+        route_ids = list_route[np.random.choice(range(len(list_route)))]
     cur, nxt = route_ids[0], route_ids[1]
 
     # randomly select lane offset from current direction
@@ -261,7 +262,7 @@ def adjust_ego_start_pos(route_ids, pos_l, dict_length, dict_geo, dict_width):
     """
     # get two candidate starting points on the first section
     cur = route_ids[0]
-    pos_s0 = 0.01*np.random.rand()*dict_length[cur]
+    pos_s0 = 0.01
     pos_s1 = dict_length[cur] - pos_s0
     origin_geo = list(dict_geo[cur])
     xo0, yo0, _ = project_coord(*( [pos_s0] + origin_geo + [pos_l] ))
