@@ -14,6 +14,7 @@ length, width, and geometry look-up table.
 :date: 2017-Sep-4
 """
 
+import os
 from xml.etree import ElementTree as ET
 from xml.etree.ElementTree import Element
 import numpy as np
@@ -23,37 +24,51 @@ from gen_launch_dynamic import *
 if __name__=='__main__':
     parser = argparse.ArgumentParser('Generate random planning launch file.')
     parser.add_argument('map_file')
-    parser.add_argument('ws_dir')
     parser.add_argument('launch_template_file')
+    parser.add_argument('output_dir')
     parser.add_argument('n_obs', type=int)
     parser.add_argument(
-        '--random_n_obs', dest='random_n_obs', action='store_true'
-    )
+        '--random_n_obs', dest='random_n_obs', action='store_true')
     parser.set_defaults(random_n_obs=False)
     parser.add_argument(
         '--include_short_segment', dest='include_short', action='store_true'
     )
     parser.set_defaults(include_short=False)
+    parser.add_argument(
+        '--route', dest='route_ids', nargs="*"
+    )
+    parser.set_defaults(route_ids=None)
+    parser.add_argument(
+        '--index_l', dest='index_l', type=float
+    )
+    parser.add_argument('--seed', dest='seed', type=int)
+    parser.set_defaults(seed=None)
     args = parser.parse_args()
 
-    obs = Element('obstacle')
     map_file = args.map_file  # './road_segment_info.txt' 
     list_route, dict_junc, dict_pred, dict_succ, \
         dict_length, dict_width, dict_geo = read_parsed_map(map_file)
 
-    ws_dir = args.ws_dir
-    if ws_dir[-1] != '/':
-        ws_dir += '/'
-    planning_path = ws_dir + 'src/Planning/planning/'
+    # === config ===
+    if args.seed is None:
+        seed = np.random.randint(0, 2 ** 32 - 1)
+    else:
+        seed = args.seed
+    np.random.seed(seed=seed)
 
     # === Ego car ===
-    while True:
-        (route_ids,), (pos_s, pos_l, _), _ = gen_single_car(
+    if args.route_ids is None:
+        (route_ids,), (_, pos_l, _), _ = gen_single_car(
                 list_route, dict_junc, dict_pred, dict_succ,
                 dict_length, dict_width)
-        if not args.include_short or \
-            route_ids[0] not in ['S7', 'S10', 'S9', 'S11', 'S12']:
-            break
+    elif args.index_l is None:
+        route_ids = args.route_ids
+        (_,), (_, pos_l, _), _ = gen_single_car(
+                list_route, dict_junc, dict_pred, dict_succ,
+                dict_length, dict_width, route_ids=route_ids)
+    else:
+        route_ids = args.route_ids
+        pos_l = dict_width[args.index_l]
     pos_s = adjust_ego_start_pos(
         route_ids, pos_l, dict_length, dict_geo, dict_width)
 
@@ -69,13 +84,25 @@ if __name__=='__main__':
                route_ids, pos_l, pos_s, dict_length[route_ids[0]],
                x0, y0, carHdg, xd, yd)
 
+    num_obs = args.n_obs
+    if args.random_n_obs:
+        num_obs = np.random.randint(low=0, high=num_obs+1)
+    launch_fn = 'test_route[{}]_S[{}]_L[{}]_nobs[{}]_seed[{}].launch'.format(
+        ''.join(route_ids), pos_s, pos_l, num_obs, seed
+    )
+    launch_fn = os.path.abspath(os.sep.join([args.output_dir, launch_fn]))
+    obs_fn = 'test_route[{}]_S[{}]_L[{}]_nobs[{}]_seed[{}].obs'.format(
+        ''.join(route_ids), pos_s, pos_l, num_obs, seed
+    )
+    obs_fn = os.path.abspath(os.sep.join([args.output_dir, obs_fn]))
+
     tree = ET.parse(args.launch_template_file)
     root = tree.getroot()
     for param in root.findall('param'):
         if param.get('name')=='/route':
             param.set('value', ','.join(route_ids))
         if param.get('name')=='/obstacles3/filename':
-            param.set('value', planning_path+'config/honda_dynamic_obs.obs')
+            param.set('value', obs_fn)
         if param.get('name')=='/car/dest_coord_x':
             param.set('value', str(xd))
         if param.get('name')=='/car/dest_coord_y':
@@ -84,11 +111,11 @@ if __name__=='__main__':
         for arg in include.findall('arg'):
             if arg.get('name')=='car_pos':
                 arg.set('value', '-x {} -y {} -z 0.0 -Y {}'.format(x, y, carHdg))
-    tree.write(planning_path+'launch/honda_dynamic_obs.launch',
-               encoding='utf-8', xml_declaration=True)
+    tree.write(launch_fn, encoding='utf-8', xml_declaration=True)
+
+
 
     # Obstacles
-    num_obs = args.n_obs
     ego_route = route_ids
     ego_link = [l for l in ego_route if 'L' in l][0]
     ego_junc = [j for j in dict_junc if ego_link in dict_junc[j]][0]
@@ -97,9 +124,7 @@ if __name__=='__main__':
         if [rr for rr in r if 'L' in rr][0] in dict_junc[ego_junc]
         and r != ego_route
     ]
-
-    if args.random_n_obs:
-        num_obs = np.random.randint(low=0, high=num_obs+1)
+    obs = Element('obstacle')
     print "[gen_dynamic_launch.py]: {} obstacle cars.".format(num_obs)
     num_same = num_obs/8
     num_adj = num_obs - num_same
@@ -127,7 +152,5 @@ if __name__=='__main__':
         )
     tree = ET.ElementTree()
     tree._setroot(obs)
-    tree.write(planning_path+'config/honda_dynamic_obs.obs',
-               encoding='utf-8', xml_declaration=True)
-
+    tree.write(obs_fn, encoding='utf-8', xml_declaration=True)
 
