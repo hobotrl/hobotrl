@@ -469,18 +469,6 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
         # self._rollout_action = network.NetworkFunction(self.network["rollout_action"])
         # self._rollout_dist = distribution.DiscreteDistribution(self._rollout_action, self._input_action)
 
-        self._next_frame_function = network.NetworkFunction(self.network["next_frame"])
-        self._reward_function = network.NetworkFunction(self.network["reward"])
-
-        # self._next_frame_function = network.NetworkFunction(self.network["next_frame"])
-        # self._reward_function = network.NetworkFunction(self.network["reward"])
-        #
-        # self._next_frame_function1 = network.NetworkFunction(self.network["next_frame1"])
-        # self._reward_function1 = network.NetworkFunction(self.network["reward1"])
-        #
-        # self._next_frame_function2 = network.NetworkFunction(self.network["next_frame2"])
-        # self._reward_function2 = network.NetworkFunction(self.network["reward2"])
-
         if target_estimator is None:
             target_estimator = target_estimate.NStepTD(self._v_function, discount_factor)
             # target_estimator = target_estimate.GAENStep(self._v_function, discount_factor)
