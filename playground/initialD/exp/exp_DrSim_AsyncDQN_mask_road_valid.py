@@ -149,34 +149,25 @@ def gen_backend_cmds():
         ['python', backend_path+'car_go.py'],
         # start simulation restarter backend
         ['python', backend_path+'rviz_restart.py', 'honda_dynamic_obs.launch'],
+        ['python', backend_path + 'non_stop_data_capture.py', 0]
+
     ]
     return backend_cmds
-
-
-def on_the_most_left_plane(rewards):
-    pass
-
-
-def on_the_most_right_plane(rewards):
-    pass
-
-def on_the_intersection(rewards):
-    return rewards[1] > 0.5
 
 
 def too_slow(rewards):
     return rewards[2] < 1.0
 
 def mask_action(rewards, action):
-    if on_the_most_left_plane(rewards) and action == 2 \
-            or on_the_most_right_plane(rewards) and action == 1\
-            or on_the_intersection(rewards):
+    if rewards[7] and action == 2 \
+            or rewards[8] and action == 1\
+            or rewards[1]:
         return 0
     return action
 
 
 env = DrivingSimulatorEnv(
-    address='localhost', port='6003',
+    address='localhost', port='10014',
     backend_cmds=gen_backend_cmds(),
     defs_obs=[
         ('/training/image/compressed', 'sensor_msgs.msg.CompressedImage'),
@@ -190,6 +181,8 @@ env = DrivingSimulatorEnv(
         ('/rl/on_pedestrian', 'std_msgs.msg.Bool'),
         ('/rl/obs_factor', 'std_msgs.msg.Float32'),
         ('/rl/distance_to_longestpath', 'std_msgs.msg.Float32'),
+        ('/rl/on_biking_lane', 'std_msgs.msg.Bool'),
+        ('/rl/on_outterest_lane', 'std_msgs.msg.Bool')
     ],
     defs_action=[('/autoDrive_KeyboardMode', 'std_msgs.msg.Char')],
     rate_action=10.0,

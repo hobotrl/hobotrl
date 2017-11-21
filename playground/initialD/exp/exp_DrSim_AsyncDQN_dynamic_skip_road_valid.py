@@ -139,7 +139,7 @@ def gen_backend_cmds():
         # Generate obs and launch file
         ['python', utils_path+'gen_launch_dynamic_v1.py',
          utils_path+'road_segment_info.txt', ws_path,
-         utils_path+'honda_dynamic_obs_template.launch',
+         utils_path+'honda_dynamic_obs_template_tilt.launch',
          32, '--random_n_obs'],
         # start roscore
         ['roscore'],
@@ -152,12 +152,14 @@ def gen_backend_cmds():
         ['python', backend_path+'car_go.py'],
         # start simulation restarter backend
         ['python', backend_path+'rviz_restart.py', 'honda_dynamic_obs.launch'],
+        ['python', backend_path + 'non_stop_data_capture.py', 0]
+
     ]
     return backend_cmds
 
 
 env = DrivingSimulatorEnv(
-    address='vmgpu016.hogpu.cc', port='10004',
+    address='localhost', port='10004',
     backend_cmds=gen_backend_cmds(),
     defs_obs=[
         ('/training/image/compressed', 'sensor_msgs.msg.CompressedImage'),
@@ -255,7 +257,7 @@ replay_buffer = BigPlayback(
     bucket_cls=BalancedMapPlayback,
     cache_path="./ReplayBufferCache/experimentexperiment",
     capacity=300000, bucket_size=100, ratio_active=0.05, max_sample_epoch=2,
-    num_actions=len(AGENT_ACTIONS), upsample_bias=(1,1,1,0.1)
+    num_actions=len(AGENT_ACTIONS)*len(TIME_STEP_SCALES), upsample_bias=tuple([1 for _ in range(12)] + [0.1] )
 )
 
 gamma = 0.9
@@ -479,13 +481,12 @@ try:
                     t = time.time()
                     next_proxy_action = agent.act(next_state, exploration=not exploration_off)
                     next_action = next_proxy_action / len(TIME_STEP_SCALES)
-                    n_skip = next_proxy_action % len(TIME_STEP_SCALES)
+                    n_skip = TIME_STEP_SCALES[next_proxy_action % len(TIME_STEP_SCALES)]
                     cnt_skip = n_skip
                     n_agent_steps += 1
                     t_infer += time.time() - t
                     skip_reward = 0
                     state, action = next_state, next_action  # s',a' -> s,a
-                    action = next_action
                 else:
                     action = 3  # no op during skipping
 
