@@ -134,7 +134,7 @@ class NoisyPendulum(NoisyExperiment):
                  intrinsic_weight=0.0,
                  explore_net=False,
                  abs_goal=True,
-                 manager_ac=False,
+                 manager_ac=True,
                  achievable_weight=1e-2,
                  disentangle_weight=1e-4,
                  **kwargs
@@ -153,8 +153,7 @@ class NoisyPendulum(NoisyExperiment):
                 input_state = inputs[0]
                 out = hrl.network.Utils.layer_fcs(input_state, [], se_dimension,
                                                   None, None, l2=l2)
-                gradient_scale = 1.0
-                out = out * gradient_scale + tf.stop_gradient(out * (1.0 - gradient_scale))
+                out = hrl.network.Utils.scale_gradient(out, 1e-1)
                 return {"se": out}
 
             def fd(inputs):
@@ -271,18 +270,20 @@ class NoisyPendulumSearch(GridSearch):
             "achievable_weight": [1e-3],
             "worker_explore_param":  [(0, 0.2, CappedLinear(2e5, 0.2, 0.01)), (0, 0.2, CappedLinear(2e5, 0.5, 0.1))],
             "manager_entropy": [1e-2, CappedLinear(2e5, 1e-2, 1e-3), CappedLinear(5e5, 1e-2, 1e-4)],
-        round 5: abs_goal; momentum
+        round 5: manager_ac, with momentum
+
     """
     def __init__(self):
         super(NoisyPendulumSearch, self).__init__(NoisyPendulum, {
-            "episode_n": [2000],
-            "abs_goal": [True],
             "explicit_momentum": [True],
             "act_ac": [False],
             "explore_net": [False],
-            "manager_ac": [False, True],
-            "achievable_weight": [1e-1, 1e-3],
-            "worker_explore_param":  [(0, 0.2, CappedLinear(2e5, 0.2, 0.01)), (0, 0.2, CappedLinear(2e5, 0.5, 0.1))],
+            "manager_ac": [True],
+            "manager_entropy": [1e-2, 1e-3],
+            "achievable_weight": [1e-3, 1e-1],
+            # "worker_explore_param":  [(0, 0.2, CappedLinear(2e5, 0.2, 0.01)), (0, 0.2, CappedLinear(2e5, 0.5, 0.1))],
+            "worker_explore_param": [(0, 0.2, CappedLinear(2e5, 0.2, 0.01))],
+            "imagine_history": [True],
         })
 Experiment.register(NoisyPendulumSearch, "Noisy explore for pendulum")
 

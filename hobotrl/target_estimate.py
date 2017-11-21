@@ -132,14 +132,14 @@ class GAENStep(TargetEstimator):
 
 
 class ContinuousActionEstimator(TargetEstimator):
-    def __init__(self, actor, critic, discount_factor):
+    def __init__(self, v, discount_factor):
         super(ContinuousActionEstimator, self).__init__(discount_factor)
-        self._actor, self._critic, = actor, critic
+        self._v = v
+        # self._actor, self._critic, = actor, critic
 
     def estimate(self, state, action, reward, next_state, episode_done, **kwargs):
-        target_action = self._actor(next_state)
-        target_q = self._critic(next_state, target_action)
-        target_q = reward + self._discount_factor * (1.0 - episode_done) * target_q
+        target_v = self._v(next_state)
+        target_q = reward + self._discount_factor * (1.0 - episode_done) * target_v
         return target_q
 
 

@@ -194,6 +194,44 @@ class DuelDQNPendulum(DQNPendulum):
 Experiment.register(DuelDQNPendulum, "Duel DQN for Pendulum")
 
 
+class DPGPendulum(DPGExperiment):
+    def __init__(self, env=None, f_se=None, f_actor=None, f_critic=None, episode_n=1000, discount_factor=0.9,
+                 network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3),
+                                                                           grad_clip=10.0),
+                 ou_params=(0, 0.2, 0.1),
+                 target_sync_interval=10, target_sync_rate=0.01, batch_size=32, replay_capacity=1000):
+        if env is None:
+            env = gym.make("Pendulum-v0")
+            env = hrl.envs.AugmentEnvWrapper(env, reward_decay=discount_factor, reward_scale=0.1)
+        state_shape = list(env.observation_space.shape)
+        dim_action = env.action_space.shape[-1]
+        l2 = 1e-8
+        if f_se is None:
+            def f(inputs):
+                return {"se": inputs[0]}
+            f_se = f
+        if f_actor is None:
+            def f(inputs):
+                se = inputs[0]
+                actor = hrl.network.Utils.layer_fcs(se, [200, 100], dim_action, activation_out=tf.nn.tanh, l2=l2,
+                                                    var_scope="action")
+                return {"action": actor}
+            f_actor = f
+        if f_critic is None:
+            def f(inputs):
+                se, action = inputs[0], inputs[1]
+                se = tf.concat([se, action], axis=-1)
+                q = hrl.network.Utils.layer_fcs(se, [100], 1, activation_out=None, l2=l2, var_scope="q")
+                q = tf.squeeze(q, axis=1)
+                return {"q": q}
+            f_critic = f
+
+        super(DPGPendulum, self).__init__(env, f_se, f_actor, f_critic, episode_n, discount_factor,
+                                          network_optimizer_ctor, ou_params, target_sync_interval, target_sync_rate,
+                                          batch_size, replay_capacity)
+Experiment.register(DPGPendulum, "DPG for Pendulum")
+
+
 class CarEnvWrapper(object):
     """
     Wraps car env into discrete action control problem
