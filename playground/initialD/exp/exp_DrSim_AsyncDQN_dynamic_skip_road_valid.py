@@ -46,6 +46,9 @@ def func_compile_obs(obss):
 
 ALL_ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0,)]
 AGENT_ACTIONS = ALL_ACTIONS[:3]
+TIME_STEP_SCALES = [1, 2, 4, 8]
+
+
 # AGENT_ACTIONS = ALL_ACTIONS
 def func_compile_action(action):
     ALL_ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0, )]
@@ -153,24 +156,8 @@ def gen_backend_cmds():
     return backend_cmds
 
 
-def on_ped(rewards):
-    return rewards[3] < 0.5
-
-
-def on_opp(rewards):
-    return rewards[4] > 0.5
-
-
-def on_traffic_jam(rewards):
-    return rewards[2] < 3.0
-
-
-def on_the_intersection(rewards):
-    return rewards[1] > 0.5
-
-
 env = DrivingSimulatorEnv(
-    address='localhost', port='6003',
+    address='vmgpu016.hogpu.cc', port='10004',
     backend_cmds=gen_backend_cmds(),
     defs_obs=[
         ('/training/image/compressed', 'sensor_msgs.msg.CompressedImage'),
@@ -241,21 +228,10 @@ def f_net(inputs):
             inputs=hid1, units=256, activation=tf.nn.relu,
             kernel_regularizer=l2_regularizer(scale=1e-2), name='hid2_adv')
         print hid2.shape
-        adv = layers.dense(
-            inputs=hid2, units=len(AGENT_ACTIONS), activation=None,
-            kernel_initializer=tf.random_uniform_initializer(-3e-3, 3e-3),
-            kernel_regularizer=l2_regularizer(scale=1e-2), name='adv')
-        print adv.shape
-        hid2 = layers.dense(
-            inputs=hid1, units=256, activation=tf.nn.relu,
-            kernel_regularizer=l2_regularizer(scale=1e-2), name='hid2_v')
-        print hid2.shape
-        v = layers.dense(
-            inputs=hid2, units=1, activation=None,
-            kernel_initializer=tf.random_uniform_initializer(-3e-3, 3e-3),
-            kernel_regularizer=l2_regularizer(scale=1e-2), name='v')
-        print v.shape
-        q = tf.add(adv, v, name='q')
+        q = layers.dense(inputs=hid2, units=len(AGENT_ACTIONS)*len(TIME_STEP_SCALES), activation=None,
+                         kernel_initializer=tf.random_normal_initializer(-3e-3, 3e-3),
+                         kernel_regularizer=l2_regularizer(scale=1e-2), name='q')
+
         print q.shape
 
     return {"q": q}
@@ -277,7 +253,7 @@ global_step = tf.get_variable(
 # 1 sample ~= 1MB @ 6x skipping
 replay_buffer = BigPlayback(
     bucket_cls=BalancedMapPlayback,
-    cache_path="./ReplayBufferCache/experiment",
+    cache_path="./ReplayBufferCache/experimentexperiment",
     capacity=300000, bucket_size=100, ratio_active=0.05, max_sample_epoch=2,
     num_actions=len(AGENT_ACTIONS), upsample_bias=(1,1,1,0.1)
 )
@@ -462,14 +438,15 @@ try:
             t_infer, t_step, t_learn = 0, 0, 0
 
             state  = env.reset()
-            action = agent.act(state, exploration=not exploration_off)
+            proxy_action = agent.act(state, exploration=not exploration_off)
             n_agent_steps += 1
-            skip_action = action
+            action = proxy_action / len(TIME_STEP_SCALES)
+            n_skip = TIME_STEP_SCALES[proxy_action % len(TIME_STEP_SCALES)]
+            cnt_skip = n_skip
             next_state = state
             next_action = action
             # cnt_skip = 1 if next_action == 0 else n_skip
             # cnt_skip = int(n_skip * (1 + np.random.rand()))  # randome start offset to enforce randomness on phase
-            cnt_skip = n_skip
             log_info(update_info)
 
             while True:
@@ -480,8 +457,7 @@ try:
 
                 # Env step
                 t = time.time()
-                next_state, reward, done, info = env.step(skip_action)
-                vec_reward = np.mean(reward, axis=0)
+                next_state, reward, done, info = env.step(action)
                 flag_success = done
                 t_step = time.time() - t
                 state, action, reward, next_state, done = \
@@ -496,27 +472,24 @@ try:
                     # add tail for non-early-stops
                     skip_reward += flag_tail * gamma * skip_reward/ (1-gamma)
                     update_info = agent.step(
-                        sess=sess, state=state, action=action,
+                        sess=sess, state=state, action=proxy_action,
                         reward=skip_reward, next_state=next_state,
                         episode_done=done
                     )
                     t = time.time()
-                    next_action = agent.act(next_state, exploration=not exploration_off)
+                    next_proxy_action = agent.act(next_state, exploration=not exploration_off)
+                    next_action = next_proxy_action / len(TIME_STEP_SCALES)
+                    n_skip = next_proxy_action % len(TIME_STEP_SCALES)
+                    cnt_skip = n_skip
                     n_agent_steps += 1
                     t_infer += time.time() - t
                     skip_reward = 0
                     state, action = next_state, next_action  # s',a' -> s,a
-                    skip_action = next_action
+                    action = next_action
                 else:
-                    skip_action = 3  # no op during skipping
+                    action = 3  # no op during skipping
 
                 sv.summary_computed(sess, summary=log_info(update_info))
-                if cnt_skip == 0:
-                    if on_opp(vec_reward) or on_ped(reward) or \
-                            on_the_intersection(reward) or on_traffic_jam(reward):
-                        cnt_skip = 1
-                    else:
-                        cnt_skip = n_skip
                 # print "Agent step learn {} sec, infer {} sec".format(t_learn, t_infer)
                 if done:
                     break

@@ -164,6 +164,9 @@ def on_the_intersection(rewards):
     return rewards[1] > 0.5
 
 
+def too_slow(rewards):
+    return rewards[2] < 1.0
+
 def mask_action(rewards, action):
     if on_the_most_left_plane(rewards) and action == 2 \
             or on_the_most_right_plane(rewards) and action == 1\
