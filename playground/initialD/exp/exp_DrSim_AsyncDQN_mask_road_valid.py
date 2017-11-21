@@ -462,7 +462,6 @@ try:
 
             state  = env.reset()
             action = agent.act(state, exploration=not exploration_off)
-            action = mask_action(state, action)
             n_agent_steps += 1
             skip_action = action
             next_state = state
