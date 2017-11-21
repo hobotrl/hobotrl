@@ -1038,33 +1038,97 @@ class ScaledFloatFrame(gym.ObservationWrapper):
         # return np.array(obs).astype(np.float32) / 255.0
 
 
-class DistorFrame(gym.ObservationWrapper):  #ProcessFrame84
+class RemapFrame(gym.ObservationWrapper):
     def __init__(self, env=None):
-        super(DistorFrame, self).__init__(env)
+        super(RemapFrame, self).__init__(env)
+        shp = env.observation_space.shape
+        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(shp[0]/2, shp[1]/2, shp[2]))
 
     def _observation(self, obs):
-        return DistorFrame.process(obs)
+        return RemapFrame.process(obs)
 
     @staticmethod
     def process(frame):
+        src_size = (96,96)
+        dst_size = (48,48)
+        center_src = (70,48)
+        center_dst = (33,24)
+        linear_part_ratio_dst = 0.2
 
-        def fx(y,x):
-            cen = 48.0
-            return cen+(x-cen)/2.0+np.abs(x-cen)*(x-cen)/(2*48.0)
+        def remap_core(x, size_s, size_d, c_src, c_dst, lr):
+            lp      = c_dst - c_dst*lr
+            lp_src  = c_src - c_dst*lr
+            hp      = c_dst + (size_d - c_dst)*lr
+            hp_src  = c_src + (size_d - c_dst)*lr
+            a1      = -(lp_src-lp) / (lp*lp)
+            b1      = 1 - 2*a1*lp
+            a2      = (hp_src-hp - size_s + size_d) / (-(hp-size_d)*(hp-size_d))
+            b2      = 1 - 2*a2*hp
+            c2      = hp_src - a2*hp*hp-b2*hp
+            if x < lp :
+                y = a1*x*x + b1*x
+            elif x < hp:
+                y = x + (c_src - c_dst)
+            else:
+                y = a2*x*x + b2*x + c2
+            return y
 
-        def fy(y,x):
-            cen = 55.0
-            return cen+(y-cen)/2.0+np.abs(y-cen)*(y-cen)/(2*48.0)
+        def fx(x):
+            return remap_core(x, src_size[0], dst_size[0], center_src[0], center_dst[0], linear_part_ratio_dst)
 
-        mapx = np.fromfunction(fx,(96,96),dtype=np.float32)
-        mapy = np.fromfunction(fy,(96,96),dtype=np.float32)
-        #normalize mapy
-        mapy = 96*mapy/(mapy.max() -mapy.min()) -mapy.min();
-        dst = cv2.remap(np.asarray(frame), mapx, mapy, cv2.INTER_LINEAR)
-        dst_disp = cv2.resize(dst, (296, 296), interpolation=cv2.INTER_LINEAR)
-        last_frame = dst_disp[:,:,0:3]
-        cv2.imshow("image", last_frame)
+        def fy(y):
+            return remap_core(y, src_size[1], dst_size[1], center_src[1], center_dst[1], linear_part_ratio_dst)
+
+        mapx = np.zeros((dst_size[1], dst_size[0]), dtype=np.float32)
+        mapy = np.zeros((dst_size[1], dst_size[0]), dtype=np.float32)
+
+        for x in range(dst_size[0]):
+            tmp = fx(x)
+            for y in range(dst_size[1]):
+                mapx[x][y] = tmp
+        for y in range(dst_size[1]):
+            tmp = fy(y)
+            for x in range(dst_size[0]):
+                mapy[x][y] = tmp
+        """
+        # normalize map to the src image size, d(srctodst) will be affected by ratio
+        map_max = mapx.max()
+        map_min = mapx.min()
+        ratio = (src_size[0]-1)/(map_max - map_min)
+        mapx = ratio*(mapx-map_min)
+        map_max = mapy.max()
+        map_min = mapy.min()
+        ratio = (src_size[1]-1)/(map_max - map_min)
+        mapy = ratio*(mapy-map_min)
+        """
+        # remap
+        dst = cv2.remap(np.asarray(frame), mapy, mapx, cv2.INTER_LINEAR)
+        # for display
+        last_frame = dst[:,:,0:3]
+        cv2.imshow("image1", cv2.resize(last_frame, (320,320), interpolation=cv2.INTER_LINEAR))
         cv2.waitKey(10)
+        return dst
+
+
+class HalfFrame(gym.ObservationWrapper): #as compare to remapframe
+    def __init__(self, env=None):
+        super(HalfFrame, self).__init__(env)
+        shp = env.observation_space.shape
+        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(shp[0]/2, shp[1]/2, shp[2]))
+
+    def _observation(self, obs):
+        return HalfFrame.process(obs)
+
+    @staticmethod
+    def process(frame):
+        dst = np.asarray(frame)
+        #last_frame = np.asarray(frame)[:,:,0:3]
+        #cv2.imshow("image0", last_frame)
+        #cv2.waitKey(10)
+        last_frame = dst[:,:,0:3]
+        cv2.imshow("image1", cv2.resize(last_frame, (320,320), interpolation=cv2.INTER_CUBIC))
+        cv2.waitKey(10)
+        dst=cv2.resize(dst, (48,48), interpolation=cv2.INTER_CUBIC)
         return dst
 
 
