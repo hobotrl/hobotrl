@@ -128,5 +128,6 @@ def wrap_car(env, steer_n, speed_n):
     # env = ProcessFrame96H(env)
     env = FrameStack(env, 4)
     env = ScaledRewards(env, 0.1)
-    env = DistorFrame(env)
+    env = RemapFrame(env)
+    #env = HalfFrame(env)
     return env
