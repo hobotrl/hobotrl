@@ -310,7 +310,7 @@ class AOTDQNCarRacing(AOTDQNExperiment):
     def __init__(self, env=None, f_create_q=None, episode_n=1000, discount_factor=0.99, ddqn=True,
                  target_sync_interval=100, target_sync_rate=1.0,
                  update_interval=8, replay_size=100000, batch_size=8,
-                 lower_weight=1.0, upper_weight=1.0, neighbour_size=8,
+                 lower_weight=4.0, upper_weight=4.0, neighbour_size=8,
                  greedy_epsilon=hrl.utils.CappedLinear(1e5, 0.1, 0.05),
                  learning_rate=1e-4):
         if env is None:
