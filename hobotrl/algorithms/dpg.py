@@ -89,7 +89,8 @@ class DPGUpdater(network.NetworkUpdater):
 class DPG(sampling.TransitionBatchUpdate,
           BaseDeepAgent):
     def __init__(self,
-                 f_create_net, state_shape, dim_action,
+                 f_se, f_actor, f_critic,
+                 state_shape, dim_action,
                  # ACUpdate arguments
                  discount_factor, target_estimator=None,
                  # optimizer arguments
@@ -102,6 +103,8 @@ class DPG(sampling.TransitionBatchUpdate,
                  # sampler arguments
                  sampler=None,
                  batch_size=32,
+                 update_interval=4,
+                 replay_size=1000,
                  *args, **kwargs):
         """
 
@@ -124,7 +127,9 @@ class DPG(sampling.TransitionBatchUpdate,
         :param kwargs:
         """
         kwargs.update({
-            "f_create_net": f_create_net,
+            "f_se": f_se,
+            "f_actor": f_actor,
+            "f_critic": f_critic,
             "state_shape": state_shape,
             "dim_action": dim_action,
             "discount_factor": discount_factor,
@@ -136,38 +141,60 @@ class DPG(sampling.TransitionBatchUpdate,
         if network_optimizer is None:
             network_optimizer = network.LocalOptimizer(grad_clip=max_gradient)
         if sampler is None:
-            sampler = sampling.TransitionSampler(hrl.playback.MapPlayback(1000), batch_size, 4)
+            sampler = sampling.TransitionSampler(hrl.playback.MapPlayback(replay_size), batch_size, update_interval)
         kwargs.update({"sampler": sampler})
         super(DPG, self).__init__(*args, **kwargs)
-
-        self._q_function = network.NetworkFunction(self.network["q"])
-        self._actor_function = network.NetworkFunction(self.network["action"])
-        self._target_q_function = network.NetworkFunction(self.network.target["q"])
-        self._target_actor_function = network.NetworkFunction(self.network.target["action"])
-        if target_estimator is None:
-            target_estimator = target_estimate.ContinuousActionEstimator(
-                self._target_actor_function, self._target_q_function, discount_factor)
         self.network_optimizer = network_optimizer
-        network_optimizer.add_updater(
-            DPGUpdater(actor=self._actor_function,
-                       critic=self._q_function,
-                       target_estimator=target_estimator,
-                       discount_factor=discount_factor, actor_weight=0.1), name="ac")
-        network_optimizer.add_updater(network.L2(self.network), name="l2")
-        network_optimizer.compile()
+        self._q_function = network.NetworkFunction(self.network["q"])
+        self._actor_function = network.NetworkFunction(self.network["action"], inputs=[self.network.inputs[0]])
+        net_target = self.network.target
+        self._target_q_function = network.NetworkFunction(net_target["q"])
+        self._target_actor_function = network.NetworkFunction(net_target["action"], inputs=[self.network.inputs[0]])
+        self._target_v_function = network.NetworkFunction(net_target["v"], inputs=[self.network.inputs[0]])
+        self._discount_factor = discount_factor
+        self.init_updaters_()
 
         self._policy = OUExplorationPolicy(self._actor_function, *ou_params)
         self._target_sync_interval = target_sync_interval
         self._target_sync_rate = target_sync_rate
         self._update_count = 0
 
-    def init_network(self, f_create_net, state_shape, dim_action, *args, **kwargs):
+    def init_network(self, f_se, f_actor, f_critic, state_shape, dim_action, *args, **kwargs):
         input_state = tf.placeholder(dtype=tf.float32, shape=[None] + list(state_shape), name="input_state")
         input_action = tf.placeholder(dtype=tf.float32, shape=[None, dim_action], name="input_action")
+
+        def f(inputs):
+            state, action = input_state, input_action
+            net_se = network.Network([state], f_se, var_scope="se")
+            se = net_se["se"].op
+            net_actor = network.Network([se], f_actor, var_scope="actor")
+            net_critic = network.Network([se, input_action], f_critic, var_scope="critic")
+            net_critic_for_a = net_critic([se, net_actor["action"].op], name_scope="v_critic")
+            return {
+                "action": net_actor["action"].op,
+                "q": net_critic["q"].op,
+                "v": net_critic_for_a["q"].op,
+            }, {
+                "se": net_se,
+                "actor": net_actor,
+                "critic": net_critic
+            }
+
         return network.NetworkWithTarget([input_state, input_action],
-                                         network_creator=f_create_net,
+                                         network_creator=f,
                                          var_scope="learn",
                                          target_var_scope="target")
+
+    def init_updaters_(self):
+        target_estimator = target_estimate.ContinuousActionEstimator(
+            self._target_v_function, self._discount_factor)
+        self.network_optimizer.add_updater(
+            DPGUpdater(actor=self._actor_function,
+                       critic=self._q_function,
+                       target_estimator=target_estimator,
+                       discount_factor=self._discount_factor, actor_weight=0.1), name="ac")
+        self.network_optimizer.add_updater(network.L2(self.network), name="l2")
+        self.network_optimizer.compile()
 
     def update_on_transition(self, batch):
         self._update_count += 1

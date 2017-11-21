@@ -68,6 +68,12 @@ class Utils(object):
 
     @staticmethod
     def clipped_square(value, clip=1.0):
+        """
+        namely huber loss
+        :param value:
+        :param clip:
+        :return:
+        """
         abs_value = tf.abs(value)
         quadratic = tf.minimum(abs_value, clip)
         linear = abs_value - quadratic
@@ -123,6 +129,10 @@ class Utils(object):
         if current == abs_var_scope:
             return ""
         return abs_var_scope[len(current)+1:]
+
+    @staticmethod
+    def scale_gradient(x, scale=1.0):
+        return x * scale + tf.stop_gradient((1-scale) * x)
 
 
 class Function(object):
@@ -333,6 +343,10 @@ class NetworkWithTarget(Network):
 
     @property
     def target(self):
+        """
+        :return:
+        :rtype: Network
+        """
         return self._target
 
     def set_session(self, sess):

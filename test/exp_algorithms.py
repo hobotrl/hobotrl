@@ -469,7 +469,7 @@ class AOTDQNExperiment(Experiment):
 class DPGExperiment(Experiment):
 
     def __init__(self, env,
-                 f_create_net,
+                 f_se, f_actor, f_critic,
                  episode_n=1000,
                  # ACUpdate arguments
                  discount_factor=0.9,
@@ -483,11 +483,11 @@ class DPGExperiment(Experiment):
                  # sampler arguments
                  batch_size=32,
                  replay_capacity=1000):
-        self._env, self._f_create_net, self._episode_n,\
+        self._env, self._f_se, self._f_actor, self._f_critic, self._episode_n,\
             self._discount_factor, self._network_optimizer_ctor, \
             self._ou_params, self._target_sync_interval, self._target_sync_rate, \
             self._batch_size, self._replay_capacity = \
-            env, f_create_net, episode_n, \
+            env, f_se, f_actor, f_critic, episode_n, \
             discount_factor, network_optimizer_ctor, \
             ou_params, target_sync_interval, target_sync_rate, \
             batch_size, replay_capacity
@@ -501,7 +501,9 @@ class DPGExperiment(Experiment):
              initializer=tf.constant_initializer(0), trainable=False
         )
         agent = hrl.DPG(
-            f_create_net=self._f_create_net,
+            f_se=self._f_se,
+            f_actor=self._f_actor,
+            f_critic=self._f_critic,
             state_shape=state_shape,
             dim_action=dim_action,
             # ACUpdate arguments
