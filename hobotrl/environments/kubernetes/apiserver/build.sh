@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 #
 # usage: ./build.sh 0.1.5
 

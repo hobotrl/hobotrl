@@ -55,7 +55,7 @@ class KubeUtil(object):
         except:
             pass
 
-    def spawn_new_env(self):
+    def spawn_new_env(self, image_uri):
         """
         create new pod and service accessible from outside kubernetes cluster
         :return: dict{"id": id, "host": host, "port": port} to access newly spawned env
@@ -65,7 +65,7 @@ class KubeUtil(object):
             pod_object, svc_object = None, None
             try:
                 env_id = self.ensure_env_id_()
-                pod = yaml.load(open("pod.yaml").read().replace("${id}", env_id))
+                pod = yaml.load(open("pod.yaml").read().replace("${id}", env_id).replace("${image}", image_uri))
                 pod_object = self.api.create_namespaced_pod(namespace=self.namespace, body=pod)
                 # wait for pod deploy ok
                 pod_host = None
@@ -81,17 +81,20 @@ class KubeUtil(object):
                 svc = yaml.load(open("svc.yaml").read().replace("${id}", env_id))
                 svc_object = self.api.create_namespaced_service(self.namespace, svc)
                 # wait for svc deploy ok
-                svc_port = None
+                svc_port = {}
                 for i in range(self.SVC_WAIT):
                     svc_object = self.api.read_namespaced_service(env_id, self.namespace)
-                    svc_port = svc_object.spec.ports[0].node_port \
-                        if svc_object.spec is not None and svc_object.spec.ports is not None and \
-                        len(svc_object.spec.ports) >= 1 \
-                        else None
-                    if svc_port is not None:
+                    if svc_object.spec is not None and svc_object.spec.ports is not None:
+                        for port in svc_object.spec.ports:
+                            svc_port[port.name] = port.node_port
+                    # svc_port = svc_object.spec.ports[0].node_port \
+                    #     if svc_object.spec is not None and svc_object.spec.ports is not None and \
+                    #     len(svc_object.spec.ports) >= 1 \
+                    #     else None
+                    if len(svc_port) > 0:
                         break
                     time.sleep(1)
-                if svc_port is None:
+                if len(svc_port) == 0:
                     # cannot retrieve service port, deploy svc consider failed
                     raise IOError("cannot determine svc_port after %d retry" % self.SVC_WAIT)
                 env = {"id": env_id, "host": pod_host, "port": svc_port}
