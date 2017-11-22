@@ -944,9 +944,12 @@ class ProcessFrame84(gym.ObservationWrapper):
         return x_t.astype(np.uint8)
 
 class DownsampledMsPacman(gym.ObservationWrapper):
-    def __init__(self, env=None):
+    def __init__(self, env=None, bottom=False):
         super(DownsampledMsPacman, self).__init__(env)
-        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(80, 80, 3))
+        if not bottom:
+            self.observation_space = gym.spaces.Box(low=0, high=255, shape=(80, 80, 3))
+        else:
+            self.observation_space = gym.spaces.Box(low=0, high=255, shape=(171, 160, 3))
 
     def _observation(self, obs):
         return DownsampledMsPacman.process(obs)
@@ -955,7 +958,7 @@ class DownsampledMsPacman(gym.ObservationWrapper):
     def process(frame):
         img = np.reshape(frame, [210, 160, 3]).astype(np.float32)
         img = img[0:171, :, :] # crop the bottom part of the picture
-        img = cv2.resize(img, (80, 80)) # resize to half
+        # img = cv2.resize(img, (80, 80)) # resize to half
         return img.astype(np.uint8)
 
 

@@ -413,9 +413,9 @@ Experiment.register(DQNCarRacing, "DQN for CarRacing, tuned with ddqn, duel netw
 
 
 class I2A(A3CExperimentWithI2A):
-    def __init__(self, env=None, f_se = None, f_ac=None, f_tran=None, f_decoder=None, f_rollout=None, f_encoder = None, episode_n=10000,
-                 learning_rate=1e-4, discount_factor=0.99, entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4),
-                 batch_size=32):
+    def __init__(self, env=None, f_se = None, f_ac=None, f_tran=None, f_decoder=None, f_rollout=None, f_encoder = None,
+                 episode_n=10000, learning_rate=1e-4, discount_factor=0.99,
+                 entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4), batch_size=32):
         if env is None:
             env = gym.make('CarRacing-v0')
             # env = envs.DownsampledMsPacman(env)
@@ -467,18 +467,12 @@ class I2A(A3CExperimentWithI2A):
                 input_state = inputs[0]
 
                 # rollout that imitates the A3C policy
-                rollout_se = hrl.utils.Network.conv2ds(input_state,
-                                               shape=[(32, 8, 4), (64, 4, 2), (64, 3, 2)],
-                                               out_flatten=True,
-                                               activation=tf.nn.relu,
-                                               l2=l2,
-                                               var_scope="rollout_se")
 
-                rollout_action = hrl.utils.Network.layer_fcs(rollout_se, [256], dim_action,
-                                                 activation_hidden=tf.nn.relu,
-                                                 activation_out=tf.nn.softmax,
-                                                 l2=l2,
-                                                 var_scope="pi")
+                rollout_action = hrl.utils.Network.layer_fcs(input_state, [256], dim_action,
+                                                             activation_hidden=tf.nn.relu,
+                                                             activation_out=tf.nn.softmax,
+                                                             l2=l2,
+                                                             var_scope="pi")
                 return {"rollout_action": rollout_action}
 
             def create_transition(inputs):
@@ -572,7 +566,7 @@ class I2A(A3CExperimentWithI2A):
                                                      l2=l2,
                                                      var_scope="TM")
 
-                next_goal  = TC_goal + TM_goal
+                next_goal = TC_goal + TM_goal
 
                 return {"next_state": next_goal, "reward": reward, "momentum": TM_goal}
 
@@ -758,30 +752,31 @@ class I2A(A3CExperimentWithI2A):
                 l2 = 1e-7
                 input_state = inputs[0]
                 input_reward = inputs[1]
-                print "-------------------------------------"
-                print input_state, "\n", input_reward
+                logging.warning("-------------------------------------")
+                logging.warning(input_state)
+                logging.warning(input_reward)
 
                 rse = hrl.utils.Network.conv2ds(input_state,
-                                               shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
-                                               out_flatten=True,
-                                               activation=tf.nn.relu,
-                                               l2=l2,
-                                               var_scope="rse")
+                                                shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
+                                                out_flatten=True,
+                                                activation=tf.nn.relu,
+                                                l2=l2,
+                                                var_scope="rse")
 
                 re_conv = hrl.utils.Network.layer_fcs(rse, [], 200,
-                                            activation_hidden=tf.nn.relu,
-                                            activation_out=tf.nn.relu,
-                                            l2=l2,
-                                            var_scope="re_conv")
+                                                      activation_hidden=tf.nn.relu,
+                                                      activation_out=tf.nn.relu,
+                                                      l2=l2,
+                                                      var_scope="re_conv")
 
                 # re_conv = tf.concat([re_conv, tf.reshape(input_reward, [-1, 1])], axis=1)
                 re_conv = tf.concat([re_conv, input_reward], axis=1)
 
                 re = hrl.utils.Network.layer_fcs(re_conv, [], 200,
-                                            activation_hidden=tf.nn.relu,
-                                            activation_out=tf.nn.relu,
-                                            l2=l2,
-                                            var_scope="re")
+                                                 activation_hidden=tf.nn.relu,
+                                                 activation_out=tf.nn.relu,
+                                                 l2=l2,
+                                                 var_scope="re")
 
                 return {"re": re}
 
@@ -797,7 +792,7 @@ class I2A(A3CExperimentWithI2A):
                                                  discount_factor, entropy, batch_size)
 
 
-Experiment.register(I2A, "A3C with I2A for complex observation state experiments")
+Experiment.register(I2A, "A3C with I2A for CarRacing")
 
 
 if __name__ == '__main__':
