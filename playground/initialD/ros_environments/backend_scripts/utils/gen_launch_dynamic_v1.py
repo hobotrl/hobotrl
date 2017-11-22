@@ -51,8 +51,7 @@ if __name__=='__main__':
         (route_ids,), (pos_s, pos_l, _), _ = gen_single_car(
                 list_route, dict_junc, dict_pred, dict_succ,
                 dict_length, dict_width)
-        if not args.include_short or \
-            route_ids[0] not in ['S7', 'S10', 'S9', 'S11', 'S12']:
+        if args.include_short or route_ids[0] not in ['S7', 'S10', 'S9', 'S11', 'S12']:
             break
     pos_s = adjust_ego_start_pos(
         route_ids, pos_l, dict_length, dict_geo, dict_width)
