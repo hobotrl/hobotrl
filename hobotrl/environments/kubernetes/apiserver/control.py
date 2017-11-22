@@ -15,7 +15,6 @@ class KubeUtil(object):
     KubeUtil talks to kubernetes api server.
     """
     namespace = "simulator"
-    # namespace = "default"
     SPAWN_RETRY = 10
     POD_WAIT = 100
     SVC_WAIT = 100

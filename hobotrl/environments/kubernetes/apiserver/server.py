@@ -16,7 +16,7 @@ urls = (
     "/attach/(.+)", "Attach"
 )
 
-app = web.application(urls, globals())
+app = web.application(urls, globals(), autoreload=False)
 
 kube = KubeUtil(incluster=False)
 env_tracker = EnvTracker(kube)

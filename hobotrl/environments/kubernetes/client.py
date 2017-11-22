@@ -110,7 +110,11 @@ class ApiThread(threading.Thread):
             return
         # keep alive
         while not self._stopped:
-            http.request(self._api_server_address + "/ping/" + env_id)
+            try:
+                http.request(self._api_server_address + "/ping/" + env_id)
+            except Exception, e:
+                logging.warning("error when keeping alive:%s", e)
+                pass
             self._sleeper.wait(self.PING_INTERVAL)
         # terminate environment
         http.request(self._api_server_address + "/stop/" + env_id)
