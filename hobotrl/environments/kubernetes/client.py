@@ -68,6 +68,14 @@ class KubernetesEnv(object):
         self._api_thread.stop()
         return result
 
+    @property
+    def action_space(self):
+        return self._env.action_space
+
+    @property
+    def observation_space(self):
+        return self._env.observation_space
+
 
 class ApiThread(threading.Thread):
 
@@ -76,6 +84,7 @@ class ApiThread(threading.Thread):
     def __init__(self, remote_client_env_class, cls_kwargs, api_server_address, image_uri, env_queue,
                  group=None, target=None, name=None, args=(), kwargs=None, verbose=None):
         super(ApiThread, self).__init__(group, target, name, args, kwargs, verbose)
+        self.daemon = True
         self._env_queue = env_queue
         self._remote_env_class = remote_client_env_class
         self._cls_kwargs = cls_kwargs

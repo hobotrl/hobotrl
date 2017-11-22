@@ -173,6 +173,7 @@ class EvictThread(threading.Thread):
         super(EvictThread, self).__init__(group, target, name, args, kwargs, verbose)
         self.env_tracker = env_tracker
         self.stopped = False
+        self.daemon = True
         self._sleeper = threading.Event()
 
     def run(self):
