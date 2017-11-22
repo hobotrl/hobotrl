@@ -58,9 +58,13 @@ if __name__=='__main__':
 
     # === Ego car ===
     if args.route_ids is None:
-        (route_ids,), (_, pos_l, _), _ = gen_single_car(
+        while True:
+            (route_ids,), (_, pos_l, _), _ = gen_single_car(
                 list_route, dict_junc, dict_pred, dict_succ,
                 dict_length, dict_width)
+            if args.include_short or \
+               route_ids[0] not in ['S7', 'S10', 'S9', 'S11', 'S12']:
+                break
     elif args.index_l is None:
         route_ids = args.route_ids
         (_,), (_, pos_l, _), _ = gen_single_car(
