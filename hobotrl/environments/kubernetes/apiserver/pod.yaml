@@ -10,5 +10,6 @@ spec:
     image: docker.hobot.cc/carsim/honda_simulator_kub:0.0.1
     ports:
     - containerPort: 22224
+    - containerPort: 5901
     securityContext:
       privileged: true

@@ -4,13 +4,19 @@
 FROM ubuntu:16.04
 
 RUN apt-get update && apt-get install -y python python-pip
+RUN apt-get install -y nfs-common
+# python dependency
 RUN mkdir -p /root/.pip/
 COPY pip.conf /root/.pip/
 RUN pip install --timeout 200 web.py kubernetes
 RUN mkdir -p /server
 COPY *.py pod.yaml svc.yaml start.sh /server/
+# kubernetes env
 RUN mkdir -p /root/.kube
 COPY kube.config /root/.kube/config
-
+# service for nfs
+RUN mkdir -p /run/sendsigs.omit.d
+RUN service rpcbind start
+# app
 EXPOSE 8080
 ENTRYPOINT ["/server/start.sh"]
