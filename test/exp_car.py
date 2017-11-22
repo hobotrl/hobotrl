@@ -524,6 +524,58 @@ class I2A(A3CExperimentWithI2A):
 
                 return {"next_state": next_state, "reward": reward}
 
+
+            def create_transition_momentum(inputs):
+                l2 = 1e-7
+                input_state = inputs[0]
+
+                input_action = inputs[1]
+                input_action = tf.one_hot(indices=input_action, depth=dim_action, on_value=1.0, off_value=0.0, axis=-1)
+
+                fc_1 = hrl.utils.Network.layer_fcs(input_state, [], 64 * 5 * 5,
+                                                   activation_hidden=tf.nn.relu,
+                                                   activation_out=tf.nn.relu,
+                                                   l2=l2,
+                                                   var_scope="fc_1")
+
+                fc_action = hrl.utils.Network.layer_fcs(input_action, [], 64 * 5 * 5,
+                                                        activation_hidden=tf.nn.relu,
+                                                        activation_out=tf.nn.relu,
+                                                        l2=l2,
+                                                        var_scope="fc_action")
+
+                concat = tf.multiply(fc_1, fc_action)
+
+                fc_out = hrl.utils.Network.layer_fcs(concat, [64 * 5 * 5], 64 * 5 * 5,
+                                                     activation_hidden=tf.nn.relu,
+                                                     activation_out=tf.nn.relu,
+                                                     l2=l2,
+                                                     var_scope="fc_out")
+
+                # reward
+                reward = hrl.utils.Network.layer_fcs(fc_out, [256], 1,
+                                                     activation_hidden=tf.nn.relu,
+                                                     l2=l2,
+                                                     var_scope="reward")
+                reward = tf.squeeze(reward, axis=1)
+
+                # next_goal
+                TC_goal = hrl.utils.Network.layer_fcs(fc_out, [], 64 * 5 * 5,
+                                                     activation_hidden=tf.nn.relu,
+                                                     activation_out=tf.nn.relu,
+                                                     l2=l2,
+                                                     var_scope="TC")
+
+                TM_goal = hrl.utils.Network.layer_fcs(fc_1, [], 64 * 5 * 5,
+                                                     activation_hidden=tf.nn.relu,
+                                                     activation_out=tf.nn.relu,
+                                                     l2=l2,
+                                                     var_scope="TM")
+
+                next_goal  = TC_goal + TM_goal
+
+                return {"next_state": next_goal, "reward": reward, "momentum": TM_goal}
+
             def create_decoder(inputs):
                 l2 = 1e-7
                 input_goal = inputs[0]
@@ -738,7 +790,7 @@ class I2A(A3CExperimentWithI2A):
             # f_env = create_env_upsample_little
             f_rollout = create_rollout
             f_encoder = create_encoder
-            f_tran = create_transition
+            f_tran = create_transition_momentum
             f_decoder = create_decoder
 
         super(I2A, self).__init__(env, f_se, f_ac, f_tran, f_decoder, f_rollout, f_encoder, episode_n, learning_rate,
