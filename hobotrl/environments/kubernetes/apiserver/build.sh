@@ -7,4 +7,4 @@ image=$(docker build -f Dockerfile.server . | tail -n 2 | grep "Successfully bui
 tag="docker.hobot.cc/carsim/api:$version"
 echo "tagging $image to $tag"
 docker tag $image $tag
-docker push $tag  
+docker push $tag
