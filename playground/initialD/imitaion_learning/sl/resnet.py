@@ -5,164 +5,166 @@ import numpy as np
 
 import utils
 import sys
-from playground.initialD.imitaion_learning.sl.evaluate import evaluate
 
 HParams = namedtuple('HParams',
                     'batch_size, num_gpus, num_classes, weight_decay, '
                      'momentum, finetune')
 
-
 class ResNet(object):
     def __init__(self, hp, global_step, name=None, reuse_weights=False):
         self._hp = hp # Hyperparameters
-        self._images = tf.placeholder(tf.float32, [None, 224, 224, 3], name="images")
-        print "images name: ", self._images.name
-        self._labels = tf.placeholder(tf.int32, [None], name="labels")
-        print "labels name: ", self._labels.name
+        # self._images = tf.placeholder(tf.float32, [None, 224, 224, 3], name="images")
+        # print "images name: ", self._images.name
+        # self._labels = tf.placeholder(tf.int32, [None], name="labels")
+        # print "labels name: ", self._labels.name
         self._global_step = global_step
         self._name = name
         self._reuse_weights = reuse_weights
         self.lr = tf.placeholder(tf.float32, name="lr")
-        self.is_train = tf.placeholder(tf.bool, name="is_train")
+        # self.is_train = tf.placeholder(tf.bool, name="is_train")
+        self.is_train = tf.constant(False, dtype=tf.bool, name="is_train")
         self._counted_scope = []
         self._flops = 0
         self._weights = 0
 
-    def build_tower(self, images, labels):
-        print('Building model')
-        # filters = [128, 128, 256, 512, 1024]
-        filters = [64, 64, 128, 256, 512]
-        kernels = [7, 3, 3, 3, 3]
-        strides = [2, 0, 2, 2, 2]
 
-        # conv1
-        print('\tBuilding unit: conv1')
-        with tf.variable_scope('conv1'):
-            x = self._conv(images, kernels[0], filters[0], strides[0])
-            x = self._bn(x)
-            x = self._relu(x)
-            x = tf.nn.max_pool(x, [1, 3, 3, 1], [1, 2, 2, 1], 'SAME')
+    def build_origin_tower(self, images):
+        with tf.name_scope('tower_0') as scope:
+            print('Building model')
+            # filters = [128, 128, 256, 512, 1024]
+            filters = [64, 64, 128, 256, 512]
+            kernels = [7, 3, 3, 3, 3]
+            strides = [2, 0, 2, 2, 2]
+            # conv1
+            print('\tBuilding unit: conv1')
+            with tf.variable_scope('conv1'):
+                x = self._conv(images, kernels[0], filters[0], strides[0])
+                x = self._bn(x)
+                x = self._relu(x)
+                x = tf.nn.max_pool(x, [1, 3, 3, 1], [1, 2, 2, 1], 'SAME')
 
-        # conv2_x
-        x = self._residual_block(x, name='conv2_1')
-        x = self._residual_block(x, name='conv2_2')
+            # conv2_x
+            x = self._residual_block(x, name='conv2_1')
+            x = self._residual_block(x, name='conv2_2')
 
-        # conv3_x
-        x = self._residual_block_first(x, filters[2], strides[2], name='conv3_1')
-        x = self._residual_block(x, name='conv3_2')
+            # conv3_x
+            x = self._residual_block_first(x, filters[2], strides[2], name='conv3_1')
+            x = self._residual_block(x, name='conv3_2')
 
-        # conv4_x
-        x = self._residual_block_first(x, filters[3], strides[3], name='conv4_1')
-        x = self._residual_block(x, name='conv4_2')
+            # conv4_x
+            x = self._residual_block_first(x, filters[3], strides[3], name='conv4_1')
+            x = self._residual_block(x, name='conv4_2')
 
-        # conv5_x
-        x = self._residual_block_first(x, filters[4], strides[4], name='conv5_1')
-        x = self._residual_block(x, name='conv5_2')
+            # conv5_x
+            x = self._residual_block_first(x, filters[4], strides[4], name='conv5_1')
+            x = self._residual_block(x, name='conv5_2')
 
-        # Logit
-        with tf.variable_scope('logits') as scope:
+            # Logit
+            with tf.variable_scope('logits') as scope:
+                print('\tBuilding unit: %s' % scope.name)
+                x = tf.reduce_mean(x, [1, 2])
+                x = self._fc(x, self._hp.num_classes)
+
+            logits = x
+            # Probs & preds & acc
+            probs = tf.nn.softmax(x)
+            tf.stop_gradient(probs)
+            return probs
+
+    def build_new_tower(self, images):
+        # with tf.variable_scope('learn'):
+        with tf.name_scope('tower_0') as scope:
+            with tf.variable_scope(tf.get_variable_scope()) as scope:
+                tf.get_variable_scope().reuse_variables()
+                print "reuse: ", tf.get_variable_scope().reuse
+                print "scope: ", tf.get_variable_scope().name
+                print('Building model')
+                # filters = [128, 128, 256, 512, 1024]
+                filters = [64, 64, 128, 256, 512]
+                kernels = [7, 3, 3, 3, 3]
+                strides = [2, 0, 2, 2, 2]
+                # conv1
+                print('\tBuilding unit: conv1')
+                with tf.variable_scope('conv1'):
+                    x = self._conv(images, kernels[0], filters[0], strides[0])
+                    x = self._bn(x)
+                    x = self._relu(x)
+                    x = tf.nn.max_pool(x, [1, 3, 3, 1], [1, 2, 2, 1], 'SAME')
+
+                # conv2_x
+                x = self._residual_block(x, name='conv2_1')
+                x = self._residual_block(x, name='conv2_2')
+
+                # conv3_x
+                x = self._residual_block_first(x, filters[2], strides[2], name='conv3_1')
+                x = self._residual_block(x, name='conv3_2')
+
+                # conv4_x
+                x = self._residual_block_first(x, filters[3], strides[3], name='conv4_1')
+                x = self._residual_block(x, name='conv4_2')
+
+                # conv5_x
+                x = self._residual_block_first(x, filters[4], strides[4], name='conv5_1')
+                x = self._residual_block(x, name='conv5_2')
+
+
+        # with tf.variable_scope(tf.get_variable_scope(), reuse=False):
+        #     print('\tBuilding unit: %s' % scope.name)
+        tf.stop_gradient(x)
+
+        print "reuse: ", tf.get_variable_scope().reuse
+        print "scope: ", tf.get_variable_scope().name
+        with tf.variable_scope('q_logits') as scope:
             print('\tBuilding unit: %s' % scope.name)
             x = tf.reduce_mean(x, [1, 2])
-            # x = tf.reduce_mean(x, [0, 1])
             x = self._fc(x, self._hp.num_classes)
+            logits = x
 
-        logits = x
-
-        # class imbalance
-        # class_weights = tf.constant([[0.94, 0.03, 0.03]] * self._hp.batch_size)
+        # Logit
+        # with tf.variable_scope('q_logits') as scope:
+        #     print('\tBuilding unit: %s' % scope.name)
+        #     x = tf.reduce_mean(x, [1, 2])
+        #     x = self._fc(x, self._hp.num_classes)
+        #     logits = x
 
         # Probs & preds & acc
-        probs = tf.nn.softmax(x)
-        # preds = tf.to_int32(tf.argmax(tf.divide(probs, class_weights), 1))
-        preds = tf.to_int32(tf.argmax(probs, 1))
-        print "preds name {}".format(preds.name)
-        # ones = tf.constant(np.ones([self._hp.batch_size]), dtype=tf.float32)
-        # zeros = tf.constant(np.zeros([self._hp.batch_size]), dtype=tf.float32)
-        # correct = tf.where(tf.equal(preds, labels), ones, zeros)
-        # acc = tf.reduce_mean(correct)
-        acc = tf.reduce_mean(tf.cast(tf.equal(preds, labels), "float"))
-        # precision-recall
-        # prec = precision_score(labels, preds)
+        return logits
 
 
-
-        # Loss & acc
-        # weighted_logits = tf.multiply(logits, class_weights)
-        losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels)
-        # losses = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels)
-        loss = tf.reduce_mean(losses)
-
-        return logits, preds, loss, acc
 
     def build_model(self):
         # Split images and labels into (num_gpus) groups
         # images = tf.split(self._images, num_or_size_splits=self._hp.num_gpus, axis=0)
         # labels = tf.split(self._labels, num_or_size_splits=self._hp.num_gpus, axis=0)
 
-        with tf.variable_scope(tf.get_variable_scope()):
-            with tf.name_scope('tower') as scope:
-                print('Build a tower: %s' % scope)
-                if self._reuse_weights:
-                    tf.get_variable_scope().reuse_variables()
+        # Build towers for each GPU
+        self._logits_list = []
+        self._preds_list = []
+        self._loss_list = []
+        self._acc_list = []
 
-                self.logits, self.preds, self.loss, self.acc = self.build_tower(self._images, self._labels)
+        for i in range(self._hp.num_gpus):
+            with tf.device('/GPU:%d' % i), tf.variable_scope(tf.get_variable_scope()):
+                with tf.name_scope('tower_%d' % i) as scope:
+                    print('Build a tower: %s' % scope)
+                    if self._reuse_weights or i > 0:
+                        tf.get_variable_scope().reuse_variables()
 
-        tf.summary.scalar((self._name+"/" if self._name else "") + "cross_entropy", self.loss)
-        tf.summary.scalar((self._name+"/" if self._name else "") + "accuracy", self.acc)
+                    logits, preds, loss, acc = self.build_tower(self._images)
+                    self._logits_list.append(logits)
+                    self._preds_list.append(preds)
+                    self._loss_list.append(loss)
+                    self._acc_list.append(acc)
 
-    def build_train_op(self):
-        # Learning rate
-        tf.summary.scalar((self._name+"/" if self._name else "") + 'learing_rate', self.lr)
+        # Merge losses, accuracies of all GPUs
+        with tf.device('/CPU:0'):
+            self.logits = tf.concat(self._logits_list, axis=0, name="logits")
+            self.preds = tf.concat(self._preds_list, axis=0, name="predictions")
+            self.loss = tf.reduce_mean(self._loss_list, name="cross_entropy")
+            tf.summary.scalar((self._name+"/" if self._name else "") + "cross_entropy", self.loss)
+            self.acc = tf.reduce_mean(self._acc_list, name="accuracy")
+            tf.summary.scalar((self._name+"/" if self._name else "") + "accuracy", self.acc)
 
-        opt = tf.train.MomentumOptimizer(self.lr, self._hp.momentum)
-        self._grads_and_vars_list = []
-        # Computer gradients for each GPU
-        with tf.variable_scope(tf.get_variable_scope()):
-            with tf.name_scope('tower') as scope:
-                print('Compute gradients of tower: %s' % scope)
-                if self._reuse_weights:
-                    tf.get_variable_scope().reuse_variables()
-
-                # Add l2 loss
-                costs = [tf.nn.l2_loss(var) for var in tf.get_collection(utils.WEIGHT_DECAY_KEY)]
-                l2_loss = tf.multiply(self._hp.weight_decay, tf.add_n(costs))
-                total_loss = self.loss + l2_loss
-                # vars_fc = [var for var in tf.trainable_variables()
-                #            if "logtis" in var.name and
-                #            not "Momentum" in var.name and
-                #            not "global_step" in var.name]
-                # fc_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_RESOURCE_VARIABLES, vars_fc)
-                # # Compute gradients of total loss
-                # grads_and_vars = opt.compute_gradients(total_loss, fc_vars)
-
-                # Compute gradients of total loss
-                grads_and_vars = opt.compute_gradients(total_loss, tf.trainable_variables())
-
-                # Append gradients and vars
-                self._grads_and_vars_list.append(grads_and_vars)
-
-        # Merge gradients
-        print('Average gradients')
-        grads_and_vars = self._average_gradients(self._grads_and_vars_list)
-
-        # Finetuning
-        # if self._hp.finetune:
-        #     for idx, (grad, var) in enumerate(grads_and_vars):
-        #         if "unit3" in var.op.name or \
-        #             "unit_last" in var.op.name or \
-        #             "/q" in var.op.name or \
-        #             "logits" in var.op.name:
-        #             print('\tScale up learning rate of % s by 10.0' % var.op.name)
-        #             grad = 10.0 * grad
-        #             grads_and_vars[idx] = (grad,var)
-
-        # Apply gradient
-        apply_grad_op = opt.apply_gradients(grads_and_vars, global_step=self._global_step)
-
-        # Batch normalization moving average update
-        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-        self.train_op = tf.group(*(update_ops+[apply_grad_op]))
-        print "train_op name: {}".format(self.train_op.name)
 
     def _residual_block_first(self, x, out_channel, strides, name="unit"):
         in_channel = x.get_shape().as_list()[-1]
@@ -188,6 +190,7 @@ class ResNet(object):
             x = self._relu(x, name='relu_2')
         return x
 
+
     def _residual_block(self, x, input_q=None, output_q=None, name="unit"):
         num_channel = x.get_shape().as_list()[-1]
         with tf.variable_scope(name) as scope:
@@ -204,6 +207,7 @@ class ResNet(object):
             x = x + shortcut
             x = self._relu(x, name='relu_2')
         return x
+
 
     def _average_gradients(self, tower_grads):
         """Calculate the average gradient for each shared variable across all towers.
@@ -246,6 +250,7 @@ class ResNet(object):
             average_grads.append(grad_and_var)
 
         return average_grads
+
 
     # Helper functions(counts FLOPs and number of weights)
     def _conv(self, x, filter_size, out_channel, stride, pad="SAME", input_q=None, output_q=None, name="conv"):

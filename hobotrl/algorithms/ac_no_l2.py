@@ -15,7 +15,7 @@ from value_based import GreedyStateValueFunction
 
 
 class ActorCriticUpdater(network.NetworkUpdater):
-    def __init__(self, policy_dist, v_function, target_estimator, entropy=1e-3, actor_weight=1.0, is_learn_q=False):
+    def __init__(self, policy_dist, v_function, target_estimator, entropy=1e-3, actor_weight=1.0):
         """
         Actor Critic methods, for both continuous and discrete action spaces.
 
@@ -49,10 +49,8 @@ class ActorCriticUpdater(network.NetworkUpdater):
                 pi_loss = tf.reduce_mean(self._policy_dist.log_prob() * tf.stop_gradient(self._std_advantage))
                 entropy_loss = tf.reduce_mean(self._input_entropy * self._policy_dist.entropy())
                 self._pi_loss = pi_loss
-            if is_learn_q:
-                self._op_loss = self._q_loss
-            else:
-                self._op_loss = self._q_loss - (self._pi_loss + entropy_loss)
+            # self._op_loss = self._q_loss - (self._pi_loss + entropy_loss)
+            self._op_loss = self._q_loss
             print "advantage, self._policy_dist.entropy(), self._policy_dist.log_prob()", advantage, self._policy_dist.entropy(), self._policy_dist.log_prob()
         self._update_operation = network.MinimizeLoss(self._op_loss,
                                                       var_list=self._v_function.variables +
@@ -160,7 +158,6 @@ class ActorCritic(sampling.TrajectoryBatchUpdate,
                  # sampler arguments
                  sampler=None,
                  batch_size=32,
-                 is_learn_q=False,
                  *args, **kwargs):
         """
         :param f_create_net: function: f_create_net(inputs) => {"pi": dist_pi, "q": q_values},
@@ -196,6 +193,7 @@ class ActorCritic(sampling.TrajectoryBatchUpdate,
             "max_gradient": max_gradient,
             "batch_size": batch_size,
         })
+        print "network_optimizer:", network_optimizer
         if network_optimizer is None:
             network_optimizer = network.LocalOptimizer(grad_clip=max_gradient)
         if sampler is None:
@@ -237,7 +235,7 @@ class ActorCritic(sampling.TrajectoryBatchUpdate,
         network_optimizer.add_updater(
             ActorCriticUpdater(policy_dist=self._pi_distribution,
                                v_function=self._v_function,
-                               target_estimator=target_estimator, entropy=entropy, is_learn_q=is_learn_q), name="ac")
+                               target_estimator=target_estimator, entropy=entropy), name="ac")
         # network_optimizer.add_updater(network.L2(self.network), name="l2")
         network_optimizer.compile()
 
