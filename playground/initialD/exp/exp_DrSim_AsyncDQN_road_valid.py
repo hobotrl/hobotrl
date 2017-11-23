@@ -541,7 +541,8 @@ try:
                 img_path = eps_dir + "/" + str(n_steps+1).zfill(4) + "_" + str(skip_action) + ".jpg"
                 cv2.imwrite(img_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
 
-                sv.summary_computed(sess, summary=log_info(update_info))
+                # sv.summary_computed(sess, summary=log_info(update_info))
+                summary_writer.add_summary(log_info(update_info), n_steps)
                 if cnt_skip == 0:
                     if next_action == 0:
                         # cnt_skip = 1
@@ -554,11 +555,7 @@ try:
 
             summary = tf.Summary()
             summary.value.add(tag="cum_reward_ep", simple_value=cum_reward)
-            summary_writer.add_summary(summary, n_ep)
-            summary = tf.Summary()
             summary.value.add(tag="flag_success_ep", simple_value=flag_success)
-            summary_writer.add_summary(summary, n_ep)
-            summary = tf.Summary()
             summary.value.add(tag="done_ep", simple_value=done)
             summary_writer.add_summary(summary, n_ep)
             recording_file.close()
