@@ -560,14 +560,22 @@ class Stepper(IntHandle):
         self._n += 1
 
 
-def clone_params(*params):
-    params = [p.clone() if isinstance(p, ScheduledParam) else p for p in params]
-    return params[0] if len(params) == 1 else params
+def clone_param(param):
+    if isinstance(param, ScheduledParam):
+        return param.clone()
+    if isinstance(param, tuple):
+        return tuple([clone_param(p) for p in param])
+    if isinstance(param, list):
+        return [clone_param(p) for p in param]
+    if isinstance(param, dict):
+        return dict([(k, clone_param(param[k])) for k in param])
+    return param
 
 
-def clone_params_dict(**params):
-    params = dict([(k, params[k].clone() if isinstance(params[k], ScheduledParam) else params[k]) for k in params])
-    return params
+def clone_params(*params, **paramsk):
+    if len(params) > 0:
+        return clone_param(params[0]) if len(params) == 1 else clone_param(params)
+    return clone_param(paramsk)
 
 
 class ScheduledParam(FloatParam):

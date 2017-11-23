@@ -246,7 +246,9 @@ class TrainingThread(threading.Thread):
             except:
                 print "[TrainingThread.run()]: step exception:"
                 traceback.print_exc()
-        print "[TrainingThread.run()]: returning."
+        logging.warning(
+            "[TrainingThread.run()]: returning."
+        )
 
     def step(self, *args, **kwargs):
         # get data from step queue
@@ -263,7 +265,6 @@ class TrainingThread(threading.Thread):
             step = self._step_queue.get(block=True)
             self._first_sample_arrived = True
 
-        # print "[TrainingThread.step()]: ", step
         # async_buffer_end signal for asynchronous samplers, representing end of step queue
         # TODO: ??? aync_buffer end, async_buffer_empty?
         if self._first_sample_arrived:
@@ -271,11 +272,13 @@ class TrainingThread(threading.Thread):
                 *step["args"], async_buffer_end=queue_empty, **step["kwargs"]
             )
             self.__n_step += 1
-            info['TrainingThread/n_step'] = self.__n_step
-            # TODO: make lock for multiple threads
+            # update the item in info_queue with the latest info
+            old_info = {}
             if self._info_queue.qsize() > 0:
-                self._info_queue.get(block=True)
-            self._info_queue.put(info)
+                old_info = self._info_queue.get(block=True)
+            info['TrainingThread/n_step'] = self.__n_step
+            old_info.update(info)
+            self._info_queue.put(old_info)
 
     def stop(self):
         print "[TrainingThread.step()]: setting poison pill."
@@ -391,6 +394,10 @@ class RateControlMixin(object):
         # print "[RateControlMixin.step()]: current quota", self.__quota
         # throttle calls to the step() method of super class
         if self.__quota > 1 or self.__method == 'best_effort':
+            # logging.warning(
+            #     "[RateControlMixin.step()]: "
+            #     "got quota {} to step once.".format(self.__quota)
+            # )
             super(RateControlMixin, self).step(*args, **kwargs)
             self.__quota -= 1
         else:

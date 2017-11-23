@@ -39,10 +39,13 @@ def func_compile_obs(obss):
     obs2 = obss[-2][0]
     obs3 = obss[-3][0]
     print obss[-1][1]
+    
     # cast as uint8 is important otherwise float64
     obs = ((obs1 + obs2)/2).astype('uint8')
-    # print obs.shape
-    return obs.copy()
+    speed =(np.ones((350, 350, 1)) * int(obss[-1][2] /10 * 255)).astype('uint8')
+    print speed[0, 0, 0]
+    ret = np.concatenate([obs, speed], axis=2)
+    return ret
 
 ALL_ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0,)]
 AGENT_ACTIONS = ALL_ACTIONS[:3]
@@ -149,40 +152,25 @@ def gen_backend_cmds():
         ['python', backend_path+'car_go.py'],
         # start simulation restarter backend
         ['python', backend_path+'rviz_restart.py', 'honda_dynamic_obs.launch'],
-        ['python', backend_path + 'non_stop_data_capture.py', 0]
-
     ]
     return backend_cmds
 
-
-def too_slow(rewards):
-    return rewards[2] < 1.0
-
-def mask_action(rewards, action):
-    if rewards[7] and action == 2 \
-            or rewards[8] and action == 1\
-            or rewards[1]:
-        return 0
-    return action
-
-
 env = DrivingSimulatorEnv(
-    address='10.31.40.197', port='10024',
+    address='localhost', port='6103',
     backend_cmds=gen_backend_cmds(),
     defs_obs=[
         ('/training/image/compressed', 'sensor_msgs.msg.CompressedImage'),
-        ('/decision_result', 'std_msgs.msg.Int16')
+        ('/decision_result', 'std_msgs.msg.Int16'),
+        ('/rl/car_velocity_front', 'std_msgs.msg.Float32'),
     ],
     defs_reward=[
         ('/rl/current_road_validity', 'std_msgs.msg.Int16'),
         ('/rl/entering_intersection', 'std_msgs.msg.Bool'),
-        ('/rl/car_velocity', 'std_msgs.msg.Float32'),
+        ('/rl/car_velocity_front', 'std_msgs.msg.Float32'),
         ('/rl/last_on_opposite_path', 'std_msgs.msg.Int16'),
-        ('/rl/on_pedestrian', 'std_msgs.msg.Bool'),
+        ('/rl/on_biking_lane', 'std_msgs.msg.Bool'),
         ('/rl/obs_factor', 'std_msgs.msg.Float32'),
         ('/rl/distance_to_longestpath', 'std_msgs.msg.Float32'),
-        ('/rl/on_biking_lane', 'std_msgs.msg.Bool'),
-        ('/rl/on_outterest_lane', 'std_msgs.msg.Bool')
     ],
     defs_action=[('/autoDrive_KeyboardMode', 'std_msgs.msg.Char')],
     rate_action=10.0,
@@ -193,7 +181,7 @@ env = DrivingSimulatorEnv(
     func_compile_action=func_compile_action,
     step_delay_target=0.5)
 # TODO: define these Gym related params insode DrivingSimulatorEnv
-env.observation_space = Box(low=0, high=255, shape=(350, 350, 3))
+env.observation_space = Box(low=0, high=255, shape=(350, 350, 4))
 env.reward_range = (-np.inf, np.inf)
 env.metadata = {}
 env.action_space = Discrete(len(ALL_ACTIONS))
@@ -204,7 +192,7 @@ def f_net(inputs):
     inputs = inputs[0]
     inputs = inputs/128 - 1.0
     # (640, 640, 3*n) -> ()
-    with tf.device('/gpu:1'):
+    with tf.device('/gpu:0'):
         conv1 = layers.conv2d(
             inputs=inputs, filters=16, kernel_size=(8, 8), strides=1,
             kernel_regularizer=l2_regularizer(scale=1e-2),
@@ -259,26 +247,27 @@ def f_net(inputs):
 
     return {"q": q}
 
+target_sync_rate = 1e-3
+state_shape = env.observation_space.shape
+graph = tf.get_default_graph()
 lr = tf.get_variable(
     'learning_rate', [], dtype=tf.float32,
     initializer=tf.constant_initializer(1e-3), trainable=False
 )
 lr_in = tf.placeholder(dtype=tf.float32)
 op_set_lr = tf.assign(lr, lr_in)
-optimizer_td = tf.train.AdamOptimizer(learning_rate=lr)
-target_sync_rate = 1e-3
-state_shape = env.observation_space.shape
-graph = tf.get_default_graph()
+optimizer_td = tf.train.AdamOptimizer(learning_rate=1e-4)
 global_step = tf.get_variable(
     'global_step', [], dtype=tf.int32,
     initializer=tf.constant_initializer(0), trainable=False)
+op_global_step_set = tf.assign(global_step, 0)
 
 # 1 sample ~= 1MB @ 6x skipping
 replay_buffer = BigPlayback(
     bucket_cls=BalancedMapPlayback,
-    cache_path="./Mask3ReplayBufferCache/experiment",
-    capacity=300000, bucket_size=100, ratio_active=0.05, max_sample_epoch=2,
-    num_actions=len(AGENT_ACTIONS), upsample_bias=(1.0, 1.0, 1.0, 0.1)
+    cache_path="./ReplayBufferCache/experiment_255543117017472316",
+    capacity=900000, bucket_size=300, ratio_active=0.05, max_sample_epoch=2,
+    num_actions=len(AGENT_ACTIONS), upsample_bias=(1,1,1,0.1)
 )
 
 gamma = 0.9
@@ -290,12 +279,9 @@ _agent = hrl.DQN(
     target_sync_interval=1,
     target_sync_rate=target_sync_rate,
     # epsilon greeedy arguments
-    # greedy_epsilon=0.025,
     # greedy_epsilon=0.05,
-    # greedy_epsilon=0.075,
-    # greedy_epsilon=0.2,  # 0.2 -> 0.15 -> 0.1
-    # greedy_epsilon=CappedLinear(10000, 0.5, 0.05),
-    greedy_epsilon=CappedLinear(10000, 0.1, 0.025),
+    greedy_epsilon=CappedLinear(10000, 0.2, 0.05),
+    # greedy_epsilon=CappedLinear(10000, 0.1, 0.025),
     # optimizer arguments
     network_optimizer=hrl.network.LocalOptimizer(optimizer_td, 1.0),
     # sampler arguments
@@ -413,8 +399,8 @@ def log_info(update_info):
     return summary_proto
 
 n_interactive = 0
-n_skip = 6
-update_rate = 6.0
+n_skip = 1  # 6
+update_rate = 4.0
 n_ep = 0  # last ep in the last run, if restart use 0
 n_test = 0  # num of episode per test run (no exploration)
 
@@ -425,14 +411,15 @@ try:
         graph=tf.get_default_graph(),
         is_chief=True,
         init_op=tf.global_variables_initializer(),
-        logdir='./experiment_mask3',
+        logdir='./experiment_255543117017472316',
         save_summaries_secs=10,
-        save_model_secs=900)
+        save_model_secs=3600)
 
     with sv.managed_session(config=config) as sess, \
          AsynchronousAgent(agent=_agent, method='rate', rate=update_rate) as agent:
 
         agent.set_session(sess)
+        sess.run(op_global_step_set)
         sess.run(op_set_lr, feed_dict={lr_in: 1e-4})
         print "Using learning rate {}".format(sess.run(lr))
         n_env_steps = 0
@@ -450,6 +437,7 @@ try:
             cum_td_loss = 0.0
             cum_reward = 0.0
             done = False
+            turning_flag = False
 
             last_road_change = False
             road_invalid_at_enter = False
@@ -467,8 +455,7 @@ try:
             next_state = state
             next_action = action
             # cnt_skip = 1 if next_action == 0 else n_skip
-            # cnt_skip = int(n_skip * (1 + np.random.rand()))  # randome start offset to enforce randomness on phase
-            cnt_skip = n_skip
+            cnt_skip = int(n_skip * (1 + np.random.rand()))  # randome start offset to enforce randomness on phase
             log_info(update_info)
 
             while True:
@@ -479,15 +466,34 @@ try:
 
                 # Env step
                 t = time.time()
-                next_state, reward, done, info = env.step(skip_action)
-                vec_reward = np.mean(reward, axis=0)
+                next_state, rewards, done, info = env.step(skip_action)
                 flag_success = done
                 t_step = time.time() - t
                 state, action, reward, next_state, done = \
-                    func_compile_exp_agent(state, action, reward, next_state, done)
+                    func_compile_exp_agent(state, action, rewards, next_state, done)
                 flag_tail = done
                 flag_success = True if flag_success and reward > 0.0 else False
                 skip_reward += reward
+
+                rewards = np.mean(np.array(rewards), axis=0)
+                min_dist = np.min(np.abs(np.array([0, 3.75, 7.5, 10.75]) - rewards[6]))
+                # keep skipping until lane switching is finished
+                if (action==1 or action==2) and ema_speed > 0.1:
+                    if turning_flag:  # already turning
+                        if min_dist > 0.5:
+                            if cnt_skip == 0:  # keep cnt_skip > 0 while not finished
+                                cnt_skip = 1
+                        else:
+                            turning_flag = False
+                    else:
+                        if min_dist <= 0.5:
+                            if cnt_skip == 0:  # keep cnt_skip > 0 while not finished
+                                cnt_skip = 1
+                        else:
+                            turning_flag = True
+
+                print min_dist, turning_flag
+                        
 
                 if cnt_skip==0 or done:
                     # average rewards during skipping
@@ -501,7 +507,6 @@ try:
                     )
                     t = time.time()
                     next_action = agent.act(next_state, exploration=not exploration_off)
-                    next_action = mask_action(vec_reward, next_action)
                     n_agent_steps += 1
                     t_infer += time.time() - t
                     skip_reward = 0
@@ -513,8 +518,8 @@ try:
                 sv.summary_computed(sess, summary=log_info(update_info))
                 if cnt_skip == 0:
                     if next_action == 0:
-                        cnt_skip = 1
-                        # cnt_skip = n_skip
+                        # cnt_skip = 1
+                        cnt_skip = n_skip
                     else:
                         cnt_skip = n_skip
                 # print "Agent step learn {} sec, infer {} sec".format(t_learn, t_infer)

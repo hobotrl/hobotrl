@@ -159,7 +159,7 @@ def gen_backend_cmds():
 
 
 env = DrivingSimulatorEnv(
-    address='localhost', port='10004',
+    address='10.31.40.197', port='10014',
     backend_cmds=gen_backend_cmds(),
     defs_obs=[
         ('/training/image/compressed', 'sensor_msgs.msg.CompressedImage'),
@@ -255,9 +255,9 @@ global_step = tf.get_variable(
 # 1 sample ~= 1MB @ 6x skipping
 replay_buffer = BigPlayback(
     bucket_cls=BalancedMapPlayback,
-    cache_path="./ReplayBufferCache/experimentexperiment",
+    cache_path="./Dynamic3ReplayBufferCache/experiment",
     capacity=300000, bucket_size=100, ratio_active=0.05, max_sample_epoch=2,
-    num_actions=len(AGENT_ACTIONS)*len(TIME_STEP_SCALES), upsample_bias=tuple([1 for _ in range(12)] + [0.1] )
+    num_actions=len(AGENT_ACTIONS)*len(TIME_STEP_SCALES), upsample_bias=tuple([1.0 for _ in range(12)] + [0.1] )
 )
 
 gamma = 0.9
@@ -404,7 +404,7 @@ try:
         graph=tf.get_default_graph(),
         is_chief=True,
         init_op=tf.global_variables_initializer(),
-        logdir='./experiment',
+        logdir='./experiment_dynamic3',
         save_summaries_secs=10,
         save_model_secs=900)
 

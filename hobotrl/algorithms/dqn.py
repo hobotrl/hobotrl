@@ -11,7 +11,7 @@ import hobotrl.network as network
 import hobotrl.sampling as sampling
 from hobotrl.tf_dependent.base import BaseDeepAgent
 from hobotrl.playback import MapPlayback
-from value_based import ValueBasedAgent
+from value_based import ValueBasedAgent, GreedyStateValueFunction
 import hobotrl.target_estimate as target_estimate
 
 
@@ -87,6 +87,7 @@ class DQN(sampling.TransitionBatchUpdate,
     def init_value_function(self, **kwargs):
         self.learn_q = network.NetworkFunction(self.network["q"])
         self.target_q = network.NetworkFunction(self.network.target["q"])
+        self.target_v = GreedyStateValueFunction(self.target_q)
         return self.learn_q
 
     def init_updaters_(self):

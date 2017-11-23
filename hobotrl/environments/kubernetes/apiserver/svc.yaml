@@ -11,5 +11,9 @@ spec:
     targetPort: 22224
     protocol: TCP
     name: websocket
+  - port: 5901
+    targetPort: 5901
+    protocol: TCP
+    name: vnc
   selector:
     run: ${id}

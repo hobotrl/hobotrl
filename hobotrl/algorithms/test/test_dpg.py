@@ -21,19 +21,38 @@ class TestDPG(unittest.TestCase):
             initializer=tf.constant_initializer(0), trainable=False
         )
 
-        def f_net(inputs):
-            l2 = 1e-8
-            state, action = inputs[0], inputs[1]
-            actor = hrl.network.Utils.layer_fcs(state, [200, 100], dim_action, activation_out=tf.nn.tanh, l2=l2, var_scope="action")
-            se = hrl.network.Utils.layer_fcs(state, [200], 100, activation_out=None, l2=l2, var_scope="se")
+        l2 = 1e-8
+
+        def f_se(inputs):
+            state = inputs[0]
+            # se = hrl.network.Utils.layer_fcs(state, [200], 100, activation_out=None, l2=l2, var_scope="se")
+            return {"se": state}
+
+        def f_actor(inputs):
+            se = inputs[0]
+            actor = hrl.network.Utils.layer_fcs(se, [200, 100], dim_action, activation_out=tf.nn.tanh, l2=l2,
+                                                var_scope="action")
+            return {"action": actor}
+
+        def f_critic(inputs):
+            se, action = inputs[0], inputs[1]
             se = tf.concat([se, action], axis=-1)
             q = hrl.network.Utils.layer_fcs(se, [100], 1, activation_out=None, l2=l2, var_scope="q")
             q = tf.squeeze(q, axis=1)
-            return {"q": q, "action": actor}
+            return {"q": q}
+        #
+        # def f_net(inputs):
+        #     state, action = inputs[0], inputs[1]
+        #     se = hrl.network.Utils.layer_fcs(state, [200], 100, activation_out=None, l2=l2, var_scope="se")
+        #     se = tf.concat([se, action], axis=-1)
+        #     q = hrl.network.Utils.layer_fcs(se, [100], 1, activation_out=None, l2=l2, var_scope="q")
+        #     q = tf.squeeze(q, axis=1)
+        #     return {"q": q, "action": actor}
 
         sampler = hrl.async.AsyncTransitionSampler(hrl.playback.MapPlayback(1000), 32)
         agent = hrl.DPG(
-            f_create_net=f_net, state_shape=state_shape, dim_action=dim_action,
+            f_se=f_se, f_actor=f_actor, f_critic=f_critic,
+            state_shape=state_shape, dim_action=dim_action,
             # ACUpdate arguments
             discount_factor=0.9, target_estimator=None,
             # optimizer arguments
