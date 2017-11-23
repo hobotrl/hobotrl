@@ -16,13 +16,15 @@ spec:
     spec:
       containers:
       - name: xserver-daemon
-        image: docker.hobot.cc/carsim/simulator_cpu_kub:0.0.6
+        image: docker.hobot.cc/carsim/opengl-3dx:latest
+        securityContext:
+          privileged: true
         resources:
           limits:
             alpha.kubernetes.io/nvidia-gpu: 1
         volumeMounts:
         - name: xsocket
-          mountPath: /Projects/.X11-unix
+          mountPath: /tmp/.X11-unix
           readOnly: false
       terminationGracePeriodSeconds: 30
       volumes:
