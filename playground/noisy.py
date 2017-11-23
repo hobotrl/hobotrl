@@ -215,18 +215,26 @@ class ModelUpdater(NetworkUpdater):
             next_se = net_se([self._input_next_state])["se"].op
             self._goal_fact = tf.stop_gradient(next_se - se)
             logging.warning("ModelUpdater model input:%s", [se, self._input_action])
-            net = net_model([se, self._input_action])
+            net = net_model([se, self._input_action], name_scope="model_control")
             net_momentum = net_momentum([se], name_scope="model_momentum")
             op_momentum = net_momentum["sd"].op
-            self._goal_predict = net["sd"].op + op_momentum
+            self._op_momentum = op_momentum
+            self._op_goal_control = net["sd"].op
+            self._goal_predict = self._op_goal_control + self._op_momentum
+            self._momentum_norm = tf.norm(self._op_momentum, axis=-1)
+            self._goal_control_norm = tf.norm(self._op_goal_control, axis=-1)
+            self._goal_predict_norm = tf.norm(self._goal_predict, axis=-1)
+
             self._goal_loss = tf.reduce_mean(
                 tf.reduce_sum(
                     Utils.clipped_square(self._goal_fact - self._goal_predict)
                 ))
+            self._momentum_loss = tf.reduce_mean(
+                tf.reduce_sum(
+                    Utils.clipped_square(self._goal_fact - self._op_momentum)
+                ))
             self._reward_loss = tf.reduce_mean(Utils.clipped_square(self._input_reward - net["r"].op))
-            self._op_momentum = op_momentum
-            self._momentum_norm = tf.norm(op_momentum)
-            self._loss = self._goal_loss + reward_weight * self._reward_loss
+            self._loss = self._goal_loss + self._momentum_loss * 0.1 + reward_weight * self._reward_loss
         self._update_operation = network.MinimizeLoss(self._loss,
                                                       var_list=net_se.variables + net_model.variables
                                                         + net_momentum.variables)
@@ -248,7 +256,10 @@ class ModelUpdater(NetworkUpdater):
             self._input_reward: reward,
         }
         return network.UpdateRun(feed_dict=feed_dict, fetch_dict={"goal_predict": self._goal_predict,
+                                                                  "goal_predict_norm": self._goal_predict_norm,
                                                                   "goal_fact": self._goal_fact,
+                                                                  "goal_control": self._op_goal_control,
+                                                                  "goal_control_norm": self._goal_control_norm,
                                                                   "action": self._input_action,
                                                                   "loss_reward": self._reward_loss,
                                                                   "loss_goal": self._goal_loss,
@@ -261,7 +272,7 @@ class ImaginaryGoalGradient(NetworkUpdater):
     """
     update IK with imaginary goals
     """
-    def __init__(self, net_se, net_model, net_ik, net_momentum, func_goal=None):
+    def __init__(self, net_se, net_model, net_ik, net_momentum, func_goal=None, imagine_history=False):
         super(ImaginaryGoalGradient, self).__init__()
         self._func_goal = func_goal
         state_shape = net_se.inputs[0].shape.as_list()
@@ -278,12 +289,16 @@ class ImaginaryGoalGradient(NetworkUpdater):
                 tf.reduce_mean(tf.norm(self._input_goal_history, axis=-1))
                 / tf.reduce_mean(tf.norm(self._input_goal_random, axis=-1))
             )
-            self._goal_fact = tf.stop_gradient(norm_scale) * self._input_goal_random
-            action_predict = net_ik([se, self._goal_fact])["action"].op
+            self.goal_random = tf.stop_gradient(norm_scale) * self._input_goal_random
+            if imagine_history:
+                self._goal_to_achieve = self._input_goal_history
+            else:
+                self._goal_to_achieve = self.goal_random
+            action_predict = net_ik([se, self._goal_to_achieve])["action"].op
             self._goal_predict = net_model([se, action_predict])["sd"].op
             self._loss = tf.reduce_mean(
                 tf.reduce_sum(
-                    Utils.clipped_square(self._goal_fact - self._goal_predict), axis=-1)
+                    Utils.clipped_square(self._goal_to_achieve - self._goal_predict), axis=-1)
             )
         self._update_operation = network.MinimizeLoss(self._loss,
                                                       var_list=net_ik.variables)
@@ -301,14 +316,15 @@ class ImaginaryGoalGradient(NetworkUpdater):
         if self._func_goal is not None:
             goal_random = self._func_goal(state, noise)
         else:
-            goal_random = np.random.rand(*goal.shape)
+            goal_random = np.random.normal(np.zeros(goal.shape, dtype=np.float32), np.ones(goal.shape, dtype=np.float32))
+            # goal_random = np.random.rand(*goal.shape)
         feed_dict = {
             self._input_state: state,
             self._input_goal_history: goal,
             self._input_goal_random: goal_random
         }
         return network.UpdateRun(feed_dict=feed_dict, fetch_dict={"goal_predict": self._goal_predict,
-                                                                  "goal_fact": self._goal_fact,
+                                                                  "goal_fact": self.goal_random,
                                                                   "loss": self._loss})
 
 
@@ -412,13 +428,13 @@ class WorkerActorCritic(ac.ActorCriticUpdater):
 
 
 class NoisySD(BaseDeepAgent):
-    def __init__(self, f_se,    # state encoder             se = SE(s)
-                 f_manager,     # manager outputs Dstate    sd = Manager(se)
-                 f_explorer,    # noisy network             n  = Noise(z), goal = sd + n
-                 f_ik,          # inverse kinetic           a  = IK(se, goal)
-                 f_value,       # value network             v  = V(se)
-                 f_model,       # transition model          goal[0] = TM(se[0], a[0])
-                 f_pi,          # worker_policy
+    def __init__(self, f_se,  # state encoder             se = SE(s)
+                 f_manager,  # manager outputs Dstate    sd = Manager(se)
+                 f_explorer,  # noisy network             n  = Noise(z), goal = sd + n
+                 f_ik,  # inverse kinetic           a  = IK(se, goal)
+                 f_value,  # value network             v  = V(se)
+                 f_model,  # transition model          goal[0] = TM(se[0], a[0])
+                 f_pi,  # worker_policy
                  state_shape,
                  action_dimension,
                  noise_dimension,
@@ -438,12 +454,13 @@ class NoisySD(BaseDeepAgent):
                  batch_size=32,
                  batch_horizon=4,
                  replay_size=1000,
-                 act_ac=False,          # True if act by actor critic; False by IK
+                 act_ac=False,  # True if act by actor critic; False by IK
                  intrinsic_weight=0.0,
-                 explore_net=False,     # True if explore by noise net; False by plain ou noise
-                 abs_goal=True,         # True if goal expressed in absolute delta; False in direction
-                 manager_ac=False,      # True if manager trained with actor critic
+                 explore_net=False,  # True if explore by noise net; False by plain ou noise
+                 abs_goal=True,  # True if goal expressed in absolute delta; False in direction
+                 manager_ac=False,  # True if manager trained with actor critic
                  explicit_momentum=False,
+                 imagine_history=False,
                  achievable_weight=1e-1,
                  disentangle_weight=1.0,
                  *args, **kwargs):
@@ -569,7 +586,7 @@ class NoisySD(BaseDeepAgent):
                 self.network.sub_net("se"),
                 self.network.sub_net("model"),
                 self.network.sub_net("ik"),
-                self.network.sub_net("momentum"), func_goal=None), name="imagine")
+                self.network.sub_net("momentum"), func_goal=None, imagine_history=imagine_history), name="imagine")
         else:
             # worker  pi
             self._pi_function = network.NetworkFunction(

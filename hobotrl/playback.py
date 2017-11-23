@@ -91,15 +91,20 @@ class Trajectory(object):
 
     def transition(self, state, action, reward, next_state, episode_done, **kwargs):
         if not self._finalized:
-            kwargs.update({
-                "state": state,
-                "action": action,
-                "reward": reward,
-                "next_state": next_state,
-                "episode_done": episode_done
-            })
-            self._steps.append(kwargs)
-            self._finalized = episode_done or len(self._steps) >= self._max_length
+            if state is not None and \
+                action is not None and \
+                reward is not None and \
+                next_state is not None and \
+                episode_done is not None:
+                kwargs.update({
+                    "state": state,
+                    "action": action,
+                    "reward": reward,
+                    "next_state": next_state,
+                    "episode_done": episode_done
+                })
+                self._steps.append(kwargs)
+                self._finalized = episode_done or len(self._steps) >= self._max_length
         else:
             raise ValueError("cannot append further transitions!length:%d, finalized:%s"
                              % (len(self._steps), self._finalized))
@@ -994,10 +999,10 @@ class BigPlayback(Playback):
             )
             time.sleep(1.0)
 
-        logging.info(
-            "[BigPlayback.push_sample()]: "
-            "push into bucket {} @ {}".format(bucket_to_push, self._buckets[bucket_to_push].push_index)
-        )
+        # logging.warning(
+        #     "[BigPlayback.push_sample()]: "
+        #     "push into bucket {} @ {}".format(bucket_to_push, self._buckets[bucket_to_push].push_index)
+        # )
 
         try:
             self._buckets[bucket_to_push].push_sample(sample, sample_score)
@@ -1393,10 +1398,10 @@ class BigPlayback(Playback):
         )
 
     def __load_one(self, bucket_id):
-        # logging.warning(
-        #     "[BigPlayback.__load_one()]: "
-        #     "going to load bucket {}.".format(bucket_id)
-        # )
+        logging.warning(
+            "[BigPlayback.__load_one()]: "
+            "going to load bucket {}.".format(bucket_id)
+        )
         self._buckets[bucket_id].load()
 
         # assign sampling quota to this bucket
@@ -1405,10 +1410,10 @@ class BigPlayback(Playback):
         self._buckets_active[bucket_id] = True
 
     def __save_one(self, bucket_id):
-        # logging.warning(
-        #     "[BigPlayback.__save_one()]: "
-        #     "going to save bucket {}".format(bucket_id)
-        # )
+        logging.warning(
+            "[BigPlayback.__save_one()]: "
+            "going to save bucket {}".format(bucket_id)
+        )
         self._buckets[bucket_id].save()
         # Sync meta to truly persist the saved meta.
         # Otherwise the saved bucket data will be ignored in the next

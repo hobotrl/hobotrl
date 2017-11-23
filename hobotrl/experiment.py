@@ -11,7 +11,7 @@ import tensorflow as tf
 import gym
 import argparse
 
-from utils import clone_params_dict, escape_path
+from utils import clone_params, escape_path
 
 
 class Experiment(object):
@@ -142,7 +142,7 @@ class GridSearch(Experiment):
             names = param.keys()
             valuelists = [param[n] for n in names]
             for values in itertools.product(*valuelists):
-                yield clone_params_dict(**dict(zip(names, values)))
+                yield clone_params(**dict(zip(names, values)))
 
     def labelize(self, parameter):
         return "_".join(["%s%s" % (f, escape_path(str(parameter[f]))) for f in parameter])
