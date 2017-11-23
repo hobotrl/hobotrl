@@ -159,15 +159,14 @@ def gen_backend_cmds():
 
 
 tf.app.flags.DEFINE_string("logdir",
-                           "./experiment",
+                           "./dqn_log",
                            """save tmp model""")
 tf.app.flags.DEFINE_string("savedir",
-                           "/home/pirate03/hobotrl_data/playground/initialD/exp/"
-                           "docker006/dqn",
+                           "./dqn_save",
                            """records data""")
 tf.app.flags.DEFINE_string("readme", "direct dqn. Use new reward function.", """readme""")
 tf.app.flags.DEFINE_string("host", "10.31.40.197", """host""")
-tf.app.flags.DEFINE_string("port", '10034', "Docker port")
+tf.app.flags.DEFINE_string("port", '10014', "Docker port")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -283,7 +282,7 @@ global_step = tf.get_variable(
 # 1 sample ~= 1MB @ 6x skipping
 replay_buffer = BigPlayback(
     bucket_cls=BalancedMapPlayback,
-    cache_path="./ReplayBufferCache/experiment",
+    cache_path="./DQNReplayBufferCache/experiment",
     capacity=300000, bucket_size=100, ratio_active=0.05, max_sample_epoch=2,
     num_actions=len(AGENT_ACTIONS), upsample_bias=(1,1,1,0.1)
 )
@@ -478,7 +477,7 @@ try:
             n_agent_steps += 1
             skip_action = action
 
-            img = state[:, :, 6:]
+            img = np.array(state)[:, :, 6:]
             img_path = eps_dir + "/" + str(n_steps+1).zfill(4) + "_" + str(skip_action) + ".jpg"
             cv2.imwrite(img_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
 
@@ -537,7 +536,7 @@ try:
                 else:
                     skip_action = 3  # no op during skipping
 
-                img = next_state[:, :, 6:]
+                img = np.array(next_state)[:, :, 6:]
                 img_path = eps_dir + "/" + str(n_steps+1).zfill(4) + "_" + str(skip_action) + ".jpg"
                 cv2.imwrite(img_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
 
