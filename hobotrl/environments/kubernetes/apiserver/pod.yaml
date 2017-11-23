@@ -7,8 +7,9 @@ metadata:
 spec:
   containers:
   - name: ${id}
-    image: docker.hobot.cc/carsim/honda_simulator_kub:0.0.1
+    image: ${image}
     ports:
     - containerPort: 22224
+    - containerPort: 5901
     securityContext:
       privileged: true
