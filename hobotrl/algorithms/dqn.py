@@ -96,14 +96,14 @@ class DQN(sampling.TransitionBatchUpdate,
         else:
             estimator = target_estimate.OneStepTD(self.target_q, self._discount_factor)
         self.network_optimizer.add_updater(network.FitTargetQ(self.learn_q, estimator), name="td")
-        self.network_optimizer.add_updater(network.L2(self.network), name="l2")
+        # self.network_optimizer.add_updater(network.L2(self.network), name="l2")
         self.network_optimizer.compile()
         pass
 
     def update_on_transition(self, batch):
         self._update_count += 1
         self.network_optimizer.update("td", self.sess, batch)
-        self.network_optimizer.update("l2", self.sess)
+        # self.network_optimizer.update("l2", self.sess)
         info = self.network_optimizer.optimize_step(self.sess)
         if self._update_count % self._target_sync_interval == 0:
             self.network.sync_target(self.sess, self._target_sync_rate)
