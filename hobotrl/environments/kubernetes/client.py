@@ -43,6 +43,7 @@ class KubernetesEnv(object):
 
         self._cls_kwargs = kwargs
         self._env, self._env_spec = None, None
+        self._os, self._as = None, None
         self._init_env_queue = Queue.Queue(maxsize=1)
         self._api_thread = ApiThread(remote_client_env_class, kwargs, api_server_address, image_uri, self._init_env_queue)
         self._api_thread.start()
@@ -70,11 +71,25 @@ class KubernetesEnv(object):
 
     @property
     def action_space(self):
-        return self._env.action_space
+        return self._env.action_space if self._as is None else self._as
+
+    @action_space.setter
+    def action_space(self, action_space):
+        if self._env is None:
+            self._as = action_space
+        else:
+            self._env.action_space = action_space
 
     @property
     def observation_space(self):
-        return self._env.observation_space
+        return self._env.observation_space if self._os is None else self._os
+
+    @observation_space.setter
+    def observation_space(self, ob):
+        if self._env is None:
+            self._os = ob
+        else:
+            self._env.observation_space = ob
 
 
 class ApiThread(threading.Thread):
