@@ -24,11 +24,14 @@ from hobotrl.sampling import TransitionSampler
 from hobotrl.playback import BalancedMapPlayback, BigPlayback
 from hobotrl.async import AsynchronousAgent
 from hobotrl.utils import CappedLinear
+from tensorflow.python.training.summary_io import SummaryWriterCache
+
 # initialD
 # from ros_environments.honda import DrivingSimulatorEnv
 from ros_environments.clients import DrivingSimulatorEnvClient as DrivingSimulatorEnv
 # Gym
 from gym.spaces import Discrete, Box
+import cv2
 
 # Environment
 def func_compile_reward(rewards):
@@ -149,11 +152,32 @@ def gen_backend_cmds():
         ['python', backend_path+'car_go.py'],
         # start simulation restarter backend
         ['python', backend_path+'rviz_restart.py', 'honda_dynamic_obs.launch'],
+        ['python', backend_path + 'non_stop_data_capture.py', 0]
     ]
     return backend_cmds
 
+
+
+tf.app.flags.DEFINE_string("logdir",
+                           "./experiment",
+                           """save tmp model""")
+tf.app.flags.DEFINE_string("savedir",
+                           "/home/pirate03/hobotrl_data/playground/initialD/exp/"
+                           "docker006/dqn",
+                           """records data""")
+tf.app.flags.DEFINE_string("readme", "direct dqn",
+                                     "Use new reward function.", """readme""")
+tf.app.flags.DEFINE_string("host", "10.31.40.197",
+                                     "Use new reward function.", """readme""")
+tf.app.flags.DEFINE_string("port", '10034', "Docker port")
+
+FLAGS = tf.app.flags.FLAGS
+
+
+os.mkdir(FLAGS.savedir)
+
 env = DrivingSimulatorEnv(
-    address='localhost', port='6003',
+    address=FLAGS.host, port=FLAGS.port,
     backend_cmds=gen_backend_cmds(),
     defs_obs=[
         ('/training/image/compressed', 'sensor_msgs.msg.CompressedImage'),
@@ -243,6 +267,7 @@ def f_net(inputs):
 
     return {"q": q}
 
+
 target_sync_rate = 1e-3
 state_shape = env.observation_space.shape
 graph = tf.get_default_graph()
@@ -256,7 +281,6 @@ optimizer_td = tf.train.AdamOptimizer(learning_rate=1e-4)
 global_step = tf.get_variable(
     'global_step', [], dtype=tf.int32,
     initializer=tf.constant_initializer(0), trainable=False)
-op_global_step_set = tf.assign(global_step, 247200)
 
 # 1 sample ~= 1MB @ 6x skipping
 replay_buffer = BigPlayback(
@@ -410,15 +434,15 @@ try:
         graph=tf.get_default_graph(),
         is_chief=True,
         init_op=tf.global_variables_initializer(),
-        logdir='./experiment',
+        logdir=FLAGS.logdir,
         save_summaries_secs=10,
         save_model_secs=3600)
 
     with sv.managed_session(config=config) as sess, \
          AsynchronousAgent(agent=_agent, method='rate', rate=update_rate) as agent:
+        summary_writer = SummaryWriterCache.get(FLAGS.logdir)
 
         agent.set_session(sess)
-        sess.run(op_global_step_set)
         # sess.run(op_set_lr, feed_dict={lr_in: 1e-4})
         # print "Using learning rate {}".format(sess.run(lr))
         n_env_steps = 0
@@ -427,6 +451,11 @@ try:
         action_td_loss = np.zeros(len(AGENT_ACTIONS), )
         while True:
             n_ep += 1
+            eps_dir = FLAGS.savedir + "/" + str(n_ep).zfill(4)
+            os.mkdir(eps_dir)
+            recording_filename = eps_dir + "/" + "0000.txt"
+            recording_file = open(recording_filename, 'w')
+
             env.env.n_ep = n_ep  # TODO: do this systematically
             exploration_off = (n_ep%n_test==0) if n_test >0 else False
             learning_off = exploration_off
@@ -446,10 +475,15 @@ try:
             update_info = {}
             t_infer, t_step, t_learn = 0, 0, 0
 
-            state  = env.reset()
+            state = env.reset()
             action = agent.act(state, exploration=not exploration_off)
             n_agent_steps += 1
             skip_action = action
+
+            img = state[:, :, 6:]
+            img_path = eps_dir + "/" + str(n_steps+1).zfill(4) + "_" + str(skip_action) + ".jpg"
+            cv2.imwrite(img_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+
             next_state = state
             next_action = action
             # cnt_skip = 1 if next_action == 0 else n_skip
@@ -464,11 +498,23 @@ try:
 
                 # Env step
                 t = time.time()
-                next_state, reward, done, info = env.step(skip_action)
+                next_state, vec_reward, done, info = env.step(skip_action)
                 flag_success = done
                 t_step = time.time() - t
                 state, action, reward, next_state, done = \
-                    func_compile_exp_agent(state, action, reward, next_state, done)
+                    func_compile_exp_agent(state, action, vec_reward, next_state, done)
+
+                recording_file.write(str(n_steps) + ',' + str(skip_action) + ',' + str(reward) + '\n')
+                vec_reward = np.mean(np.array(vec_reward), axis=0)
+                vec_reward = vec_reward.tolist()
+                str_reward = ""
+                for r in vec_reward:
+                    str_reward += str(r)
+                    str_reward += ","
+                str_reward += "\n"
+                recording_file.write(str_reward)
+                recording_file.write("\n")
+
                 flag_tail = done
                 flag_success = True if flag_success and reward > 0.0 else False
                 skip_reward += reward
@@ -493,6 +539,10 @@ try:
                 else:
                     skip_action = 3  # no op during skipping
 
+                img = next_state[:, :, 6:]
+                img_path = eps_dir + "/" + str(n_steps+1).zfill(4) + "_" + str(skip_action) + ".jpg"
+                cv2.imwrite(img_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+
                 sv.summary_computed(sess, summary=log_info(update_info))
                 if cnt_skip == 0:
                     if next_action == 0:
@@ -503,6 +553,18 @@ try:
                 # print "Agent step learn {} sec, infer {} sec".format(t_learn, t_infer)
                 if done:
                     break
+
+            summary = tf.Summary()
+            summary.value.add(tag="cum_reward_ep", simple_value=cum_reward)
+            summary_writer.add_summary(summary, n_ep)
+            summary = tf.Summary()
+            summary.value.add(tag="flag_success_ep", simple_value=flag_success)
+            summary_writer.add_summary(summary, n_ep)
+            summary = tf.Summary()
+            summary.value.add(tag="done_ep", simple_value=done)
+            summary_writer.add_summary(summary, n_ep)
+            recording_file.close()
+
 except Exception as e:
     print e.message
     traceback.print_exc()
