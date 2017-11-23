@@ -234,7 +234,7 @@ class ModelUpdater(NetworkUpdater):
                     Utils.clipped_square(self._goal_fact - self._op_momentum)
                 ))
             self._reward_loss = tf.reduce_mean(Utils.clipped_square(self._input_reward - net["r"].op))
-            self._loss = self._goal_loss + self._momentum_loss * 0.1 + reward_weight * self._reward_loss
+            self._loss = self._goal_loss + self._momentum_loss * 0.01 + reward_weight * self._reward_loss
         self._update_operation = network.MinimizeLoss(self._loss,
                                                       var_list=net_se.variables + net_model.variables
                                                         + net_momentum.variables)
@@ -263,6 +263,7 @@ class ModelUpdater(NetworkUpdater):
                                                                   "action": self._input_action,
                                                                   "loss_reward": self._reward_loss,
                                                                   "loss_goal": self._goal_loss,
+                                                                  "loss_momentum": self._momentum_loss,
                                                                   "momentum": self._op_momentum,
                                                                   "momentum_norm": self._momentum_norm,
                                                                   "loss": self._loss})
@@ -463,6 +464,7 @@ class NoisySD(BaseDeepAgent):
                  imagine_history=False,
                  achievable_weight=1e-1,
                  disentangle_weight=1.0,
+                 imagine_weight=1.0,
                  *args, **kwargs):
         kwargs.update({
             "f_se": f_se,  # state encoder
@@ -586,7 +588,9 @@ class NoisySD(BaseDeepAgent):
                 self.network.sub_net("se"),
                 self.network.sub_net("model"),
                 self.network.sub_net("ik"),
-                self.network.sub_net("momentum"), func_goal=None, imagine_history=imagine_history), name="imagine")
+                self.network.sub_net("momentum"), func_goal=None, imagine_history=imagine_history),
+                weight=imagine_weight,
+                name="imagine")
         else:
             # worker  pi
             self._pi_function = network.NetworkFunction(

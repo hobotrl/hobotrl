@@ -158,7 +158,7 @@ class NoisyPendulum(NoisyExperiment):
 
             def fd(inputs):
                 return {"se": inputs[0]}
-            f_se = f
+            f_se = fd
 
         if f_manager is None:
             def f(inputs):
@@ -275,15 +275,15 @@ class NoisyPendulumSearch(GridSearch):
     """
     def __init__(self):
         super(NoisyPendulumSearch, self).__init__(NoisyPendulum, {
-            "explicit_momentum": [True],
+            "explicit_momentum": [True, False],
             "act_ac": [False],
             "explore_net": [False],
             "manager_ac": [True],
-            "manager_entropy": [1e-2, 1e-3],
-            "achievable_weight": [1e-3, 1e-1],
+            "manager_entropy": [1e-2],
+            "achievable_weight": [1e-3, 1e-4],
             # "worker_explore_param":  [(0, 0.2, CappedLinear(2e5, 0.2, 0.01)), (0, 0.2, CappedLinear(2e5, 0.5, 0.1))],
             "worker_explore_param": [(0, 0.2, CappedLinear(2e5, 0.2, 0.01))],
-            "imagine_history": [True],
+            "imagine_history": [True, False],
         })
 Experiment.register(NoisyPendulumSearch, "Noisy explore for pendulum")
 
