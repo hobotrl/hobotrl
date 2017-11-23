@@ -16,8 +16,8 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 from tensorflow import layers
 from tensorflow.contrib.layers import l2_regularizer
-sys.path.append('../../../../')
-sys.path.append('../..')
+sys.path.append('../../../')
+sys.path.append('..')
 # Hobotrl
 import hobotrl as hrl
 from hobotrl.algorithms.ot import OTDQN
@@ -162,7 +162,7 @@ def gen_backend_cmds():
         # start simulation restarter backend
         ['python', backend_path+'rviz_restart.py', 'honda_dynamic_obs.launch'],
         # [optional] video capture
-        # ['python', backend_path+'non_stop_data_capture.py', 0]
+        ['python', backend_path+'non_stop_data_capture.py', 0]
     ]
     return backend_cmds
 
@@ -194,6 +194,7 @@ env = KubernetesEnv(
     func_compile_action=func_compile_action,
     step_delay_target=0.5)
 # TODO: define these Gym related params insode DrivingSimulatorEnv
+env.reset()
 env.observation_space = Box(low=0, high=255, shape=(350, 350, 4))
 env.reward_range = (-np.inf, np.inf)
 env.metadata = {}
