@@ -165,10 +165,8 @@ tf.app.flags.DEFINE_string("savedir",
                            "/home/pirate03/hobotrl_data/playground/initialD/exp/"
                            "docker006/dqn",
                            """records data""")
-tf.app.flags.DEFINE_string("readme", "direct dqn",
-                                     "Use new reward function.", """readme""")
-tf.app.flags.DEFINE_string("host", "10.31.40.197",
-                                     "Use new reward function.", """readme""")
+tf.app.flags.DEFINE_string("readme", "direct dqn. Use new reward function.", """readme""")
+tf.app.flags.DEFINE_string("host", "10.31.40.197", """host""")
 tf.app.flags.DEFINE_string("port", '10034', "Docker port")
 
 FLAGS = tf.app.flags.FLAGS
