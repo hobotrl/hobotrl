@@ -9,21 +9,27 @@ from control import KubeUtil, EnvTracker, EvictThread
 
 
 urls = (
+    "/spawn/(.+)", "Spawn",
     "/spawn", "Spawn",
     "/stop/(.+)", "Stop",
     "/ping/(.+)", "Ping",
     "/attach/(.+)", "Attach"
 )
 
-app = web.application(urls, globals())
+app = web.application(urls, globals(), autoreload=False)
 
 kube = KubeUtil(incluster=False)
 env_tracker = EnvTracker(kube)
 
 
 class Spawn(object):
-    def GET(self):
-        return json.dumps(kube.spawn_new_env())
+    DEFAULT_IMAGE = "docker.hobot.cc/carsim/simulator_cpu_kub:0.0.6"
+
+    def GET(self, image_uri=None):
+        if image_uri is None:
+            logging.warning("using default:%s", self.DEFAULT_IMAGE)
+            image_uri = self.DEFAULT_IMAGE
+        return json.dumps(kube.spawn_new_env(image_uri))
 
 
 class Stop(object):
