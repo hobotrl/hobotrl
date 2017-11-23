@@ -1053,17 +1053,20 @@ class RemapFrame(gym.ObservationWrapper):
         dst_size = (48,48)
         center_src = (70,48)
         center_dst = (33,24)
-        linear_part_ratio_dst = 0.2
+        linear_part_ratio_dst = 0.1
+        k_scale = 0.5 #dst_size[0]/src_size[0] typically, set by hand if needed
+        d = 1.0/k_scale
 
         def remap_core(x, size_s, size_d, c_src, c_dst, lr):
             lp      = c_dst - c_dst*lr
             lp_src  = c_src - c_dst*lr
             hp      = c_dst + (size_d - c_dst)*lr
             hp_src  = c_src + (size_d - c_dst)*lr
-            a1      = -(lp_src-lp) / (lp*lp)
-            b1      = 1 - 2*a1*lp
-            a2      = (hp_src-hp - size_s + size_d) / (-(hp-size_d)*(hp-size_d))
-            b2      = 1 - 2*a2*hp
+            a1      = -(lp_src-d*lp) / (lp*lp) # -(lp_src-lp) / (lp*lp)
+            b1      = d - 2*a1*lp #add d
+            # a2      = (hp_src-hp - size_s + size_d) / (-(hp-size_d)*(hp-size_d))
+            a2      = (hp_src-d*hp - size_s + d*size_d) / (-(hp-size_d)*(hp-size_d)) # add d
+            b2      = d - 2*a2*hp # add d, 1-2a*hp
             c2      = hp_src - a2*hp*hp-b2*hp
             if x < lp :
                 y = a1*x*x + b1*x
