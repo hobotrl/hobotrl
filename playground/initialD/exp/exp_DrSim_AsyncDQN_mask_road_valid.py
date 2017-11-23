@@ -136,7 +136,7 @@ def gen_backend_cmds():
         # Generate obs and launch file
         ['python', utils_path+'gen_launch_dynamic_v1.py',
          utils_path+'road_segment_info.txt', ws_path,
-         utils_path+'honda_dynamic_obs_template.launch',
+         utils_path+'honda_dynamic_obs_template_tilt.launch',
          32, '--random_n_obs'],
         # start roscore
         ['roscore'],
@@ -167,7 +167,7 @@ def mask_action(rewards, action):
 
 
 env = DrivingSimulatorEnv(
-    address='localhost', port='10014',
+    address='10.31.40.197', port='10024',
     backend_cmds=gen_backend_cmds(),
     defs_obs=[
         ('/training/image/compressed', 'sensor_msgs.msg.CompressedImage'),
@@ -204,7 +204,7 @@ def f_net(inputs):
     inputs = inputs[0]
     inputs = inputs/128 - 1.0
     # (640, 640, 3*n) -> ()
-    with tf.device('/gpu:0'):
+    with tf.device('/gpu:1'):
         conv1 = layers.conv2d(
             inputs=inputs, filters=16, kernel_size=(8, 8), strides=1,
             kernel_regularizer=l2_regularizer(scale=1e-2),
@@ -276,9 +276,9 @@ global_step = tf.get_variable(
 # 1 sample ~= 1MB @ 6x skipping
 replay_buffer = BigPlayback(
     bucket_cls=BalancedMapPlayback,
-    cache_path="./ReplayBufferCache/experiment",
+    cache_path="./Mask3ReplayBufferCache/experiment",
     capacity=300000, bucket_size=100, ratio_active=0.05, max_sample_epoch=2,
-    num_actions=len(AGENT_ACTIONS), upsample_bias=(1,1,1,0.1)
+    num_actions=len(AGENT_ACTIONS), upsample_bias=(1.0, 1.0, 1.0, 0.1)
 )
 
 gamma = 0.9
@@ -425,7 +425,7 @@ try:
         graph=tf.get_default_graph(),
         is_chief=True,
         init_op=tf.global_variables_initializer(),
-        logdir='./experiment',
+        logdir='./experiment_mask3',
         save_summaries_secs=10,
         save_model_secs=900)
 
@@ -462,7 +462,6 @@ try:
 
             state  = env.reset()
             action = agent.act(state, exploration=not exploration_off)
-            action = mask_action(state, action)
             n_agent_steps += 1
             skip_action = action
             next_state = state
