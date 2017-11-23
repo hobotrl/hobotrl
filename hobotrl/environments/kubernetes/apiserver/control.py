@@ -18,6 +18,7 @@ class KubeUtil(object):
     SPAWN_RETRY = 10
     POD_WAIT = 100
     SVC_WAIT = 100
+    ENV_PREFIX = "ros-env-"
 
     def __init__(self, incluster=False):
         super(KubeUtil, self).__init__()
@@ -106,7 +107,7 @@ class KubeUtil(object):
                     self.api.delete_namespaced_service(env_id, self.namespace)
 
     def gen_env_id_(self):
-        return "ros-env-" + str(random.randint(0, 1e10))
+        return self.ENV_PREFIX + str(random.randint(0, 1e10))
 
     def ensure_env_id_(self):
         for i in range(10):
@@ -144,7 +145,8 @@ class EnvTracker(object):
 
     def evict(self):
         envs = self.kube.get_svc_list()
-        env_ids = [e.metadata.name for e in envs.items]
+        env_ids = filter(lambda n: n.startswith(self.kube.ENV_PREFIX),
+                         [e.metadata.name for e in envs.items])
         now = monotonic_time()
         logging.warning("eviction start:%s", env_ids)
 
