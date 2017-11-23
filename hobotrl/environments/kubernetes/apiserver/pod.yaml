@@ -13,3 +13,13 @@ spec:
     - containerPort: 5901
     securityContext:
       privileged: true
+    volumeMounts:
+    - name: xsocket
+      mountPath: /Projects/.X11-unix
+      readOnly: false
+  volumes:
+  - name: xsocket
+    hostPath:
+      path: /var/xserver-daemon
+  nodeSelector:
+    xserver-daemon: "yes"
