@@ -476,6 +476,7 @@ class UpdateOperation(object):
 
 class MinimizeLoss(UpdateOperation):
     def __init__(self, op_loss, var_list=None):
+        self.op_loss = op_loss
         super(MinimizeLoss, self).__init__(op_loss, var_list)
 
     def __str__(self):
@@ -564,6 +565,14 @@ class NetworkOptimizer(object):
         """
         raise NotImplementedError()
 
+    def freeze(self, variables):
+        """
+        Stop the gradients propagating through some variables.
+        :param variables: network.variables
+        :return:
+        """
+        raise NotImplementedError()
+
     def compile(self):
         """
         Merge all update operations from all updaters into one optimize operation.
@@ -591,6 +600,7 @@ class BaseNetworkOptimizer(NetworkOptimizer):
         self._update_runs = []
         self._grad_clip = grad_clip
         self._default_optimizer = tf.train.AdamOptimizer()
+        self._freeze_var = None
 
     def add_updater(self, updater, weight=1.0, name=None):
         if self._optimize_op is not None:
@@ -626,6 +636,9 @@ class BaseNetworkOptimizer(NetworkOptimizer):
     def collect_update_run(self, update_run):
         self._update_runs.append(update_run)
 
+    def freeze(self, variables):
+        self._freeze_var = variables
+
     def compile(self):
         if self._optimize_op is not None:
             raise RuntimeError("compile() can be invoked only once!")
@@ -649,6 +662,9 @@ class BaseNetworkOptimizer(NetworkOptimizer):
     def create_optimize_op_(self, updates):
         with tf.name_scope("optimizers"):
             grads_and_vars = self.compute_gradients_op_(updates)
+            if self._freeze_var is not None:
+                grads_and_vars = \
+                    [grad_and_var for grad_and_var in grads_and_vars if grad_and_var[1] not in self._freeze_var]
             return self.apply_gradients_op_(grads_and_vars)
 
     def compute_gradients_op_(self, updates):
@@ -677,14 +693,14 @@ class BaseNetworkOptimizer(NetworkOptimizer):
             losses = varlist_losses[varlist]
             loss = tf.add_n([self._updater_weights[up_loss._updater] * up_loss._op_list for up_loss in losses])
             grads_vars = self._default_optimizer.compute_gradients(loss, var_list=varlist)
-            weighted_grads.extend(grads_vars)
+            weighted_grads.extend(grads_vars)    # here filter
 
         for grad_update in up_grads:
             grads_vars = grad_update._op_list
             for i, (grad, var) in enumerate(grads_vars):
                 if grad is not None:
                     grads_vars[i] = (grad * self._updater_weights[grad_update._updater], var)
-            weighted_grads.extend(grads_vars)
+            weighted_grads.extend(grads_vars)    # here filter
         # merge weighted_grads
         var_indices = {}
         merged_grad_vars = []
@@ -837,12 +853,20 @@ class OptimizerPlaceHolder(NetworkOptimizer):
         self._optimizer = optimizer
         self._updaters = []
         self._compiled = False
+        self._freeze = None
 
     def update(self, updater_name=None, *args, **kwargs):
         return self._optimizer.update(updater_name, *args, **kwargs)
 
     def optimize_step(self, sess):
         return self._optimizer.optimize_step(sess)
+
+    def freeze(self, variables):
+        if self._optimizer is not None:
+            return self._optimizer.freeze(variables)
+        else:
+            self._freeze = variables
+
 
     def add_updater(self, updater, weight=1.0, name=None):
         if self._compiled:
@@ -872,5 +896,7 @@ class OptimizerPlaceHolder(NetworkOptimizer):
         if len(self._updaters) > 0:
             for updater, weight, name in self._updaters:
                 self._optimizer.add_updater(updater, weight, name)
+        if self._freeze:
+            self._optimizer.freeze(self._freeze)
         if self._compiled:
             self._optimizer.compile()

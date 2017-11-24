@@ -590,7 +590,7 @@ class I2A(A3CExperimentWithI2A):
                                                    l2=l2,
                                                    var_scope="conv_2")
 
-                twoD_out = tf.reshape(input_goal, [-1, 64, 5, 5])
+                twoD_out = tf.reshape(input_goal, [-1, 5, 5, 128])
 
                 conv_5 = hrl.utils.Network.conv2ds(twoD_out,
                                                    shape=[(32, 3, 1)],
@@ -752,9 +752,6 @@ class I2A(A3CExperimentWithI2A):
                 l2 = 1e-7
                 input_state = inputs[0]
                 input_reward = inputs[1]
-                logging.warning("-------------------------------------")
-                logging.warning(input_state)
-                logging.warning(input_reward)
 
                 rse = hrl.utils.Network.conv2ds(input_state,
                                                 shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
