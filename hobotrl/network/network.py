@@ -601,6 +601,14 @@ class NetworkOptimizer(object):
         """
         raise NotImplementedError()
 
+    def freeze(self, variables):
+        """
+        Stop the gradients propagating through some variables.
+        :param variables: network.variables
+        :return:
+        """
+        raise NotImplementedError()
+
     def compile(self):
         """
         Merge all update operations from all updaters into one optimize operation.
@@ -636,6 +644,7 @@ class BaseNetworkOptimizer(NetworkOptimizer):
         self._default_optimizer = tf.train.AdamOptimizer()
         self._pass2updater = {}  # pass_name: [updater_name]
         self._updater2pass = {}  # updater_name: pass_name
+        self._freeze_var = None
 
     def add_updater(self, updater, weight=1.0, name=None, forward_pass=NetworkOptimizer.DEFAULT_PASS):
         if self._optimize_op is not None:
@@ -672,6 +681,9 @@ class BaseNetworkOptimizer(NetworkOptimizer):
         if pass_name not in self._update_runs:
             self._update_runs[pass_name] = []
         self._update_runs[pass_name].append(update_run)
+
+    def freeze(self, variables):
+        self._freeze_var = variables
 
     def compile(self):
         if self._optimize_op is not None:
@@ -732,6 +744,9 @@ class BaseNetworkOptimizer(NetworkOptimizer):
                 for pass_name in updates:
                     update_list = updates[pass_name]
                     grads_and_vars = self.compute_gradients_op_(update_list)
+                    if self._freeze_var is not None:
+                        grads_and_vars = \
+                            [grad_and_var for grad_and_var in grads_and_vars if grad_and_var[1] not in self._freeze_var]
                     self._optimize_op = self.apply_gradients_op_(grads_and_vars)
             else:
                 # multiple forward pass.
@@ -741,6 +756,10 @@ class BaseNetworkOptimizer(NetworkOptimizer):
                     for pass_name in updates:
                         update_list = updates[pass_name]
                         grads_and_vars = self.compute_gradients_op_(update_list)
+                        if self._freeze_var is not None:
+                            grads_and_vars = \
+                                [grad_and_var for grad_and_var in grads_and_vars if
+                                 grad_and_var[1] not in self._freeze_var]
                         grads_and_vars = filter(lambda x: x[0] is not None, grads_and_vars)
                         for i in range(len(grads_and_vars)):
                             grad, var = grads_and_vars[i]
@@ -952,6 +971,7 @@ class OptimizerPlaceHolder(NetworkOptimizer):
         self._optimizer = optimizer
         self._updaters = []
         self._compiled = False
+        self._freeze = None
 
     def update(self, updater_name=None, *args, **kwargs):
         return self._optimizer.update(updater_name, *args, **kwargs)
@@ -966,6 +986,12 @@ class OptimizerPlaceHolder(NetworkOptimizer):
 
     def optimize_step(self, sess):
         return self._optimizer.optimize_step(sess)
+
+    def freeze(self, variables):
+        if self._optimizer is not None:
+            return self._optimizer.freeze(variables)
+        else:
+            self._freeze = variables
 
     def compile(self):
         if self._compiled:
@@ -987,5 +1013,7 @@ class OptimizerPlaceHolder(NetworkOptimizer):
         if len(self._updaters) > 0:
             for updater, weight, name, forward_pass in self._updaters:
                 self._optimizer.add_updater(updater, weight, name, forward_pass)
+        if self._freeze:
+            self._optimizer.freeze(self._freeze)
         if self._compiled:
             self._optimizer.compile()
