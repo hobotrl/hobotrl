@@ -120,14 +120,14 @@ class ProcessFrame96H(gym.ObservationWrapper):
         return img
 
 
-def wrap_car(env, steer_n, speed_n):
+def wrap_car(env, steer_n, speed_n, skipFrame=2):
     """Apply a common set of wrappers for Atari games."""
     env = CarDiscreteWrapper(env, steer_n, speed_n)
     env = ScaledFloatFrame(env)
-    env = MaxAndSkipEnv(env, skip=2, max_len=1)
+    env = MaxAndSkipEnv(env, skip=skipFrame, max_len=1)
     # env = ProcessFrame96H(env)
     env = FrameStack(env, 4)
     env = ScaledRewards(env, 0.1)
-    env = RemapFrame(env)
+    # env = RemapFrame(env)
     #env = HalfFrame(env)
     return env
