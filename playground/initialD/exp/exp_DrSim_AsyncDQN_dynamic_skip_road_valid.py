@@ -50,7 +50,8 @@ def func_compile_obs(obss):
 ALL_ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0,)]
 AGENT_ACTIONS = ALL_ACTIONS[:3]
 TIME_STEP_SCALES = [2, 6, 10]
-NUM_PROXY_ACTION_NUM = len(AGENT_ACTIONS) * len(TIME_STEP_SCALES)
+NUM_PROXY_ACTION = len(AGENT_ACTIONS) * len(TIME_STEP_SCALES)
+PROXY_ACTIONS = range(NUM_PROXY_ACTION)
 
 
 # AGENT_ACTIONS = ALL_ACTIONS
@@ -252,7 +253,7 @@ def f_net(inputs):
             kernel_regularizer=l2_regularizer(scale=1e-2), name='hid2_adv')
         print hid2.shape
         adv = layers.dense(
-            inputs=hid2, units=NUM_PROXY_ACTION_NUM, activation=None,
+            inputs=hid2, units=NUM_PROXY_ACTION, activation=None,
             kernel_initializer=tf.random_uniform_initializer(-3e-3, 3e-3),
             kernel_regularizer=l2_regularizer(scale=1e-2), name='adv')
         print adv.shape
@@ -290,14 +291,14 @@ replay_buffer = BigPlayback(
     bucket_cls=BalancedMapPlayback,
     cache_path=FLAGS.cache_path,
     capacity=300000, bucket_size=100, ratio_active=0.05, max_sample_epoch=2,
-    num_actions=NUM_PROXY_ACTION_NUM, upsample_bias=tuple([1.0 for _ in range(NUM_PROXY_ACTION_NUM)] + [0.1])
+    num_actions=NUM_PROXY_ACTION, upsample_bias=tuple([1.0 for _ in range(NUM_PROXY_ACTION)] + [0.1])
 )
 
 gamma = 0.9
 _agent = hrl.DQN(
     f_create_q=f_net, state_shape=state_shape,
     # OneStepTD arguments
-    num_actions=NUM_PROXY_ACTION_NUM, discount_factor=gamma, ddqn=True,
+    num_actions=NUM_PROXY_ACTION, discount_factor=gamma, ddqn=True,
     # target network sync arguments
     target_sync_interval=1,
     target_sync_rate=target_sync_rate,
@@ -307,7 +308,7 @@ _agent = hrl.DQN(
     # greedy_epsilon=0.075,
     # greedy_epsilon=0.2,  # 0.2 -> 0.15 -> 0.1
     # greedy_epsilon=CappedLinear(10000, 0.5, 0.05),
-    greedy_epsilon=CappedLinear(12000, 0.15, 0.0),
+    greedy_epsilon=CappedLinear(12000, 0.15, 0.05),
     # optimizer arguments
     network_optimizer=hrl.network.LocalOptimizer(optimizer_td, 1.0),
     # sampler arguments
@@ -369,31 +370,30 @@ def log_info(update_info):
             simple_value=np.min(q_vals))
     if cnt_skip == 0 or n_steps == 0:
         next_q_vals_nt = agent._agent.learn_q(np.asarray(next_state)[np.newaxis, :])[0]
-        for i, ac in enumerate(AGENT_ACTIONS):
+        for i in range(NUM_PROXY_ACTION):
+            tmp_act = i/len(TIME_STEP_SCALES)
+            tmp_scale = TIME_STEP_SCALES[i % len(TIME_STEP_SCALES)]
             summary_proto.value.add(
-                tag='next_q_vals_{}'.format(ac[0]),
+                tag='next_q_vals/actiion_{}/time_{}'.format(tmp_act, tmp_scale),
                 simple_value=next_q_vals_nt[i])
             summary_proto.value.add(
-                tag='next_q_vals_{}'.format(ac[0]),
-                simple_value=next_q_vals_nt[i])
-            summary_proto.value.add(
-                tag='action_td_loss_{}'.format(ac[0]),
+                tag='action_td_loss/action_{}/time_{}'.format(tmp_act, tmp_scale),
                 simple_value=action_td_loss[i])
             summary_proto.value.add(
-                tag='action_fraction_{}'.format(ac[0]),
+                tag='action_fraction/action_{}/time_{}'.format(tmp_act, tmp_scale),
                 simple_value=action_fraction[i])
-        p_dict = sorted(zip(
-            map(lambda x: x[0], AGENT_ACTIONS), next_q_vals_nt))
-        max_idx = np.argmax([v for _, v in p_dict])
-        p_str = "({:.3f}) ({:3d})[Q_vals]: ".format(
-            time.time(), n_steps)
-        for i, (a, v) in enumerate(p_dict):
-            if a == AGENT_ACTIONS[next_action][0]:
-                sym = '|x|' if i==max_idx else ' x '
-            else:
-                sym = '| |' if i==max_idx else '   '
-            p_str += '{}{:3d}: {:8.4f} '.format(sym, a, v)
-        print p_str
+        # p_dict = sorted(zip(
+        #     map(lambda x: x[0], AGENT_ACTIONS), next_q_vals_nt))
+        # max_idx = np.argmax([v for _, v in p_dict])
+        # p_str = "({:.3f}) ({:3d})[Q_vals]: ".format(
+        #     time.time(), n_steps)
+        # for i, (a, v) in enumerate(p_dict):
+        #     if a == AGENT_ACTIONS[next_action][0]:
+        #         sym = '|x|' if i==max_idx else ' x '
+        #     else:
+        #         sym = '| |' if i==max_idx else '   '
+        #     p_str += '{}{:3d}: {:8.4f} '.format(sym, a, v)
+        # print p_str
 
     cum_td_loss += update_info['td_loss'] if 'td_loss' in update_info \
         and update_info['td_loss'] is not None else 0
@@ -537,7 +537,6 @@ try:
                     next_proxy_action = agent.act(next_state, exploration=not exploration_off)
                     next_action = next_proxy_action / len(TIME_STEP_SCALES)
                     n_skip = TIME_STEP_SCALES[next_proxy_action % len(TIME_STEP_SCALES)]
-                    cnt_skip = n_skip
                     n_agent_steps += 1
                     t_infer += time.time() - t
                     skip_reward = 0
@@ -549,6 +548,10 @@ try:
                 img_path = eps_dir + "/" + str(n_steps+1).zfill(4) + "_" + str(action) + ".jpg"
                 cv2.imwrite(img_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
                 sv.summary_computed(sess, summary=log_info(update_info))
+
+                if cnt_skip == 0:
+                    cnt_skip = n_skip
+
                 # summary_writer.add_summary(log_info(update_info), n_steps)
                 # print "Agent step learn {} sec, infer {} sec".format(t_learn, t_infer)
                 if done:
