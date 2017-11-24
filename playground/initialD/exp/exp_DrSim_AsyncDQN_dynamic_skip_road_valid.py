@@ -24,11 +24,14 @@ from hobotrl.sampling import TransitionSampler
 from hobotrl.playback import BalancedMapPlayback, BigPlayback
 from hobotrl.async import AsynchronousAgent
 from hobotrl.utils import CappedLinear
+from tensorflow.python.training.summary_io import SummaryWriterCache
+
 # initialD
 # from ros_environments.honda import DrivingSimulatorEnv
 from ros_environments.clients import DrivingSimulatorEnvClient as DrivingSimulatorEnv
 # Gym
 from gym.spaces import Discrete, Box
+import cv2
 
 # Environment
 def func_compile_reward(rewards):
@@ -46,7 +49,8 @@ def func_compile_obs(obss):
 
 ALL_ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0,)]
 AGENT_ACTIONS = ALL_ACTIONS[:3]
-TIME_STEP_SCALES = [1, 2, 4, 8]
+TIME_STEP_SCALES = [2, 6, 10]
+NUM_PROXY_ACTION_NUM = len(AGENT_ACTIONS) * len(TIME_STEP_SCALES)
 
 
 # AGENT_ACTIONS = ALL_ACTIONS
@@ -158,8 +162,25 @@ def gen_backend_cmds():
     return backend_cmds
 
 
+tf.app.flags.DEFINE_string("logdir",
+                           "./dfk_log",
+                           """save tmp model""")
+tf.app.flags.DEFINE_string("savedir",
+                           "./dfk_save",
+                           """records data""")
+tf.app.flags.DEFINE_string("readme", "dynamic frame skipping dqn. Use new reward function.", """readme""")
+tf.app.flags.DEFINE_string("host", "10.31.40.197", """host""")
+tf.app.flags.DEFINE_string("port", '10024', "Docker port")
+tf.app.flags.DEFINE_string("cache_path", './dfk_ReplayBufferCache', "Replay buffer cache path")
+
+FLAGS = tf.app.flags.FLAGS
+
+
+os.mkdir(FLAGS.savedir)
+
+
 env = DrivingSimulatorEnv(
-    address='10.31.40.197', port='10014',
+    address=FLAGS.host, port=FLAGS.port,
     backend_cmds=gen_backend_cmds(),
     defs_obs=[
         ('/training/image/compressed', 'sensor_msgs.msg.CompressedImage'),
@@ -230,9 +251,21 @@ def f_net(inputs):
             inputs=hid1, units=256, activation=tf.nn.relu,
             kernel_regularizer=l2_regularizer(scale=1e-2), name='hid2_adv')
         print hid2.shape
-        q = layers.dense(inputs=hid2, units=len(AGENT_ACTIONS)*len(TIME_STEP_SCALES), activation=None,
-                         kernel_initializer=tf.random_normal_initializer(-3e-3, 3e-3),
-                         kernel_regularizer=l2_regularizer(scale=1e-2), name='q')
+        adv = layers.dense(
+            inputs=hid2, units=NUM_PROXY_ACTION_NUM, activation=None,
+            kernel_initializer=tf.random_uniform_initializer(-3e-3, 3e-3),
+            kernel_regularizer=l2_regularizer(scale=1e-2), name='adv')
+        print adv.shape
+        hid2 = layers.dense(
+            inputs=hid1, units=256, activation=tf.nn.relu,
+            kernel_regularizer=l2_regularizer(scale=1e-2), name='hid2_v')
+        print hid2.shape
+        v = layers.dense(
+            inputs=hid2, units=1, activation=None,
+            kernel_initializer=tf.random_uniform_initializer(-3e-3, 3e-3),
+            kernel_regularizer=l2_regularizer(scale=1e-2), name='v')
+        print v.shape
+        q = tf.add(adv, v, name='q')
 
         print q.shape
 
@@ -255,16 +288,16 @@ global_step = tf.get_variable(
 # 1 sample ~= 1MB @ 6x skipping
 replay_buffer = BigPlayback(
     bucket_cls=BalancedMapPlayback,
-    cache_path="./Dynamic3ReplayBufferCache/experiment",
+    cache_path=FLAGS.cache_path,
     capacity=300000, bucket_size=100, ratio_active=0.05, max_sample_epoch=2,
-    num_actions=len(AGENT_ACTIONS)*len(TIME_STEP_SCALES), upsample_bias=tuple([1.0 for _ in range(12)] + [0.1] )
+    num_actions=NUM_PROXY_ACTION_NUM, upsample_bias=tuple([1.0 for _ in range(NUM_PROXY_ACTION_NUM)] + [0.1])
 )
 
 gamma = 0.9
 _agent = hrl.DQN(
     f_create_q=f_net, state_shape=state_shape,
     # OneStepTD arguments
-    num_actions=len(AGENT_ACTIONS), discount_factor=gamma, ddqn=True,
+    num_actions=NUM_PROXY_ACTION_NUM, discount_factor=gamma, ddqn=True,
     # target network sync arguments
     target_sync_interval=1,
     target_sync_rate=target_sync_rate,
@@ -274,7 +307,7 @@ _agent = hrl.DQN(
     # greedy_epsilon=0.075,
     # greedy_epsilon=0.2,  # 0.2 -> 0.15 -> 0.1
     # greedy_epsilon=CappedLinear(10000, 0.5, 0.05),
-    greedy_epsilon=CappedLinear(10000, 0.1, 0.025),
+    greedy_epsilon=CappedLinear(12000, 0.15, 0.0),
     # optimizer arguments
     network_optimizer=hrl.network.LocalOptimizer(optimizer_td, 1.0),
     # sampler arguments
@@ -392,7 +425,6 @@ def log_info(update_info):
     return summary_proto
 
 n_interactive = 0
-n_skip = 6
 update_rate = 6.0
 n_ep = 0  # last ep in the last run, if restart use 0
 n_test = 0  # num of episode per test run (no exploration)
@@ -404,12 +436,13 @@ try:
         graph=tf.get_default_graph(),
         is_chief=True,
         init_op=tf.global_variables_initializer(),
-        logdir='./experiment_dynamic3',
+        logdir=FLAGS.logdir,
         save_summaries_secs=10,
-        save_model_secs=900)
+        save_model_secs=3600)
 
     with sv.managed_session(config=config) as sess, \
          AsynchronousAgent(agent=_agent, method='rate', rate=update_rate) as agent:
+        # summary_writer = SummaryWriterCache.get(FLAGS.logdir)
 
         agent.set_session(sess)
         sess.run(op_set_lr, feed_dict={lr_in: 1e-4})
@@ -420,6 +453,11 @@ try:
         action_td_loss = np.zeros(len(AGENT_ACTIONS), )
         while True:
             n_ep += 1
+            eps_dir = FLAGS.savedir + "/" + str(n_ep).zfill(4)
+            os.mkdir(eps_dir)
+            recording_filename = eps_dir + "/" + "0000.txt"
+            recording_file = open(recording_filename, 'w')
+
             env.env.n_ep = n_ep  # TODO: do this systematically
             exploration_off = (n_ep%n_test==0) if n_test >0 else False
             learning_off = exploration_off
@@ -445,6 +483,10 @@ try:
             action = proxy_action / len(TIME_STEP_SCALES)
             n_skip = TIME_STEP_SCALES[proxy_action % len(TIME_STEP_SCALES)]
             cnt_skip = n_skip
+            img = np.array(state)[:, :, 6:]
+            img_path = eps_dir + "/" + str(n_steps+1).zfill(4) + "_" + str(action) + ".jpg"
+            cv2.imwrite(img_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+
             next_state = state
             next_action = action
             # cnt_skip = 1 if next_action == 0 else n_skip
@@ -459,11 +501,24 @@ try:
 
                 # Env step
                 t = time.time()
-                next_state, reward, done, info = env.step(action)
+                next_state, vec_reward, done, info = env.step(action)
                 flag_success = done
                 t_step = time.time() - t
                 state, action, reward, next_state, done = \
-                    func_compile_exp_agent(state, action, reward, next_state, done)
+                    func_compile_exp_agent(state, action, vec_reward, next_state, done)
+
+                recording_file.write(str(n_steps) + ',' + str(action) + ',' + str(reward) + '\n')
+                vec_reward = np.mean(np.array(vec_reward), axis=0)
+                vec_reward = vec_reward.tolist()
+                str_reward = ""
+                for r in vec_reward:
+                    str_reward += str(r)
+                    str_reward += ","
+                str_reward += "\n"
+                recording_file.write(str_reward)
+                recording_file.write("\n")
+
+
                 flag_tail = done
                 flag_success = True if flag_success and reward > 0.0 else False
                 skip_reward += reward
@@ -490,10 +545,23 @@ try:
                 else:
                     action = 3  # no op during skipping
 
+                img = np.array(next_state)[:, :, 6:]
+                img_path = eps_dir + "/" + str(n_steps+1).zfill(4) + "_" + str(action) + ".jpg"
+                cv2.imwrite(img_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
                 sv.summary_computed(sess, summary=log_info(update_info))
+                # summary_writer.add_summary(log_info(update_info), n_steps)
                 # print "Agent step learn {} sec, infer {} sec".format(t_learn, t_infer)
                 if done:
                     break
+
+            # summary = tf.Summary()
+            # summary.value.add(tag="cum_reward_ep", simple_value=cum_reward)
+            # summary.value.add(tag="flag_success_ep", simple_value=flag_success)
+            # summary.value.add(tag="done_ep", simple_value=done)
+            # summary_writer.add_summary(summary, n_ep)
+            recording_file.close()
+
+
 except Exception as e:
     print e.message
     traceback.print_exc()
@@ -506,4 +574,5 @@ finally:
     replay_buffer.close()
     os.killpg(os.getpgid(os.getpid()), signal.SIGKILL)
     print "="*30
+
 
