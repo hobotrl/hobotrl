@@ -318,8 +318,6 @@ _agent = hrl.DQN(
  )
 
 def log_info(update_info):
-    global action_fraction
-    global action_td_loss
     global agent
     global next_state
     global next_action
@@ -376,12 +374,6 @@ def log_info(update_info):
             summary_proto.value.add(
                 tag='next_q_vals/actiion_{}/time_{}'.format(tmp_act, tmp_scale),
                 simple_value=next_q_vals_nt[i])
-            summary_proto.value.add(
-                tag='action_td_loss/action_{}/time_{}'.format(tmp_act, tmp_scale),
-                simple_value=action_td_loss[i])
-            summary_proto.value.add(
-                tag='action_fraction/action_{}/time_{}'.format(tmp_act, tmp_scale),
-                simple_value=action_fraction[i])
         # p_dict = sorted(zip(
         #     map(lambda x: x[0], AGENT_ACTIONS), next_q_vals_nt))
         # max_idx = np.argmax([v for _, v in p_dict])
@@ -449,8 +441,7 @@ try:
         print "Using learning rate {}".format(sess.run(lr))
         n_env_steps = 0
         n_agent_steps = 0
-        action_fraction = np.ones(len(AGENT_ACTIONS), ) / (1.0 * len(AGENT_ACTIONS))
-        action_td_loss = np.zeros(len(AGENT_ACTIONS), )
+        total_stat_file = open(FLAGS.savedir+"/0000.txt", 'w')
         while True:
             n_ep += 1
             eps_dir = FLAGS.savedir + "/" + str(n_ep).zfill(4)
@@ -563,6 +554,9 @@ try:
             # summary.value.add(tag="done_ep", simple_value=done)
             # summary_writer.add_summary(summary, n_ep)
             recording_file.close()
+            total_stat_file.write("{}, {}, {}, {}\n".format(n_ep, cum_reward, flag_success, done))
+        total_stat_file.close()
+
 
 
 except Exception as e:
