@@ -446,6 +446,7 @@ try:
         n_agent_steps = 0
         action_fraction = np.ones(len(AGENT_ACTIONS), ) / (1.0 * len(AGENT_ACTIONS))
         action_td_loss = np.zeros(len(AGENT_ACTIONS), )
+        total_stat_file = open(FLAGS.savedir+"/0000.txt", 'w')
         while True:
             n_ep += 1
             eps_dir = FLAGS.savedir + "/" + str(n_ep).zfill(4)
@@ -559,6 +560,8 @@ try:
             # summary_writer.add_summary(summary, n_ep)
             # recording_file.write(str(cum_reward)+","+str(flag_success)+","+str(done)+"\n")
             recording_file.close()
+            total_stat_file.write("{}, {}, {}, {}\n".format(n_ep, cum_reward, flag_success, done))
+        total_stat_file.close()
 
 except Exception as e:
     print e.message
