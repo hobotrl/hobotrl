@@ -139,7 +139,7 @@ def gen_backend_cmds():
         # Generate obs and launch file
         ['python', utils_path+'gen_launch_dynamic_v1.py',
          utils_path+'road_segment_info.txt', ws_path,
-         utils_path+'honda_dynamic_obs_template.launch',
+         utils_path+'honda_dynamic_obs_template_tilt.launch',
          32, '--random_n_obs'],
         # start roscore
         ['roscore'],
@@ -166,7 +166,7 @@ tf.app.flags.DEFINE_string("savedir",
                            """records data""")
 tf.app.flags.DEFINE_string("readme", "direct dqn. Use new reward function.", """readme""")
 tf.app.flags.DEFINE_string("host", "10.31.40.197", """host""")
-tf.app.flags.DEFINE_string("port", '10014', "Docker port")
+tf.app.flags.DEFINE_string("port", '10034', "Docker port")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -437,7 +437,7 @@ try:
 
     with sv.managed_session(config=config) as sess, \
          AsynchronousAgent(agent=_agent, method='rate', rate=update_rate) as agent:
-        summary_writer = SummaryWriterCache.get(FLAGS.logdir)
+        # summary_writer = SummaryWriterCache.get(FLAGS.logdir)
 
         agent.set_session(sess)
         # sess.run(op_set_lr, feed_dict={lr_in: 1e-4})
@@ -540,8 +540,8 @@ try:
                 img_path = eps_dir + "/" + str(n_steps+1).zfill(4) + "_" + str(skip_action) + ".jpg"
                 cv2.imwrite(img_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
 
-                # sv.summary_computed(sess, summary=log_info(update_info))
-                summary_writer.add_summary(log_info(update_info), n_steps)
+                sv.summary_computed(sess, summary=log_info(update_info))
+                # summary_writer.add_summary(log_info(update_info), n_steps)
                 if cnt_skip == 0:
                     if next_action == 0:
                         # cnt_skip = 1
@@ -552,11 +552,12 @@ try:
                 if done:
                     break
 
-            summary = tf.Summary()
-            summary.value.add(tag="cum_reward_ep", simple_value=cum_reward)
-            summary.value.add(tag="flag_success_ep", simple_value=flag_success)
-            summary.value.add(tag="done_ep", simple_value=done)
-            summary_writer.add_summary(summary, n_ep)
+            # summary = tf.Summary()
+            # summary.value.add(tag="cum_reward_ep", simple_value=cum_reward)
+            # summary.value.add(tag="flag_success_ep", simple_value=flag_success)
+            # summary.value.add(tag="done_ep", simple_value=done)
+            # summary_writer.add_summary(summary, n_ep)
+            # recording_file.write(str(cum_reward)+","+str(flag_success)+","+str(done)+"\n")
             recording_file.close()
 
 except Exception as e:
