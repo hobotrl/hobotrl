@@ -152,7 +152,7 @@ def gen_backend_cmds():
         ['python', backend_path+'car_go.py'],
         # start simulation restarter backend
         ['python', backend_path+'rviz_restart.py', 'honda_dynamic_obs.launch'],
-        ['python', backend_path + 'non_stop_data_capture.py', 0]
+        # ['python', backend_path + 'non_stop_data_capture.py', 0]
     ]
     return backend_cmds
 
@@ -184,9 +184,9 @@ env = DrivingSimulatorEnv(
     defs_reward=[
         ('/rl/current_road_validity', 'std_msgs.msg.Int16'),
         ('/rl/entering_intersection', 'std_msgs.msg.Bool'),
-        ('/rl/car_velocity', 'std_msgs.msg.Float32'),
+        ('/rl/car_velocity_front', 'std_msgs.msg.Float32'),
         ('/rl/last_on_opposite_path', 'std_msgs.msg.Int16'),
-        ('/rl/on_pedestrian', 'std_msgs.msg.Bool'),
+        ('/rl/on_biking_lane', 'std_msgs.msg.Bool'),
         ('/rl/obs_factor', 'std_msgs.msg.Float32'),
         ('/rl/distance_to_longestpath', 'std_msgs.msg.Float32'),
     ],
