@@ -290,7 +290,6 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
           BaseDeepAgent):
     def __init__(self, num_action,
                  f_se, f_ac, f_tran, f_decoder, f_rollout, f_encoder, state_shape,
-                 # f_se_1, f_se_2, f_se_3, f_se_4, f_ac, f_env, f_rollout, f_encoder, state_shape,
                  # ACUpdate arguments
                  discount_factor, entropy=1e-3, target_estimator=None, max_advantage=10.0,
                  # optimizer arguments
