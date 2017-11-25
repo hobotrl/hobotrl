@@ -3,6 +3,9 @@
 
 
 import sys
+
+from hobotrl.network import Utils
+
 sys.path.append(".")
 import logging
 import numpy as np
@@ -530,7 +533,7 @@ class I2A(A3CExperimentWithI2A):
                                                      activation_out=tf.nn.relu,
                                                      l2=l2,
                                                      var_scope="TM")
-
+                Action_unrelated_goal = Utils.scale_gradient(Action_unrelated_goal, 1e-3)
                 next_goal = Action_related_goal + Action_unrelated_goal
 
                 return {"next_state": next_goal, "reward": reward, "momentum": Action_unrelated_goal,
@@ -548,16 +551,15 @@ class I2A(A3CExperimentWithI2A):
                                                    activation=tf.nn.relu,
                                                    l2=l2,
                                                    var_scope="conv_1")
-
                 conv_2 = hrl.utils.Network.conv2ds(conv_1,
                                                    shape=[(64, 4, 2)],
                                                    out_flatten=False,
                                                    activation=tf.nn.relu,
                                                    l2=l2,
                                                    var_scope="conv_2")
-
-                twoD_out = tf.reshape(input_goal, [-1, 5, 5, 128])
-
+                se0, goal = tf.split(input_goal, 2, axis=1)
+                twoD_out = tf.concat((tf.reshape(se0, [-1, 5, 5, 64]),
+                                      tf.reshape(goal, [-1, 5, 5, 64])), axis=-1)
                 conv_5 = hrl.utils.Network.conv2ds(twoD_out,
                                                    shape=[(32, 3, 1)],
                                                    out_flatten=False,

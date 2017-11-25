@@ -128,6 +128,7 @@ class GridSearch(Experiment):
             with tf.Graph().as_default():
                 experiment = self._exp_class(**parameter)
                 try:
+                    logging.warning("starting experiment: %s", args.logdir)
                     rewards = experiment.run(args)
                 except Exception, e:
                     type_, value_, traceback_ = sys.exc_info()
