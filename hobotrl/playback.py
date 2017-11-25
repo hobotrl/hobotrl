@@ -262,10 +262,10 @@ class Playback(object):
             if self.sample_type is None:
                 self.sample_type = sample_type
                 self.sample_shape = sample_shape
-            logging.warning(
-                ("[Playback.add_sample()]: initializing data with: "
-                 "class:%s, type: %s, shape: %s"), sample_class, sample_type, sample_shape
-            )
+            # logging.warning(
+            #     ("[Playback.add_sample()]: initializing data with: "
+            #      "class:%s, type: %s, shape: %s"), sample_class, sample_type, sample_shape
+            # )
             self.data = [None] * self.capacity
 
         # Place data
