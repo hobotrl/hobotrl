@@ -222,9 +222,6 @@ class EnvModelUpdater(network.NetworkUpdater):
                     r_predict_loss.append(network.Utils.clipped_square(r_predict[-1] - rn[i]))
                     # f_predict.append(net_decoder([tf.concat([se0, cur_goal], axis=1), f0],
                     #                              name_scope="frame_decoder%d" % i)["next_frame"].op)
-                    logging.warning("-----==================---------------")
-                    logging.warning(se0)
-                    logging.warning(cur_se)
                     f_predict.append(net_decoder([tf.concat([se0, cur_se], axis=1), f0],
                                                  name_scope="frame_decoder%d" % i)["next_frame"].op)
                     logging.warning("[%s]: state:%s, frame:%s, predicted_frame:%s", i, se0.shape, f0.shape, f_predict[-1].shape)
