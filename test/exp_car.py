@@ -748,7 +748,7 @@ class I2A(A3CExperimentWithI2A):
             # f_env = create_env_upsample_little
             f_rollout = create_rollout
             f_encoder = create_encoder
-            f_tran = create_transition_momentum
+            f_tran = create_transition
             f_decoder = create_decoder
 
         super(I2A, self).__init__(env, f_se, f_ac, f_tran, f_decoder, f_rollout, f_encoder, episode_n, learning_rate,
