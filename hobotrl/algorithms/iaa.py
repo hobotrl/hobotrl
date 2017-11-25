@@ -222,6 +222,9 @@ class EnvModelUpdater(network.NetworkUpdater):
                     r_predict_loss.append(network.Utils.clipped_square(r_predict[-1] - rn[i]))
                     # f_predict.append(net_decoder([tf.concat([se0, cur_goal], axis=1), f0],
                     #                              name_scope="frame_decoder%d" % i)["next_frame"].op)
+                    logging.warning("-----==================---------------")
+                    logging.warning(se0)
+                    logging.warning(cur_se)
                     f_predict.append(net_decoder([tf.concat([se0, cur_se], axis=1), f0],
                                                  name_scope="frame_decoder%d" % i)["next_frame"].op)
                     logging.warning("[%s]: state:%s, frame:%s, predicted_frame:%s", i, se0.shape, f0.shape, f_predict[-1].shape)
@@ -337,7 +340,7 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
             input_frame = tf.placeholder(dtype=tf.float32, shape=[None, state_shape[0], state_shape[1], 3], name="input_frame")
             rollout = network.Network([se], f_rollout, var_scope="rollout_policy")
             net_model = network.Network([se, input_action], f_tran, var_scope="TranModel")
-            net_decoder = network.Network([se, input_frame], f_decoder, var_scope="Decoder")
+            net_decoder = network.Network([tf.concat([se, se], axis=1), input_frame], f_decoder, var_scope="Decoder")
             rollout_encoder = network.Network([encode_state, input_reward], f_encoder, var_scope="rollout_encoder")
 
             current_state = se

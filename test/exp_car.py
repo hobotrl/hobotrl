@@ -397,13 +397,13 @@ class I2A(A3CExperimentWithI2A):
                 l2 = 1e-7
                 input_observation = inputs[0]
                 se_conv = hrl.utils.Network.conv2ds(input_observation,
-                                               shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
-                                               out_flatten=True,
-                                               activation=tf.nn.relu,
-                                               l2=l2,
-                                               var_scope="se_conv")
+                                                    shape=[(32, 8, 4), (64, 4, 2), (32, 3, 2)],
+                                                    out_flatten=True,
+                                                    activation=tf.nn.relu,
+                                                    l2=l2,
+                                                    var_scope="se_conv")
 
-                se_linear = hrl.utils.Network.layer_fcs(se_conv, [], 64*5*5,
+                se_linear = hrl.utils.Network.layer_fcs(se_conv, [], 256,
                                                         activation_hidden=tf.nn.relu,
                                                         activation_out=tf.nn.relu,
                                                         l2=l2,
@@ -447,21 +447,15 @@ class I2A(A3CExperimentWithI2A):
                 input_action = inputs[1]
                 input_action = tf.one_hot(indices=input_action, depth=dim_action, on_value=1.0, off_value=0.0, axis=-1)
 
-                fc_1 = hrl.utils.Network.layer_fcs(input_state, [], 64 * 5 * 5,
-                                                   activation_hidden=tf.nn.relu,
-                                                   activation_out=tf.nn.relu,
-                                                   l2=l2,
-                                                   var_scope="fc_1")
-
-                fc_action = hrl.utils.Network.layer_fcs(input_action, [], 64 * 5 * 5,
+                fc_action = hrl.utils.Network.layer_fcs(input_action, [], 256,
                                                         activation_hidden=tf.nn.relu,
                                                         activation_out=tf.nn.relu,
                                                         l2=l2,
                                                         var_scope="fc_action")
 
-                concat = tf.multiply(fc_1, fc_action)
+                concat = tf.multiply(input_state, fc_action)
 
-                fc_out = hrl.utils.Network.layer_fcs(concat, [64 * 5 * 5], 64 * 5 * 5,
+                fc_out = hrl.utils.Network.layer_fcs(concat, [], 256,
                                                      activation_hidden=tf.nn.relu,
                                                      activation_out=tf.nn.relu,
                                                      l2=l2,
@@ -475,7 +469,7 @@ class I2A(A3CExperimentWithI2A):
                 reward = tf.squeeze(reward, axis=1)
 
                 # next_state
-                next_state = hrl.utils.Network.layer_fcs(fc_out, [], 64 * 5 * 5,
+                next_state = hrl.utils.Network.layer_fcs(fc_out, [], 256,
                                                      activation_hidden=tf.nn.relu,
                                                      activation_out=tf.nn.relu,
                                                      l2=l2,
@@ -556,16 +550,38 @@ class I2A(A3CExperimentWithI2A):
                                                    l2=l2,
                                                    var_scope="conv_2")
 
-                twoD_out = tf.reshape(input_goal, [-1, 5, 5, 128])
+                conv_3 = hrl.utils.Network.conv2ds(conv_2,
+                                                   shape=[(32, 3, 2)],
+                                                   out_flatten=False,
+                                                   activation=tf.nn.relu,
+                                                   l2=l2,
+                                                   var_scope="conv_3")
 
-                conv_5 = hrl.utils.Network.conv2ds(twoD_out,
+                logging.warning("----------------------------")
+                logging.warning(input_goal)
+
+                fc_1 = hrl.utils.Network.layer_fcs(input_goal, [], int(np.shape(conv_3)[1]) * int(np.shape(conv_3)[2]) *
+                                                   (2 * 256 / int(np.shape(conv_3)[1]) / int(np.shape(conv_3)[2])),
+                                                   activation_hidden=tf.nn.relu,
+                                                   activation_out=tf.nn.relu,
+                                                   l2=l2,
+                                                   var_scope="fc_goal")
+
+                twoD_out = tf.reshape(fc_1, [-1,
+                                             int(np.shape(conv_3)[1]),
+                                             int(np.shape(conv_3)[2]),
+                                             2 * 256 / int(np.shape(conv_3)[1]) / int(np.shape(conv_3)[2])])
+
+                concat_0 = tf.concat([conv_3, twoD_out], axis=3)
+
+                conv_4 = hrl.utils.Network.conv2ds(concat_0,
                                                    shape=[(32, 3, 1)],
                                                    out_flatten=False,
                                                    activation=tf.nn.relu,
                                                    l2=l2,
                                                    var_scope="conv_5")
 
-                up_1 = tf.image.resize_images(conv_5, [((dim_observation[0] + 3) / 4 + 1) / 2,
+                up_1 = tf.image.resize_images(conv_4, [((dim_observation[0] + 3) / 4 + 1) / 2,
                                                        ((dim_observation[1] + 3) / 4 + 1) / 2])
 
                 concat_1 = tf.concat([conv_2, up_1], axis=3)
