@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+ # -*- coding: utf-8 -*-
 """Experiment script for DQN-based lane decision.
 
 Author: Jingchu Liu
@@ -157,9 +157,13 @@ def gen_backend_cmds():
     return backend_cmds
 
 def mask_action(rewards, action):
-    if rewards[7] < 0.5 and action == 2 \
-            or rewards[8] < 0.5 and action == 1:
+    if rewards[7] and action == 1 \
+            or rewards[8] and action == 2:
         return 0
+    elif rewards[9]:
+        return 1
+    elif rewards[10] == 0:
+        return 2
     return action
 
 
@@ -193,9 +197,10 @@ env = DrivingSimulatorEnv(
         ('/rl/on_pedestrian', 'std_msgs.msg.Bool'),
         ('/rl/obs_factor', 'std_msgs.msg.Float32'),
         ('/rl/distance_to_longestpath', 'std_msgs.msg.Float32'),
+        ('/rl/on_innerest_lane', 'std_msgs.msg.Bool'),
+        ('/rl/on_outterest_lane', 'std_msgs.msg.Bool'),
         ('/rl/on_biking_lane', 'std_msgs.msg.Bool'),
-        ('/rl/on_outterest_lane', 'std_msgs.msg.Bool')
-
+        ('/rl/opposite_path', 'std_msgs.msg.Int16')
     ],
     defs_action=[('/autoDrive_KeyboardMode', 'std_msgs.msg.Char')],
     rate_action=10.0,
@@ -217,58 +222,57 @@ def f_net(inputs):
     inputs = inputs[0]
     inputs = inputs/128 - 1.0
     # (640, 640, 3*n) -> ()
-    with tf.device('/gpu:1'):
-        conv1 = layers.conv2d(
-            inputs=inputs, filters=16, kernel_size=(8, 8), strides=1,
-            kernel_regularizer=l2_regularizer(scale=1e-2),
-            activation=tf.nn.relu, name='conv1')
-        print conv1.shape
-        pool1 = layers.max_pooling2d(
-            inputs=conv1, pool_size=3, strides=4, name='pool1')
-        print pool1.shape
-        conv2 = layers.conv2d(
-            inputs=pool1, filters=16, kernel_size=(5, 5), strides=1,
-            kernel_regularizer=l2_regularizer(scale=1e-2),
-            activation=tf.nn.relu, name='conv2')
-        print conv2.shape
-        pool2 = layers.max_pooling2d(
-            inputs=conv2, pool_size=3, strides=3, name='pool2')
-        print pool2.shape
-        conv3 = layers.conv2d(
-             inputs=pool2, filters=64, kernel_size=(3, 3), strides=1,
-             kernel_regularizer=l2_regularizer(scale=1e-2),
-             activation=tf.nn.relu, name='conv3')
-        print conv3.shape
-        pool3 = layers.max_pooling2d(
-            inputs=conv3, pool_size=3, strides=2, name='pool3',)
-        print pool3.shape
-        depth = pool3.get_shape()[1:].num_elements()
-        inputs = tf.reshape(pool3, shape=[-1, depth])
-        print inputs.shape
-        hid1 = layers.dense(
-            inputs=inputs, units=256, activation=tf.nn.relu,
-            kernel_regularizer=l2_regularizer(scale=1e-2), name='hid1')
-        print hid1.shape
-        hid2 = layers.dense(
-            inputs=hid1, units=256, activation=tf.nn.relu,
-            kernel_regularizer=l2_regularizer(scale=1e-2), name='hid2_adv')
-        print hid2.shape
-        adv = layers.dense(
-            inputs=hid2, units=len(AGENT_ACTIONS), activation=None,
-            kernel_initializer=tf.random_uniform_initializer(-3e-3, 3e-3),
-            kernel_regularizer=l2_regularizer(scale=1e-2), name='adv')
-        print adv.shape
-        hid2 = layers.dense(
-            inputs=hid1, units=256, activation=tf.nn.relu,
-            kernel_regularizer=l2_regularizer(scale=1e-2), name='hid2_v')
-        print hid2.shape
-        v = layers.dense(
-            inputs=hid2, units=1, activation=None,
-            kernel_initializer=tf.random_uniform_initializer(-3e-3, 3e-3),
-            kernel_regularizer=l2_regularizer(scale=1e-2), name='v')
-        print v.shape
-        q = tf.add(adv, v, name='q')
-        print q.shape
+    conv1 = layers.conv2d(
+        inputs=inputs, filters=16, kernel_size=(8, 8), strides=1,
+        kernel_regularizer=l2_regularizer(scale=1e-2),
+        activation=tf.nn.relu, name='conv1')
+    print conv1.shape
+    pool1 = layers.max_pooling2d(
+        inputs=conv1, pool_size=3, strides=4, name='pool1')
+    print pool1.shape
+    conv2 = layers.conv2d(
+        inputs=pool1, filters=16, kernel_size=(5, 5), strides=1,
+        kernel_regularizer=l2_regularizer(scale=1e-2),
+        activation=tf.nn.relu, name='conv2')
+    print conv2.shape
+    pool2 = layers.max_pooling2d(
+        inputs=conv2, pool_size=3, strides=3, name='pool2')
+    print pool2.shape
+    conv3 = layers.conv2d(
+         inputs=pool2, filters=64, kernel_size=(3, 3), strides=1,
+         kernel_regularizer=l2_regularizer(scale=1e-2),
+         activation=tf.nn.relu, name='conv3')
+    print conv3.shape
+    pool3 = layers.max_pooling2d(
+        inputs=conv3, pool_size=3, strides=2, name='pool3',)
+    print pool3.shape
+    depth = pool3.get_shape()[1:].num_elements()
+    inputs = tf.reshape(pool3, shape=[-1, depth])
+    print inputs.shape
+    hid1 = layers.dense(
+        inputs=inputs, units=256, activation=tf.nn.relu,
+        kernel_regularizer=l2_regularizer(scale=1e-2), name='hid1')
+    print hid1.shape
+    hid2 = layers.dense(
+        inputs=hid1, units=256, activation=tf.nn.relu,
+        kernel_regularizer=l2_regularizer(scale=1e-2), name='hid2_adv')
+    print hid2.shape
+    adv = layers.dense(
+        inputs=hid2, units=len(AGENT_ACTIONS), activation=None,
+        kernel_initializer=tf.random_uniform_initializer(-3e-3, 3e-3),
+        kernel_regularizer=l2_regularizer(scale=1e-2), name='adv')
+    print adv.shape
+    hid2 = layers.dense(
+        inputs=hid1, units=256, activation=tf.nn.relu,
+        kernel_regularizer=l2_regularizer(scale=1e-2), name='hid2_v')
+    print hid2.shape
+    v = layers.dense(
+        inputs=hid2, units=1, activation=None,
+        kernel_initializer=tf.random_uniform_initializer(-3e-3, 3e-3),
+        kernel_regularizer=l2_regularizer(scale=1e-2), name='v')
+    print v.shape
+    q = tf.add(adv, v, name='q')
+    print q.shape
 
     return {"q": q}
 
@@ -445,7 +449,7 @@ try:
 
     with sv.managed_session(config=config) as sess, \
          AsynchronousAgent(agent=_agent, method='rate', rate=update_rate) as agent:
-        summary_writer = SummaryWriterCache.get(FLAGS.logdir)
+        # summary_writer = SummaryWriterCache.get(FLAGS.logdir)
 
         agent.set_session(sess)
         # sess.run(op_set_lr, feed_dict={lr_in: 1e-4})
@@ -454,6 +458,7 @@ try:
         n_agent_steps = 0
         action_fraction = np.ones(len(AGENT_ACTIONS), ) / (1.0 * len(AGENT_ACTIONS))
         action_td_loss = np.zeros(len(AGENT_ACTIONS), )
+        total_stat_file = open(FLAGS.savedir+"/0000.txt", 'w')
         while True:
             n_ep += 1
             eps_dir = FLAGS.savedir + "/" + str(n_ep).zfill(4)
@@ -549,8 +554,8 @@ try:
                 img_path = eps_dir + "/" + str(n_steps+1).zfill(4) + "_" + str(skip_action) + ".jpg"
                 cv2.imwrite(img_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
 
-                # sv.summary_computed(sess, summary=log_info(update_info))
-                summary_writer.add_summary(log_info(update_info), n_steps)
+                sv.summary_computed(sess, summary=log_info(update_info))
+                # summary_writer.add_summary(log_info(update_info), n_steps)
                 if cnt_skip == 0:
                     if next_action == 0:
                         # cnt_skip = 1
@@ -561,12 +566,15 @@ try:
                 if done:
                     break
 
-            summary = tf.Summary()
-            summary.value.add(tag="cum_reward_ep", simple_value=cum_reward)
-            summary.value.add(tag="flag_success_ep", simple_value=flag_success)
-            summary.value.add(tag="done_ep", simple_value=done)
-            summary_writer.add_summary(summary, n_ep)
+            # summary = tf.Summary()
+            # summary.value.add(tag="cum_reward_ep", simple_value=cum_reward)
+            # summary.value.add(tag="flag_success_ep", simple_value=flag_success)
+            # summary.value.add(tag="done_ep", simple_value=done)
+            # summary_writer.add_summary(summary, n_ep)
             recording_file.close()
+            total_stat_file.write("{}, {}, {}, {}\n".format(n_ep, cum_reward, flag_success, done))
+        total_stat_file.close()
+
 
 except Exception as e:
     print e.message

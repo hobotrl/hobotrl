@@ -167,6 +167,7 @@ tf.app.flags.DEFINE_string("savedir",
 tf.app.flags.DEFINE_string("readme", "direct dqn. Use new reward function.", """readme""")
 tf.app.flags.DEFINE_string("host", "10.31.40.197", """host""")
 tf.app.flags.DEFINE_string("port", '10034', "Docker port")
+tf.app.flags.DEFINE_string("cache_path", './dqn_ReplayBufferCache', "Replay buffer cache path")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -209,58 +210,57 @@ def f_net(inputs):
     inputs = inputs[0]
     inputs = inputs/128 - 1.0
     # (640, 640, 3*n) -> ()
-    with tf.device('/gpu:0'):
-        conv1 = layers.conv2d(
-            inputs=inputs, filters=16, kernel_size=(8, 8), strides=1,
-            kernel_regularizer=l2_regularizer(scale=1e-2),
-            activation=tf.nn.relu, name='conv1')
-        print conv1.shape
-        pool1 = layers.max_pooling2d(
-            inputs=conv1, pool_size=3, strides=4, name='pool1')
-        print pool1.shape
-        conv2 = layers.conv2d(
-            inputs=pool1, filters=16, kernel_size=(5, 5), strides=1,
-            kernel_regularizer=l2_regularizer(scale=1e-2),
-            activation=tf.nn.relu, name='conv2')
-        print conv2.shape
-        pool2 = layers.max_pooling2d(
-            inputs=conv2, pool_size=3, strides=3, name='pool2')
-        print pool2.shape
-        conv3 = layers.conv2d(
-             inputs=pool2, filters=64, kernel_size=(3, 3), strides=1,
-             kernel_regularizer=l2_regularizer(scale=1e-2),
-             activation=tf.nn.relu, name='conv3')
-        print conv3.shape
-        pool3 = layers.max_pooling2d(
-            inputs=conv3, pool_size=3, strides=2, name='pool3',)
-        print pool3.shape
-        depth = pool3.get_shape()[1:].num_elements()
-        inputs = tf.reshape(pool3, shape=[-1, depth])
-        print inputs.shape
-        hid1 = layers.dense(
-            inputs=inputs, units=256, activation=tf.nn.relu,
-            kernel_regularizer=l2_regularizer(scale=1e-2), name='hid1')
-        print hid1.shape
-        hid2 = layers.dense(
-            inputs=hid1, units=256, activation=tf.nn.relu,
-            kernel_regularizer=l2_regularizer(scale=1e-2), name='hid2_adv')
-        print hid2.shape
-        adv = layers.dense(
-            inputs=hid2, units=len(AGENT_ACTIONS), activation=None,
-            kernel_initializer=tf.random_uniform_initializer(-3e-3, 3e-3),
-            kernel_regularizer=l2_regularizer(scale=1e-2), name='adv')
-        print adv.shape
-        hid2 = layers.dense(
-            inputs=hid1, units=256, activation=tf.nn.relu,
-            kernel_regularizer=l2_regularizer(scale=1e-2), name='hid2_v')
-        print hid2.shape
-        v = layers.dense(
-            inputs=hid2, units=1, activation=None,
-            kernel_initializer=tf.random_uniform_initializer(-3e-3, 3e-3),
-            kernel_regularizer=l2_regularizer(scale=1e-2), name='v')
-        print v.shape
-        q = tf.add(adv, v, name='q')
-        print q.shape
+    conv1 = layers.conv2d(
+        inputs=inputs, filters=16, kernel_size=(8, 8), strides=1,
+        kernel_regularizer=l2_regularizer(scale=1e-2),
+        activation=tf.nn.relu, name='conv1')
+    print conv1.shape
+    pool1 = layers.max_pooling2d(
+        inputs=conv1, pool_size=3, strides=4, name='pool1')
+    print pool1.shape
+    conv2 = layers.conv2d(
+        inputs=pool1, filters=16, kernel_size=(5, 5), strides=1,
+        kernel_regularizer=l2_regularizer(scale=1e-2),
+        activation=tf.nn.relu, name='conv2')
+    print conv2.shape
+    pool2 = layers.max_pooling2d(
+        inputs=conv2, pool_size=3, strides=3, name='pool2')
+    print pool2.shape
+    conv3 = layers.conv2d(
+         inputs=pool2, filters=64, kernel_size=(3, 3), strides=1,
+         kernel_regularizer=l2_regularizer(scale=1e-2),
+         activation=tf.nn.relu, name='conv3')
+    print conv3.shape
+    pool3 = layers.max_pooling2d(
+        inputs=conv3, pool_size=3, strides=2, name='pool3',)
+    print pool3.shape
+    depth = pool3.get_shape()[1:].num_elements()
+    inputs = tf.reshape(pool3, shape=[-1, depth])
+    print inputs.shape
+    hid1 = layers.dense(
+        inputs=inputs, units=256, activation=tf.nn.relu,
+        kernel_regularizer=l2_regularizer(scale=1e-2), name='hid1')
+    print hid1.shape
+    hid2 = layers.dense(
+        inputs=hid1, units=256, activation=tf.nn.relu,
+        kernel_regularizer=l2_regularizer(scale=1e-2), name='hid2_adv')
+    print hid2.shape
+    adv = layers.dense(
+        inputs=hid2, units=len(AGENT_ACTIONS), activation=None,
+        kernel_initializer=tf.random_uniform_initializer(-3e-3, 3e-3),
+        kernel_regularizer=l2_regularizer(scale=1e-2), name='adv')
+    print adv.shape
+    hid2 = layers.dense(
+        inputs=hid1, units=256, activation=tf.nn.relu,
+        kernel_regularizer=l2_regularizer(scale=1e-2), name='hid2_v')
+    print hid2.shape
+    v = layers.dense(
+        inputs=hid2, units=1, activation=None,
+        kernel_initializer=tf.random_uniform_initializer(-3e-3, 3e-3),
+        kernel_regularizer=l2_regularizer(scale=1e-2), name='v')
+    print v.shape
+    q = tf.add(adv, v, name='q')
+    print q.shape
 
     return {"q": q}
 
@@ -282,7 +282,7 @@ global_step = tf.get_variable(
 # 1 sample ~= 1MB @ 6x skipping
 replay_buffer = BigPlayback(
     bucket_cls=BalancedMapPlayback,
-    cache_path="./DQNReplayBufferCache/experiment",
+    cache_path=FLAGS.cache_path,
     capacity=300000, bucket_size=100, ratio_active=0.05, max_sample_epoch=2,
     num_actions=len(AGENT_ACTIONS), upsample_bias=(1,1,1,0.1)
 )
