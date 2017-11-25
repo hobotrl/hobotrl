@@ -102,7 +102,9 @@ class OTDPGPendulum(OTDPGExperiment):
         if f_actor is None:
             def f(inputs):
                 se = inputs[0]
-                actor = hrl.network.Utils.layer_fcs(se, [200, 100], dim_action, activation_out=tf.nn.tanh, l2=l2,
+                actor = hrl.network.Utils.layer_fcs(se, [200, 100], dim_action,
+                                                    activation_out=tf.nn.tanh,
+                                                    l2=l2,
                                                     var_scope="action")
                 return {"action": actor}
             f_actor = f
@@ -110,7 +112,10 @@ class OTDPGPendulum(OTDPGExperiment):
             def f(inputs):
                 se, action = inputs[0], inputs[1]
                 se = tf.concat([se, action], axis=-1)
-                q = hrl.network.Utils.layer_fcs(se, [100], 1, activation_out=None, l2=l2, var_scope="q")
+                q = hrl.network.Utils.layer_fcs(se, [100], 1,
+                                                activation_out=None,
+                                                l2=l2,
+                                                var_scope="q")
                 q = tf.squeeze(q, axis=1)
                 return {"q": q}
             f_critic = f
@@ -118,6 +123,22 @@ class OTDPGPendulum(OTDPGExperiment):
                                             episode_n, discount_factor, network_optimizer_ctor, ou_params,
                                             target_sync_interval, target_sync_rate, batch_size, replay_capacity)
 Experiment.register(OTDPGPendulum, "OTDPG for Pendulum")
+
+
+class OTDPGBipedal(OTDPGPendulum):
+    def __init__(self, env=None, f_se=None, f_actor=None, f_critic=None, lower_weight=4, upper_weight=4,
+                 neighbour_size=8, episode_n=4000, discount_factor=0.9,
+                 network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-4),
+                                                                           grad_clip=10.0),
+                 ou_params=(0, 0.2, hrl.utils.CappedLinear(1e6, 1.0, 0.1)),
+                 target_sync_interval=10, target_sync_rate=0.01, batch_size=8, replay_capacity=40000):
+        if env is None:
+            env = gym.make("BipedalWalker-v2")
+            env = hrl.envs.AugmentEnvWrapper(env, reward_decay=discount_factor, reward_scale=0.02)
+        super(OTDPGBipedal, self).__init__(env, f_se, f_actor, f_critic, lower_weight, upper_weight, neighbour_size,
+                                           episode_n, discount_factor, network_optimizer_ctor, ou_params,
+                                           target_sync_interval, target_sync_rate, batch_size, replay_capacity)
+Experiment.register(OTDPGBipedal, "OTDPG for Bipedal")
 
 
 if __name__ == '__main__':

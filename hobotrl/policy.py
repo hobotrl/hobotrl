@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-
+import logging
 
 import numpy as np
 from network import NetworkFunction
@@ -75,7 +75,10 @@ class OUExplorationPolicy(Policy):
 
     def act(self, state, **kwargs):
         action = self._action_function(np.asarray(state)[np.newaxis, :])[0]
-        return self.action_add(action, self._ou_noise.tick())
+        noise = self._ou_noise.tick()
+        action0 = self.action_add(action, noise)
+        logging.warning("action: %s + %s -> %s", action, noise, action0)
+        return action0
 
 
 class StochasticPolicy(Policy):
