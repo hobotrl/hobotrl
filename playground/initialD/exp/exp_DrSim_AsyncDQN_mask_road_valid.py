@@ -24,7 +24,6 @@ from hobotrl.sampling import TransitionSampler
 from hobotrl.playback import BalancedMapPlayback, BigPlayback
 from hobotrl.async import AsynchronousAgent
 from hobotrl.utils import CappedLinear
-from tensorflow.python.training.summary_io import SummaryWriterCache
 
 # initialD
 # from ros_environments.honda import DrivingSimulatorEnv
@@ -160,9 +159,9 @@ def mask_action(rewards, action):
     if rewards[7] and action == 1 \
             or rewards[8] and action == 2:
         return 0
-    elif rewards[9]:
+    elif rewards[4]:
         return 1
-    elif rewards[10] == 0:
+    elif rewards[3] == 0:
         return 2
     return action
 
@@ -192,15 +191,13 @@ env = DrivingSimulatorEnv(
     defs_reward=[
         ('/rl/current_road_validity', 'std_msgs.msg.Int16'),
         ('/rl/entering_intersection', 'std_msgs.msg.Bool'),
-        ('/rl/car_velocity', 'std_msgs.msg.Float32'),
+        ('/rl/car_velocity_front', 'std_msgs.msg.Float32'),
         ('/rl/last_on_opposite_path', 'std_msgs.msg.Int16'),
-        ('/rl/on_pedestrian', 'std_msgs.msg.Bool'),
+        ('/rl/on_biking_lane', 'std_msgs.msg.Bool'),
         ('/rl/obs_factor', 'std_msgs.msg.Float32'),
         ('/rl/distance_to_longestpath', 'std_msgs.msg.Float32'),
         ('/rl/on_innerest_lane', 'std_msgs.msg.Bool'),
         ('/rl/on_outterest_lane', 'std_msgs.msg.Bool'),
-        ('/rl/on_biking_lane', 'std_msgs.msg.Bool'),
-        ('/rl/opposite_path', 'std_msgs.msg.Int16')
     ],
     defs_action=[('/autoDrive_KeyboardMode', 'std_msgs.msg.Char')],
     rate_action=10.0,
