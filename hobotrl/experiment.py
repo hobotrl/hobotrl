@@ -124,10 +124,11 @@ class GridSearch(Experiment):
         log_root = args.logdir
         for parameter in self.product(self._parameters):
             label = self.labelize(parameter)
-            args.logdir = os.sep.join([log_root, label])
+            args.logdir = self.find_new(os.sep.join([log_root, label]))
             with tf.Graph().as_default():
                 experiment = self._exp_class(**parameter)
                 try:
+                    logging.warning("starting experiment: %s", args.logdir)
                     rewards = experiment.run(args)
                 except Exception, e:
                     type_, value_, traceback_ = sys.exc_info()
@@ -139,13 +140,23 @@ class GridSearch(Experiment):
         if isinstance(parameters, dict):
             parameters = [parameters]
         for param in parameters:
-            names = param.keys()
+            names = sorted(param.keys())
             valuelists = [param[n] for n in names]
             for values in itertools.product(*valuelists):
                 yield clone_params(**dict(zip(names, values)))
 
+    def find_new(self, path):
+        if not os.path.exists(path):
+            return path
+        for i in range(10000):
+            ipath = "%s_%d" % (path, i)
+            if not os.path.exists(ipath):
+                return ipath
+        return path
+
     def labelize(self, parameter):
-        return "_".join(["%s%s" % (f, escape_path(str(parameter[f]))) for f in parameter])
+        names = sorted(parameter.keys())
+        return "_".join(["%s%s" % (f, escape_path(str(parameter[f]))) for f in names])
 
 
 if __name__ == "__main__":
