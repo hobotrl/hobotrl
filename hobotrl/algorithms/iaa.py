@@ -207,23 +207,23 @@ class EnvModelUpdater(network.NetworkUpdater):
                 for i in range(depth):
                     logging.warning("[%s]: state:%s, action:%s", i, cur_se.shape, an[i].shape)
                     net_trans = net_transition([cur_se, an[i]], name_scope="transition_%d" % i)
-                    goal = net_trans["next_state"].op
-                    TM_goal = net_trans["momentum"].op
+                    cur_se = net_trans["next_state"].op
+                    # TM_goal = net_trans["momentum"].op
                     # socalled_state = net_trans["action_related"].op
-                    cur_goal = goal if cur_goal is None else cur_goal + goal
-                    cur_mom = TM_goal if cur_mom is None else cur_mom + TM_goal
-                    goalfrom0_predict.append(cur_goal)
-                    momfrom0_predict.append(cur_mom)
-                    cur_se = se0 + cur_goal
+                    # cur_goal = goal if cur_goal is None else cur_goal + goal
+                    # cur_mom = TM_goal if cur_mom is None else cur_mom + TM_goal
+                    # goalfrom0_predict.append(cur_goal)
+                    # momfrom0_predict.append(cur_mom)
+                    # cur_se = se0 + cur_goal
                     # cur_se = socalled_state
-                    cur_se_mom = se0 + cur_mom
+                    # cur_se_mom = se0 + cur_mom
                     ses_predict.append(cur_se)
                     r_predict.append(net_trans["reward"].op)
                     r_predict_loss.append(network.Utils.clipped_square(r_predict[-1] - rn[i]))
-                    f_predict.append(net_decoder([tf.concat([se0, cur_goal], axis=1), f0],
-                                                 name_scope="frame_decoder%d" % i)["next_frame"].op)
-                    # f_predict.append(net_decoder([tf.concat([se0, cur_se], axis=1), f0],
+                    # f_predict.append(net_decoder([tf.concat([se0, cur_goal], axis=1), f0],
                     #                              name_scope="frame_decoder%d" % i)["next_frame"].op)
+                    f_predict.append(net_decoder([tf.concat([se0, cur_se], axis=1), f0],
+                                                 name_scope="frame_decoder%d" % i)["next_frame"].op)
                     logging.warning("[%s]: state:%s, frame:%s, predicted_frame:%s", i, se0.shape, f0.shape, f_predict[-1].shape)
                     f_predict_loss.append(network.Utils.clipped_square(f_predict[-1] - fn[i]))
                     # goal_reg_loss.append(network.Utils.clipped_square(cur_se_mom - sen[i]))
@@ -342,52 +342,52 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
 
             current_state = se
 
-            for i in range(3):
-                for j in range(3):
-                    current_rollout = rollout([current_state], name_scope="rollout_%d_%d" %(i,j))
-                    rollout_action_function = network.NetworkFunction(current_rollout["rollout_action"])
+            # for i in range(3):
+            #     for j in range(3):
+            #         current_rollout = rollout([current_state], name_scope="rollout_%d_%d" %(i,j))
+            #         rollout_action_function = network.NetworkFunction(current_rollout["rollout_action"])
+            #
+            #         rollout_action_dist = tf.contrib.distributions.Categorical(rollout_action_function.output().op)
+            #         current_action = rollout_action_dist.sample()
+            #
+            #         tran_model = net_model([current_state, current_action], name_scope="env_model_%d_%d" %(i,j))
+            #
+            #         next_state = network.NetworkFunction(tran_model["next_state"]).output().op  # literally next_goal
+            #         reward = network.NetworkFunction(tran_model["reward"]).output().op
+            #
+            #         if j == 0:
+            #             # out_next_state = next_state
+            #             # out_reward = reward
+            #             encode_states = next_state
+            #             rollout_reward = reward
+            #             if i == 0:
+            #                 rollout_action = rollout_action_function.output().op
+            #         else:
+            #             encode_states = tf.concat([next_state, encode_states], axis=1)
+            #             rollout_reward = tf.concat([rollout_reward, reward], axis=0)
+            #
+            #         current_state += next_state
+            #
+            #     encode_state = encode_states
+            #     # input_reward = rollout_reward
+            #     input_reward = tf.reshape(rollout_reward, [-1, 3])
+            #     rollout_encoders = rollout_encoder([tf.reshape(encode_state, [-1, 5, 5, 64*3]), input_reward],
+            #                                        name_scope="rollout_encoder_%d" %i)
+            #
+            #     re = network.NetworkFunction(rollout_encoders["re"]).output().op
+            #     if i == 0:
+            #         path = re
+            #     else:
+            #         path = tf.concat([path, re], axis=1)
+            #
+            # feature = tf.concat([path, se], axis=1)
 
-                    rollout_action_dist = tf.contrib.distributions.Categorical(rollout_action_function.output().op)
-                    current_action = rollout_action_dist.sample()
-
-                    tran_model = net_model([current_state, current_action], name_scope="env_model_%d_%d" %(i,j))
-
-                    next_state = network.NetworkFunction(tran_model["next_state"]).output().op  # literally next_goal
-                    reward = network.NetworkFunction(tran_model["reward"]).output().op
-
-                    if j == 0:
-                        # out_next_state = next_state
-                        # out_reward = reward
-                        encode_states = next_state
-                        rollout_reward = reward
-                        if i == 0:
-                            rollout_action = rollout_action_function.output().op
-                    else:
-                        encode_states = tf.concat([next_state, encode_states], axis=1)
-                        rollout_reward = tf.concat([rollout_reward, reward], axis=0)
-
-                    current_state += next_state
-
-                encode_state = encode_states
-                # input_reward = rollout_reward
-                input_reward = tf.reshape(rollout_reward, [-1, 3])
-                rollout_encoders = rollout_encoder([tf.reshape(encode_state, [-1, 5, 5, 64*3]), input_reward],
-                                                   name_scope="rollout_encoder_%d" %i)
-
-                re = network.NetworkFunction(rollout_encoders["re"]).output().op
-                if i == 0:
-                    path = re
-                else:
-                    path = tf.concat([path, re], axis=1)
-
-            feature = tf.concat([path, se], axis=1)
-
-            ac = network.Network([feature], f_ac, var_scope='ac')
+            ac = network.Network([se], f_ac, var_scope='ac')
             # ac = network.Network([se_4], f_ac, var_scope='ac')
             v = network.NetworkFunction(ac["v"]).output().op
             pi_dist = network.NetworkFunction(ac["pi"]).output().op
 
-            return {"v": v, "pi": pi_dist, "rollout_action": rollout_action,}, \
+            return {"v": v, "pi": pi_dist, "rollout_action": None,}, \
                     {
                         "se": net_se, "transition": net_model,
                         "state_decoder": net_decoder
@@ -440,8 +440,8 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
             self._v_function = network.NetworkFunction(self.network["v"])
             # continuous action: mean / stddev for normal distribution
 
-        self._rollout_action = network.NetworkFunction(self.network["rollout_action"])
-        self._rollout_dist = distribution.DiscreteDistribution(self._rollout_action, self._input_action)
+        # self._rollout_action = network.NetworkFunction(self.network["rollout_action"])
+        # self._rollout_dist = distribution.DiscreteDistribution(self._rollout_action, self._input_action)
 
         if target_estimator is None:
             target_estimator = target_estimate.NStepTD(self._v_function, discount_factor)
@@ -452,12 +452,12 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                                v_function=self._v_function,
                                target_estimator=target_estimator, entropy=entropy), name="ac")
         network_optimizer.add_updater(network.L2(self.network), name="l2")
-        network_optimizer.add_updater(
-            PolicyNetUpdater(rollout_dist=self._rollout_dist,
-                             rollout_action_function=self._rollout_action,
-                             pi_function=self._pi_function),
-            name="policy_net"
-        )
+        # network_optimizer.add_updater(
+        #     PolicyNetUpdater(rollout_dist=self._rollout_dist,
+        #                      rollout_action_function=self._rollout_action,
+        #                      pi_function=self._pi_function),
+        #     name="policy_net"
+        # )
         network_optimizer.add_updater(
             EnvModelUpdater(
                 net_se=self.network.sub_net("se"),
