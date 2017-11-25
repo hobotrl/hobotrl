@@ -209,18 +209,21 @@ class EnvModelUpdater(network.NetworkUpdater):
                     net_trans = net_transition([cur_se, an[i]], name_scope="transition_%d" % i)
                     goal = net_trans["next_state"].op
                     TM_goal = net_trans["momentum"].op
+                    # socalled_state = net_trans["action_related"].op
                     cur_goal = goal if cur_goal is None else cur_goal + goal
                     cur_mom = TM_goal if cur_mom is None else cur_mom + TM_goal
                     goalfrom0_predict.append(cur_goal)
                     momfrom0_predict.append(cur_mom)
                     cur_se = se0 + cur_goal
+                    # cur_se = socalled_state
                     cur_se_mom = se0 + cur_mom
                     ses_predict.append(cur_se)
                     r_predict.append(net_trans["reward"].op)
                     r_predict_loss.append(network.Utils.clipped_square(r_predict[-1] - rn[i]))
-                    # f_predict.append(net_decoder([cur_goal, f0], name_scope="frame_decoder%d" % i)["next_frame"].op)
-                    f_predict.append(net_decoder([tf.concat([se0, cur_se], axis=1), f0],
+                    f_predict.append(net_decoder([tf.concat([se0, cur_goal], axis=1), f0],
                                                  name_scope="frame_decoder%d" % i)["next_frame"].op)
+                    # f_predict.append(net_decoder([tf.concat([se0, cur_se], axis=1), f0],
+                    #                              name_scope="frame_decoder%d" % i)["next_frame"].op)
                     logging.warning("[%s]: state:%s, frame:%s, predicted_frame:%s", i, se0.shape, f0.shape, f_predict[-1].shape)
                     f_predict_loss.append(network.Utils.clipped_square(f_predict[-1] - fn[i]))
                     # goal_reg_loss.append(network.Utils.clipped_square(cur_se_mom - sen[i]))
@@ -465,7 +468,7 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                 transition_loss_weight=1.0),
             name="env_model"
         )
-        network_optimizer.freeze(self.network.sub_net("transition").variables)
+        # network_optimizer.freeze(self.network.sub_net("transition").variables)
         network_optimizer.compile()
 
         self._policy = StochasticPolicy(self._pi_distribution)
@@ -479,7 +482,7 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
 
     def update_on_trajectory(self, batch):
         if (np.shape(batch["action"])[0] >= self._rollout_depth):
-            self.network_optimizer.update("policy_net", self.sess, batch)
+            # self.network_optimizer.update("policy_net", self.sess, batch)
             self.network_optimizer.update("env_model", self.sess, batch)
             self.network_optimizer.update("ac", self.sess, batch)
             self.network_optimizer.update("l2", self.sess)

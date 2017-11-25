@@ -519,21 +519,22 @@ class I2A(A3CExperimentWithI2A):
                 reward = tf.squeeze(reward, axis=1)
 
                 # next_goal
-                TC_goal = hrl.utils.Network.layer_fcs(fc_out, [], 64 * 5 * 5,
+                Action_related_goal = hrl.utils.Network.layer_fcs(fc_out, [], 64 * 5 * 5,
                                                      activation_hidden=tf.nn.relu,
                                                      activation_out=tf.nn.relu,
                                                      l2=l2,
                                                      var_scope="TC")
 
-                TM_goal = hrl.utils.Network.layer_fcs(fc_1, [], 64 * 5 * 5,
+                Action_unrelated_goal = hrl.utils.Network.layer_fcs(fc_1, [], 64 * 5 * 5,
                                                      activation_hidden=tf.nn.relu,
                                                      activation_out=tf.nn.relu,
                                                      l2=l2,
                                                      var_scope="TM")
 
-                next_goal = TC_goal + TM_goal
+                next_goal = Action_related_goal + Action_unrelated_goal
 
-                return {"next_state": next_goal, "reward": reward, "momentum": TM_goal}
+                return {"next_state": next_goal, "reward": reward, "momentum": Action_unrelated_goal,
+                        "action_related": Action_related_goal}
 
             def create_decoder(inputs):
                 l2 = 1e-7
