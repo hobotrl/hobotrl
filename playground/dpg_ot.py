@@ -77,6 +77,6 @@ class OTDPG(DPG):
         self.network_optimizer.add_updater(TrajectoryFitQ(self._actor_function,
                                                           self._q_function,
                                                           target_esitmator,
-                                                          self._discount_factor, 0.1), name="ac")
+                                                          self._discount_factor, 0.02), name="ac")
         self.network_optimizer.add_updater(network.L2(self.network), name="l2")
         self.network_optimizer.compile()

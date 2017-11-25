@@ -42,8 +42,8 @@ class NoisyExperiment(Experiment):
                  intrinsic_weight=0.0,
                  explore_net=False,
                  abs_goal=True,
-                 manager_ac=False,
-                 achievable_weight=1e-1,
+                 manager_ac=True,
+                 achievable_weight=1e-3,
                  disentangle_weight=1.0,
                  **kwargs
                  ):
@@ -120,7 +120,7 @@ class NoisyPendulum(NoisyExperiment):
     def __init__(self, env=None, se_dimension=3, f_se=None, f_manager=None, f_explorer=None, f_ik=None,
                  f_value=None, f_model=None, f_pi=None,
                  episode_n=2000, discount_factor=0.9,
-                 noise_dimension=2, manager_horizon=16, manager_interval=4, batch_size=8, batch_horizon=4,
+                 noise_dimension=2, manager_horizon=16, manager_interval=1, batch_size=8, batch_horizon=4,
                  noise_stddev=hrl.utils.CappedLinear(1e5, 1.0, 0.05),
                  # noise_stddev=0.3,
                  noise_explore_param=(0, 0.2, 0.2),
@@ -158,7 +158,7 @@ class NoisyPendulum(NoisyExperiment):
 
             def fd(inputs):
                 return {"se": inputs[0]}
-            f_se = f
+            f_se = fd
 
         if f_manager is None:
             def f(inputs):
@@ -271,19 +271,35 @@ class NoisyPendulumSearch(GridSearch):
             "worker_explore_param":  [(0, 0.2, CappedLinear(2e5, 0.2, 0.01)), (0, 0.2, CappedLinear(2e5, 0.5, 0.1))],
             "manager_entropy": [1e-2, CappedLinear(2e5, 1e-2, 1e-3), CappedLinear(5e5, 1e-2, 1e-4)],
         round 5: manager_ac, with momentum
-
+            "explicit_momentum": [True, False],
+            "act_ac": [False],
+            "explore_net": [False],
+            "manager_ac": [True],
+            "manager_entropy": [1e-2],
+            "achievable_weight": [1e-3, 1e-4],
+            # "worker_explore_param":  [(0, 0.2, CappedLinear(2e5, 0.2, 0.01)), (0, 0.2, CappedLinear(2e5, 0.5, 0.1))],
+            "worker_explore_param": [(0, 0.2, CappedLinear(2e5, 0.2, 0.01))],
+            "imagine_history": [True, False],
+        round 6: imaginary training
+            "explicit_momentum": [True],
+            "manager_entropy": [1e-2],
+            "worker_explore_param":  [(0, 0.2, CappedLinear(2e5, 0.2, 0.01)), (0, 0.2, CappedLinear(3e5, 0.5, 0.05))],
+            # "worker_explore_param": [(0, 0.2, CappedLinear(2e5, 0.2, 0.01))],
+            "imagine_history": [True],
+            "momentum_weight": [1e-1, 1e-2],
+            "imagine_weight": [1.0, 1e-1],
+            "_r": [0, 1],
+        round 7: stability
     """
     def __init__(self):
         super(NoisyPendulumSearch, self).__init__(NoisyPendulum, {
             "explicit_momentum": [True],
-            "act_ac": [False],
-            "explore_net": [False],
-            "manager_ac": [True],
-            "manager_entropy": [1e-2, 1e-3],
-            "achievable_weight": [1e-3, 1e-1],
-            # "worker_explore_param":  [(0, 0.2, CappedLinear(2e5, 0.2, 0.01)), (0, 0.2, CappedLinear(2e5, 0.5, 0.1))],
-            "worker_explore_param": [(0, 0.2, CappedLinear(2e5, 0.2, 0.01))],
+            "manager_entropy": [1e-2],
+            "worker_explore_param":  [(0, 0.2, CappedLinear(2e5, 0.2, 0.01))],
             "imagine_history": [True],
+            "momentum_weight": [1e-1],
+            "imagine_weight": [1.0],
+            "_r": [0, 1, 2, 3],
         })
 Experiment.register(NoisyPendulumSearch, "Noisy explore for pendulum")
 

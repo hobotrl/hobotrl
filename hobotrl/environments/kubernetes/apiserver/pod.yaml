@@ -15,11 +15,17 @@ spec:
       privileged: true
     volumeMounts:
     - name: xsocket
-      mountPath: /Projects/.X11-unix
+      mountPath: /tmp/.X11-unix/X0
       readOnly: false
+    - name: nfs
+      mountPath: /Projects/hobotrl/playground/initialD/test/experiment
   volumes:
   - name: xsocket
     hostPath:
-      path: /var/xserver-daemon
+      path: /var/xserver-daemon/X0
+      type: File
+  - name: nfs
+    persistentVolumeClaim:
+      claimName: nfs-rl-validation-claim
   nodeSelector:
     xserver-daemon: "yes"
