@@ -557,20 +557,16 @@ class I2A(A3CExperimentWithI2A):
                                                    l2=l2,
                                                    var_scope="conv_3")
 
-                logging.warning("----------------------------")
-                logging.warning(input_goal)
-
-                fc_1 = hrl.utils.Network.layer_fcs(input_goal, [], int(np.shape(conv_3)[1]) * int(np.shape(conv_3)[2]) *
-                                                   (2 * 256 / int(np.shape(conv_3)[1]) / int(np.shape(conv_3)[2])),
+                conv_3_shape = conv_3.shape.as_list()
+                fc_1 = hrl.utils.Network.layer_fcs(input_goal, [], conv_3_shape[1] * conv_3_shape[2] *
+                                                   (2 * 256 / conv_3_shape[1] / conv_3_shape[2]),
                                                    activation_hidden=tf.nn.relu,
                                                    activation_out=tf.nn.relu,
                                                    l2=l2,
                                                    var_scope="fc_goal")
 
-                twoD_out = tf.reshape(fc_1, [-1,
-                                             int(np.shape(conv_3)[1]),
-                                             int(np.shape(conv_3)[2]),
-                                             2 * 256 / int(np.shape(conv_3)[1]) / int(np.shape(conv_3)[2])])
+                twoD_out = tf.reshape(fc_1, [-1, conv_3_shape[1], conv_3_shape[2],
+                                             2 * 256 / conv_3_shape[1] / conv_3_shape[2]])
 
                 concat_0 = tf.concat([conv_3, twoD_out], axis=3)
 
