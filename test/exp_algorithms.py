@@ -930,6 +930,8 @@ class A3CExperimentWithI2A(Experiment):
                 network_optimizer=n_optimizer,
                 # sampler arguments
                 sampler=None,
+                policy_with_iaa=False,
+                with_momentum=False,
                 batch_size=self._batch_size,
                 log_dir=args.logdir,
                 global_step=global_step,
