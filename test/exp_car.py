@@ -483,7 +483,7 @@ class I2A(A3CExperimentWithI2A):
                 input_state = inputs[0]
 
                 input_action = inputs[1]
-                input_action = tf.one_hot(indices=input_action, depth=dim_action, on_value=1.0, off_value=0.0, axis=-1)
+                # input_action = tf.one_hot(indices=input_action, depth=dim_action, on_value=1.0, off_value=0.0, axis=-1)
 
                 fc_action = hrl.utils.Network.layer_fcs(input_action, [256], 256,
                                                         activation_hidden=tf.nn.relu,
@@ -720,26 +720,26 @@ class I2A(A3CExperimentWithI2A):
 
             def create_encoder(inputs):
                 l2 = 1e-7
-                input_state = inputs[0]
-                input_reward = inputs[1]
+                input_argu = inputs[0]
+                # input_reward = inputs[1]
+                #
+                # rse = hrl.utils.Network.conv2ds(input_state,
+                #                                 shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
+                #                                 out_flatten=True,
+                #                                 activation=tf.nn.relu,
+                #                                 l2=l2,
+                #                                 var_scope="rse")
+                #
+                # re_conv = hrl.utils.Network.layer_fcs(rse, [], 200,
+                #                                       activation_hidden=tf.nn.relu,
+                #                                       activation_out=tf.nn.relu,
+                #                                       l2=l2,
+                #                                       var_scope="re_conv")
+                #
+                # # re_conv = tf.concat([re_conv, tf.reshape(input_reward, [-1, 1])], axis=1)
+                # re_conv = tf.concat([re_conv, input_reward], axis=1)
 
-                rse = hrl.utils.Network.conv2ds(input_state,
-                                                shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
-                                                out_flatten=True,
-                                                activation=tf.nn.relu,
-                                                l2=l2,
-                                                var_scope="rse")
-
-                re_conv = hrl.utils.Network.layer_fcs(rse, [], 200,
-                                                      activation_hidden=tf.nn.relu,
-                                                      activation_out=tf.nn.relu,
-                                                      l2=l2,
-                                                      var_scope="re_conv")
-
-                # re_conv = tf.concat([re_conv, tf.reshape(input_reward, [-1, 1])], axis=1)
-                re_conv = tf.concat([re_conv, input_reward], axis=1)
-
-                re = hrl.utils.Network.layer_fcs(re_conv, [], 200,
+                re = hrl.utils.Network.layer_fcs(input_argu, [256], 256,
                                                  activation_hidden=tf.nn.relu,
                                                  activation_out=tf.nn.relu,
                                                  l2=l2,
