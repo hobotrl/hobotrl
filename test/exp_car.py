@@ -382,12 +382,12 @@ class I2A(A3CExperimentWithI2A):
                  episode_n=10000, learning_rate=1e-4, discount_factor=0.99,
                  entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4), batch_size=32):
         if env is None:
-            env = gym.make('MsPacman-v0')
-            env = DownsampledMsPacman(env, bottom=True)
-            env = ScaledRewards(env, 0.1)
-            env = MaxAndSkipEnv(env, skip=4, max_len=1)
-            env = FrameStack(env, k=4)
-            # env = wrap_car(env, 3, 3)
+            env = gym.make('CarRacing-v0')
+            # env = DownsampledMsPacman(env, bottom=True)
+            # env = ScaledRewards(env, 0.1)
+            # env = MaxAndSkipEnv(env, skip=4, max_len=1)
+            # env = FrameStack(env, k=4)
+            env = wrap_car(env, 3, 3)
 
         if (f_tran and f_rollout and f_ac) is None:
             dim_action = env.action_space.n
@@ -403,9 +403,9 @@ class I2A(A3CExperimentWithI2A):
                                                     l2=l2,
                                                     var_scope="se_conv")
 
-                se_linear = hrl.utils.Network.layer_fcs(se_conv, [], 256,
+                se_linear = hrl.utils.Network.layer_fcs(se_conv, [256], 256,
                                                         activation_hidden=tf.nn.relu,
-                                                        activation_out=tf.nn.relu,
+                                                        activation_out=None,
                                                         l2=l2,
                                                         var_scope="se_linear")
                 return {"se": se_linear}
@@ -470,9 +470,9 @@ class I2A(A3CExperimentWithI2A):
                 reward = tf.squeeze(reward, axis=1)
 
                 # next_state
-                next_state = hrl.utils.Network.layer_fcs(fc_out, [], 256,
+                next_state = hrl.utils.Network.layer_fcs(fc_out, [256], 256,
                                                          activation_hidden=tf.nn.relu,
-                                                         activation_out=tf.nn.relu,
+                                                         activation_out=None,
                                                          l2=l2,
                                                          var_scope="next_state")
 
@@ -507,15 +507,15 @@ class I2A(A3CExperimentWithI2A):
                 reward = tf.squeeze(reward, axis=1)
 
                 # next_goal
-                Action_related_goal = hrl.utils.Network.layer_fcs(fc_out, [], 256,
+                Action_related_goal = hrl.utils.Network.layer_fcs(fc_out, [256], 256,
                                                      activation_hidden=tf.nn.relu,
-                                                     activation_out=tf.nn.relu,
+                                                     activation_out=None,
                                                      l2=l2,
                                                      var_scope="TC")
 
-                Action_unrelated_goal = hrl.utils.Network.layer_fcs(input_state, [], 256,
+                Action_unrelated_goal = hrl.utils.Network.layer_fcs(input_state, [256], 256,
                                                      activation_hidden=tf.nn.relu,
-                                                     activation_out=tf.nn.relu,
+                                                     activation_out=None,
                                                      l2=l2,
                                                      var_scope="TM")
                 Action_unrelated_goal = Utils.scale_gradient(Action_unrelated_goal, 1e-3)

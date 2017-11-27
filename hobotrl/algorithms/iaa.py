@@ -252,7 +252,7 @@ class EnvModelUpdater(network.NetworkUpdater):
                     self._momentum_loss = tf.reduce_mean(tf.add_n(momentum_loss) / depth) * transition_weight
                 else:
                     self._momentum_loss = 0
-                self._env_loss = self._env_loss / 2.0
+                self._env_loss = self._env_loss / 2.0 * 255
                 self._reward_loss = self._reward_loss / 2.0
                 self._op_loss = self._env_loss \
                                 + self._reward_loss \
@@ -289,7 +289,7 @@ class EnvModelUpdater(network.NetworkUpdater):
                       "momentum_loss": self._momentum_loss
                       }#,
                       # "goal_reg_loss": self._goal_reg_loss}
-        if self.imshow_count % 2 == 0:
+        if self.imshow_count % 1000 == 0:
             fetch_dict["s0"] = self._s0
             for i in range(self._depth):
                 fetch_dict.update({
@@ -526,7 +526,7 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                     for j in range(frame_n):
                         f = s[:, :,  3 * j: 3 * j + 3]
                         cv2.imwrite(path_prefix + "%d_%03d_f0_%d.png" % (self.step_n, i, j),
-                                    cv2.cvtColor(f.astype(np.float32), cv2.COLOR_RGB2BGR))
+                                    cv2.cvtColor(255 * f.astype(np.float32), cv2.COLOR_RGB2BGR))
                     for d in range(self._rollout_depth):
                         fn = info[prefix + "f%d" % d][i]
                         fn_predict = info[prefix + "f%d_predict" % d][i]
@@ -538,13 +538,13 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                         logging.warning(np.mean(mn_predict))
 
                         cv2.imwrite(path_prefix + "%d_%03d_f%d_raw.png" % (self.step_n, i, d+1),
-                                    cv2.cvtColor(fn.astype(np.float32), cv2.COLOR_RGB2BGR))
+                                    cv2.cvtColor(255 * fn.astype(np.float32), cv2.COLOR_RGB2BGR))
                         cv2.imwrite(path_prefix + "%d_%03d_f%d_predict.png" % (self.step_n, i, d+1),
-                                    cv2.cvtColor(fn_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
+                                    cv2.cvtColor(255 * fn_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
                         cv2.imwrite(path_prefix + "%d_%03d_y_actionf%d_predict.png" % (self.step_n, i, d + 1),
-                                    cv2.cvtColor(an_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
+                                    cv2.cvtColor(255 * an_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
                         cv2.imwrite(path_prefix + "%d_%03d_z_momf%d_predict.png" % (self.step_n, i, d + 1),
-                                    cv2.cvtColor(mn_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
+                                    cv2.cvtColor(255 * mn_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
                 del info[prefix + "s0"]
                 for d in range(self._rollout_depth):
                     del info[prefix + "f%d" % d], info[prefix + "f%d_predict" % d]
