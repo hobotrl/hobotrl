@@ -382,12 +382,12 @@ class I2A(A3CExperimentWithI2A):
                  episode_n=10000, learning_rate=1e-4, discount_factor=0.99,
                  entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4), batch_size=32):
         if env is None:
-            env = gym.make('CarRacing-v0')
-            # env = envs.DownsampledMsPacman(env)
-            # env = envs.ScaledRewards(env, 0.1)
-            # env = envs.MaxAndSkipEnv(env, skip=4, max_len=4)
-            # env = envs.FrameStack(env, k=4)
-            env = wrap_car(env, 3, 3)
+            env = gym.make('MsPacman-v0')
+            env = DownsampledMsPacman(env, bottom=True)
+            env = ScaledRewards(env, 0.1)
+            env = MaxAndSkipEnv(env, skip=4, max_len=1)
+            env = FrameStack(env, k=4)
+            # env = wrap_car(env, 3, 3)
 
         if (f_tran and f_rollout and f_ac) is None:
             dim_action = env.action_space.n
@@ -752,7 +752,7 @@ class I2A(A3CExperimentWithI2A):
             # f_env = create_env_upsample_little
             f_rollout = create_rollout
             f_encoder = create_encoder
-            f_tran = create_transition
+            f_tran = create_transition_momentum
             f_decoder = create_decoder
 
         super(I2A, self).__init__(env, f_se, f_ac, f_tran, f_decoder, f_rollout, f_encoder, episode_n, learning_rate,
