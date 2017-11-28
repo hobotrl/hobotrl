@@ -247,11 +247,11 @@ class EnvModelUpdater(network.NetworkUpdater):
                     f_predict_loss.append(network.Utils.clipped_square(f_predict[-1] - fn[i]))
                     transition_loss.append(network.Utils.clipped_square(ses_predict[-1] - sen[i]))
 
-                self._reward_loss = tf.reduce_mean(tf.add_n(r_predict_loss) / depth) * transition_weight
-                self._env_loss = tf.reduce_mean(tf.add_n(f_predict_loss) / depth)
-                self._transition_loss = tf.reduce_mean(tf.add_n(transition_loss) / depth) * transition_weight
+                self._reward_loss = tf.reduce_mean(tf.add_n(r_predict_loss) / depth, name="reward_loss") * transition_weight
+                self._env_loss = tf.reduce_mean(tf.add_n(f_predict_loss) / depth, name="env_loss")
+                self._transition_loss = tf.reduce_mean(tf.add_n(transition_loss) / depth, name="transition_loss") * transition_weight
                 if with_momentum:
-                    self._momentum_loss = tf.reduce_mean(tf.add_n(momentum_loss) / depth) * transition_weight
+                    self._momentum_loss = tf.reduce_mean(tf.add_n(momentum_loss) / depth, name="momentum_loss") * transition_weight
                 else:
                     self._momentum_loss = 0
                 self._env_loss = self._env_loss / 2.0 * 255
@@ -293,6 +293,7 @@ class EnvModelUpdater(network.NetworkUpdater):
                       # "goal_reg_loss": self._goal_reg_loss}
         if self.imshow_count % 1000 == 0:
             fetch_dict["s0"] = self._s0
+            fetch_dict["update_step"] = self.imshow_count
             for i in range(self._depth):
                 fetch_dict.update({
                     "f%d" % i: self._fn[i],
@@ -524,7 +525,7 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
             prefix = "EnvModelUpdater/env_model/"
             if prefix+"s0" in info:
                 s0 = info[prefix + "s0"]
-
+                update_step = info[prefix + "update_step"]
                 path_prefix = os.sep.join([self._log_dir, "Img", ""])
                 if not os.path.isdir(path_prefix):
                     os.makedirs(path_prefix)
@@ -534,7 +535,7 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                     frame_n = s.shape[-1] / 3
                     for j in range(frame_n):
                         f = s[:, :,  3 * j: 3 * j + 3]
-                        cv2.imwrite(path_prefix + "%d_%03d_f0_%d.png" % (self.step_n, i, j),
+                        cv2.imwrite(path_prefix + "%d_%03d_f0_%d.png" % (update_step, i, j),
                                     cv2.cvtColor(255 * f.astype(np.float32), cv2.COLOR_RGB2BGR))
                     for d in range(self._rollout_depth):
                         fn = info[prefix + "f%d" % d][i]
@@ -546,15 +547,16 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                         logging.warning(np.mean(an_predict))
                         logging.warning(np.mean(mn_predict))
 
-                        cv2.imwrite(path_prefix + "%d_%03d_f%d_raw.png" % (self.step_n, i, d+1),
+                        cv2.imwrite(path_prefix + "%d_%03d_f%d_raw.png" % (update_step, i, d+1),
                                     cv2.cvtColor(255 * fn.astype(np.float32), cv2.COLOR_RGB2BGR))
-                        cv2.imwrite(path_prefix + "%d_%03d_f%d_predict.png" % (self.step_n, i, d+1),
+                        cv2.imwrite(path_prefix + "%d_%03d_f%d_predict.png" % (update_step, i, d+1),
                                     cv2.cvtColor(255 * fn_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
                         cv2.imwrite(path_prefix + "%d_%03d_y_actionf%d_predict.png" % (self.step_n, i, d + 1),
                                     cv2.cvtColor(255 * an_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
                         cv2.imwrite(path_prefix + "%d_%03d_z_momf%d_predict.png" % (self.step_n, i, d + 1),
                                     cv2.cvtColor(255 * mn_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
                 del info[prefix + "s0"]
+                del info[prefix + "update_step"]
                 for d in range(self._rollout_depth):
                     del info[prefix + "f%d" % d], info[prefix + "f%d_predict" % d]
             return info, {}

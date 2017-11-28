@@ -67,17 +67,29 @@ class Utils(object):
         return out
 
     @staticmethod
-    def clipped_square(value, clip=1.0):
+    def deconv(input_var, kernel_size, out_channel, stride=(1, 1), padding="SAME",
+               activation=tf.nn.relu, l2=1e-4, var_scope=""):
+        with tf.variable_scope(var_scope):
+            out = tf.layers.conv2d_transpose(inputs=input_var, filters=out_channel, kernel_size=kernel_size,
+                                             strides=stride, padding=padding, activation=activation,
+                                             use_bias=True, kernel_initializer=layers.xavier_initializer(),
+                                             kernel_regularizer=layers.l2_regularizer(l2),
+                                             bias_regularizer=layers.l2_regularizer(l2))
+        return out
+
+    @staticmethod
+    def clipped_square(value, clip=1.0, name="Huber"):
         """
         namely huber loss
         :param value:
         :param clip:
         :return:
         """
-        abs_value = tf.abs(value)
-        quadratic = tf.minimum(abs_value, clip)
-        linear = abs_value - quadratic
-        return 0.5 * tf.square(quadratic) + clip * linear
+        with tf.name_scope(name):
+            abs_value = tf.abs(value)
+            quadratic = tf.minimum(abs_value, clip)
+            linear = abs_value - quadratic
+            return 0.5 * tf.square(quadratic) + clip * linear
 
     @staticmethod
     def minimize_and_clip(optimizer, objective, var_list, clip_val=10):
@@ -226,8 +238,8 @@ class Network(object):
         self._variables = Utils.scope_vars(self._abs_var_scope)
         self._sess = None
         self._sub_nets = sub_nets
-        logging.warning("Network[vs=%s,abs_vs=%s,var=%s,symbols=%s]",
-                        self._var_scope, self.abs_var_scope,self.variables, self._symbols)
+        logging.warning("Network[vs=%s,abs_vs=%s,symbols=%s]",
+                        self._var_scope, self.abs_var_scope, self._symbols)
 
     def __getitem__(self, item):
         """
@@ -934,7 +946,7 @@ class DistributedOptimizer(BaseNetworkOptimizer):
     def apply_gradients_op_(self, grads_and_vars):
         with tf.name_scope(self._name):
             grads_and_globalvars = [(grad, self._var_map[var]) for grad, var in grads_and_vars]
-            logging.warning("grads_and_global_vars:%s", grads_and_globalvars)
+            logging.warning("grads_and_global_vars:%s", len(grads_and_globalvars))
             apply_op = self._global_optimizer.apply_gradients(grads_and_globalvars)
             with tf.control_dependencies([apply_op]):
                 pulls = [tf.assign(local_var, global_var) for local_var, global_var in self._var_map.items()]

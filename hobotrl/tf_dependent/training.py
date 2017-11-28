@@ -4,6 +4,7 @@ import time
 
 import tensorflow as tf
 from tensorflow.python.platform import tf_logging as logging
+from tensorflow.python import debug as tf_debug
 
 
 class RestoreVariablesHook(tf.train.SessionRunHook):
