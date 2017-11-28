@@ -220,7 +220,6 @@ class DDPGCar(DPGExperiment):
         super(DDPGCar, self).__init__(env, f_net_ddp, f_net_dqn, episode_n, optimizer_ddp_ctor, optimizer_dqn_ctor,
                                       target_sync_rate, ddp_update_interval, ddp_sync_interval, dqn_update_interval,
                                       dqn_sync_interval, max_gradient, ou_params, gamma, batch_size, replay_capacity)
-
 Experiment.register(DDPGCar, "DDPG for CarRacing")
 
 
@@ -384,10 +383,6 @@ class I2A(A3CExperimentWithI2A):
                  entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4), batch_size=32):
         if env is None:
             env = gym.make('CarRacing-v0')
-            # env = DownsampledMsPacman(env, bottom=True)
-            # env = ScaledRewards(env, 0.1)
-            # env = MaxAndSkipEnv(env, skip=4, max_len=1)
-            # env = FrameStack(env, k=4)
             env = wrap_car(env, 3, 3)
 
         if (f_tran and f_rollout and f_ac) is None:
@@ -929,13 +924,11 @@ class I2A(A3CExperimentWithI2A):
             f_rollout = create_rollout
             f_encoder = create_encoder
             f_tran = create_transition_momentum
-            # f_decoder = create_decoder
-            f_decoder = create_decoder_deform_refine
+            f_decoder = create_decoder
+            # f_decoder = create_decoder_deform_refine
 
         super(I2A, self).__init__(env, f_se, f_ac, f_tran, f_decoder, f_rollout, f_encoder, episode_n, learning_rate,
                                                  discount_factor, entropy, batch_size)
-
-
 Experiment.register(I2A, "A3C with I2A for CarRacing")
 
 

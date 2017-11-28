@@ -1,27 +1,28 @@
 import sys
 sys.path.append(".")
 import logging
-import math
 import numpy as np
 import gym
-from gym import spaces
 import cv2
 import matplotlib.colors as colors
 from exp_algorithms import *
-import hobotrl.environments as envs
+from car import *
+from hobotrl.tf_dependent.ops import atanh
+from hobotrl.environments.environments import *
+from hobotrl.playback import Playback, BigPlayback
+from hobotrl.network import Utils
 
 
 class I2A(A3CExperimentWithI2A):
-    def __init__(self, env=None, f_se=None, f_ac=None, f_tran=None, f_decoder=None, f_rollout=None, f_encoder=None,
+    def __init__(self, env=None, f_se = None, f_ac=None, f_tran=None, f_decoder=None, f_rollout=None, f_encoder = None,
                  episode_n=10000, learning_rate=1e-4, discount_factor=0.99,
                  entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4), batch_size=32):
         if env is None:
             env = gym.make('MsPacman-v0')
-            env = envs.DownsampledMsPacman(env, bottom=True)
-            env = envs.ScaledRewards(env, 0.1)
-            env = envs.MaxAndSkipEnv(env, skip=4, max_len=1)
-            env = envs.FrameStack(env, k=4)
-            # env = wrap_car(env, 3, 3, frame=4)
+            env = DownsampledMsPacman(env, resize=True)
+            env = ScaledRewards(env, 0.1)
+            env = MaxAndSkipEnv(env, skip=4, max_len=4)
+            env = FrameStack(env, k=4)
 
         if (f_tran and f_rollout and f_ac) is None:
             dim_action = env.action_space.n
@@ -31,15 +32,15 @@ class I2A(A3CExperimentWithI2A):
                 l2 = 1e-7
                 input_observation = inputs[0]
                 se_conv = hrl.utils.Network.conv2ds(input_observation,
-                                                    shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
+                                                    shape=[(32, 8, 4), (64, 4, 2), (32, 3, 2)],
                                                     out_flatten=True,
                                                     activation=tf.nn.relu,
                                                     l2=l2,
                                                     var_scope="se_conv")
 
-                se_linear = hrl.utils.Network.layer_fcs(se_conv, [], 64*5*5,
+                se_linear = hrl.utils.Network.layer_fcs(se_conv, [256], 256,
                                                         activation_hidden=tf.nn.relu,
-                                                        activation_out=tf.nn.relu,
+                                                        activation_out=None,
                                                         l2=l2,
                                                         var_scope="se_linear")
                 return {"se": se_linear}
@@ -66,14 +67,8 @@ class I2A(A3CExperimentWithI2A):
                 input_state = inputs[0]
 
                 # rollout that imitates the A3C policy
-                rollout_se = hrl.utils.Network.conv2ds(input_state,
-                                                       shape=[(32, 8, 4), (64, 4, 2), (64, 3, 2)],
-                                                       out_flatten=True,
-                                                       activation=tf.nn.relu,
-                                                       l2=l2,
-                                                       var_scope="rollout_se")
 
-                rollout_action = hrl.utils.Network.layer_fcs(rollout_se, [256], dim_action,
+                rollout_action = hrl.utils.Network.layer_fcs(input_state, [256], dim_action,
                                                              activation_hidden=tf.nn.relu,
                                                              activation_out=tf.nn.softmax,
                                                              l2=l2,
@@ -85,23 +80,18 @@ class I2A(A3CExperimentWithI2A):
                 input_state = inputs[0]
 
                 input_action = inputs[1]
-                input_action = tf.one_hot(indices=input_action, depth=dim_action, on_value=1.0, off_value=0.0, axis=-1)
+                # input_action = tf.one_hot(indices=input_action, depth=dim_action, on_value=1.0, off_value=0.0, axis=-1)
 
-                fc_1 = hrl.utils.Network.layer_fcs(input_state, [], 64 * 5 * 5,
-                                                   activation_hidden=tf.nn.relu,
-                                                   activation_out=tf.nn.relu,
-                                                   l2=l2,
-                                                   var_scope="fc_1")
-
-                fc_action = hrl.utils.Network.layer_fcs(input_action, [], 64 * 5 * 5,
+                fc_action = hrl.utils.Network.layer_fcs(input_action, [], 256,
                                                         activation_hidden=tf.nn.relu,
                                                         activation_out=tf.nn.relu,
                                                         l2=l2,
                                                         var_scope="fc_action")
 
-                concat = tf.multiply(fc_1, fc_action)
+                concat = tf.multiply(input_state, fc_action)
+                # concat = tf.concat([input_state, fc_action], axis=-1)
 
-                fc_out = hrl.utils.Network.layer_fcs(concat, [64 * 5 * 5], 64 * 5 * 5,
+                fc_out = hrl.utils.Network.layer_fcs(concat, [], 256,
                                                      activation_hidden=tf.nn.relu,
                                                      activation_out=tf.nn.relu,
                                                      l2=l2,
@@ -115,37 +105,30 @@ class I2A(A3CExperimentWithI2A):
                 reward = tf.squeeze(reward, axis=1)
 
                 # next_state
-                next_state = hrl.utils.Network.layer_fcs(fc_out, [], 64 * 5 * 5,
-                                                     activation_hidden=tf.nn.relu,
-                                                     activation_out=tf.nn.relu,
-                                                     l2=l2,
-                                                     var_scope="next_state")
+                next_state = hrl.utils.Network.layer_fcs(fc_out, [256], 256,
+                                                         activation_hidden=tf.nn.relu,
+                                                         activation_out=None,
+                                                         l2=l2,
+                                                         var_scope="next_state")
 
                 return {"next_state": next_state, "reward": reward}
-
 
             def create_transition_momentum(inputs):
                 l2 = 1e-7
                 input_state = inputs[0]
 
                 input_action = inputs[1]
-                input_action = tf.one_hot(indices=input_action, depth=dim_action, on_value=1.0, off_value=0.0, axis=-1)
+                # input_action = tf.one_hot(indices=input_action, depth=dim_action, on_value=1.0, off_value=0.0, axis=-1)
 
-                fc_1 = hrl.utils.Network.layer_fcs(input_state, [], 64 * 5 * 5,
-                                                   activation_hidden=tf.nn.relu,
-                                                   activation_out=tf.nn.relu,
-                                                   l2=l2,
-                                                   var_scope="fc_1")
-
-                fc_action = hrl.utils.Network.layer_fcs(input_action, [], 64 * 5 * 5,
+                fc_action = hrl.utils.Network.layer_fcs(input_action, [], 256,
                                                         activation_hidden=tf.nn.relu,
                                                         activation_out=tf.nn.relu,
                                                         l2=l2,
                                                         var_scope="fc_action")
 
-                concat = tf.multiply(fc_1, fc_action)
+                concat = tf.multiply(input_state, fc_action)
 
-                fc_out = hrl.utils.Network.layer_fcs(concat, [64 * 5 * 5], 64 * 5 * 5,
+                fc_out = hrl.utils.Network.layer_fcs(concat, [], 256,
                                                      activation_hidden=tf.nn.relu,
                                                      activation_out=tf.nn.relu,
                                                      l2=l2,
@@ -159,21 +142,22 @@ class I2A(A3CExperimentWithI2A):
                 reward = tf.squeeze(reward, axis=1)
 
                 # next_goal
-                TC_goal = hrl.utils.Network.layer_fcs(fc_out, [], 64 * 5 * 5,
-                                                      activation_hidden=tf.nn.relu,
-                                                      activation_out=tf.nn.relu,
-                                                      l2=l2,
-                                                      var_scope="TC")
-
-                TM_goal = hrl.utils.Network.layer_fcs(fc_1, [], 64 * 5 * 5,
+                Action_related_goal = hrl.utils.Network.layer_fcs(fc_out, [256], 256,
                                                      activation_hidden=tf.nn.relu,
-                                                     activation_out=tf.nn.relu,
+                                                     activation_out=None,
+                                                     l2=l2,
+                                                     var_scope="TC")
+
+                Action_unrelated_goal = hrl.utils.Network.layer_fcs(input_state, [256], 256,
+                                                     activation_hidden=tf.nn.relu,
+                                                     activation_out=None,
                                                      l2=l2,
                                                      var_scope="TM")
+                Action_unrelated_goal = Utils.scale_gradient(Action_unrelated_goal, 1e-3)
+                next_goal = Action_related_goal + Action_unrelated_goal
 
-                next_goal  = TC_goal + TM_goal
-
-                return {"next_state": next_goal, "reward": reward, "momentum": TM_goal}
+                return {"next_state": next_goal, "reward": reward, "momentum": Action_unrelated_goal,
+                        "action_related": Action_related_goal}
 
             def create_decoder(inputs):
                 l2 = 1e-7
@@ -187,7 +171,6 @@ class I2A(A3CExperimentWithI2A):
                                                    activation=tf.nn.relu,
                                                    l2=l2,
                                                    var_scope="conv_1")
-
                 conv_2 = hrl.utils.Network.conv2ds(conv_1,
                                                    shape=[(64, 4, 2)],
                                                    out_flatten=False,
@@ -195,17 +178,34 @@ class I2A(A3CExperimentWithI2A):
                                                    l2=l2,
                                                    var_scope="conv_2")
 
-                twoD_out = tf.reshape(input_goal, [-1, 64, 5, 5])
+                conv_3 = hrl.utils.Network.conv2ds(conv_2,
+                                                   shape=[(32, 3, 2)],
+                                                   out_flatten=False,
+                                                   activation=tf.nn.relu,
+                                                   l2=l2,
+                                                   var_scope="conv_3")
 
-                conv_5 = hrl.utils.Network.conv2ds(twoD_out,
+                conv_3_shape = conv_3.shape.as_list()
+                fc_1 = hrl.utils.Network.layer_fcs(input_goal, [], conv_3_shape[1] * conv_3_shape[2] *
+                                                   (2 * 256 / conv_3_shape[1] / conv_3_shape[2]),
+                                                   activation_hidden=tf.nn.relu,
+                                                   activation_out=tf.nn.relu,
+                                                   l2=l2,
+                                                   var_scope="fc_goal")
+
+                twoD_out = tf.reshape(fc_1, [-1, conv_3_shape[1], conv_3_shape[2],
+                                             2 * 256 / conv_3_shape[1] / conv_3_shape[2]])
+
+                concat_0 = tf.concat([conv_3, twoD_out], axis=3)
+
+                conv_4 = hrl.utils.Network.conv2ds(concat_0,
                                                    shape=[(32, 3, 1)],
                                                    out_flatten=False,
                                                    activation=tf.nn.relu,
                                                    l2=l2,
                                                    var_scope="conv_5")
 
-                up_1 = tf.image.resize_images(conv_5, [((dim_observation[0] + 3) / 4 + 1) / 2,
-                                                       ((dim_observation[1] + 3) / 4 + 1) / 2])
+                up_1 = tf.image.resize_images(conv_4, conv_2.shape.as_list()[1:3])
 
                 concat_1 = tf.concat([conv_2, up_1], axis=3)
                 concat_1 = hrl.utils.Network.conv2ds(concat_1,
@@ -215,7 +215,7 @@ class I2A(A3CExperimentWithI2A):
                                                      l2=l2,
                                                      var_scope="concat_1")
 
-                up_2 = tf.image.resize_images(concat_1, [(dim_observation[0] + 3) / 4, (dim_observation[1] + 3) / 4])
+                up_2 = tf.image.resize_images(concat_1, conv_1.shape.as_list()[1:3])
 
                 concat_2 = tf.concat([conv_1, up_2], axis=3)
                 concat_2 = hrl.utils.Network.conv2ds(concat_2,
@@ -225,7 +225,7 @@ class I2A(A3CExperimentWithI2A):
                                                      l2=l2,
                                                      var_scope="concat_2")
 
-                up_3 = tf.image.resize_images(concat_2, [dim_observation[0], dim_observation[1]])
+                up_3 = tf.image.resize_images(concat_2, input_frame.shape.as_list()[1:3])
 
                 concat_3 = tf.concat([input_frame, up_3], axis=3)
                 concat_3 = hrl.utils.Network.conv2ds(concat_3,
@@ -355,32 +355,30 @@ class I2A(A3CExperimentWithI2A):
 
             def create_encoder(inputs):
                 l2 = 1e-7
-                input_state = inputs[0]
-                input_reward = inputs[1]
-                print "-------------------------------------"
-                print input_state, "\n", input_reward
+                input_argu = inputs[0]
+                # input_reward = inputs[1]
+                #
+                # rse = hrl.utils.Network.conv2ds(input_state,
+                #                                 shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
+                #                                 out_flatten=True,
+                #                                 activation=tf.nn.relu,
+                #                                 l2=l2,
+                #                                 var_scope="rse")
+                #
+                # re_conv = hrl.utils.Network.layer_fcs(rse, [], 200,
+                #                                       activation_hidden=tf.nn.relu,
+                #                                       activation_out=tf.nn.relu,
+                #                                       l2=l2,
+                #                                       var_scope="re_conv")
+                #
+                # # re_conv = tf.concat([re_conv, tf.reshape(input_reward, [-1, 1])], axis=1)
+                # re_conv = tf.concat([re_conv, input_reward], axis=1)
 
-                rse = hrl.utils.Network.conv2ds(input_state,
-                                               shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
-                                               out_flatten=True,
-                                               activation=tf.nn.relu,
-                                               l2=l2,
-                                               var_scope="rse")
-
-                re_conv = hrl.utils.Network.layer_fcs(rse, [], 200,
-                                            activation_hidden=tf.nn.relu,
-                                            activation_out=tf.nn.relu,
-                                            l2=l2,
-                                            var_scope="re_conv")
-
-                # re_conv = tf.concat([re_conv, tf.reshape(input_reward, [-1, 1])], axis=1)
-                re_conv = tf.concat([re_conv, input_reward], axis=1)
-
-                re = hrl.utils.Network.layer_fcs(re_conv, [], 200,
-                                            activation_hidden=tf.nn.relu,
-                                            activation_out=tf.nn.relu,
-                                            l2=l2,
-                                            var_scope="re")
+                re = hrl.utils.Network.layer_fcs(input_argu, [256], 256,
+                                                 activation_hidden=tf.nn.relu,
+                                                 activation_out=tf.nn.relu,
+                                                 l2=l2,
+                                                 var_scope="re")
 
                 return {"re": re}
 
@@ -394,9 +392,7 @@ class I2A(A3CExperimentWithI2A):
 
         super(I2A, self).__init__(env, f_se, f_ac, f_tran, f_decoder, f_rollout, f_encoder, episode_n, learning_rate,
                                                  discount_factor, entropy, batch_size)
-
-
-Experiment.register(I2A, "A3C with I2A for Ms. Pacman")
+Experiment.register(I2A, "A3C with I2A for MsPacman")
 
 
 if __name__ == '__main__':
