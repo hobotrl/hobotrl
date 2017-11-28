@@ -6,15 +6,17 @@ Author: Jingchu Liu
 # Basics
 import os
 import signal
-import time
 import sys
+import time
 import traceback
-from collections import deque
+
 import numpy as np
 # Tensorflow
 import tensorflow as tf
 from tensorflow import layers
 from tensorflow.contrib.layers import l2_regularizer
+
+from playground.initialD.exp.skip import SkippingAgent
 
 sys.path.append('../../..')
 sys.path.append('..')
@@ -477,6 +479,8 @@ config.gpu_options.allow_growth = True
 
 agent = AsynchronousAgent(agent=_agent, method='rate', rate=update_rate)
 
+agent = SkippingAgent(agent=agent, n_skip=6, specific_act=3)
+
 try:
     with agent.create_session(config=config, save_dir=FLAGS.logdir, save_checkpoint_secs=3600) as sess:
         summary_writer = SummaryWriterCache.get(FLAGS.logdir)
@@ -485,34 +489,20 @@ try:
         while True:
             n_ep += 1
             n_steps = 0
-            cnt_skip = n_skip
             state = env.reset()
             while True:
                 # Do act
-                if cnt_skip == n_skip:
-                    action = agent.act(state)
-                    # set skip ation
-                    skip_action = action
-                    # save state to last_state so that it could be used when agent.step()
-                    last_state = state
-                else:
-                    skip_action = 3
-
-                next_state, vec_reward, done, info = env.step(skip_action)
+                action = agent.act(state)
+                next_state, vec_reward, done, info = env.step(action)
                 summary_writer.add_summary(info, n_steps)
                 state, action, reward, next_state, done = \
                     func_compile_exp_agent(state, action, vec_reward, next_state, done)
 
                 # save intermediate info
-                saveState.save_step(n_ep, n_steps, state, skip_action, vec_reward, reward,
+                saveState.save_step(n_ep, n_steps, state, action, vec_reward, reward,
                                     done, cum_reward, flag_success)
-
                 n_steps += 1
-                cnt_skip -= 1
-                if cnt_skip == 0 or done:
-                    agent.step(last_state, action, reward, next_state)
-                    cnt_skip = n_skip
-
+                agent.step(state, action, reward, next_state)
                 state = next_state
 
                 summary_writer.add_summary(info, n_steps)
