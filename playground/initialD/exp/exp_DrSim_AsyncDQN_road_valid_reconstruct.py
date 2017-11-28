@@ -1,4 +1,4 @@
- # -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """Experiment script for DQN-based lane decision.
 
 Author: Jingchu Liu
@@ -15,6 +15,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import layers
 from tensorflow.contrib.layers import l2_regularizer
+
 sys.path.append('../../..')
 sys.path.append('..')
 # Hobotrl
@@ -24,6 +25,7 @@ from hobotrl.sampling import TransitionSampler
 from hobotrl.playback import BalancedMapPlayback, BigPlayback
 from hobotrl.async import AsynchronousAgent
 from hobotrl.utils import CappedLinear
+from tensorflow.python.training.summary_io import SummaryWriterCache
 
 # initialD
 # from ros_environments.honda import DrivingSimulatorEnv
@@ -32,9 +34,11 @@ from ros_environments.clients import DrivingSimulatorEnvClient as DrivingSimulat
 from gym.spaces import Discrete, Box
 import cv2
 
+
 # Environment
 def func_compile_reward(rewards):
     return rewards
+
 
 def func_compile_obs(obss):
     obs1 = obss[-1][0]
@@ -42,16 +46,20 @@ def func_compile_obs(obss):
     obs3 = obss[-3][0]
     print obss[-1][1]
     # cast as uint8 is important otherwise float64
-    obs = ((obs1 + obs2)/2).astype('uint8')
+    obs = ((obs1 + obs2) / 2).astype('uint8')
     # print obs.shape
     return obs.copy()
 
+
 ALL_ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0,)]
 AGENT_ACTIONS = ALL_ACTIONS[:3]
+
+
 # AGENT_ACTIONS = ALL_ACTIONS
 def func_compile_action(action):
-    ALL_ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0, )]
+    ALL_ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0,)]
     return ALL_ACTIONS[action]
+
 
 def func_compile_exp_agent(state, action, rewards, next_state, done):
     global cnt_skip
@@ -66,8 +74,8 @@ def func_compile_exp_agent(state, action, rewards, next_state, done):
     # Compile reward
     rewards = np.mean(np.array(rewards), axis=0)
     rewards = rewards.tolist()
-    rewards.append(np.logical_or(action==1, action==2))  # action == turn?
-    print (' '*5+'R: ['+'{:4.2f} '*len(rewards)+']').format(*rewards),
+    rewards.append(np.logical_or(action == 1, action == 2))  # action == turn?
+    print (' ' * 5 + 'R: [' + '{:4.2f} ' * len(rewards) + ']').format(*rewards),
 
     road_change = rewards[1] > 0.01  # road changed
     road_invalid = rewards[0] > 0.01  # any yellow or red
@@ -77,31 +85,31 @@ def func_compile_exp_agent(state, action, rewards, next_state, done):
     speed = rewards[2]
     obs_risk = rewards[5]
 
-    ema_speed = 0.5*ema_speed + 0.5*speed
+    ema_speed = 0.5 * ema_speed + 0.5 * speed
     ema_dist = 1.0 if rewards[6] > 2.0 else 0.9 * ema_dist
-    momentum_opp = (rewards[3]<0.5)*(momentum_opp+(1-rewards[3]))
+    momentum_opp = (rewards[3] < 0.5) * (momentum_opp + (1 - rewards[3]))
     momentum_opp = min(momentum_opp, 20)
-    momentum_ped = (rewards[4]>0.5)*(momentum_ped+rewards[4])
+    momentum_ped = (rewards[4] > 0.5) * (momentum_ped + rewards[4])
     momentum_ped = min(momentum_ped, 12)
 
     # road_change
-    rewards[0] = -100*(
-        (road_change and ema_dist>0.2) or (road_change and momentum_ped > 0)
-    )*(n_skip-cnt_skip)  # direct penalty
+    rewards[0] = -100 * (
+        (road_change and ema_dist > 0.2) or (road_change and momentum_ped > 0)
+    ) * (n_skip - cnt_skip)  # direct penalty
     # velocity
     rewards[2] *= 10
     rewards[2] -= 10
     # opposite
-    rewards[3] = -20*(0.9+0.1*momentum_opp)*(momentum_opp>1.0)
+    rewards[3] = -20 * (0.9 + 0.1 * momentum_opp) * (momentum_opp > 1.0)
     # ped
-    rewards[4] = -40*(0.9+0.1*momentum_ped)*(momentum_ped>1.0)
+    rewards[4] = -40 * (0.9 + 0.1 * momentum_ped) * (momentum_ped > 1.0)
     # obs factor
     rewards[5] *= -100.0
     # dist
     rewards[6] *= 0.0
     # steering
     rewards[-1] *= -40  # -3
-    reward = np.sum(rewards)/100.0
+    reward = np.sum(rewards) / 100.0
     print '{:4.2f}, {:4.2f}, {:4.2f}, {:4.2f}'.format(
         road_invalid_at_enter, momentum_opp, momentum_ped, ema_dist),
     print ': {:5.2f}'.format(reward)
@@ -115,7 +123,7 @@ def func_compile_exp_agent(state, action, rewards, next_state, done):
         print "[Early stopping] turned onto intersection."
         done = True
 
-    if road_change and momentum_ped>0:
+    if road_change and momentum_ped > 0:
         print "[Early stopping] ped onto intersection."
         done = True
 
@@ -125,6 +133,7 @@ def func_compile_exp_agent(state, action, rewards, next_state, done):
 
     return state, action, reward, next_state, done
 
+
 def gen_backend_cmds():
     ws_path = '/Projects/catkin_ws/'
     initialD_path = '/Projects/hobotrl/playground/initialD/'
@@ -132,50 +141,40 @@ def gen_backend_cmds():
     utils_path = initialD_path + 'ros_environments/backend_scripts/utils/'
     backend_cmds = [
         # Parse maps
-        ['python', utils_path+'parse_map.py',
-         ws_path+'src/Map/src/map_api/data/honda_wider.xodr',
-         utils_path+'road_segment_info.txt'],
+        ['python', utils_path + 'parse_map.py',
+         ws_path + 'src/Map/src/map_api/data/honda_wider.xodr',
+         utils_path + 'road_segment_info.txt'],
         # Generate obs and launch file
-        ['python', utils_path+'gen_launch_dynamic_v1.py',
-         utils_path+'road_segment_info.txt', ws_path,
-         utils_path+'honda_dynamic_obs_template_tilt.launch',
+        ['python', utils_path + 'gen_launch_dynamic_v1.py',
+         utils_path + 'road_segment_info.txt', ws_path,
+         utils_path + 'honda_dynamic_obs_template_tilt.launch',
          32, '--random_n_obs'],
         # start roscore
         ['roscore'],
         # start reward function script
-        ['python', backend_path+'gazebo_rl_reward.py'],
+        ['python', backend_path + 'gazebo_rl_reward.py'],
         # start road validity node script
-        ['python', backend_path+'road_validity.py',
-         utils_path+'road_segment_info.txt.signal'],
+        ['python', backend_path + 'road_validity.py',
+         utils_path + 'road_segment_info.txt.signal'],
         # start car_go script
-        ['python', backend_path+'car_go.py'],
+        ['python', backend_path + 'car_go.py'],
         # start simulation restarter backend
-        ['python', backend_path+'rviz_restart.py', 'honda_dynamic_obs.launch'],
-        ['python', backend_path + 'non_stop_data_capture.py', 0]
+        ['python', backend_path + 'rviz_restart.py', 'honda_dynamic_obs.launch'],
+        # ['python', backend_path + 'non_stop_data_capture.py', 0]
     ]
     return backend_cmds
 
-def mask_action(rewards, action):
-    if rewards[7] and action == 1 \
-            or rewards[8] and action == 2:
-        return 0
-    elif rewards[4]:
-        return 1
-    elif rewards[3] == 0:
-        return 2
-    return action
-
 
 tf.app.flags.DEFINE_string("logdir",
-                           "./mask_log",
+                           "./dqn_log",
                            """save tmp model""")
 tf.app.flags.DEFINE_string("savedir",
-                           "./mask_save",
+                           "./dqn_save",
                            """records data""")
-tf.app.flags.DEFINE_string("readme", "mask dqn. Use new reward function.", """readme""")
+tf.app.flags.DEFINE_string("readme", "direct dqn. Use new reward function.", """readme""")
 tf.app.flags.DEFINE_string("host", "10.31.40.197", """host""")
-tf.app.flags.DEFINE_string("port", '10014', "Docker port")
-tf.app.flags.DEFINE_string("cache_path", './mask_ReplayBufferCache', "Replay buffer cache path")
+tf.app.flags.DEFINE_string("port", '10034', "Docker port")
+tf.app.flags.DEFINE_string("cache_path", './dqn_ReplayBufferCache', "Replay buffer cache path")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -196,8 +195,6 @@ env = DrivingSimulatorEnv(
         ('/rl/on_biking_lane', 'std_msgs.msg.Bool'),
         ('/rl/obs_factor', 'std_msgs.msg.Float32'),
         ('/rl/distance_to_longestpath', 'std_msgs.msg.Float32'),
-        ('/rl/on_innerest_lane', 'std_msgs.msg.Bool'),
-        ('/rl/on_outterest_lane', 'std_msgs.msg.Bool'),
     ],
     defs_action=[('/autoDrive_KeyboardMode', 'std_msgs.msg.Char')],
     rate_action=10.0,
@@ -214,10 +211,11 @@ env.metadata = {}
 env.action_space = Discrete(len(ALL_ACTIONS))
 env = FrameStack(env, 3)
 
+
 # Agent
 def f_net(inputs):
     inputs = inputs[0]
-    inputs = inputs/128 - 1.0
+    inputs = inputs / 128 - 1.0
     # (640, 640, 3*n) -> ()
     conv1 = layers.conv2d(
         inputs=inputs, filters=16, kernel_size=(8, 8), strides=1,
@@ -236,12 +234,12 @@ def f_net(inputs):
         inputs=conv2, pool_size=3, strides=3, name='pool2')
     print pool2.shape
     conv3 = layers.conv2d(
-         inputs=pool2, filters=64, kernel_size=(3, 3), strides=1,
-         kernel_regularizer=l2_regularizer(scale=1e-2),
-         activation=tf.nn.relu, name='conv3')
+        inputs=pool2, filters=64, kernel_size=(3, 3), strides=1,
+        kernel_regularizer=l2_regularizer(scale=1e-2),
+        activation=tf.nn.relu, name='conv3')
     print conv3.shape
     pool3 = layers.max_pooling2d(
-        inputs=conv3, pool_size=3, strides=2, name='pool3',)
+        inputs=conv3, pool_size=3, strides=2, name='pool3', )
     print pool3.shape
     depth = pool3.get_shape()[1:].num_elements()
     inputs = tf.reshape(pool3, shape=[-1, depth])
@@ -293,7 +291,7 @@ replay_buffer = BigPlayback(
     bucket_cls=BalancedMapPlayback,
     cache_path=FLAGS.cache_path,
     capacity=300000, bucket_size=100, ratio_active=0.05, max_sample_epoch=2,
-    num_actions=len(AGENT_ACTIONS), upsample_bias=(1,1,1,0.1)
+    num_actions=len(AGENT_ACTIONS), upsample_bias=(1, 1, 1, 0.1)
 )
 
 gamma = 0.9
@@ -317,7 +315,8 @@ _agent = hrl.DQN(
     sampler=TransitionSampler(replay_buffer, batch_size=8, interval=1, minimum_count=103),
     # checkpoint
     global_step=global_step
- )
+)
+
 
 def log_info(update_info):
     global action_fraction
@@ -356,13 +355,13 @@ def log_info(update_info):
             update_info['target_q'], update_info['td_losses'],
             update_info['reward'], update_info['done'])
         for s in prt_str:
-            if cnt_skip==0:
-                print ("{} "+"{:10.5f} "*4+"{}").format(*s)
+            if cnt_skip == 0:
+                print ("{} " + "{:10.5f} " * 4 + "{}").format(*s)
     for tag in update_info:
         summary_proto.value.add(
             tag=tag, simple_value=np.mean(update_info[tag]))
     if 'q' in update_info and \
-       update_info['q'] is not None:
+                    update_info['q'] is not None:
         q_vals = update_info['q']
         summary_proto.value.add(
             tag='q_vals_max',
@@ -392,14 +391,14 @@ def log_info(update_info):
             time.time(), n_steps)
         for i, (a, v) in enumerate(p_dict):
             if a == AGENT_ACTIONS[next_action][0]:
-                sym = '|x|' if i==max_idx else ' x '
+                sym = '|x|' if i == max_idx else ' x '
             else:
-                sym = '| |' if i==max_idx else '   '
+                sym = '| |' if i == max_idx else '   '
             p_str += '{}{:3d}: {:8.4f} '.format(sym, a, v)
         print p_str
 
     cum_td_loss += update_info['td_loss'] if 'td_loss' in update_info \
-        and update_info['td_loss'] is not None else 0
+                                             and update_info['td_loss'] is not None else 0
     if not done:
         cum_reward += reward
 
@@ -410,8 +409,8 @@ def log_info(update_info):
     if done:
         print ("Episode {} done in {} steps, reward is {}, "
                "average td_loss is {}. No exploration {}").format(
-                   n_ep, n_steps, cum_reward,
-                   cum_td_loss/n_steps, exploration_off)
+            n_ep, n_steps, cum_reward,
+            cum_td_loss / n_steps, exploration_off)
         n_env_steps += n_steps
         summary_proto.value.add(tag='n_steps', simple_value=n_steps)
         summary_proto.value.add(tag='n_env_steps', simple_value=n_env_steps)
@@ -421,11 +420,51 @@ def log_info(update_info):
         summary_proto.value.add(
             tag='cum_reward', simple_value=cum_reward)
         summary_proto.value.add(
-            tag='per_step_reward', simple_value=cum_reward/n_steps)
+            tag='per_step_reward', simple_value=cum_reward / n_steps)
         summary_proto.value.add(
             tag='flag_success', simple_value=flag_success)
 
     return summary_proto
+
+
+class SaveState(object):
+    def __init__(self, savedir):
+        self.savedir = savedir
+        self.eps_dir = None
+        self.file = None
+        self.total_file = open(self.savedir + "/0000.txt", "w")
+
+    def end_save(self):
+        self.stat_file.close()
+
+    def save_step(self, n_ep, n_step, state, action, vec_reward, reward,
+                  done, cum_reward, flag_success, is_end=False):
+        if self.file is None:
+            self.eps_dir = self.savedir + "/" + str(n_ep).zfill(4)
+            os.mkdir(self.eps_dir)
+            self.file = open(self.eps_dir + "/0000.txt", "w")
+
+        img = np.array(state)[:, :, 6:]
+        img_path = self.eps_dir + "/" + str(n_step + 1).zfill(4) + "_" + str(action) + ".jpg"
+        cv2.imwrite(img_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+        self.file.write(str(n_steps) + ',' + str(action) + ',' + str(reward) + '\n')
+        vec_reward = np.mean(np.array(vec_reward), axis=0)
+        vec_reward = vec_reward.tolist()
+        str_reward = ""
+        for r in vec_reward:
+            str_reward += str(r)
+            str_reward += ","
+        str_reward += "\n"
+        self.file.write(str_reward)
+        self.file.write("\n")
+        if done:
+            self.file.close()
+            self.file = None
+            self.stat_file.write("{}, {}, {}, {}\n".format(n_ep, cum_reward, flag_success, done))
+
+        if is_end:
+            self.end_save()
+
 
 n_interactive = 0
 n_skip = 6
@@ -433,157 +472,70 @@ update_rate = 6.0
 n_ep = 0  # last ep in the last run, if restart use 0
 n_test = 0  # num of episode per test run (no exploration)
 
+config = tf.ConfigProto()
+config.gpu_options.allow_growth = True
+
+agent = AsynchronousAgent(agent=_agent, method='rate', rate=update_rate)
+
 try:
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
-    sv = tf.train.Supervisor(
-        graph=tf.get_default_graph(),
-        is_chief=True,
-        init_op=tf.global_variables_initializer(),
-        logdir=FLAGS.logdir,
-        save_summaries_secs=10,
-        save_model_secs=3600)
-
-    with sv.managed_session(config=config) as sess, \
-         AsynchronousAgent(agent=_agent, method='rate', rate=update_rate) as agent:
-        # summary_writer = SummaryWriterCache.get(FLAGS.logdir)
-
-        agent.set_session(sess)
-        # sess.run(op_set_lr, feed_dict={lr_in: 1e-4})
-        # print "Using learning rate {}".format(sess.run(lr))
-        n_env_steps = 0
-        n_agent_steps = 0
-        action_fraction = np.ones(len(AGENT_ACTIONS), ) / (1.0 * len(AGENT_ACTIONS))
-        action_td_loss = np.zeros(len(AGENT_ACTIONS), )
-        total_stat_file = open(FLAGS.savedir+"/0000.txt", 'w')
+    with agent.create_session(config=config, save_dir=FLAGS.logdir, save_checkpoint_secs=3600) as sess:
+        summary_writer = SummaryWriterCache.get(FLAGS.logdir)
+        total_steps = 0
+        saveState = SaveState(FLAGS.savedir)
         while True:
             n_ep += 1
-            eps_dir = FLAGS.savedir + "/" + str(n_ep).zfill(4)
-            os.mkdir(eps_dir)
-            recording_filename = eps_dir + "/" + "0000.txt"
-            recording_file = open(recording_filename, 'w')
-
-            env.env.n_ep = n_ep  # TODO: do this systematically
-            exploration_off = (n_ep%n_test==0) if n_test >0 else False
-            learning_off = exploration_off
             n_steps = 0
-            reward = 0
-            skip_reward = 0
-            cum_td_loss = 0.0
-            cum_reward = 0.0
-            done = False
-
-            last_road_change = False
-            road_invalid_at_enter = False
-            momentum_opp = 0.0
-            momentum_ped = 0.0
-            ema_speed = 10.0
-            ema_dist = 0.0
-            update_info = {}
-            t_infer, t_step, t_learn = 0, 0, 0
-
+            cnt_skip = n_skip
             state = env.reset()
-            action = agent.act(state, exploration=not exploration_off)
-            n_agent_steps += 1
-            skip_action = action
-
-            img = np.array(state)[:, :, 6:]
-            img_path = eps_dir + "/" + str(n_steps+1).zfill(4) + "_" + str(skip_action) + ".jpg"
-            cv2.imwrite(img_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
-
-            next_state = state
-            next_action = action
-            # cnt_skip = 1 if next_action == 0 else n_skip
-            cnt_skip = int(n_skip * (1 + np.random.rand()))  # randome start offset to enforce randomness on phase
-            log_info(update_info)
-
             while True:
-                n_steps += 1
-                cnt_skip -= 1
-                update_info = {}
-                t_learn, t_infer, t_step = 0, 0, 0
+                # Do act
+                if cnt_skip == n_skip:
+                    action = agent.act(state)
+                    # set skip ation
+                    skip_action = action
+                    # save state to last_state so that it could be used when agent.step()
+                    last_state = state
+                else:
+                    skip_action = 3
 
-                # Env step
-                t = time.time()
                 next_state, vec_reward, done, info = env.step(skip_action)
-                flag_success = done
-                t_step = time.time() - t
+                summary_writer.add_summary(info, n_steps)
                 state, action, reward, next_state, done = \
                     func_compile_exp_agent(state, action, vec_reward, next_state, done)
 
-                recording_file.write(str(n_steps) + ',' + str(skip_action) + ',' + str(reward) + '\n')
-                vec_reward = np.mean(np.array(vec_reward), axis=0)
-                vec_reward = vec_reward.tolist()
-                str_reward = ""
-                for r in vec_reward:
-                    str_reward += str(r)
-                    str_reward += ","
-                str_reward += "\n"
-                recording_file.write(str_reward)
-                recording_file.write("\n")
+                # save intermediate info
+                saveState.save_step(n_ep, n_steps, state, skip_action, vec_reward, reward,
+                                    done, cum_reward, flag_success)
 
-                flag_tail = done
-                flag_success = True if flag_success and reward > 0.0 else False
-                skip_reward += reward
+                n_steps += 1
+                cnt_skip -= 1
+                if cnt_skip == 0 or done:
+                    agent.step(last_state, action, reward, next_state)
+                    cnt_skip = n_skip
 
-                if cnt_skip==0 or done:
-                    # average rewards during skipping
-                    skip_reward /= (n_skip - cnt_skip)
-                    # add tail for non-early-stops
-                    skip_reward += flag_tail * gamma * skip_reward/ (1-gamma)
-                    update_info = agent.step(
-                        sess=sess, state=state, action=action,
-                        reward=skip_reward, next_state=next_state,
-                        episode_done=done
-                    )
-                    t = time.time()
-                    next_action = agent.act(next_state, exploration=not exploration_off)
-                    next_action = mask_action(vec_reward, next_action)
-                    n_agent_steps += 1
-                    t_infer += time.time() - t
-                    skip_reward = 0
-                    state, action = next_state, next_action  # s',a' -> s,a
-                    skip_action = next_action
-                else:
-                    skip_action = 3  # no op during skipping
+                state = next_state
 
-                img = np.array(next_state)[:, :, 6:]
-                img_path = eps_dir + "/" + str(n_steps+1).zfill(4) + "_" + str(skip_action) + ".jpg"
-                cv2.imwrite(img_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+                summary_writer.add_summary(info, n_steps)
 
-                sv.summary_computed(sess, summary=log_info(update_info))
-                # summary_writer.add_summary(log_info(update_info), n_steps)
-                if cnt_skip == 0:
-                    if next_action == 0:
-                        # cnt_skip = 1
-                        cnt_skip = n_skip
-                    else:
-                        cnt_skip = n_skip
-                # print "Agent step learn {} sec, infer {} sec".format(t_learn, t_infer)
                 if done:
+                    summary = tf.Summary()
+                    summary.value.add(tag="cum_reward_ep", simple_value=cum_reward)
+                    summary.value.add(tag="flag_success_ep", simple_value=flag_success)
+                    summary.value.add(tag="done_ep", simple_value=done)
+                    summary_writer.add_summary(summary, n_ep)
                     break
-
-            # summary = tf.Summary()
-            # summary.value.add(tag="cum_reward_ep", simple_value=cum_reward)
-            # summary.value.add(tag="flag_success_ep", simple_value=flag_success)
-            # summary.value.add(tag="done_ep", simple_value=done)
-            # summary_writer.add_summary(summary, n_ep)
-            recording_file.close()
-            total_stat_file.write("{}, {}, {}, {}\n".format(n_ep, cum_reward, flag_success, done))
-        total_stat_file.close()
 
 
 except Exception as e:
     print e.message
     traceback.print_exc()
 finally:
-    print "="*30
-    print "="*30
+    print "=" * 30
+    print "=" * 30
     print "Tidying up..."
     # kill orphaned monitor daemon process
     env.env.exit()
     replay_buffer.close()
     os.killpg(os.getpgid(os.getpid()), signal.SIGKILL)
-    print "="*30
-
+    print "=" * 30
 
