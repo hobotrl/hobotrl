@@ -24,7 +24,7 @@ Common RL framework and utilities.
 * [v] PPO
 * [v] Bootstrap DQN
 * [v] [ICM](https://arxiv.org/abs/1705.05363)
-
+* [v] [I2A](https://arxiv.org/abs/1707.06203)
 
 ## Getting started
 

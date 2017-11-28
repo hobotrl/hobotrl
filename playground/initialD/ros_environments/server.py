@@ -12,6 +12,7 @@ import sys
 import os
 import traceback
 import logging
+import numpy as np
 
 # comms
 import zmq
@@ -122,7 +123,7 @@ class DrSimDecisionK8SServer(object):
         2. ('/decision_result', 'std_msgs.msg.Int16'),
         3. ('/rl/car_velocity_front', 'std_msgs.msg.Float32'),
 
-        1. The last two image frames are averaged to combat flickering.
+        1. The last two image frames are max-poolled to combat flickering.
            Image observations are casted as `uint8` to save memory.
         2. Decision result is printed and discarded.
         3. Ego speed is printed and discarded.
@@ -132,7 +133,7 @@ class DrSimDecisionK8SServer(object):
         """
         img1, img2 = obss[-1][0], obss[-2][0]
         decision, speed = obss[-1][1], obss[-1][2]
-        obs = ((img1 + img2) / 2).astype('uint8')
+        obs = np.maximum(img1, img2)
         print decision
         print speed
         return obs
