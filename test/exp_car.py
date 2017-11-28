@@ -453,8 +453,8 @@ class I2A(A3CExperimentWithI2A):
                                                         l2=l2,
                                                         var_scope="fc_action")
 
-                # concat = tf.multiply(input_state, fc_action)
-                concat = tf.concat([input_state, fc_action], axis=-1)
+                concat = tf.multiply(input_state, fc_action)
+                # concat = tf.concat([input_state, fc_action], axis=-1)
 
                 fc_out = hrl.utils.Network.layer_fcs(concat, [], 256,
                                                      activation_hidden=tf.nn.relu,
