@@ -9,6 +9,7 @@ import time
 import sys
 import traceback
 import numpy as np
+import matplotlib.pyplot as plt
 
 # Tensorflow
 import tensorflow as tf
@@ -213,6 +214,8 @@ def func_compile_exp_agent(state, action, rewards, next_state, done):
         print "[Early stopping] hit obstacle."
         done = True
 
+
+
     return state, action, reward, next_state, done
 
 def log_info(update_info):
@@ -374,6 +377,9 @@ try:
             t_infer, t_step, t_learn = 0, 0, 0
 
             state  = env.reset()
+            print np.array(state).shape
+            plt.imsave('./img_1.jpg', np.array(state)[:, :, :3])
+            plt.imsave('./img_2.jpg', np.array(state)[:, :, 3:6])
             action = agent.act(state, exploration=not exploration_off)
             n_agent_steps += 1
             skip_action = action
