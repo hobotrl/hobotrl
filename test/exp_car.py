@@ -924,8 +924,8 @@ class I2A(A3CExperimentWithI2A):
             f_rollout = create_rollout
             f_encoder = create_encoder
             f_tran = create_transition_momentum
-            # f_decoder = create_decoder
-            f_decoder = create_decoder_deform_refine
+            f_decoder = create_decoder
+            # f_decoder = create_decoder_deform_refine
 
         super(I2A, self).__init__(env, f_se, f_ac, f_tran, f_decoder, f_rollout, f_encoder, episode_n, learning_rate,
                                                  discount_factor, entropy, batch_size)
