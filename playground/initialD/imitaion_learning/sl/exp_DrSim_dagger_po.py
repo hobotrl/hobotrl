@@ -29,7 +29,7 @@ import sklearn.metrics
 from gym.spaces import Discrete, Box
 import cv2
 
-from playground.initialD.imitaion_learning import initialD_input
+from playground.initialD.imitaion_learning.sl import initialD_input
 import random
 
 # Environment
@@ -78,7 +78,7 @@ env = DrivingSimulatorEnv(
     rate_action=10.0,
     window_sizes={'obs': 2, 'reward': 3},
     buffer_sizes={'obs': 2, 'reward': 3},
-    step_delay_target=0.5
+    step_delay_target=0.3
 )
 env.observation_space = Box(low=0, high=255, shape=(640, 640, 3))
 env.action_space = Discrete(3)
@@ -96,10 +96,9 @@ n_ep = 0  # last ep in the last run, if restart use 0
 n_test = 10  # num of episode per test run (no exploration)
 n_update = 0
 
-# filename = "/home/pirate03/PycharmProjects/hobotrl/data/records_v1/filter_action3/train.tfrecords"
-# replay_buffer = initialD_input.init_replay_buffer(filename, replay_size=2000, batch_size=200)
-# noval_scene_count = 0
-
+filename = "/home/pirate03/PycharmProjects/hobotrl/data/records_v1/filter_action3/train.tfrecords"
+replay_buffer = initialD_input.init_replay_buffer(filename, replay_size=10000, batch_size=200)
+noval_scene_count = 0
 
 try:
     # config = tf.ConfigProto()
@@ -109,7 +108,7 @@ try:
     # config.gpu_options.allow_growth = True
 
     with tf.Session() as sess:
-        train_dir = "./sl_dir"
+        train_dir = "./tmp"
         checkpoint = "/home/pirate03/PycharmProjects/resnet-18-tensorflow/log3_tmp/model.ckpt-10000"
         saver = tf.train.import_meta_graph(
             '/home/pirate03/PycharmProjects/resnet-18-tensorflow/log3_tmp/model.ckpt-10000.meta',
@@ -162,10 +161,10 @@ try:
                 print "sl pred action: {}".format(action)
                 print "rule action: {}".format(rule_action)
 
-                # if rule_action != 3:
-                #     replay_buffer.append([np.copy(img), action])
-                #     replay_buffer.pop(0)
-                #     noval_scene_count += 1
+                if rule_action != 3:
+                    replay_buffer.append([np.copy(img), action])
+                    # replay_buffer.pop(0)
+                    noval_scene_count += 1
             else:
                 print "identical"
                 print "sl pred and rule action: {}".format(rule_action)
@@ -198,10 +197,10 @@ try:
                     print "sl pred action: {}".format(next_action)
                     print "rule action: {}".format(next_rule_action)
                     # fileter action 3
-                    # if next_rule_action != 3:
-                    #     replay_buffer.append([np.copy(next_img), next_action])
-                    #     replay_buffer.pop(0)
-                    #     noval_scene_count += 1
+                    if next_rule_action != 3:
+                        replay_buffer.append([np.copy(next_img), next_action])
+                        # replay_buffer.pop(0)
+                        noval_scene_count += 1
                     # replay_buffer.pop(0)
                 else:
                     print "identical"
@@ -214,49 +213,50 @@ try:
                 next_state, reward, done, info = env.step(ACTIONS[action])
                 next_img, next_rule_action = next_state
 
-            # if noval_scene_count > 10:
-            #     print "update_n: {}".format(n_update)
-            #     print "========Trying to learn======\n"*5
-            #     replay_size = len(replay_buffer)
-            #     batch_size = 256
-            #     # num_ = replay_size * 10 / batch_size
-            #     num_ = 50
-            #     batch = [random.choice(replay_buffer) for i in range(batch_size)]
-            #     batch_imgs = np.array([batch[i][0] for i in range(batch_size)])
-            #     batch_acts = np.array([batch[i][1] for i in range(batch_size)])
-            #     # batch = replay_buffer[np.random.randint(replay_size, size=batch_size)]
-            #     y_preds = sess.run(preds, feed_dict={tensor_imgs: batch_imgs,
-            #                                    is_train: False})
-            #     print "y_true: ", batch_acts
-            #     print "y_preds: ", y_preds
-            #     evaluate(batch_acts, y_preds)
-            #
-            #     # y_true = np.array([y[1] for y in replay_buffer])
-            #
-            #     for i in range(num_):
-            #         print "learning timestep.... {}".format(i)
-            #         batch = [random.choice(replay_buffer) for j in range(batch_size)]
-            #         batch_imgs = np.array([batch[j][0] for j in range(batch_size)])
-            #         batch_acts = np.array([batch[j][1] for j in range(batch_size)])
-            #         sess.run(train_op, feed_dict={tensor_imgs: batch_imgs,
-            #                                         tensor_acts: batch_acts,
-            #                                         is_train: True,
-            #                                         lr: 0.001})
-            #
-            #     n_update += 1
-            #     batch = [random.choice(replay_buffer) for i in range(batch_size)]
-            #     batch_imgs = np.array([batch[i][0] for i in range(batch_size)])
-            #     batch_acts = np.array([batch[i][1] for i in range(batch_size)])
-            #     y_preds = sess.run(preds, feed_dict={tensor_imgs: batch_imgs,
-            #                                            is_train: False})
-            #     print "y_true: ", batch_acts
-            #     print "y_preds: ", y_preds
-            #     evaluate(batch_acts, y_preds)
+            if noval_scene_count > 10:
+                print "update_n: {}".format(n_update)
+                print "========Trying to learn======\n"*5
+                replay_size = len(replay_buffer)
+                batch_size = 256
+                print "replay_buffer: ", replay_buffer
+                # num_ = replay_size * 10 / batch_size
+                num_ = 10
+                batch = [random.choice(replay_buffer) for i in range(batch_size)]
+                batch_imgs = np.array([batch[i][0] for i in range(batch_size)])
+                batch_acts = np.array([batch[i][1] for i in range(batch_size)])
+                # batch = replay_buffer[np.random.randint(replay_size, size=batch_size)]
+                y_preds = sess.run(preds, feed_dict={tensor_imgs: batch_imgs,
+                                               is_train: False})
+                print "y_true: ", batch_acts
+                print "y_preds: ", y_preds
+                evaluate(batch_acts, y_preds)
 
-                # save_path = os.path.join(train_dir, 'model.ckpt')
-                # saver.save(sess, save_path, global_step= n_update * num_)
-                # print "=======Learning Done======\n"*5
-                # noval_scene_count = 0
+                # y_true = np.array([y[1] for y in replay_buffer])
+
+                for i in range(num_):
+                    print "learning timestep.... {}".format(i)
+                    batch = [random.choice(replay_buffer) for j in range(batch_size)]
+                    batch_imgs = np.array([batch[j][0] for j in range(batch_size)])
+                    batch_acts = np.array([batch[j][1] for j in range(batch_size)])
+                    sess.run(train_op, feed_dict={tensor_imgs: batch_imgs,
+                                                    tensor_acts: batch_acts,
+                                                    is_train: True,
+                                                    lr: 0.001})
+
+                n_update += 1
+                batch = [random.choice(replay_buffer) for i in range(batch_size)]
+                batch_imgs = np.array([batch[i][0] for i in range(batch_size)])
+                batch_acts = np.array([batch[i][1] for i in range(batch_size)])
+                y_preds = sess.run(preds, feed_dict={tensor_imgs: batch_imgs,
+                                                       is_train: False})
+                print "y_true: ", batch_acts
+                print "y_preds: ", y_preds
+                evaluate(batch_acts, y_preds)
+
+                save_path = os.path.join(train_dir, 'model.ckpt')
+                saver.save(sess, save_path, global_step= n_update * num_)
+                print "=======Learning Done======\n"*5
+                noval_scene_count = 0
 
 
 except Exception as e:
