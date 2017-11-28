@@ -445,7 +445,7 @@ class I2A(A3CExperimentWithI2A):
                 input_state = inputs[0]
 
                 input_action = inputs[1]
-                input_action = tf.one_hot(indices=input_action, depth=dim_action, on_value=1.0, off_value=0.0, axis=-1)
+                # input_action = tf.one_hot(indices=input_action, depth=dim_action, on_value=1.0, off_value=0.0, axis=-1)
 
                 fc_action = hrl.utils.Network.layer_fcs(input_action, [], 256,
                                                         activation_hidden=tf.nn.relu,
@@ -485,17 +485,17 @@ class I2A(A3CExperimentWithI2A):
                 input_action = inputs[1]
                 # input_action = tf.one_hot(indices=input_action, depth=dim_action, on_value=1.0, off_value=0.0, axis=-1)
 
-                fc_action = hrl.utils.Network.layer_fcs(input_action, [256], 256,
+                fc_action = hrl.utils.Network.layer_fcs(input_action, [], 256,
                                                         activation_hidden=tf.nn.relu,
-                                                        activation_out=None,
+                                                        activation_out=tf.nn.relu,
                                                         l2=l2,
                                                         var_scope="fc_action")
 
                 concat = tf.multiply(input_state, fc_action)
 
-                fc_out = hrl.utils.Network.layer_fcs(concat, [256], 256,
+                fc_out = hrl.utils.Network.layer_fcs(concat, [], 256,
                                                      activation_hidden=tf.nn.relu,
-                                                     activation_out=None,
+                                                     activation_out=tf.nn.relu,
                                                      l2=l2,
                                                      var_scope="fc_out")
 
