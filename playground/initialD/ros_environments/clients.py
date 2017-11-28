@@ -1,7 +1,14 @@
+import sys
 import zmq
 import dill
+import wrapt
 import numpy as np
-import hobotrl as hrl
+# HobotRL
+sys.path.append('../../../')
+from hobotrl.environments.kubernetes.client import KubernetesEnv
+from server import DrSimDecisionK8SServer
+# Gym
+from gym.spaces import Discrete, Box
 
 
 class DrivingSimulatorEnvClient(object):
@@ -33,74 +40,123 @@ class DrivingSimulatorEnvClient(object):
 
     def exit(self):
         self.socket.send_pyobj(('exit', None))
-        msg_type, msg_payload = self.socket.recv_pyobj()
         self.socket.close()
-        self.context.term()
-        if not msg_type == 'exit':
-            raise Exception('EnvClient: msg_type is not exit.')
+        # self.context.term()
         return
 
     def close(self):
         self.exit()
 
-class Driving1Env(DrivingSimulatorEnvClient):
-    def __init__(self, address, port, **kwargs):
-        def compile_obs(obss):
-            obs1 = obss[-1][0]
-            print obss[-1][1]
-            print obs1.shape
-            return obs1
+    def __enter__(self):
+        return self
 
-        # Environment
-        def compile_reward(rewards):
-            return rewards
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.exit()
 
-        def compile_reward_agent(rewards):
-            global momentum_ped
-            global momentum_opp
-            rewards = np.mean(np.array(rewards), axis=0)
-            print (' ' * 10 + 'R: [' + '{:4.2f} ' * len(rewards) + ']').format(*rewards),
 
-            # obstacle
-            rewards[0] *= -100.0
-            # distance to
-            rewards[1] *= -1.0 * (rewards[1] > 2.0)
-            # velocity
-            rewards[2] *= 10
-            # opposite
-            momentum_opp = (rewards[3] < 0.5) * (momentum_opp + (1 - rewards[3]))
-            momentum_opp = min(momentum_opp, 20)
-            rewards[3] = -20 * (0.9 + 0.1 * momentum_opp) * (momentum_opp > 1.0)
-            # ped
-            momentum_ped = (rewards[4] > 0.5) * (momentum_ped + rewards[4])
-            momentum_ped = min(momentum_ped, 12)
-            rewards[4] = -40 * (0.9 + 0.1 * momentum_ped) * (momentum_ped > 1.0)
+class DrSimDecisionK8S(wrapt.ObjectProxy):
+    _version = '20171127'
+    _ALL_ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0,)]
+    def __init__(self, image_uri=None, backend_cmds=None, *args, **kwargs):
+        # Simulator Docker image to use
+        if image_uri is None:
+            _image_uri = "docker.hobot.cc/carsim/simulator_gpu_kub:latest"
+        else:
+            _image_uri = image_uri
 
-            reward = np.sum(rewards) / 100.0
-            print '{:6.4f}, {:6.4f}'.format(momentum_opp, momentum_ped),
-            print ': {:7.4f}'.format(reward)
-            return reward
+        # bash commands to be executed in each episode to start simulation
+        # backend
+        if backend_cmds is None:
+            _backend_cmds = self.gen_default_backend_cmds()
+        else:
+            _backend_cmds = backend_cmds
 
-        super(Driving1Env, self).__init__(address, port,
-            defs_obs=[
-                ('/training/image/compressed', 'sensor_msgs.msg.CompressedImage'),
-                ('/decision_result', 'std_msgs.msg.Int16')
-            ],
-            func_compile_obs=compile_obs,
-            defs_reward=[
-                ('/rl/has_obstacle_nearby', 'std_msgs.msg.Bool'),
-                ('/rl/distance_to_longestpath', 'std_msgs.msg.Float32'),
-                ('/rl/car_velocity', 'std_msgs.msg.Float32'),
-                ('/rl/last_on_opposite_path', 'std_msgs.msg.Int16'),
-                ('/rl/on_pedestrian', 'std_msgs.msg.Bool')],
-            func_compile_reward=compile_reward,
-            defs_action=[('/autoDrive_KeyboardMode', 'std_msgs.msg.Char')],
+        # ROS topic definition tuples for observation, reward, and action
+        _defs_obs = [
+            ('/training/image/compressed', 'sensor_msgs.msg.CompressedImage'),
+            ('/decision_result', 'std_msgs.msg.Int16'),
+            ('/rl/car_velocity_front', 'std_msgs.msg.Float32'),
+        ]
+        _defs_reward = [
+            ('/rl/car_velocity_front', 'std_msgs.msg.Float32'),
+            ('/rl/distance_to_longestpath', 'std_msgs.msg.Float32'),
+            ('/rl/obs_factor', 'std_msgs.msg.Float32'),
+            ('/rl/current_road_validity', 'std_msgs.msg.Int16'),
+            ('/rl/entering_intersection', 'std_msgs.msg.Bool'),
+            ('/rl/last_on_opposite_path', 'std_msgs.msg.Int16'),
+            ('/rl/on_biking_lane', 'std_msgs.msg.Bool'),
+            ('/rl/on_innerest_lane', 'std_msgs.msg.Bool'),
+            ('/rl/on_outterest_lane', 'std_msgs.msg.Bool')
+        ]
+        _defs_action = [('/autoDrive_KeyboardMode', 'std_msgs.msg.Char')]
+
+        _func_compile_obs = DrSimDecisionK8SServer.func_compile_obs
+        _func_compile_reward = DrSimDecisionK8SServer.func_compile_reward
+        _func_compile_action = DrSimDecisionK8SServer.func_compile_action
+
+        # Build wrapped environment, expose step() an reset()
+        # _env = KubernetesEnv(
+        #     remote_client_env_class=DrivingSimulatorEnvClient,
+        _env = KubernetesEnv(
+            image_uri=_image_uri,
+            remote_client_env_class=DrivingSimulatorEnvClient,
+            backend_cmds=_backend_cmds,
+            defs_obs=_defs_obs,
+            defs_reward=_defs_reward,
+            defs_action=_defs_action,
             rate_action=10.0,
-            window_sizes={'obs': 2, 'reward': 3},
-            buffer_sizes={'obs': 2, 'reward': 3},
-            step_delay_target=0.5)
+            window_sizes={'obs': 3, 'reward': 3},
+            buffer_sizes={'obs': 3, 'reward': 3},
+            func_compile_obs=_func_compile_obs,
+            func_compile_reward=_func_compile_reward,
+            func_compile_action=_func_compile_action,
+            step_delay_target=0.5
+        )
+        super(DrSimDecisionK8S, self).__init__(_env)
 
+        # Gym env required attributes
+        self.observation_space = Box(low=0, high=255, shape=(350, 350, 3))
+        self.reward_range = Box(
+            low=-np.inf, high=np.inf, shape=(len(_defs_reward),)
+        )
+        self.action_space = Discrete(len(self._ALL_ACTIONS))
+        self.metadata = {}
 
-class KubernetesDriving1Env(hrl.envs.KubernetesEnv):
-    def __init__(self, api_server_address="train078.hogpu.cc:30794"):
-        super(KubernetesDriving1Env, self).__init__(Driving1Env, api_server_address)
+    @staticmethod
+    def gen_default_backend_cmds():
+        ws_path = '/Projects/catkin_ws/'
+        initialD_path = '/Projects/hobotrl/playground/initialD/'
+        backend_path = initialD_path + 'ros_environments/backend_scripts/'
+        utils_path = initialD_path + 'ros_environments/backend_scripts/utils/'
+        backend_cmds = [
+            # Parse maps
+            ['python', utils_path + 'parse_map.py',
+             ws_path + 'src/Map/src/map_api/data/honda_wider.xodr',
+             utils_path + 'road_segment_info.txt'],
+            # Generate obstacle configuration and write to launch file
+            ['python', utils_path+'gen_launch_dynamic_v1.py',
+             utils_path+'road_segment_info.txt', ws_path,
+             utils_path+'honda_dynamic_obs_template_tilt.launch', 32, '--random_n_obs'],
+            # Start roscore
+            ['roscore'],
+            # Reward function script
+            ['python', backend_path + 'gazebo_rl_reward.py'],
+            # Road validity node script
+            ['python', backend_path + 'road_validity.py',
+             utils_path + 'road_segment_info.txt.signal'],
+            # Simulation restarter backend
+            ['python', backend_path+'rviz_restart.py', 'honda_dynamic_obs.launch'],
+            # Video capture
+            ['python', backend_path+'non_stop_data_capture.py']
+        ]
+        return backend_cmds
+
+    def exit(self):
+        self.__wrapped__.exit()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.exit()
+

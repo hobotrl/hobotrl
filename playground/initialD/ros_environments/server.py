@@ -8,16 +8,18 @@
 
 # Basic python
 import importlib
-import signal
-import time
 import sys
 import os
 import traceback
+import logging
+
 # comms
 import zmq
 import dill
+
 # Multiprocessing
 import multiprocessing
+
 # To find env packages
 sys.path.append(os.path.dirname(os.path.realpath(__file__)))
 
@@ -46,6 +48,10 @@ class DrivingSimulatorEnvServer(multiprocessing.Process):
                     print msg_payload
                     env_kwargs = {}
                     for key, value in msg_payload.iteritems():
+                        logging.warning(
+                            "[DrivingSimulatorEnvServer]: "
+                            "deserializing key {}.".format(key)
+                        )
                         env_kwargs[key] = dill.loads(value)
                     if 'env_class_name' in env_kwargs:
                         env_class_name = env_kwargs['env_class_name']
@@ -92,3 +98,45 @@ class DrivingSimulatorEnvServer(multiprocessing.Process):
         except:
             pass
 
+
+class DrSimDecisionK8SServer(object):
+    _version = '20171127'
+    _ALL_ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0,)]
+    @staticmethod
+    def func_compile_reward(rewards):
+        """Server-side reward compilation function.
+        Rewards are nested lists. Outter index is the time step, inner index
+        is the reward type.
+
+        :param rewards: raw rewards vectors.
+        :return:
+        """
+        return rewards
+
+    @staticmethod
+    def func_compile_obs(obss):
+        """Server side observation compilation function.
+
+        The observations are:
+        1. ('/training/image/compressed', sensor_msgs.msg.CompressedImage'),
+        2. ('/decision_result', 'std_msgs.msg.Int16'),
+        3. ('/rl/car_velocity_front', 'std_msgs.msg.Float32'),
+
+        1. The last two image frames are averaged to combat flickering.
+           Image observations are casted as `uint8` to save memory.
+        2. Decision result is printed and discarded.
+        3. Ego speed is printed and discarded.
+
+        :param obss: original observations.
+        :return: compiled obseravation tensor.
+        """
+        img1, img2 = obss[-1][0], obss[-2][0]
+        decision, speed = obss[-1][1], obss[-1][2]
+        obs = ((img1 + img2) / 2).astype('uint8')
+        print decision
+        print speed
+        return obs
+
+    @staticmethod
+    def func_compile_action(action):
+        return DrSimDecisionK8SServer._ALL_ACTIONS[action]
