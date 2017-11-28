@@ -121,13 +121,14 @@ class TransitionPolicyGradientUpdater(NetworkUpdater):
 
 
 class AchievableUpdater(NetworkUpdater):
-    def __init__(self, func_goal, net_se, net_momentum):
+    def __init__(self, func_goal, net_se, net_momentum, momentum_weight=1e-2):
         super(AchievableUpdater, self).__init__()
         self._func_goal = func_goal
         self._net_state = net_se(name_scope="state")
         self._net_next_state = net_se(name_scope="next_state")
         net_momentum = net_momentum([self._net_state["se"].op], name_scope="achievable_momentum")
-        self._goal_fact = tf.stop_gradient(self._net_next_state["se"].op - self._net_state["se"].op - net_momentum["sd"].op)
+        op_momentum = Utils.scale_gradient(net_momentum["sd"].op, momentum_weight)
+        self._goal_fact = tf.stop_gradient(self._net_next_state["se"].op - self._net_state["se"].op - op_momentum)
         self._goal_predict = func_goal.output().op
         self._achievable_loss = tf.reduce_mean(tf.square(self._goal_fact - self._goal_predict))
         self._update_operation = network.MinimizeLoss(self._achievable_loss,
