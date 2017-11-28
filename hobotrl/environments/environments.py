@@ -894,6 +894,25 @@ class EpisodicLifeEnv(gym.Wrapper):
         return obs
 
 
+class DownsampledMsPacman(gym.ObservationWrapper):
+    def __init__(self, env=None, bottom=False):
+        super(DownsampledMsPacman, self).__init__(env)
+        if not bottom:
+            self.observation_space = gym.spaces.Box(low=0, high=255, shape=(80, 80, 3))
+        else:
+            self.observation_space = gym.spaces.Box(low=0, high=255, shape=(171, 160, 3))
+
+    def _observation(self, obs):
+        return DownsampledMsPacman.process(obs)
+
+    @staticmethod
+    def process(frame):
+        img = np.reshape(frame, [210, 160, 3]).astype(np.float32)
+        img = img[0:171, :, :] # crop the bottom part of the picture
+        # img = cv2.resize(img, (80, 80)) # resize to half
+        return img.astype(np.uint8)
+
+
 class MaxAndSkipEnv(gym.Wrapper):
     def __init__(self, env=None, max_len=2, skip=4):
         """Return only every `skip`-th frame"""

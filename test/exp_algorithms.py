@@ -915,10 +915,6 @@ class A3CExperimentWithI2A(Experiment):
             agent = hrl.ActorCriticWithI2A(
                 num_action=self._env.action_space.n,
                 f_se=self._f_se,
-                # f_se_1=self._f_se_1,
-                # f_se_2=self._f_se_2,
-                # f_se_3=self._f_se_3,
-                # f_se_4=self._f_se_4,
                 f_ac=self._f_ac,
                 f_tran=self._f_tran,
                 f_decoder=self._f_decoder,
@@ -934,6 +930,8 @@ class A3CExperimentWithI2A(Experiment):
                 network_optimizer=n_optimizer,
                 # sampler arguments
                 sampler=None,
+                policy_with_iaa=True,
+                with_momentum=True,
                 batch_size=self._batch_size,
                 log_dir=args.logdir,
                 global_step=global_step,
@@ -951,7 +949,6 @@ class A3CExperimentWithI2A(Experiment):
                                         render_once=True,
                                         logdir=args.logdir if args.index == 0 else None)
             runner.episode(self._episode_n)
-
 
 
 class PPOExperiment(Experiment):
