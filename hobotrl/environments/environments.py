@@ -895,22 +895,18 @@ class EpisodicLifeEnv(gym.Wrapper):
 
 
 class DownsampledMsPacman(gym.ObservationWrapper):
-    def __init__(self, env=None, bottom=False):
+    def __init__(self, env=None, resize=False):
         super(DownsampledMsPacman, self).__init__(env)
-        self._bottom = bottom
-        if not self._bottom:
+        self._resize = resize
+        if not self._resize:
             self.observation_space = gym.spaces.Box(low=0, high=255, shape=(80, 80, 3))
         else:
             self.observation_space = gym.spaces.Box(low=0, high=255, shape=(171, 160, 3))
 
     def _observation(self, obs):
-    #     return DownsampledMsPacman.process(obs)
-    #
-    # @staticmethod
-    # def process(frame):
         img = np.reshape(obs, [210, 160, 3]).astype(np.float32)
         img = img[0:171, :, :] # crop the bottom part of the picture
-        if not self._bottom:
+        if not self._resize:
             img = cv2.resize(img, (80, 80)) # resize to half
         return img.astype(np.uint8)
 
