@@ -293,13 +293,14 @@ class NoisyPendulumSearch(GridSearch):
     """
     def __init__(self):
         super(NoisyPendulumSearch, self).__init__(NoisyPendulum, {
+            "achievable_weight": [1e-1, 1e-4],
             "explicit_momentum": [True],
             "manager_entropy": [1e-2],
             "worker_explore_param":  [(0, 0.2, CappedLinear(2e5, 0.2, 0.01))],
             "imagine_history": [True],
             "momentum_weight": [1e-1],
             "imagine_weight": [1.0],
-            "_r": [0, 1, 2, 3],
+            "_r": [0, 1],
         })
 Experiment.register(NoisyPendulumSearch, "Noisy explore for pendulum")
 
