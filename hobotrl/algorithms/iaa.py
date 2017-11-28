@@ -358,8 +358,8 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
             net_se = network.Network([input_observation], f_se, var_scope="se_1")
             se = network.NetworkFunction(net_se["se"]).output().op
 
-            input_reward = tf.placeholder(dtype=tf.float32, shape=[None, 3], name="input_reward")
-            encode_state = tf.placeholder(dtype=tf.float32, shape=[None, 3 * se.shape.as_list()[-1] + rollout_depth],
+            input_reward = tf.placeholder(dtype=tf.float32, shape=[None, 1], name="input_reward")
+            encode_state = tf.placeholder(dtype=tf.float32, shape=[None, se.shape.as_list()[-1]],
                                           name="encode_states")
             input_frame = tf.placeholder(dtype=tf.float32, shape=[None, state_shape[0], state_shape[1], 3],
                                          name="input_frame")
@@ -368,7 +368,8 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
 
             net_decoder = network.Network([tf.concat((se, se), axis=-1), input_frame], f_decoder, var_scope="Decoder")
 
-            rollout_encoder = network.Network([encode_state, input_reward], f_encoder, var_scope="rollout_encoder")
+            rollout_encoder = network.Network([tf.concat((encode_state, encode_state, input_reward), axis=-1)],
+                                              f_encoder, var_scope="rollout_encoder")
 
             current_state = se
 
@@ -382,31 +383,39 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
 
                     tran_model = net_model([current_state, rollout_action_function.output().op], name_scope="env_model_%d_%d" %(i,j))
 
-                    next_state = network.NetworkFunction(tran_model["next_state"]).output().op  # literally next_goal
+                    next_goal = network.NetworkFunction(tran_model["next_state"]).output().op  # literally next_goal
                     reward = network.NetworkFunction(tran_model["reward"]).output().op
 
                     if j == 0:
-                        # out_next_state = next_state
-                        # out_reward = reward
-                        encode_states = next_state
+                        encode_states = next_goal
                         rollout_reward = reward
-                        if i == 0:
-                            rollout_action = rollout_action_function.output().op
+                        # if i == 0:
+                        #     rollout_action = rollout_action_function.output().op
                     else:
-                        encode_states = tf.concat([next_state, encode_states], axis=1)
+                        encode_states = tf.concat([next_goal, encode_states], axis=1)
                         rollout_reward = tf.concat([rollout_reward, reward], axis=0)
 
-                    current_state += next_state
+                    current_state += next_goal
 
-                encode_state = encode_states
-                # input_reward = rollout_reward
-                input_reward = tf.reshape(rollout_reward, [-1, 3])
-                # rollout_encoders = rollout_encoder([tf.reshape(encode_state, [-1, 5, 5, 64*3]), input_reward],
-                #                                    name_scope="rollout_encoder_%d" %i)
-                rollout_encoders = rollout_encoder([tf.concat([encode_state, input_reward], axis=-1)],
-                                                   name_scope="rollout_encoder_%d" % i)
+                current_state = se
 
-                re = network.NetworkFunction(rollout_encoders["re"]).output().op
+                encode_state = tf.split(encode_states, rollout_depth, axis=1)
+                input_reward = tf.reshape(rollout_reward, [-1, rollout_depth])
+                input_reward = tf.split(input_reward, rollout_depth, axis=1)
+
+                for m in range(rollout_depth):
+                    if m == 0:
+                        rollout_encoder = rollout_encoder([
+                            tf.concat([encode_state[-(m + 1)], encode_state[-(m + 1)], input_reward[-(m + 1)]],
+                                      axis=-1)], name_scope="rollout_encoder_%d_%d" %(i, m))
+                        re = rollout_encoder["re"].op
+
+                    else:
+                        rollout_encoder = rollout_encoder([
+                            tf.concat([re, encode_state[-(m + 1)], input_reward[-(m + 1)]],
+                                      axis=-1)], name_scope="rollout_encoder_%d_%d" % (i, m))
+                        re = rollout_encoder["re"].op
+
                 if i == 0:
                     path = re
                 else:
@@ -420,7 +429,7 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
             v = network.NetworkFunction(ac["v"]).output().op
             pi_dist = network.NetworkFunction(ac["pi"]).output().op
 
-            return {"v": v, "pi": pi_dist, "rollout_action": None,}, \
+            return {"v": v, "pi": pi_dist, "rollout_action": None}, \
                     {
                         "se": net_se, "transition": net_model,
                         "state_decoder": net_decoder
