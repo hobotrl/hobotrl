@@ -20,6 +20,7 @@ class I2A(A3CExperimentWithI2A):
         if env is None:
             env = gym.make('MsPacman-v0')
             env = DownsampledMsPacman(env, resize=True)
+            env = ScaledFloatFrame(env)
             env = ScaledRewards(env, 0.1)
             env = MaxAndSkipEnv(env, skip=4, max_len=4)
             env = FrameStack(env, k=4)

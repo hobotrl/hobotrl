@@ -782,7 +782,6 @@ class I2A(A3CExperimentWithI2A):
                 out = {"next_frame": next_frame}
                 return out
 
-
             def create_env_upsample_little(inputs):
                 l2 = 1e-7
                 input_state = inputs[0]
