@@ -112,6 +112,7 @@ class DrSimDecisionK8SServer(object):
         :param rewards: raw rewards vectors.
         :return:
         """
+        rewards = np.mean(np.array(rewards), axis=0)
         return rewards
 
     @staticmethod

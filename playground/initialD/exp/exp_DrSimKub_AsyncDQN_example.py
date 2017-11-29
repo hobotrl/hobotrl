@@ -118,8 +118,6 @@ def func_compile_exp_agent(state, action, rewards, next_state, done):
     global last_road_change
     global road_invalid_at_enter
 
-
-    rewards = np.mean(np.array(rewards), axis=0)
     rewards = rewards.tolist()
     rewards.append(np.logical_or(action==1, action==2))  # action == turn?
     print (' '*5+'R: ['+'{:4.2f} '*len(rewards)+']').format(*rewards),
@@ -342,8 +340,6 @@ try:
 
             state  = env.reset()
             print np.array(state).shape
-            plt.imsave('./img_1.jpg', np.array(state)[:, :, :3])
-            plt.imsave('./img_2.jpg', np.array(state)[:, :, 3:6])
             action = agent.act(state, exploration=not exploration_off)
             n_agent_steps += 1
             skip_action = action
