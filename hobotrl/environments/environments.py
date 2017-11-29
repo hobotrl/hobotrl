@@ -905,7 +905,7 @@ class DownsampledMsPacman(gym.ObservationWrapper):
 
     def _observation(self, obs):
         img = np.reshape(obs, [210, 160, 3]).astype(np.float32)
-        img = img[0:171, :, :] # crop the bottom part of the picture
+        img = img[0:171, :, :]  # crop the bottom part of the picture
         if self._resize:
             img = cv2.resize(img, (80, 80)) # resize to half
         return img.astype(np.uint8)
