@@ -51,7 +51,7 @@ f_net = lambda inputs: f_dueling_q(inputs, num_actions)
 if_ddqn = True
 # --- optimization
 batch_size = 8
-learning_rate = 1e-3
+learning_rate = 1e-4
 target_sync_interval = 1
 target_sync_rate = 1e-3
 update_interval = 1
