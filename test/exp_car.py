@@ -384,9 +384,9 @@ class I2A(A3CExperimentWithI2A):
                  episode_n=10000, learning_rate=1e-4, discount_factor=0.99,
                  entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4), batch_size=32):
         if env is None:
-            # env = gym.make('CarRacing-v0')
-            env = DrSimDecisionK8S()
-            # env = wrap_car(env, 3, 3)
+            env = gym.make('CarRacing-v0')
+            env = wrap_car(env, 3, 3)
+            # env = DrSimDecisionK8S()
 
         if (f_tran and f_rollout and f_ac) is None:
             dim_action = env.action_space.n
