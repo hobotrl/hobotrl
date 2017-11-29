@@ -226,10 +226,10 @@ class EnvModelUpdater(network.NetworkUpdater):
                     r_predict_loss.append(network.Utils.clipped_square(r_predict[-1] - rn[i]))
                     # f_predict.append(net_decoder([tf.concat([se0, cur_goal], axis=1), f0],
                     #                              name_scope="frame_decoder%d" % i)["next_frame"].op)
-                    mom_decoder_predict.append(net_decoder([tf.concat([se0, cur_se_mom], axis=1), f0],
-                                                           name_scope="mom_decoder%d" % i)["next_frame"].op)
-                    action_related_decoder_predict.append(net_decoder([tf.concat([se0, cur_se_action_related], axis=1), f0],
-                                                          name_scope="action_related_decoder%d" % i)["next_frame"].op)
+                    # mom_decoder_predict.append(net_decoder([tf.concat([se0, cur_se_mom], axis=1), f0],
+                    #                                        name_scope="mom_decoder%d" % i)["next_frame"].op)
+                    # action_related_decoder_predict.append(net_decoder([tf.concat([se0, cur_se_action_related], axis=1), f0],
+                    #                                       name_scope="action_related_decoder%d" % i)["next_frame"].op)
                     f_predict.append(net_decoder([tf.concat([se0, cur_se], axis=1), f0],
                                                  name_scope="frame_decoder%d" % i)["next_frame"].op)
                     logging.warning("[%s]: state:%s, frame:%s, predicted_frame:%s", i, se0.shape, f0.shape, f_predict[-1].shape)
@@ -317,9 +317,9 @@ class EnvModelUpdater(network.NetworkUpdater):
             for i in range(self._depth):
                 fetch_dict.update({
                     "f%d" % i: self._fn[i],
-                    "f%d_predict" % i: self._f_predict[i],
-                    "a%d_predict" % i: self._action_related_decoder_predict[i],
-                    "m%d_predict" % i: self._mom_decoder_predict[i]
+                    "f%d_predict" % i: self._f_predict[i]
+                    # "a%d_predict" % i: self._action_related_decoder_predict[i],
+                    # "m%d_predict" % i: self._mom_decoder_predict[i]
                 })
         return network.UpdateRun(feed_dict=feed_dict, fetch_dict=fetch_dict)
 
@@ -544,7 +544,8 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
             self.network_optimizer.update("l2", self.sess)
             info = self.network_optimizer.optimize_step(self.sess)
             prefix = "EnvModelUpdater/env_model/"
-            logging.warning("-----------%s steps for loss------------", info[prefix + "num"])
+            num = info[prefix + "num"]
+            logging.warning("-----------%s steps for loss------------", num)
             if prefix+"s0" in info:
                 s0 = info[prefix + "s0"]
                 update_step = info[prefix + "update_step"]
@@ -559,31 +560,31 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                         f = s[:, :,  3 * j: 3 * j + 3]
                         cv2.imwrite(path_prefix + "%d_%03d_f0_%d.png" % (update_step, i, j),
                                     cv2.cvtColor(255 * f.astype(np.float32), cv2.COLOR_RGB2BGR))
-                    for d in range(self._rollout_depth):
+                    for d in range(num):
                         fn = info[prefix + "f%d" % d][i]
                         fn_predict = info[prefix + "f%d_predict" % d][i]
-                        an_predict = info[prefix + "a%d_predict" % d][i]
-                        mn_predict = info[prefix + "m%d_predict" % d][i]
-                        logging.warning("---------------------------------")
-                        logging.warning(np.mean(fn_predict))
-                        logging.warning(np.mean(an_predict))
-                        logging.warning(np.mean(mn_predict))
+                        # an_predict = info[prefix + "a%d_predict" % d][i]
+                        # mn_predict = info[prefix + "m%d_predict" % d][i]
+                        # logging.warning("---------------------------------")
+                        # logging.warning(np.mean(fn_predict))
+                        # logging.warning(np.mean(an_predict))
+                        # logging.warning(np.mean(mn_predict))
 
                         cv2.imwrite(path_prefix + "%d_%03d_f%d_raw.png" % (update_step, i, d+1),
                                     cv2.cvtColor(255 * fn.astype(np.float32), cv2.COLOR_RGB2BGR))
                         cv2.imwrite(path_prefix + "%d_%03d_f%d_predict.png" % (update_step, i, d+1),
                                     cv2.cvtColor(255 * fn_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
-                        cv2.imwrite(path_prefix + "%d_%03d_y_actionf%d_predict.png" % (update_step, i, d + 1),
-                                    cv2.cvtColor(255 * an_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
-                        cv2.imwrite(path_prefix + "%d_%03d_z_momf%d_predict.png" % (update_step, i, d + 1),
-                                    cv2.cvtColor(255 * mn_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
+                        # cv2.imwrite(path_prefix + "%d_%03d_y_actionf%d_predict.png" % (update_step, i, d + 1),
+                        #             cv2.cvtColor(255 * an_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
+                        # cv2.imwrite(path_prefix + "%d_%03d_z_momf%d_predict.png" % (update_step, i, d + 1),
+                        #             cv2.cvtColor(255 * mn_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
                 del info[prefix + "s0"]
                 del info[prefix + "update_step"]
-                del info[prefix + "f%d_predict" % d]
-                del info[prefix + "a%d_predict" % d]
-                del info[prefix + "m%d_predict" % d]
+                # del info[prefix + "f%d_predict" % d]
+                # del info[prefix + "a%d_predict" % d]
+                # del info[prefix + "m%d_predict" % d]
                 del info[prefix + "num"]
-                for d in range(self._rollout_depth):
+                for d in range(num):
                     del info[prefix + "f%d" % d], info[prefix + "f%d_predict" % d]
             return info, {}
         else:
