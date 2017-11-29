@@ -50,9 +50,12 @@ def func_compile_obs(obss):
 ALL_ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0,)]
 AGENT_ACTIONS = ALL_ACTIONS[:3]
 # AGENT_ACTIONS = ALL_ACTIONS
+
+
 def func_compile_action(action):
     ALL_ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0, )]
     return ALL_ACTIONS[action]
+
 
 def func_compile_exp_agent(state, action, rewards, next_state, done):
     global cnt_skip

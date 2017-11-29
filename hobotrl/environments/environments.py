@@ -898,7 +898,7 @@ class DownsampledMsPacman(gym.ObservationWrapper):
     def __init__(self, env=None, resize=False):
         super(DownsampledMsPacman, self).__init__(env)
         self._resize = resize
-        if not self._resize:
+        if self._resize:
             self.observation_space = gym.spaces.Box(low=0, high=255, shape=(80, 80, 3))
         else:
             self.observation_space = gym.spaces.Box(low=0, high=255, shape=(171, 160, 3))
@@ -906,7 +906,7 @@ class DownsampledMsPacman(gym.ObservationWrapper):
     def _observation(self, obs):
         img = np.reshape(obs, [210, 160, 3]).astype(np.float32)
         img = img[0:171, :, :] # crop the bottom part of the picture
-        if not self._resize:
+        if self._resize:
             img = cv2.resize(img, (80, 80)) # resize to half
         return img.astype(np.uint8)
 

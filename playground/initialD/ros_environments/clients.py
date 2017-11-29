@@ -95,8 +95,6 @@ class DrSimDecisionK8S(wrapt.ObjectProxy):
         _func_compile_action = DrSimDecisionK8SServer.func_compile_action
 
         # Build wrapped environment, expose step() an reset()
-        # _env = KubernetesEnv(
-        #     remote_client_env_class=DrivingSimulatorEnvClient,
         _env = KubernetesEnv(
             image_uri=_image_uri,
             remote_client_env_class=DrivingSimulatorEnvClient,
