@@ -11,6 +11,10 @@ from tensorflow.contrib.layers import l2_regularizer
 
 
 def f_dueling_q(inputs, num_actions, device_name="/gpu:0", l2=1e-2):
+    """Q network with dueling channels for advantage and bias.
+    (conv - pool)*3 -> hid -> hid * 2 ----- Q
+                        |->   hid * 2 ->|
+    """
     inputs = inputs[0]
     inputs = inputs/128 - 1.0
     with tf.device(device_name):
