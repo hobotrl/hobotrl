@@ -258,6 +258,10 @@ class EnvModelUpdater(network.NetworkUpdater):
                     self._momentum_loss1 = 0
                 self._env_loss5 = self._env_loss5 / 2.0 * 255
                 self._reward_loss5 = self._reward_loss5 / 2.0
+                self._env_loss3 = self._env_loss3 / 2.0 * 255
+                self._reward_loss3 = self._reward_loss3 / 2.0
+                self._env_loss1 = self._env_loss1 / 2.0 * 255
+                self._reward_loss1 = self._reward_loss1 / 2.0
 
                 def f1():
                     return self._env_loss1, self._reward_loss1, self._transition_loss1, self._momentum_loss1, 1
