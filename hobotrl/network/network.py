@@ -238,8 +238,8 @@ class Network(object):
         self._variables = Utils.scope_vars(self._abs_var_scope)
         self._sess = None
         self._sub_nets = sub_nets
-        logging.warning("Network[vs=%s,abs_vs=%s,symbols=%s]",
-                        self._var_scope, self.abs_var_scope, self._symbols)
+        logging.warning("Network[vs=%s,abs_vs=%s,ns=%s,symbols=%s]",
+                        self._var_scope, self.abs_var_scope, name_scope, self._symbols)
 
     def __getitem__(self, item):
         """
