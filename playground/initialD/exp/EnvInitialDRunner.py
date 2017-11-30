@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 
 import sys
+sys.path.insert('./')
+sys.path.index('../../..')
 import os
 import time
 import logging
@@ -10,6 +12,7 @@ import tensorflow as tf
 from tensorflow.python.training.summary_io import SummaryWriterCache
 import cv2
 from collections import deque
+from playground.initialD.ros_environments.clients import DrivingSimulatorEnvClient as DrivingSimulatorEnv
 
 
 def func_compile_obs(obss):
@@ -26,74 +29,8 @@ ALL_ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0,)]
 AGENT_ACTIONS = ALL_ACTIONS[:3]
 
 
-def func_compile_action(action):
-    ALL_ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0, )]
-    return ALL_ACTIONS[action]
-
-
-
 def func_compile_exp_agent(action, rewards, done):
-    # Compile reward
-    rewards = np.mean(np.array(rewards), axis=0)
-    rewards = rewards.tolist()
-    rewards.append(np.logical_or(action==1, action==2))  # action == turn?
-    print (' '*5+'R: ['+'{:4.2f} '*len(rewards)+']').format(*rewards),
-
-    road_change = rewards[1] > 0.01  # road changed
-    road_invalid = rewards[0] > 0.01  # any yellow or red
-    if road_change and not last_road_change:
-        road_invalid_at_enter = road_invalid
-    last_road_change = road_change
-    speed = rewards[2]
-    obs_risk = rewards[5]
-
-    ema_speed = 0.5*ema_speed + 0.5*speed
-    ema_dist = 1.0 if rewards[6] > 2.0 else 0.9 * ema_dist
-    momentum_opp = (rewards[3]<0.5)*(momentum_opp+(1-rewards[3]))
-    momentum_opp = min(momentum_opp, 20)
-    momentum_ped = (rewards[4]>0.5)*(momentum_ped+rewards[4])
-    momentum_ped = min(momentum_ped, 12)
-
-    # road_change
-    rewards[0] = -100*(
-        (road_change and ema_dist>0.2) or (road_change and momentum_ped > 0)
-    )*(n_skip-cnt_skip)  # direct penalty
-    # velocity
-    rewards[2] *= 10
-    rewards[2] -= 10
-    # opposite
-    rewards[3] = -20*(0.9+0.1*momentum_opp)*(momentum_opp>1.0)
-    # ped
-    rewards[4] = -40*(0.9+0.1*momentum_ped)*(momentum_ped>1.0)
-    # obs factor
-    rewards[5] *= -100.0
-    # dist
-    rewards[6] *= 0.0
-    # steering
-    rewards[-1] *= -40  # -3
-    reward = np.sum(rewards)/100.0
-    print '{:4.2f}, {:4.2f}, {:4.2f}, {:4.2f}'.format(
-        road_invalid_at_enter, momentum_opp, momentum_ped, ema_dist),
-    print ': {:5.2f}'.format(reward)
-
-    if road_invalid_at_enter:
-        print "[Early stopping] entered invalid road."
-        road_invalid_at_enter = False
-        # done = True
-
-    if road_change and ema_dist > 0.2:
-        print "[Early stopping] turned onto intersection."
-        done = True
-
-    if road_change and momentum_ped>0:
-        print "[Early stopping] ped onto intersection."
-        done = True
-
-    if obs_risk > 1.0:
-        print "[Early stopping] hit obstacle."
-        done = True
-
-    return reward, done
+    pass
 
 
 class StepsSaver(object):
@@ -134,7 +71,6 @@ class StepsSaver(object):
             self.stat_file.write("{}, {}, {}, {}\n".format(n_ep, cum_reward, flag_success, done))
 
 
-
 class EnvInitialDRunner(object):
     """
     interaction between agent and environment.
@@ -157,7 +93,7 @@ class EnvInitialDRunner(object):
         self.env, self.agent = env, agent
         self.reward_decay, self.max_episode_len = 1.0, max_episode_len
         self.evaluate_interval, self.render_interval = evaluate_interval, render_interval
-        self.episode_n, self.step_n = 0, 0
+        self.episode_n, self.step_n, self.step_t = 0, 0, 0
         self.state = None
         self.action = None
         self.total_reward = 0.0
@@ -166,8 +102,8 @@ class EnvInitialDRunner(object):
             self.summary_writer = SummaryWriterCache.get(logdir)
         self.steps_saver = None
         if savedir is not None:
+            self.savedir = savedir
             self.steps_saver = StepsSaver(savedir)
-        self.flag_success = None
 
     def step(self):
         """
@@ -176,6 +112,7 @@ class EnvInitialDRunner(object):
         :return:
         """
         self.step_n += 1
+        self.step_t += 1
         # TODO: directly calling agent.act will by-pass BaseDeepAgent, which
         # checks and assigns 'sess' arugment. So we manually set sess here. But
         # is there a better way to do this?
@@ -190,11 +127,13 @@ class EnvInitialDRunner(object):
             next_state=next_state, episode_done=done
         )
         self.record(info)
-        self.flag_success = True if done and reward > 0.0 else False
+        flag_success = True if done and reward > 0.0 else False
         if self.savedir is not None:
-            self.steps_saver.save(self.episode_n, self.step_n, self.state, self.action,
-                                vec_reward, reward, done, self.total_reward, self.flag_success)
+            self.steps_saver.save(self.episode_n, self.step_t, self.state, self.action,
+                                vec_reward, reward, done, self.total_reward, flag_success)
         self.state = next_state
+        if done:
+            self.step_t = 0
         return done
 
     def record(self, info):
@@ -203,7 +142,7 @@ class EnvInitialDRunner(object):
                 value = info[name]
                 summary = tf.Summary()
                 summary.value.add(tag=name, simple_value=np.mean(value))
-                self.summary_writer.add_summary(summary, self.step_n)
+                self.summary_writer.add_summary(summary, self.total_step)
 
     def episode(self, n):
         """
@@ -228,7 +167,96 @@ class EnvInitialDRunner(object):
             summary.value.add(tag="episode_total_reward", simple_value=self.total_reward)
             summary.value.add(tag="epsisode_success", simple_value=self.flag_success)
             self.summary_writer.add_summary(summary, self.episode_n)
-
             rewards.append(self.total_reward)
-        self.steps_saver.end_save()
+        if self.savedir is not None:
+            self.steps_saver.end_save()
         return rewards
+
+
+
+def gen_backend_cmds():
+    ws_path = '/Projects/catkin_ws/'
+    initialD_path = '/Projects/hobotrl/playground/initialD/'
+    backend_path = initialD_path + 'ros_environments/backend_scripts/'
+    utils_path = initialD_path + 'ros_environments/backend_scripts/utils/'
+    backend_cmds = [
+        # Parse maps
+        ['python', utils_path+'parse_map.py',
+         ws_path+'src/Map/src/map_api/data/honda_wider.xodr',
+         utils_path+'road_segment_info.txt'],
+        # Generate obs and launch file
+        ['python', utils_path+'gen_launch_dynamic_v1.py',
+         utils_path+'road_segment_info.txt', ws_path,
+         utils_path+'honda_dynamic_obs_template_tilt.launch',
+         32, '--random_n_obs'],
+        # start roscore
+        ['roscore'],
+        # start reward function script
+        ['python', backend_path+'gazebo_rl_reward.py'],
+        # start road validity node script
+        ['python', backend_path+'road_validity.py',
+         utils_path+'road_segment_info.txt.signal'],
+        # start car_go script
+        ['python', backend_path+'car_go.py'],
+        # start simulation restarter backend
+        ['python', backend_path+'rviz_restart.py', 'honda_dynamic_obs.launch'],
+        # ['python', backend_path + 'non_stop_data_capture.py', 0]
+    ]
+    return backend_cmds
+
+
+def func_compile_action(action):
+    ALL_ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0, )]
+    return ALL_ACTIONS[action]
+
+
+def func_compile_reward(rewards):
+    return rewards
+
+
+class InitialD(gym.Env):
+    def __init__(self, host, port):
+        self.driving_env = DrivingSimulatorEnv(
+            address=host, port=port,
+            backend_cmds=gen_backend_cmds(),
+            defs_obs=[
+                ('/training/image/compressed', 'sensor_msgs.msg.CompressedImage'),
+                ('/decision_result', 'std_msgs.msg.Int16')
+            ],
+            defs_reward=[
+                ('/rl/current_road_validity', 'std_msgs.msg.Int16'),
+                ('/rl/entering_intersection', 'std_msgs.msg.Bool'),
+                ('/rl/car_velocity_front', 'std_msgs.msg.Float32'),
+                ('/rl/last_on_opposite_path', 'std_msgs.msg.Int16'),
+                ('/rl/on_biking_lane', 'std_msgs.msg.Bool'),
+                ('/rl/obs_factor', 'std_msgs.msg.Float32'),
+                ('/rl/distance_to_longestpath', 'std_msgs.msg.Float32'),
+            ],
+            defs_action=[('/autoDrive_KeyboardMode', 'std_msgs.msg.Char')],
+            rate_action=10.0,
+            window_sizes={'obs': 3, 'reward': 3},
+            buffer_sizes={'obs': 3, 'reward': 3},
+            # should be wrapped
+            func_compile_obs=func_compile_obs,
+            func_compile_reward=func_compile_reward,
+            func_compile_action=func_compile_action,
+            step_delay_target=0.5)
+
+    def _reset(self):
+        return self.driving_env.reset()
+
+    def _step(self, action):
+        return self.driving_env.step(action)
+
+
+# class ScalarReward(gym.Wrapper):
+#     def __init__(self, env):
+#         gym.Wrapper.__init__(self, env)
+#
+#     def _func_reward(self, action, vec_rewards):
+#         pass
+#
+#     def _step(self, action):
+#         ob, vec_rewards, done, info = self.env.step(action)
+#         reward = self._func_reward(action, vec_rewards)
+#         return ob, reward, done, info
