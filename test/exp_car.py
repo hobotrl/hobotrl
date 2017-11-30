@@ -16,8 +16,9 @@ from hobotrl.environments.environments import *
 from hobotrl.tf_dependent.ops import frame_trans
 from hobotrl.playback import Playback, BigPlayback
 from hobotrl.network import Utils
-sys.path.append("../playground/initialD/")
 from playground.initialD.ros_environments.clients import DrSimDecisionK8S
+from playground.initialD.exp.utils.wrappers import EnvNoOpSkipping, EnvRewardVec2Scalar
+
 
 class A3CCarExp(ACOOExperiment):
     def __init__(self, env, f_create_net=None,
@@ -386,7 +387,10 @@ class I2A(A3CExperimentWithI2A):
         if env is None:
             env = gym.make('CarRacing-v0')
             env = wrap_car(env, 3, 3)
-            # env = DrSimDecisionK8S()
+            # env = ScaledFloatFrame(EnvNoOpSkipping(
+            #     env=EnvRewardVec2Scalar(FrameStack(DrSimDecisionK8S(), 4)),
+            #     n_skip=6, gamma=0.9, if_random_phase=True
+            # ))
 
         if (f_tran and f_rollout and f_ac) is None:
             dim_action = env.action_space.n
