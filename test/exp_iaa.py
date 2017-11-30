@@ -19,7 +19,8 @@ class I2A(A3CExperimentWithI2A):
                  entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4), batch_size=32):
         if env is None:
             env = gym.make('MsPacman-v0')
-            env = DownsampledMsPacman(env, resize=True)
+            env = CropMsPacman(env)
+            env = Downsample(env, length_factor=2.0)
             env = ScaledFloatFrame(env)
             env = ScaledRewards(env, 0.1)
             env = MaxAndSkipEnv(env, skip=4, max_len=4)
