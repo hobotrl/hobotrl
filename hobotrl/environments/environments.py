@@ -11,6 +11,7 @@ import tensorflow as tf
 from tensorflow.python.training.summary_io import SummaryWriterCache
 import cv2
 from collections import deque
+import copy
 
 
 class EnvRunner(object):
@@ -894,20 +895,31 @@ class EpisodicLifeEnv(gym.Wrapper):
         return obs
 
 
-class DownsampledMsPacman(gym.ObservationWrapper):
-    def __init__(self, env=None, resize=False):
-        super(DownsampledMsPacman, self).__init__(env)
-        self._resize = resize
-        if self._resize:
-            self.observation_space = gym.spaces.Box(low=0, high=255, shape=(80, 80, 3))
-        else:
-            self.observation_space = gym.spaces.Box(low=0, high=255, shape=(171, 160, 3))
+class CropMsPacman(gym.ObservationWrapper):
+    def __init__(self, env=None):
+        super(CropMsPacman, self).__init__(env)
+        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(171, 160, 3))
 
     def _observation(self, obs):
         img = np.reshape(obs, [210, 160, 3]).astype(np.float32)
         img = img[0:171, :, :]  # crop the bottom part of the picture
-        if self._resize:
-            img = cv2.resize(img, (80, 80)) # resize to half
+        return img.astype(np.uint8)
+
+
+class Downsample(gym.ObservationWrapper):
+    def __init__(self, env=None, length_factor=False):
+        super(Downsample, self).__init__(env)
+        self._length_factor = int(length_factor)
+        self.ob_shape = self.observation_space.shape
+        self.ob_shape = list(self.ob_shape)
+        self.raw_shape = copy.copy(self.ob_shape)
+        self.ob_shape[:2] = map(lambda x: x / self._length_factor, self.ob_shape[:2])
+        self.ob_shape = tuple(self.ob_shape)
+        self.observation_space = gym.spaces.Box(low=0, high=255, shape=self.ob_shape)
+
+    def _observation(self, obs):
+        img = np.reshape(obs, self.raw_shape).astype(np.float32)
+        img = cv2.resize(img, self.ob_shape[:2][::-1]) # resize to half
         return img.astype(np.uint8)
 
 
