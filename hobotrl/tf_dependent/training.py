@@ -7,6 +7,43 @@ from tensorflow.python.platform import tf_logging as logging
 from tensorflow.python import debug as tf_debug
 
 
+def pretty_list(vars):
+    names = [v.name for v in vars]
+    root = {
+        "n": 0,
+        "sub": {}
+    }
+    for n in names:
+        words = n.split("/")
+        current = root
+        root["n"] = root["n"] + 1
+        for i in range(len(words)):
+            w = words[i]
+            if w not in current["sub"]:
+                current["sub"][w] = {
+                    "n": 1,
+                    "sub": {}
+                }
+            else:
+                current["sub"][w]["n"] = current["sub"][w]["n"] + 1
+            current = current["sub"][w]
+    strs = []
+    for name in root["sub"]:
+        node = root["sub"][name]
+        prefix = name
+        while True:
+            if len(node["sub"]) == 1:
+                sub_word = node["sub"].keys()[0]
+                prefix = prefix + "/" + sub_word
+                node = node["sub"][sub_word]
+            else:
+                if len(node["sub"]) > 1:
+                    prefix = prefix + "/..."
+                break
+        strs.append("<%s>[%d]" % (prefix, root["sub"][name]["n"]))
+    return ", ".join(strs)
+
+
 class RestoreVariablesHook(tf.train.SessionRunHook):
 
     def __init__(self,
@@ -119,7 +156,7 @@ def MonitoredTrainingSession(master='',  # pylint: disable=invalid-name
         all_hooks.append(RestoreVariablesHook(checkpoint_dir, var_list=restore_var_list))
         all_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
         missing_vars = filter(lambda v: not (v in restore_var_list), all_vars)
-        logging.warning("MonitoredTrainingSession not restoring %s", missing_vars)
+        logging.warning("MonitoredTrainingSession not restoring %s", pretty_list(missing_vars))
         # local_init_op = tf.group(*[v.initializer for v in missing_vars])
         # restore_scaffold = tf.train.Scaffold(local_init_op=local_init_op, saver=tf.train.Saver(restore_var_list))
 
