@@ -45,7 +45,7 @@ def l2_distance_add_grad(op, grad):
 @ops.RegisterGradient("L2DistanceSquareGrad")
 def l2_distance_square_grad(op, grad):
     x = op.inputs[0]
-    return [x * grad]
+    return [tf.sign(x) * grad]
 
 
 def l2_distance(x1, y1, x2, y2, name=None):
@@ -129,11 +129,12 @@ def frame_trans(frame, move, kernel_size=3, name=None):
                 y_neighbor = y_neighbor * tf.to_int32(y_valid)
                 x_neighbor = x_neighbor * tf.to_int32(x_valid)
                 nyx_coord = tf.concat((batch_index, y_neighbor, x_neighbor), axis=3)
-                activations.append(tf.stop_gradient(tf.gather_nd(frame, nyx_coord) * tf.to_float(valid)))
-                logging.warning("weight:%s, activation:%s", weights[-1], activations[-1])
+                # activations.append(tf.stop_gradient(tf.gather_nd(frame, nyx_coord) * tf.to_float(valid)))
+                activations.append(tf.gather_nd(frame, nyx_coord) * tf.to_float(valid))
+                # logging.warning("weight:%s, activation:%s", weights[-1], activations[-1])
         # reweight
         sum_weights = tf.add(tf.add_n(weights), 1e-7, name="sum_weight")
-        logging.warning("sum_weight:%s", sum_weights)
+        # logging.warning("sum_weight:%s", sum_weights)
         output = tf.add_n([activations[i] * weights[i] for i in range(len(weights))], name="next_frame")
         output = tf.div(output, sum_weights, name="next_frame_normed")
         return output

@@ -227,7 +227,7 @@ class EnvModelUpdater(network.NetworkUpdater):
 
                     goal = net_trans["next_state"].op
                     # socalled_state = net_trans["action_related"].op
-                    cur_goal = goal if cur_goal is None else cur_goal + goal
+                    cur_goal = goal if cur_goal is None else tf.stop_gradient(cur_goal) + goal
                     goalfrom0_predict.append(cur_goal)
                     cur_se = se0 + cur_goal
                     # cur_se = socalled_state
@@ -241,10 +241,28 @@ class EnvModelUpdater(network.NetworkUpdater):
                                                            name_scope="mom_decoder%d" % i)["next_frame"].op)
                     action_related_decoder_predict.append(net_decoder([tf.concat([se0, cur_se_action_related], axis=1), f0],
                                                           name_scope="action_related_decoder%d" % i)["next_frame"].op)
-                    f_predict.append(net_decoder([tf.concat([se0, cur_se], axis=1), f0],
-                                                 name_scope="frame_decoder%d" % i)["next_frame"].op)
+                    net_decoded = net_decoder([tf.concat([se0, cur_se], axis=1), f0],
+                                              name_scope="frame_decoder%d" % i)
+                    f_predict.append(net_decoded["next_frame"].op)
+                    logging.warning("frame_2 IN testing")
+                    frame_2 = net_decoded["frame_2"]
+                    if frame_2 is not None:
+                        logging.warning("frame_2 IN test passed")
+                        frame_2 = net_decoded["frame_2"].op
+                        f_predict_loss.append(tf.reduce_mean(network.Utils.clipped_square(
+                            frame_2 - tf.image.resize_images(fn[i], frame_2.shape.as_list()[1:3]))
+                        ))
+                        frame_4 = net_decoded["frame_4"].op
+                        f_predict_loss.append(tf.reduce_mean(network.Utils.clipped_square(
+                            frame_4 - tf.image.resize_images(fn[i], frame_4.shape.as_list()[1:3]))
+                        ))
+                        frame_8 = net_decoded["frame_8"].op
+                        f_predict_loss.append(tf.reduce_mean(network.Utils.clipped_square(
+                            frame_8 - tf.image.resize_images(fn[i], frame_8.shape.as_list()[1:3]))
+                        ))
+
                     logging.warning("[%s]: state:%s, frame:%s, predicted_frame:%s", i, se0.shape, f0.shape, f_predict[-1].shape)
-                    f_predict_loss.append(network.Utils.clipped_square(f_predict[-1] - fn[i]))
+                    f_predict_loss.append(tf.reduce_mean(network.Utils.clipped_square(f_predict[-1] - fn[i])))
                     transition_loss.append(network.Utils.clipped_square(ses_predict[-1] - sen[i]))
 
                 self._reward_loss = tf.reduce_mean(tf.add_n(r_predict_loss) / depth, name="reward_loss") * transition_weight
@@ -551,10 +569,10 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                         fn_predict = info[prefix + "f%d_predict" % d][i]
                         an_predict = info[prefix + "a%d_predict" % d][i]
                         mn_predict = info[prefix + "m%d_predict" % d][i]
-                        logging.warning("---------------------------------")
-                        logging.warning(np.mean(fn_predict))
-                        logging.warning(np.mean(an_predict))
-                        logging.warning(np.mean(mn_predict))
+                        # logging.warning("---------------------------------")
+                        # logging.warning(np.mean(fn_predict))
+                        # logging.warning(np.mean(an_predict))
+                        # logging.warning(np.mean(mn_predict))
 
                         cv2.imwrite(path_prefix + "%d_%03d_f%d_raw.png" % (update_step, i, d+1),
                                     cv2.cvtColor(255 * fn.astype(np.float32), cv2.COLOR_RGB2BGR))
@@ -568,6 +586,8 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                 del info[prefix + "update_step"]
                 for d in range(self._rollout_depth):
                     del info[prefix + "f%d" % d], info[prefix + "f%d_predict" % d]
+                    del info[prefix + "a%d_predict" % d]
+                    del info[prefix + "m%d_predict" % d]
             return info, {}
         else:
             return {}, {}
