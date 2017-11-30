@@ -323,7 +323,7 @@ class DrivingSimulatorEnv(object):
                 time.sleep(0.1)
 
         # info
-        info = None
+        info = {}
 
         # increase counter by `credit` per successfuly step
         credit = 1 + self.len_obs + self.len_reward + 1
