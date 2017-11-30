@@ -7,12 +7,14 @@ from hobotrl.sampling import TransitionSampler
 
 
 class SkippingAgent(Agent):
-    def __init__(self, n_skip, specific_act, *args, **kwargs):
+    def __init__(self, agent, n_skip, specific_act, *args, **kwargs):
         super(SkippingAgent, self).__init__(*args, **kwargs)
+        self._agent = agent
         self._n_skip = n_skip
         self._cnt_skip = n_skip
         self._specific_act = specific_act
         self._last_state = None
+
 
     def set_n_skip(self, n_skip):
         self._n_skip = n_skip
@@ -22,7 +24,7 @@ class SkippingAgent(Agent):
             action = self._agent.act(state, **kwargs)
             # maybe here exists a shallow copy problem
             self._last_state = state
-            print "self._last_state: ", self._last_state
+            # print "self._last_state: ", self._last_state
         else:
             action = self._specific_act
         self._cnt_skip -= 1
