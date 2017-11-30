@@ -216,7 +216,7 @@ class EnvModelUpdater(network.NetworkUpdater):
 
                     goal = net_trans["next_state"].op
                     # socalled_state = net_trans["action_related"].op
-                    cur_goal = goal if cur_goal is None else cur_goal + goal
+                    cur_goal = goal if cur_goal is None else tf.stop_gradient(cur_goal) + goal
                     goalfrom0_predict.append(cur_goal)
                     cur_se = se0 + cur_goal
                     # cur_se = socalled_state
@@ -226,10 +226,10 @@ class EnvModelUpdater(network.NetworkUpdater):
                     r_predict_loss.append(network.Utils.clipped_square(r_predict[-1] - rn[i]))
                     # f_predict.append(net_decoder([tf.concat([se0, cur_goal], axis=1), f0],
                     #                              name_scope="frame_decoder%d" % i)["next_frame"].op)
-                    # mom_decoder_predict.append(net_decoder([tf.concat([se0, cur_se_mom], axis=1), f0],
-                    #                                        name_scope="mom_decoder%d" % i)["next_frame"].op)
-                    # action_related_decoder_predict.append(net_decoder([tf.concat([se0, cur_se_action_related], axis=1), f0],
-                    #                                       name_scope="action_related_decoder%d" % i)["next_frame"].op)
+                    mom_decoder_predict.append(net_decoder([tf.concat([se0, cur_se_mom], axis=1), f0],
+                                                           name_scope="mom_decoder%d" % i)["next_frame"].op)
+                    action_related_decoder_predict.append(net_decoder([tf.concat([se0, cur_se_action_related], axis=1), f0],
+                                                          name_scope="action_related_decoder%d" % i)["next_frame"].op)
                     f_predict.append(net_decoder([tf.concat([se0, cur_se], axis=1), f0],
                                                  name_scope="frame_decoder%d" % i)["next_frame"].op)
                     logging.warning("[%s]: state:%s, frame:%s, predicted_frame:%s", i, se0.shape, f0.shape, f_predict[-1].shape)
@@ -273,7 +273,7 @@ class EnvModelUpdater(network.NetworkUpdater):
                     return self._env_loss5, self._reward_loss5, self._transition_loss5, self._momentum_loss5, 5
 
                 self._env_loss, self._reward_loss, self._transition_loss, self._momentum_loss, self._num = tf.case({
-                    tf.greater(self._count, tf.constant(4)): f5, tf.less(self._count, tf.constant(2)): f1},
+                    tf.greater(self._count, tf.constant(25000)): f5, tf.less(self._count, tf.constant(10000)): f1},
                     default=f3, exclusive=True)
 
                 self._op_loss = self._env_loss \
@@ -311,15 +311,15 @@ class EnvModelUpdater(network.NetworkUpdater):
                       "momentum_loss": self._momentum_loss,
                       "num": self._num
                       }
-        if self.imshow_count % 2 == 0:
+        if self.imshow_count % 1000 == 0:
             fetch_dict["s0"] = self._s0
             fetch_dict["update_step"] = self.imshow_count
             for i in range(self._depth):
                 fetch_dict.update({
                     "f%d" % i: self._fn[i],
-                    "f%d_predict" % i: self._f_predict[i]
-                    # "a%d_predict" % i: self._action_related_decoder_predict[i],
-                    # "m%d_predict" % i: self._mom_decoder_predict[i]
+                    "f%d_predict" % i: self._f_predict[i],
+                    "a%d_predict" % i: self._action_related_decoder_predict[i],
+                    "m%d_predict" % i: self._mom_decoder_predict[i]
                 })
         return network.UpdateRun(feed_dict=feed_dict, fetch_dict=fetch_dict)
 
@@ -338,6 +338,7 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                  with_momentum=True,
                  rollout_depth=3,
                  rollout_lane=3,
+                 max_rollout=5,
                  model_train_depth=3,
                  batch_size=32,
                  log_dir="./log/img",
@@ -451,6 +452,7 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                     }
         self._log_dir = log_dir
         self._rollout_depth = rollout_depth
+        self._max_rollout = max_rollout
         kwargs.update({
             "f_iaa": f_iaa,
             "state_shape": state_shape,
@@ -520,7 +522,7 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                 net_se=self.network.sub_net("se"),
                 net_transition=self.network.sub_net("transition"),
                 net_decoder=self.network.sub_net("state_decoder"),
-                # depth=self._rollout_depth,
+                depth=self._max_rollout,
                 state_shape=state_shape,
                 dim_action=num_action,
                 transition_weight=1.0,
@@ -563,8 +565,8 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                     for d in range(num):
                         fn = info[prefix + "f%d" % d][i]
                         fn_predict = info[prefix + "f%d_predict" % d][i]
-                        # an_predict = info[prefix + "a%d_predict" % d][i]
-                        # mn_predict = info[prefix + "m%d_predict" % d][i]
+                        an_predict = info[prefix + "a%d_predict" % d][i]
+                        mn_predict = info[prefix + "m%d_predict" % d][i]
                         # logging.warning("---------------------------------")
                         # logging.warning(np.mean(fn_predict))
                         # logging.warning(np.mean(an_predict))
@@ -574,17 +576,16 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                                     cv2.cvtColor(255 * fn.astype(np.float32), cv2.COLOR_RGB2BGR))
                         cv2.imwrite(path_prefix + "%d_%03d_f%d_predict.png" % (update_step, i, d+1),
                                     cv2.cvtColor(255 * fn_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
-                        # cv2.imwrite(path_prefix + "%d_%03d_y_actionf%d_predict.png" % (update_step, i, d + 1),
-                        #             cv2.cvtColor(255 * an_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
-                        # cv2.imwrite(path_prefix + "%d_%03d_z_momf%d_predict.png" % (update_step, i, d + 1),
-                        #             cv2.cvtColor(255 * mn_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
+                        cv2.imwrite(path_prefix + "%d_%03d_y_actionf%d_predict.png" % (update_step, i, d + 1),
+                                    cv2.cvtColor(255 * an_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
+                        cv2.imwrite(path_prefix + "%d_%03d_z_momf%d_predict.png" % (update_step, i, d + 1),
+                                    cv2.cvtColor(255 * mn_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
                 del info[prefix + "s0"]
                 del info[prefix + "update_step"]
-                # del info[prefix + "f%d_predict" % d]
-                # del info[prefix + "a%d_predict" % d]
-                # del info[prefix + "m%d_predict" % d]
-                for d in range(num):
+                for d in range(self._max_rollout):
                     del info[prefix + "f%d" % d], info[prefix + "f%d_predict" % d]
+                    del info[prefix + "a%d_predict" % d]
+                    del info[prefix + "m%d_predict" % d]
             return info, {}
         else:
             return {}, {}
