@@ -12,7 +12,7 @@ from hobotrl.tf_dependent.ops import frame_trans, CoordUtil
 class I2AFlow(A3CExperimentWithI2A):
     def __init__(self, env=None, f_se = None, f_ac=None, f_tran=None, f_decoder=None, f_rollout=None, f_encoder = None,
                  episode_n=10000, learning_rate=1e-4, discount_factor=0.99,
-                 entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4), batch_size=16):
+                 entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4), batch_size=12):
         if env is None:
             env = gym.make('CarRacing-v0')
             env = wrap_car(env, 3, 3)
@@ -550,6 +550,7 @@ class I2AFlow(A3CExperimentWithI2A):
                 pixel_range = 24.0
                 gradient_scale = 16.0
                 constrain_flow = False
+                flow_residual = False
                 # /2
                 feature_2 = hrl.utils.Network.conv2ds(frame_with_coord,
                                                    shape=[(8, 4, 2)],
@@ -571,24 +572,40 @@ class I2AFlow(A3CExperimentWithI2A):
                                                    activation=nonlinear,
                                                    l2=l2,
                                                    var_scope="conv_3")
+                # /16
+                feature_16 = hrl.utils.Network.conv2ds(feature_8,
+                                                   shape=[(16, 4, 2)],
+                                                   out_flatten=False,
+                                                   activation=nonlinear,
+                                                   l2=l2,
+                                                   var_scope="conv_4")
 
                 goal = hrl.utils.Network.layer_fcs(input_goal, [], 6 * 6 * chn_se_2d,
                                                    activation_hidden=nonlinear,
                                                    activation_out=nonlinear,
                                                    l2=l2, var_scope="fc1")
                 twoD_out = tf.reshape(goal, [-1, 6, 6, chn_se_2d])
-                conv_se = hrl.utils.Network.conv2ds(twoD_out,
-                                                    shape=[(chn_se_2d, 3, 1)],
-                                                    out_flatten=False,
-                                                    activation=nonlinear,
-                                                    l2=l2,
-                                                    var_scope="conv_se")
+                frame_16 = tf.image.resize_images(frame_with_coord, feature_16.shape.as_list()[1:3])
+                trunk_16 = tf.concat([frame_16, feature_16, twoD_out], axis=3)
+                flow_16 = hrl.utils.Network.conv2ds(trunk_16,
+                                                   shape=[(2, 3, 1)],
+                                                   out_flatten=False,
+                                                   activation=None,
+                                                   l2=l2,
+                                                   var_scope="flow_16")
+                if constrain_flow:
+                    flow_16 = tf.tanh(flow_16 / gradient_scale) * (pixel_range / 8)
 
                 # /8
-                trunk_8 = tf.image.resize_images(conv_se, feature_8.shape.as_list()[1:3])
+                trunk_8 = hrl.network.Utils.deconv(trunk_16, kernel_size=3, out_channel=8,
+                                                stride=2, activation=nonlinear,
+                                                var_scope="up_8")
+                up_flow_16 = tf.image.resize_images(flow_16, feature_8.shape.as_list()[1:3]) * 2
                 frame_8 = tf.image.resize_images(frame_with_coord, feature_8.shape.as_list()[1:3])
                 trunk_8 = tf.concat([frame_8, feature_8, trunk_8], axis=3)
-                flow_8 = hrl.utils.Network.conv2ds(trunk_8,
+                trans_8_16 = frame_trans(trunk_8, up_flow_16, name="trans_8_16")
+                predict_8_16 = trans_8_16[:, :, :, :3]
+                flow_8 = hrl.utils.Network.conv2ds(tf.concat([trans_8_16, up_flow_16], axis=3),
                                                    shape=[(2, 3, 1)],
                                                    out_flatten=False,
                                                    activation=None,
@@ -596,12 +613,15 @@ class I2AFlow(A3CExperimentWithI2A):
                                                    var_scope="flow_8")
                 if constrain_flow:
                     flow_8 = tf.tanh(flow_8 / gradient_scale) * (pixel_range / 8)
-
+                if flow_residual:
+                    flow_sum_8 = flow_8 + up_flow_16
+                else:
+                    flow_sum_8 = flow_8
                 # /4
                 trunk_4 = hrl.network.Utils.deconv(trunk_8, kernel_size=3, out_channel=8,
                                                 stride=2, activation=nonlinear,
                                                 var_scope="up_4")
-                up_flow_8 = tf.image.resize_images(flow_8, feature_4.shape.as_list()[1:3]) * 2
+                up_flow_8 = tf.image.resize_images(flow_sum_8, feature_4.shape.as_list()[1:3]) * 2
                 frame_4 = tf.image.resize_images(frame_with_coord, feature_4.shape.as_list()[1:3])
                 trunk_4 = tf.concat([frame_4, feature_4, trunk_4], axis=3)
                 trans_4_8 = frame_trans(trunk_4, up_flow_8, name="trans_4_8")
@@ -614,8 +634,10 @@ class I2AFlow(A3CExperimentWithI2A):
                                                    var_scope="flow_4")
                 if constrain_flow:
                     flow_4 = tf.tanh(flow_4 / gradient_scale) * (pixel_range / 8)
-                flow_sum_4 = flow_4 + up_flow_8
-
+                if flow_residual:
+                    flow_sum_4 = flow_4 + up_flow_8
+                else:
+                    flow_sum_4 = flow_4
                 # /2
                 trunk_2 = hrl.network.Utils.deconv(trunk_4[:, :, :, 3:], kernel_size=3, out_channel=8,
                                                 stride=2, activation=nonlinear,
@@ -633,8 +655,10 @@ class I2AFlow(A3CExperimentWithI2A):
                                                    var_scope="flow_2")
                 if constrain_flow:
                     flow_2 = tf.tanh(flow_2 / gradient_scale) * (pixel_range / 8)
-                flow_sum_2 = flow_2 + up_flow_4
-
+                if flow_residual:
+                    flow_sum_2 = flow_2 + up_flow_4
+                else:
+                    flow_sum_2 = flow_2
                 # /1
                 frame_shape = input_frame.shape.as_list()[1:3]
                 trunk_1 = hrl.network.Utils.deconv(trans_2_4[:, :, :, 3:], kernel_size=3, out_channel=8,
@@ -652,7 +676,10 @@ class I2AFlow(A3CExperimentWithI2A):
                                                    var_scope="flow_1")
                 if constrain_flow:
                     flow_1 = tf.tanh(flow_1 / gradient_scale) * (pixel_range / 8)
-                flow_sum_1 = flow_1 + up_flow_2
+                if flow_residual:
+                    flow_sum_1 = flow_1 + up_flow_2
+                else:
+                    flow_sum_1 = flow_1
                 predict_1 = frame_trans(input_frame, flow_sum_1)
 
                 # weighted sum of different scale
@@ -667,7 +694,9 @@ class I2AFlow(A3CExperimentWithI2A):
                 out = {"next_frame": predict_1,
                        "frame_2": predict_1_2,
                        "frame_4": predict_2_4,
-                       "frame_8": predict_4_8}
+                       "frame_8": predict_4_8,
+                       "frame_16": predict_8_16,
+                       "flow": flow_sum_1}
                 return out
 
             def create_env_upsample_little(inputs):

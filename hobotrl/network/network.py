@@ -941,7 +941,7 @@ class DistributedOptimizer(BaseNetworkOptimizer):
         super(DistributedOptimizer, self).__init__(grad_clip, name)
         self._global_optimizer = global_optimizer
         self._var_map = local_global_var_map
-        logging.warning("var map:%s", local_global_var_map)
+        logging.warning("var map:%s", len(local_global_var_map))
 
     def apply_gradients_op_(self, grads_and_vars):
         with tf.name_scope(self._name):
