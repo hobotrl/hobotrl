@@ -82,7 +82,12 @@ echo "cluster:      $cluster"
 echo "device_n:     $device_n"
 echo "extra_arg:    $extra_arg"
 mkdir -p $log_dir
-python $exp_file run --name $exp_name --cluster "$cluster" --job ps --logdir $log_dir > $log_dir/ps.txt 2>&1 &
+if [[ "$device_n" = "0" ]]; then
+    # without gpu
+    CUDA_VISIBLE_DEVICES= python $exp_file run --name $exp_name --cluster "$cluster" --job ps --logdir $log_dir > $log_dir/ps.txt 2>&1 &
+else
+    python $exp_file run --name $exp_name --cluster "$cluster" --job ps --logdir $log_dir > $log_dir/ps.txt 2>&1 &
+fi
 end_i=$(expr $worker_n - 1)
 echo "job $exp_name with worker: [ 0 .. $end_i ]"
 for i in $(seq 0 $end_i)
