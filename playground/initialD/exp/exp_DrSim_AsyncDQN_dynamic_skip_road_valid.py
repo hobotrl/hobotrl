@@ -49,7 +49,7 @@ def func_compile_obs(obss):
 
 ALL_ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0,)]
 AGENT_ACTIONS = ALL_ACTIONS[:3]
-TIME_STEP_SCALES = [2, 6, 10]
+TIME_STEP_SCALES = [3, 6, 9]
 NUM_PROXY_ACTION = len(AGENT_ACTIONS) * len(TIME_STEP_SCALES)
 PROXY_ACTIONS = range(NUM_PROXY_ACTION)
 
@@ -468,10 +468,10 @@ try:
             t_infer, t_step, t_learn = 0, 0, 0
 
             state  = env.reset()
-            proxy_action = agent.act(state, exploration=not exploration_off)
+            action = agent.act(state, exploration=not exploration_off)
             n_agent_steps += 1
-            action = proxy_action / len(TIME_STEP_SCALES)
-            n_skip = TIME_STEP_SCALES[proxy_action % len(TIME_STEP_SCALES)]
+            skip_action = action / len(TIME_STEP_SCALES)
+            n_skip = TIME_STEP_SCALES[action % len(TIME_STEP_SCALES)]
             cnt_skip = n_skip
             img = np.array(state)[:, :, 6:]
             img_path = eps_dir + "/" + str(n_steps+1).zfill(4) + "_" + str(action) + ".jpg"
@@ -491,13 +491,13 @@ try:
 
                 # Env step
                 t = time.time()
-                next_state, vec_reward, done, info = env.step(action)
+                next_state, vec_reward, done, info = env.step(skip_action)
                 flag_success = done
                 t_step = time.time() - t
-                state, action, reward, next_state, done = \
-                    func_compile_exp_agent(state, action, vec_reward, next_state, done)
+                state, skip_action, reward, next_state, done = \
+                    func_compile_exp_agent(state, skip_action, vec_reward, next_state, done)
 
-                recording_file.write(str(n_steps) + ',' + str(action) + ',' + str(reward) + '\n')
+                recording_file.write(str(n_steps) + ',' + str(skip_action) + ',' + str(reward) + '\n')
                 vec_reward = np.mean(np.array(vec_reward), axis=0)
                 vec_reward = vec_reward.tolist()
                 str_reward = ""
@@ -507,8 +507,6 @@ try:
                 str_reward += "\n"
                 recording_file.write(str_reward)
                 recording_file.write("\n")
-
-
                 flag_tail = done
                 flag_success = True if flag_success and reward > 0.0 else False
                 skip_reward += reward
@@ -519,28 +517,29 @@ try:
                     # add tail for non-early-stops
                     skip_reward += flag_tail * gamma * skip_reward/ (1-gamma)
                     update_info = agent.step(
-                        sess=sess, state=state, action=proxy_action,
+                        sess=sess, state=state, action=action,
                         reward=skip_reward, next_state=next_state,
                         episode_done=done
                     )
                     t = time.time()
-                    next_proxy_action = agent.act(next_state, exploration=not exploration_off)
-                    next_action = next_proxy_action / len(TIME_STEP_SCALES)
-                    n_skip = TIME_STEP_SCALES[next_proxy_action % len(TIME_STEP_SCALES)]
+                    next_action = agent.act(next_state, exploration=not exploration_off)
+                    next_skip_action = next_action / len(TIME_STEP_SCALES)
+                    n_skip = TIME_STEP_SCALES[next_action % len(TIME_STEP_SCALES)]
+                    cnt_skip = n_skip
                     n_agent_steps += 1
                     t_infer += time.time() - t
                     skip_reward = 0
-                    state, action = next_state, next_action  # s',a' -> s,a
+                    state, action, skip_action = next_state, next_action, next_skip_action  # s',a' -> s,a
                 else:
-                    action = 3  # no op during skipping
+                    skip_action = 3  # no op during skipping
 
                 img = np.array(next_state)[:, :, 6:]
-                img_path = eps_dir + "/" + str(n_steps+1).zfill(4) + "_" + str(action) + ".jpg"
+                img_path = eps_dir + "/" + str(n_steps+1).zfill(4) + "_" + str(skip_action) + ".jpg"
                 cv2.imwrite(img_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
                 sv.summary_computed(sess, summary=log_info(update_info))
 
-                if cnt_skip == 0:
-                    cnt_skip = n_skip
+                # if cnt_skip == 0:
+                #     cnt_skip = n_skip
 
                 # summary_writer.add_summary(log_info(update_info), n_steps)
                 # print "Agent step learn {} sec, infer {} sec".format(t_learn, t_infer)
