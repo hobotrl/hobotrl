@@ -15,6 +15,7 @@ from hobotrl.tf_dependent.base import BaseDeepAgent
 from hobotrl.policy import StochasticPolicy
 from value_based import GreedyStateValueFunction
 import cv2
+from hobotrl.cvutils import flow_to_color
 
 
 class ActorCriticUpdater(network.NetworkUpdater):
@@ -208,6 +209,8 @@ class EnvModelUpdater(network.NetworkUpdater):
                 cur_goal = None
                 cur_mom = None
                 cur_action_related = None
+                flows = []
+                flow_regulations = []
                 for i in range(depth):
                     logging.warning("[%s]: state:%s, action:%s", i, cur_se.shape, an[i].shape)
                     input_action = tf.one_hot(indices=an[i], depth=dim_action, on_value=1.0, off_value=0.0,
@@ -244,10 +247,8 @@ class EnvModelUpdater(network.NetworkUpdater):
                     net_decoded = net_decoder([tf.concat([se0, cur_se], axis=1), f0],
                                               name_scope="frame_decoder%d" % i)
                     f_predict.append(net_decoded["next_frame"].op)
-                    logging.warning("frame_2 IN testing")
                     frame_2 = net_decoded["frame_2"]
                     if frame_2 is not None:
-                        logging.warning("frame_2 IN test passed")
                         frame_2 = net_decoded["frame_2"].op
                         f_predict_loss.append(tf.reduce_mean(network.Utils.clipped_square(
                             frame_2 - tf.image.resize_images(fn[i], frame_2.shape.as_list()[1:3]))
@@ -260,13 +261,25 @@ class EnvModelUpdater(network.NetworkUpdater):
                         f_predict_loss.append(tf.reduce_mean(network.Utils.clipped_square(
                             frame_8 - tf.image.resize_images(fn[i], frame_8.shape.as_list()[1:3]))
                         ))
+                        flow = net_decoded["flow"].op
+                        flows.append(flow)
 
-                    logging.warning("[%s]: state:%s, frame:%s, predicted_frame:%s", i, se0.shape, f0.shape, f_predict[-1].shape)
+                        o1_y = flow[:, :-1, :, :] - flow[:, 1:, :, :]
+                        o2_y = o1_y[:, :-1, :, :] - o1_y[:, 1:, :, :]
+                        o1_x = flow[:, :, :-1, :] - flow[:, :, 1:, :]
+                        o2_x = o1_x[:, :, :-1, :] - o1_x[:, :, 1:, :]
+                        l1_y = tf.reduce_mean(tf.abs(o2_y))
+                        l1_x = tf.reduce_mean(tf.abs(o2_x))
+                        flow_regulations.append(l1_x + l1_y)
                     f_predict_loss.append(tf.reduce_mean(network.Utils.clipped_square(f_predict[-1] - fn[i])))
                     transition_loss.append(network.Utils.clipped_square(ses_predict[-1] - sen[i]))
 
                 self._reward_loss = tf.reduce_mean(tf.add_n(r_predict_loss) / depth, name="reward_loss") * transition_weight
                 self._env_loss = tf.reduce_mean(tf.add_n(f_predict_loss) / depth, name="env_loss")
+                if len(flow_regulations) > 0:
+                    self._flow_regulation_loss = tf.reduce_mean(tf.add_n(flow_regulations) / depth, name="flow_loss") * 1e-1
+                else:
+                    self._flow_regulation_loss = 0
                 self._transition_loss = tf.reduce_mean(tf.add_n(transition_loss) / depth, name="transition_loss") * transition_weight
                 if with_momentum:
                     self._momentum_loss = tf.reduce_mean(tf.add_n(momentum_loss) / depth, name="momentum_loss") * transition_weight
@@ -277,11 +290,12 @@ class EnvModelUpdater(network.NetworkUpdater):
                 self._op_loss = self._env_loss \
                                 + self._reward_loss \
                                 + self._transition_loss \
-                                + self._momentum_loss
+                                + self._momentum_loss \
+                                + self._flow_regulation_loss
 
             self._s0, self._f0, self._fn, self._f_predict = s0, f0, fn, f_predict
             self._mom_decoder_predict, self._action_related_decoder_predict = mom_decoder_predict, action_related_decoder_predict
-
+            self._flows = flows
         self._update_operation = network.MinimizeLoss(self._op_loss,
                                                       var_list=net_transition.variables +
                                                                net_se.variables +
@@ -306,7 +320,8 @@ class EnvModelUpdater(network.NetworkUpdater):
                       "reward_loss": self._reward_loss,
                       "observation_loss": self._env_loss,
                       "transition_loss": self._transition_loss,
-                      "momentum_loss": self._momentum_loss
+                      "momentum_loss": self._momentum_loss,
+                      "flow_regulation_loss": self._flow_regulation_loss,
                       }#,
                       # "goal_reg_loss": self._goal_reg_loss}
         if self.imshow_count % 1000 == 0:
@@ -319,6 +334,10 @@ class EnvModelUpdater(network.NetworkUpdater):
                     "a%d_predict" % i: self._action_related_decoder_predict[i],
                     "m%d_predict" % i: self._mom_decoder_predict[i]
                 })
+                if len(self._flows) > 0:
+                    fetch_dict.update({
+                        "flow%d" % i: self._flows[i]
+                    })
         return network.UpdateRun(feed_dict=feed_dict, fetch_dict=fetch_dict)
 
 
@@ -569,6 +588,9 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                         fn_predict = info[prefix + "f%d_predict" % d][i]
                         an_predict = info[prefix + "a%d_predict" % d][i]
                         mn_predict = info[prefix + "m%d_predict" % d][i]
+                        flow = None
+                        if prefix + "flow0" in info:
+                            flow = info[prefix + "flow%d" % d][i]
                         # logging.warning("---------------------------------")
                         # logging.warning(np.mean(fn_predict))
                         # logging.warning(np.mean(an_predict))
@@ -582,12 +604,16 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                                     cv2.cvtColor(255 * an_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
                         cv2.imwrite(path_prefix + "%d_%03d_z_momf%d_predict.png" % (update_step, i, d + 1),
                                     cv2.cvtColor(255 * mn_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
+                        if flow is not None:
+                            cv2.imwrite(path_prefix + "%d_%03d_g_flow%d.png" % (update_step, i, d + 1),
+                                        flow_to_color(flow.astype(np.float32), max_len=16.0) * 255)
                 del info[prefix + "s0"]
                 del info[prefix + "update_step"]
                 for d in range(self._rollout_depth):
                     del info[prefix + "f%d" % d], info[prefix + "f%d_predict" % d]
                     del info[prefix + "a%d_predict" % d]
                     del info[prefix + "m%d_predict" % d]
+                    del info[prefix + "flow%d" % d]
             return info, {}
         else:
             return {}, {}
