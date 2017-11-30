@@ -16,10 +16,11 @@ import tensorflow as tf
 from tensorflow import layers
 from tensorflow.contrib.layers import l2_regularizer
 
-from playground.initialD.exp.skipping_masking import SkippingAgent
-
 sys.path.append('../../..')
 sys.path.append('..')
+
+from playground.initialD.exp.skipping_masking import SkippingAgent
+
 # Hobotrl
 import hobotrl as hrl
 from hobotrl.environments import FrameStack
@@ -93,8 +94,8 @@ class FuncReward(object):
         road_change = rewards[4] > 0.01  # entering intersection
         opp = rewards[5]
         biking = rewards[6]
-        inner = rewards[7]
-        outter = rewards[8]
+        # inner = rewards[7]
+        # outter = rewards[8]
         steer = rewards[-1]
 
         self.ema_speed = 0.5 * self.ema_speed + 0.5 * speed
@@ -199,16 +200,19 @@ env = DrivingSimulatorEnv(
     backend_cmds=gen_backend_cmds(),
     defs_obs=[
         ('/training/image/compressed', 'sensor_msgs.msg.CompressedImage'),
-        ('/decision_result', 'std_msgs.msg.Int16')
+        ('/decision_result', 'std_msgs.msg.Int16'),
+        ('/rl/car_velocity_front', 'std_msgs.msg.Float32'),
     ],
     defs_reward=[
+        ('/rl/car_velocity_front', 'std_msgs.msg.Float32'),
+        ('/rl/distance_to_longestpath', 'std_msgs.msg.Float32'),
+        ('/rl/obs_factor', 'std_msgs.msg.Float32'),
         ('/rl/current_road_validity', 'std_msgs.msg.Int16'),
         ('/rl/entering_intersection', 'std_msgs.msg.Bool'),
-        ('/rl/car_velocity_front', 'std_msgs.msg.Float32'),
         ('/rl/last_on_opposite_path', 'std_msgs.msg.Int16'),
         ('/rl/on_biking_lane', 'std_msgs.msg.Bool'),
-        ('/rl/obs_factor', 'std_msgs.msg.Float32'),
-        ('/rl/distance_to_longestpath', 'std_msgs.msg.Float32'),
+        ('/rl/on_innerest_lane', 'std_msgs.msg.Bool'),
+        ('/rl/on_outterest_lane', 'std_msgs.msg.Bool')
     ],
     defs_action=[('/autoDrive_KeyboardMode', 'std_msgs.msg.Char')],
     rate_action=10.0,
