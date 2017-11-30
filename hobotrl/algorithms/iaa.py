@@ -273,7 +273,7 @@ class EnvModelUpdater(network.NetworkUpdater):
                     return self._env_loss5, self._reward_loss5, self._transition_loss5, self._momentum_loss5, 5
 
                 self._env_loss, self._reward_loss, self._transition_loss, self._momentum_loss, self._num = tf.case({
-                    tf.greater(self._count, tf.constant(30000)): f5, tf.less(self._count, tf.constant(10000)): f1},
+                    tf.greater(self._count, tf.constant(4)): f5, tf.less(self._count, tf.constant(2)): f1},
                     default=f3, exclusive=True)
 
                 self._op_loss = self._env_loss \
@@ -311,7 +311,7 @@ class EnvModelUpdater(network.NetworkUpdater):
                       "momentum_loss": self._momentum_loss,
                       "num": self._num
                       }
-        if self.imshow_count % 1000 == 0:
+        if self.imshow_count % 2 == 0:
             fetch_dict["s0"] = self._s0
             fetch_dict["update_step"] = self.imshow_count
             for i in range(self._depth):
@@ -583,7 +583,6 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                 # del info[prefix + "f%d_predict" % d]
                 # del info[prefix + "a%d_predict" % d]
                 # del info[prefix + "m%d_predict" % d]
-                del info[prefix + "num"]
                 for d in range(num):
                     del info[prefix + "f%d" % d], info[prefix + "f%d_predict" % d]
             return info, {}
