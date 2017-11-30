@@ -13,13 +13,8 @@ class L2(network.NetworkUpdater):
         else:
             var_scope = net_or_var_scope
         self._var_scope = var_scope
-        print "var_scope: ", var_scope
         l2_loss = network.Utils.scope_vars(var_scope, tf.GraphKeys.REGULARIZATION_LOSSES)
         var_list = network.Utils.scope_vars(var_scope)
-        print "l2_loss type: ", type(l2_loss)
-        print "l2_loss len: ", len(l2_loss)
-        print "l2_loss: ", l2_loss
-        print "var list: ", var_list
         self._l2_loss = tf.add_n(l2_loss)
         self._update_operation = network.MinimizeLoss(self._l2_loss, var_list=var_list)
 
