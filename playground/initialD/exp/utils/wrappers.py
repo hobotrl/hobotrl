@@ -38,8 +38,6 @@ class EnvRewardVec2Scalar(wrapt.ObjectProxy):
         early_done, info_diff = self._func_early_stopping()
         done = done | early_done
         info.update(info_diff)
-        if done:
-            info['flag_success'] = reward > 0.0
         return next_state, reward, done, info
 
     def _func_scalar_reward(self, rewards, action):
@@ -162,9 +160,10 @@ class EnvNoOpSkipping(wrapt.ObjectProxy):
         # from this infinite series
         if done:
             total_skip_reward /= (1 - self.__gamma)
-
+        # update info
         info['t_step'] = time.time() - t
-
+        if done:
+            info['flag_success'] = total_skip_reward > 0.0
         self.__cnt_skip = self.__n_skip
         logging.warning(
             'Mean skip reward: {:5.2f}'.format(total_skip_reward)
