@@ -47,6 +47,7 @@ def log_info(agent_info, env_info,
 class StepsSaver(object):
     def __init__(self, savedir):
         self.savedir = savedir
+        os.makedirs(self.savedir)
         self.eps_dir = None
         self.file = None
         self.stat_file = open(self.savedir + "/0000.txt", "w")
@@ -54,8 +55,8 @@ class StepsSaver(object):
     def close(self):
         self.stat_file.close()
 
-    def parse_state(self):
-        return np.array(self.state)[:, :, 6:]
+    def parse_state(self, state):
+        return np.array(state)[:, :, 6:]
 
     def save(self, n_ep, n_step, state, action, vec_reward, reward,
                   done, cum_reward, flag_success):
@@ -65,9 +66,11 @@ class StepsSaver(object):
             self.file = open(self.eps_dir + "/0000.txt", "w")
 
         img_path = self.eps_dir + "/" + str(n_step + 1).zfill(4) + "_" + str(action) + ".jpg"
-        cv2.imwrite(img_path, cv2.cvtColor(self.parse_state(), cv2.COLOR_RGB2BGR))
+        cv2.imwrite(
+            img_path,
+            cv2.cvtColor(self.parse_state(state), cv2.COLOR_RGB2BGR)
+        )
         self.file.write(str(n_step) + ',' + str(action) + ',' + str(reward) + '\n')
-        vec_reward = np.mean(np.array(vec_reward), axis=0)
         vec_reward = vec_reward.tolist()
         str_reward = ""
         for r in vec_reward:

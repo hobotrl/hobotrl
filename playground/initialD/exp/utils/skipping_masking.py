@@ -1,65 +1,73 @@
 # -*- coding: utf-8 -*-
-
-import time
-import tensorflow as tf
-from hobotrl.core import Agent
-from hobotrl.sampling import TransitionSampler
-import sys
+import logging
 import numpy as np
+import wrapt
 
-class SkippingAgent(Agent):
+
+class SkippingAgent(wrapt.ObjectProxy):
     def __init__(self, agent, n_skip, specific_act, *args, **kwargs):
-        super(SkippingAgent, self).__init__(*args, **kwargs)
-        self._agent = agent
-        self._n_skip = n_skip
-        self._cnt_skip = None
+        super(SkippingAgent, self).__init__(agent)
+        self.n_skip = n_skip
+        self.cnt_skip = n_skip - 1
         self._specific_act = specific_act
-        self._last_state = None
+        self._state = None
         self._reward = 0.0
 
     def set_n_skip(self, n_skip):
-        self._n_skip = n_skip
+        self.n_skip = n_skip
 
     def act(self, state, **kwargs):
-        if self._cnt_skip == self._n_skip:
-            action = self._agent.act(state, **kwargs)
-            # maybe here exists a shallow copy problem
-            self._last_state = state
-            # print "self._last_state: ", self._last_state
+        if self.cnt_skip == self.n_skip - 1:
+            action = self.__wrapped__.act(state, **kwargs)
         else:
             action = self._specific_act
-        self._cnt_skip -= 1
         return action
 
-    def create_session(self, config=None, save_dir=None, **kwargs):
-        return self._agent.create_session(config=config,
-                                          save_dir=save_dir, **kwargs)
-
-    def step(self, state, action, reward, next_state, episode_done=False, **kwargs):
+    def step(self, state, action, reward, next_state, episode_done,
+             *args, **kwargs):
+        # keep the state before skipping
+        if self.cnt_skip == self.n_skip:
+            self._state = state
         self._reward += reward
-        if self._cnt_skip == 0 or episode_done:
-            self._reward /= self._n_skip - self._cnt_skip
-            self._agent.step(self._last_state, action, self._reward, next_state, episode_done, **kwargs)
-            self._cnt_skip = self._n_skip
+        info = {}
+        if self.cnt_skip == 0 or episode_done:
+            self._reward /= self.n_skip - self.cnt_skip
+            info = self.__wrapped__.step(
+                self._state, action, self._reward, next_state, episode_done,
+                *args, **kwargs
+            )
             self._reward = 0.0
+            self.cnt_skip = self.n_skip
+        self.cnt_skip -= 1
+        return info
 
 
 class RandFirstSkip(SkippingAgent):
-    def __init__(self, agent, n_skip, specific_act, *args, **kwargs):
-        super(RandFirstSkip, self).__init__(agent, n_skip, specific_act, *args, **kwargs)
-        self._n_step = 0
-        self._base_n_skip = self._n_skip
+    def __init__(self, *args, **kwargs):
+        super(RandFirstSkip, self).__init__(*args, **kwargs)
+        self.__base_n_skip = self.n_skip
+        self._rand_start()
 
-    def act(self, state, **kwargs):
-        if self._n_step == 0:
-            self.set_n_skip(int(self._base_n_skip * (1 + np.random.rand())))
-            self._cnt_skip = self._n_skip
+    def step(self, state, action, reward, next_state, episode_done,
+             *args, **kwargs):
+        if self.cnt_skip == 0:
+            self.n_skip = self.__base_n_skip
+        info = super(RandFirstSkip, self).step(
+            state, action, reward, next_state, episode_done,
+            *args, **kwargs
+        )
+        if episode_done:
+            self._rand_start()
+        return info
 
-        if self._n_step == self._n_skip:
-            self._n_skip = self._base_n_skip
-            self._cnt_skip = self._n_skip
-
-        return self._agent.act(state, **kwargs)
+    def _rand_start(self):
+        self.n_skip = int(self.__base_n_skip * (1 + np.random.rand()))
+        self.cnt_skip = self.n_skip - 1
+        logging.warning(
+            "[RandFirstSkip]: random skip for first step {}/{}".format(
+                self.n_skip, self.__base_n_skip
+            )
+        )
 
 
 class AdjustSkippingAgent(SkippingAgent):
@@ -69,20 +77,20 @@ class AdjustSkippingAgent(SkippingAgent):
 
     def act(self, state, **kwargs):
         action = self._agent.act(state, **kwargs)
-        if self._cnt_skip == self._n_skip - 1:
+        if self._cnt_skip == self.n_skip - 1:
             self.set_n_skip(self._n_skip_vec[action])
-            self._cnt_skip = self._n_skip - 1
+            self._cnt_skip = self.n_skip - 1
         return action
 
 
-class MaskingAgent(Agent):
-    def __init__(self, mask_func, *args, **kwargs):
-        super(MaskingAgent, self).__init__(*args, **kwargs)
-        self._mask_func = mask_func
-
-    def act(self, state, **kwargs):
-        action = self._agent.act(state, **kwargs)
-        return self._mask_func(action, kwargs['condition'])
+# class MaskingAgent(Agent):
+#     def __init__(self, mask_func, *args, **kwargs):
+#         super(MaskingAgent, self).__init__(*args, **kwargs)
+#         self._mask_func = mask_func
+#
+#     def act(self, state, **kwargs):
+#         action = self._agent.act(state, **kwargs)
+#         return self._mask_func(action, kwargs['condition'])
 
 
 
