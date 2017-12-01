@@ -8,10 +8,9 @@ import signal
 import logging
 import sys
 import traceback
-
 # Tensorflow
 import tensorflow as tf
-
+from tensorflow.python.training.summary_io import SummaryWriterCache
 # Hobotrl
 sys.path.append('../../..')  # hobotrl home
 from hobotrl.algorithms import DQN
@@ -116,24 +115,17 @@ try:
     )
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
-    sv = tf.train.Supervisor(
-        graph=tf.get_default_graph(),
-        is_chief=True,
-        init_op=tf.global_variables_initializer(),
-        logdir=tf_log_dir,
-        save_summaries_secs=10,
-        save_model_secs=3600)
-    with sv.managed_session(config=config) as sess, \
+    with _agent.create_session(config=config, save_dir=tf_log_dir,
+            save_checkpoint_secs=3600, save_summaries_secs=5) as sess, \
          AsynchronousAgent(
              agent=_agent, method='rate', rate=update_rate) as agent:
-        agent.set_session(sess)
+        summary_writer = SummaryWriterCache.get(tf_log_dir)
         sess.run(op_set_lr, feed_dict={lr_in: learning_rate})
         logging.warning(
             "Using learning rate {}".format(sess.run(lr))
         )
         n_ep = 0
-        n_env_steps = 0
-        n_agent_steps = 0
+        n_total_steps = 0
         while True:
             cum_reward = 0.0
             n_ep_steps = 0
@@ -141,7 +133,7 @@ try:
             while True:
                 action = agent.act(state)
                 print_qvals(
-                    n_env_steps, _agent, state, action, AGENT_ACTIONS
+                    n_ep_steps, _agent, state, action, AGENT_ACTIONS
                 )
                 next_state, reward, done, env_info = env.step(action)
                 agent_info = agent.step(
@@ -150,17 +142,16 @@ try:
                     episode_done=done
                 )
                 state = next_state
-                n_agent_steps += 1
-                n_env_steps += 1
+                n_total_steps += 1
                 n_ep_steps += 1
                 cum_reward += reward
                 summary_proto = log_info(
                     agent_info, env_info,
                     done,
                     cum_reward,
-                    n_ep, n_ep_steps, n_env_steps, n_agent_steps
+                    n_ep, n_ep_steps, n_total_steps
                 )
-                sv.summary_computed(sess, summary=summary_proto)
+                summary_writer.add_summary(summary_proto, n_total_steps)
                 if done:
                     n_ep += 1
                     logging.warning(
