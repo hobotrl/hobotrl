@@ -13,7 +13,7 @@ import traceback
 import tensorflow as tf
 
 # Hobotrl
-sys.path.append('../../..')
+sys.path.append('../../..')  # hobotrl home
 from hobotrl.algorithms import DQN
 from hobotrl.network import LocalOptimizer
 from hobotrl.environments import FrameStack
@@ -22,7 +22,7 @@ from hobotrl.playback import BalancedMapPlayback, BigPlayback
 from hobotrl.async import AsynchronousAgent
 from hobotrl.utils import CappedLinear
 # initialD
-sys.path.append('..')
+sys.path.append('..')  # initialD home
 from ros_environments.clients import DrSimDecisionK8S
 from exp.utils.func_networks import f_dueling_q
 from exp.utils.wrappers import EnvNoOpSkipping, EnvRewardVec2Scalar
@@ -39,7 +39,7 @@ ALL_ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0,)]
 AGENT_ACTIONS = ALL_ACTIONS[:3]
 num_actions = len(AGENT_ACTIONS)
 gamma = 0.9
-greedy_epsilon = CappedLinear(10000, 0.2, 0.05)
+greedy_epsilon = CappedLinear(50000, 0.5, 0.05)
 # --- replay buffer
 replay_capacity = 300000
 replay_bucket_size = 100
@@ -140,10 +140,10 @@ try:
             state  = env.reset()
             while True:
                 action = agent.act(state)
-                next_state, reward, done, env_info = env.step(action)
                 print_qvals(
                     n_env_steps, _agent, state, action, AGENT_ACTIONS
                 )
+                next_state, reward, done, env_info = env.step(action)
                 agent_info = agent.step(
                     sess=sess, state=state, action=action,
                     reward=reward, next_state=next_state,
