@@ -387,10 +387,11 @@ class I2A(A3CExperimentWithI2A):
         if env is None:
             env = gym.make('CarRacing-v0')
             env = wrap_car(env, 3, 3)
-            # env = ScaledFloatFrame(EnvNoOpSkipping(
+            env = Downsample(env, length_factor=1.0)
+            # env = Downsample(ScaledFloatFrame(EnvNoOpSkipping(
             #     env=EnvRewardVec2Scalar(FrameStack(DrSimDecisionK8S(), 4)),
             #     n_skip=6, gamma=0.9, if_random_phase=True
-            # ))
+            # )), length_factor=4.0)
 
         if (f_tran and f_rollout and f_ac) is None:
             dim_action = env.action_space.n
