@@ -11,6 +11,7 @@ class SkippingAgent(wrapt.ObjectProxy):
         self.cnt_skip = n_skip - 1
         self._specific_act = specific_act
         self._state = None
+        self._action = None
         self._reward = 0.0
 
     def set_n_skip(self, n_skip):
@@ -26,14 +27,16 @@ class SkippingAgent(wrapt.ObjectProxy):
     def step(self, state, action, reward, next_state, episode_done,
              *args, **kwargs):
         # keep the state before skipping
-        if self.cnt_skip == self.n_skip:
+        if self.cnt_skip == self.n_skip - 1 or self._state is None:
             self._state = state
+            self._action = action
         self._reward += reward
         info = {}
         if self.cnt_skip == 0 or episode_done:
             self._reward /= self.n_skip - self.cnt_skip
+            print "Mean skip reward: {}".format(self._reward)
             info = self.__wrapped__.step(
-                self._state, action, self._reward, next_state, episode_done,
+                self._state, self._action, self._reward, next_state, episode_done,
                 *args, **kwargs
             )
             self._reward = 0.0
@@ -70,17 +73,21 @@ class RandFirstSkip(SkippingAgent):
         )
 
 
-class AdjustSkippingAgent(SkippingAgent):
-    def __init__(self, agent, n_skip, specific_act, n_skip_vec, *args, **kwargs):
-        super(AdjustSkippingAgent, self).__init__(*args, **kwargs)
-        self._n_skip_vec = n_skip_vec
+class NonUniformSkip(SkippingAgent):
+    def __init__(self, n_skip_vec, *args, **kwargs):
+        super(NonUniformSkip, self).__init__(*args, **kwargs)
+        self.__n_skip_vec = n_skip_vec
 
-    def act(self, state, **kwargs):
-        action = self._agent.act(state, **kwargs)
-        if self._cnt_skip == self.n_skip - 1:
-            self.set_n_skip(self._n_skip_vec[action])
-            self._cnt_skip = self.n_skip - 1
-        return action
+    def step(self, state, action, reward, next_state, episode_done,
+             *args, **kwargs):
+        if action is not None and action != 3:
+            self.n_skip = self.__n_skip_vec[action]
+            self.cnt_skip = self.n_skip - 1
+        info = super(NonUniformSkip, self).step(
+            state, action, reward, next_state, episode_done,
+            *args, **kwargs
+        )
+        return info
 
 
 # class MaskingAgent(Agent):

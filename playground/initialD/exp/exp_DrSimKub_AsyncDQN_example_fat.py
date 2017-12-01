@@ -26,6 +26,7 @@ from hobotrl.utils import CappedLinear
 sys.path.append('..')  # initialD home
 from ros_environments.clients import DrSimDecisionK8S
 from exp.utils.func_networks import f_dueling_q
+# from exp.utils.skipping_masking import NonUniformSkip as SkippingAgent
 from exp.utils.skipping_masking import RandFirstSkip as SkippingAgent
 from exp.utils.logging_fun import StepsSaver, print_qvals, log_info
 
@@ -47,7 +48,7 @@ greedy_epsilon = CappedLinear(10000, 0.2, 0.05)
 # --- replay buffer
 replay_capacity = 300000
 replay_bucket_size = 100
-replay_ratio_active = 0.05
+replay_ratio_active = 0.01
 replay_max_sample_epoch = 2
 replay_upsample_bias = (1, 1, 1, 0.1)
 # --- NN architecture
@@ -251,17 +252,21 @@ try:
         # checkpoint
         global_step=global_step
      )
-    _agent = AsynchronousAgent(agent=__agent, method='rate', rate=update_rate)
-    agent = SkippingAgent(agent=_agent, n_skip=n_skip, specific_act=noop)
     # Utilities
     stepsSaver = StepsSaver(FLAGS.our_log_dir)
     reward_vector2scalar = FuncReward(gamma)
     # Configure sess
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
-    with agent.create_session(
+    with __agent.create_session(
             config=config, save_dir=FLAGS.tf_log_dir,
-            save_checkpoint_secs=FLAGS.save_checkpoint_secs) as sess:
+            save_checkpoint_secs=FLAGS.save_checkpoint_secs) as sess, \
+        AsynchronousAgent(
+            agent=__agent, method='rate', rate=update_rate) as _agent:
+        agent = SkippingAgent(
+            # n_skip_vec=(2, 6, 6),
+            agent=_agent, n_skip=n_skip, specific_act=noop
+        )
         summary_writer = SummaryWriterCache.get(FLAGS.tf_log_dir)
         # set vars
         sess.run(op_set_lr, feed_dict={lr_in: learning_rate})
