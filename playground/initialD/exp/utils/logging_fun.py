@@ -50,7 +50,7 @@ class StepsSaver(object):
         os.makedirs(self.savedir)
         self.eps_dir = None
         self.file = None
-        self.stat_file = open(self.savedir + "/0000.txt", "w")
+        self.stat_file = open(self.savedir + "/0000.txt", "a", 0)
 
     def close(self):
         self.stat_file.close()
