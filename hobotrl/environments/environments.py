@@ -1068,7 +1068,7 @@ class ScaledFloatFrame(gym.ObservationWrapper):
 
 
 class RemapFrame(gym.ObservationWrapper):
-    def __init__(self, env=None, source_state_center=(70,48), remaped_state_size=(48,48), remaped_state_center=(33,24),
+    def __init__(self, env=None, source_state_center=(48,70), remaped_state_size=(48,48), remaped_state_center=(24,33),
                  linear_part_ratio=0.2):
         super(RemapFrame, self).__init__(env)
         shp = env.observation_space.shape
@@ -1113,11 +1113,11 @@ class RemapFrame(gym.ObservationWrapper):
         for x in range(dst_size[0]):
             tmp = fx(x)
             for y in range(dst_size[1]):
-                self.mapx[x][y] = tmp
+                self.mapx[y][x] = tmp
         for y in range(dst_size[1]):
             tmp = fy(y)
             for x in range(dst_size[0]):
-                self.mapy[x][y] = tmp
+                self.mapy[y][x] = tmp
 
         # normalize map to the src image size, d(srctodst) will be affected by ratio
         map_max = self.mapx.max()
@@ -1135,7 +1135,7 @@ class RemapFrame(gym.ObservationWrapper):
     @staticmethod
     def process(self, frame):
         # remap
-        dst = cv2.remap(np.asarray(frame), self.mapy, self.mapx, cv2.INTER_LINEAR)
+        dst = cv2.remap(np.asarray(frame), self.mapx, self.mapy, cv2.INTER_LINEAR)
         # for display
         last_frame = dst[:,:,0:3]
         cv2.imshow("image1", cv2.resize(last_frame, (320,320), interpolation=cv2.INTER_LINEAR))
