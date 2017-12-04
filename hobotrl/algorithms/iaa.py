@@ -584,7 +584,7 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
         return network.Network([input_state, input_action, num_action], f_iaa, var_scope="learn")
 
     def update_on_trajectory(self, batch):
-        if (np.shape(batch["action"])[0] >= self._rollout_depth):
+        if (np.shape(batch["action"])[0] >= self._max_rollout):
             # self.network_optimizer.update("policy_net", self.sess, batch)
             self.network_optimizer.update("env_model", self.sess, batch)
             self.network_optimizer.update("ac", self.sess, batch)
