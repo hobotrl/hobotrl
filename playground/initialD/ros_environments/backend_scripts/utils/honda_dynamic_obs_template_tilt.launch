@@ -17,7 +17,7 @@
 </include>
 
 <include file="$(find control)/launch/honda_control.launch"/>
-<include file="$(find planning)/launch/camera_output_tilt.launch"/>
+<include file="/Projects/hobotrl/playground/initialD/ros_environments/backend_scripts/camera_cfg.launch"/>
 
 <node name="car_frame" pkg="planning" type="car_frame" output="screen" respawn="true"/>
 
