@@ -310,7 +310,7 @@ class EnvModelUpdater(network.NetworkUpdater):
                     return self._env_loss5, self._reward_loss5, self._transition_loss5, self._momentum_loss5, 5
 
                 self._env_loss, self._reward_loss, self._transition_loss, self._momentum_loss, self._num = tf.case({
-                    tf.greater(self._count, tf.constant(6)): f5, tf.less(self._count, tf.constant(3)): f1},
+                    tf.greater(self._count, tf.constant(25000)): f5, tf.less(self._count, tf.constant(10000)): f1},
                     default=f3, exclusive=True)
 
                 self._op_loss = self._env_loss \
