@@ -44,7 +44,7 @@ AGENT_ACTIONS = ALL_ACTIONS[:3]
 num_actions = len(AGENT_ACTIONS)
 noop = 3
 gamma = 0.9
-greedy_epsilon = CappedLinear(10000, 0.2, 0.05)
+greedy_epsilon = CappedLinear(50000, 0.2, 0.05)
 # --- replay buffer
 replay_capacity = 300000
 replay_bucket_size = 100
@@ -64,14 +64,16 @@ max_grad_norm = 1.0
 sample_mimimum_count = 100
 update_rate = 4.0  # updates per second by the async wrapper
 # --- logging and ckpt
+
+dir_prefix = "./experiment/1/"
 tf.app.flags.DEFINE_string(
-    "tf_log_dir", "./experiment",
+    "tf_log_dir", dir_prefix+"ckpt",
     "Path for model ckpt and event file.")
 tf.app.flags.DEFINE_string(
-    "our_log_dir", "./experiment/logging",
+    "our_log_dir", dir_prefix+"logging",
     "Path for our logging data.")
 tf.app.flags.DEFINE_string(
-    "replay_cache_dir", "./ReplayBufferCache/experiment",
+    "replay_cache_dir", dir_prefix+"ReplayBufferCache",
     "Replay buffer cache path.")
 tf.app.flags.DEFINE_float(
     "save_checkpoint_secs", 3600,
@@ -274,7 +276,7 @@ try:
         n_ep = 0
         n_total_steps = 0
         # GoGoGo
-        while True:
+        for _ in range(1000):
             cum_reward = 0.0
             n_ep_steps = 0
             state = env.reset()
