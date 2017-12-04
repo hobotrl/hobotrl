@@ -383,15 +383,14 @@ Experiment.register(AOTDQNCarRacing, "Asynchronuous OTDQN for CarRacing, tuned w
 class I2A(A3CExperimentWithI2A):
     def __init__(self, env=None, f_se = None, f_ac=None, f_tran=None, f_decoder=None, f_rollout=None, f_encoder = None,
                  episode_n=10000, learning_rate=1e-4, discount_factor=0.99,
-                 entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4), batch_size=32):
+                 entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4), batch_size=8):
         if env is None:
             env = gym.make('CarRacing-v0')
-            env = wrap_car(env, 3, 3)
             env = Downsample(env, length_factor=1.0)
-            # env = Downsample(ScaledFloatFrame(EnvNoOpSkipping(
-            #     env=EnvRewardVec2Scalar(FrameStack(DrSimDecisionK8S(), 4)),
+            # env = ScaledFloatFrame(EnvNoOpSkipping(
+            #     env=EnvRewardVec2Scalar(FrameStack(Downsample(DrSimDecisionK8S(), length_factor=2), 4)),
             #     n_skip=6, gamma=0.9, if_random_phase=True
-            # )), length_factor=4.0)
+            # ))
 
         if (f_tran and f_rollout and f_ac) is None:
             dim_action = env.action_space.n
