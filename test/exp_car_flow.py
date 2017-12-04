@@ -7,6 +7,7 @@ sys.path.append(".")
 
 from exp_car import *
 from hobotrl.tf_dependent.ops import frame_trans, CoordUtil
+from playground.initialD.ros_environments.clients import DrSimDecisionK8S
 
 
 class I2AFlow(A3CExperimentWithI2A):
@@ -550,7 +551,7 @@ class I2AFlow(A3CExperimentWithI2A):
                 pixel_range = 24.0
                 gradient_scale = 16.0
                 constrain_flow = False
-                flow_residual = False
+                flow_residual = True
                 # /2
                 feature_2 = hrl.utils.Network.conv2ds(frame_with_coord,
                                                    shape=[(8, 4, 2)],
@@ -567,14 +568,14 @@ class I2AFlow(A3CExperimentWithI2A):
                                                    var_scope="conv_2")
                 # /8
                 feature_8 = hrl.utils.Network.conv2ds(feature_4,
-                                                   shape=[(16, 4, 2)],
+                                                   shape=[(32, 4, 2)],
                                                    out_flatten=False,
                                                    activation=nonlinear,
                                                    l2=l2,
                                                    var_scope="conv_3")
                 # /16
                 feature_16 = hrl.utils.Network.conv2ds(feature_8,
-                                                   shape=[(16, 4, 2)],
+                                                   shape=[(64, 4, 2)],
                                                    out_flatten=False,
                                                    activation=nonlinear,
                                                    l2=l2,
@@ -597,7 +598,7 @@ class I2AFlow(A3CExperimentWithI2A):
                     flow_16 = tf.tanh(flow_16 / gradient_scale) * (pixel_range / 8)
 
                 # /8
-                trunk_8 = hrl.network.Utils.deconv(trunk_16, kernel_size=3, out_channel=8,
+                trunk_8 = hrl.network.Utils.deconv(trunk_16, kernel_size=3, out_channel=32,
                                                 stride=2, activation=nonlinear,
                                                 var_scope="up_8")
                 up_flow_16 = tf.image.resize_images(flow_16, feature_8.shape.as_list()[1:3]) * 2
@@ -618,7 +619,7 @@ class I2AFlow(A3CExperimentWithI2A):
                 else:
                     flow_sum_8 = flow_8
                 # /4
-                trunk_4 = hrl.network.Utils.deconv(trunk_8, kernel_size=3, out_channel=8,
+                trunk_4 = hrl.network.Utils.deconv(trunk_8, kernel_size=3, out_channel=16,
                                                 stride=2, activation=nonlinear,
                                                 var_scope="up_4")
                 up_flow_8 = tf.image.resize_images(flow_sum_8, feature_4.shape.as_list()[1:3]) * 2
@@ -849,6 +850,18 @@ class I2AFlow(A3CExperimentWithI2A):
         super(I2AFlow, self).__init__(env, f_se, f_ac, f_tran, f_decoder, f_rollout, f_encoder, episode_n, learning_rate,
                                                  discount_factor, entropy, batch_size)
 Experiment.register(I2AFlow, "A3C with I2A for CarRacing")
+
+
+class I2AFlowDriving(I2AFlow):
+    def __init__(self, env=None, f_se=None, f_ac=None, f_tran=None, f_decoder=None, f_rollout=None, f_encoder=None,
+                 episode_n=10000, learning_rate=1e-4, discount_factor=0.99,
+                 entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4), batch_size=12):
+        if env is None:
+            env = DrSimDecisionK8S()
+
+        super(I2AFlowDriving, self).__init__(env, f_se, f_ac, f_tran, f_decoder, f_rollout, f_encoder, episode_n,
+                                             learning_rate, discount_factor, entropy, batch_size)
+Experiment.register(I2AFlowDriving, "A3C with I2A for Driving Simulator")
 
 
 if __name__ == '__main__':
