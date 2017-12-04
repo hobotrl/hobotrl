@@ -11,6 +11,7 @@ import tensorflow as tf
 from tensorflow.python.training.summary_io import SummaryWriterCache
 import cv2
 from collections import deque
+import copy
 
 
 class EnvRunner(object):
@@ -894,20 +895,31 @@ class EpisodicLifeEnv(gym.Wrapper):
         return obs
 
 
-class DownsampledMsPacman(gym.ObservationWrapper):
-    def __init__(self, env=None, resize=False):
-        super(DownsampledMsPacman, self).__init__(env)
-        self._resize = resize
-        if self._resize:
-            self.observation_space = gym.spaces.Box(low=0, high=255, shape=(80, 80, 3))
-        else:
-            self.observation_space = gym.spaces.Box(low=0, high=255, shape=(171, 160, 3))
+class CropMsPacman(gym.ObservationWrapper):
+    def __init__(self, env=None):
+        super(CropMsPacman, self).__init__(env)
+        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(171, 160, 3))
 
     def _observation(self, obs):
         img = np.reshape(obs, [210, 160, 3]).astype(np.float32)
-        img = img[0:171, :, :] # crop the bottom part of the picture
-        if self._resize:
-            img = cv2.resize(img, (80, 80)) # resize to half
+        img = img[0:171, :, :]  # crop the bottom part of the picture
+        return img.astype(np.uint8)
+
+
+class Downsample(gym.ObservationWrapper):
+    def __init__(self, env=None, length_factor=False):
+        super(Downsample, self).__init__(env)
+        self._length_factor = int(length_factor)
+        self.ob_shape = self.observation_space.shape
+        self.ob_shape = list(self.ob_shape)
+        self.raw_shape = copy.copy(self.ob_shape)
+        self.ob_shape[:2] = map(lambda x: x / self._length_factor, self.ob_shape[:2])
+        self.ob_shape = tuple(self.ob_shape)
+        self.observation_space = gym.spaces.Box(low=0, high=255, shape=self.ob_shape)
+
+    def _observation(self, obs):
+        img = np.reshape(obs, self.raw_shape).astype(np.float32)
+        img = cv2.resize(img, self.ob_shape[:2][::-1]) # resize to half
         return img.astype(np.uint8)
 
 
@@ -1056,22 +1068,18 @@ class ScaledFloatFrame(gym.ObservationWrapper):
 
 
 class RemapFrame(gym.ObservationWrapper):
-    def __init__(self, env=None):
+    def __init__(self, env=None, source_state_center=(70,48), remaped_state_size=(48,48), remaped_state_center=(33,24),
+                 linear_part_ratio=0.2):
         super(RemapFrame, self).__init__(env)
         shp = env.observation_space.shape
-        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(shp[0]/2, shp[1]/2, shp[2]))
+        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(remaped_state_size[0], remaped_state_size[1], shp[2]))
 
-    def _observation(self, obs):
-        return RemapFrame.process(obs)
-
-    @staticmethod
-    def process(frame):
-        src_size = (96,96)
-        dst_size = (48,48)
-        center_src = (70,48)
-        center_dst = (33,24)
-        linear_part_ratio_dst = 0.1
-        k_scale = 0.5 #dst_size[0]/src_size[0] typically, set by hand if needed
+        src_size = (shp[0],shp[1])
+        dst_size = remaped_state_size
+        center_src = source_state_center
+        center_dst = remaped_state_center
+        linear_part_ratio_dst = linear_part_ratio
+        k_scale = 0.5  # dst_size[0]/src_size[0] typically, set by hand if needed
         d = 1.0/k_scale
 
         def remap_core(x, size_s, size_d, c_src, c_dst, lr):
@@ -1099,30 +1107,35 @@ class RemapFrame(gym.ObservationWrapper):
         def fy(y):
             return remap_core(y, src_size[1], dst_size[1], center_src[1], center_dst[1], linear_part_ratio_dst)
 
-        mapx = np.zeros((dst_size[1], dst_size[0]), dtype=np.float32)
-        mapy = np.zeros((dst_size[1], dst_size[0]), dtype=np.float32)
+        self.mapx = np.zeros((dst_size[1], dst_size[0]), dtype=np.float32)
+        self.mapy = np.zeros((dst_size[1], dst_size[0]), dtype=np.float32)
 
         for x in range(dst_size[0]):
             tmp = fx(x)
             for y in range(dst_size[1]):
-                mapx[x][y] = tmp
+                self.mapx[x][y] = tmp
         for y in range(dst_size[1]):
             tmp = fy(y)
             for x in range(dst_size[0]):
-                mapy[x][y] = tmp
-        """
+                self.mapy[x][y] = tmp
+
         # normalize map to the src image size, d(srctodst) will be affected by ratio
-        map_max = mapx.max()
-        map_min = mapx.min()
+        map_max = self.mapx.max()
+        map_min = self.mapx.min()
         ratio = (src_size[0]-1)/(map_max - map_min)
-        mapx = ratio*(mapx-map_min)
-        map_max = mapy.max()
-        map_min = mapy.min()
+        self.mapx = ratio*(self.mapx-map_min)
+        map_max = self.mapy.max()
+        map_min = self.mapy.min()
         ratio = (src_size[1]-1)/(map_max - map_min)
-        mapy = ratio*(mapy-map_min)
-        """
+        self.mapy = ratio*(self.mapy-map_min)
+
+    def _observation(self, obs):
+        return RemapFrame.process(self, obs)
+
+    @staticmethod
+    def process(self, frame):
         # remap
-        dst = cv2.remap(np.asarray(frame), mapy, mapx, cv2.INTER_LINEAR)
+        dst = cv2.remap(np.asarray(frame), self.mapy, self.mapx, cv2.INTER_LINEAR)
         # for display
         last_frame = dst[:,:,0:3]
         cv2.imshow("image1", cv2.resize(last_frame, (320,320), interpolation=cv2.INTER_LINEAR))
