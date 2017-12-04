@@ -310,8 +310,7 @@ class EnvModelUpdater(network.NetworkUpdater):
                     return self._env_loss5, self._reward_loss5, self._transition_loss5, self._momentum_loss5, 5
 
                 self._env_loss, self._reward_loss, self._transition_loss, self._momentum_loss, self._num = tf.case({
-                    tf.greater(self._count, tf.constant(25000)): f5, tf.less(self._count, tf.constant(10000)): f1},
-                    default=f3, exclusive=True)
+                    tf.equal(self._count, 5): f5, tf.equal(self._count, 1): f1}, default=f3, exclusive=True)
 
                 self._op_loss = self._env_loss \
                                 + self._reward_loss \
@@ -328,6 +327,7 @@ class EnvModelUpdater(network.NetworkUpdater):
                                                       var_list=net_transition.variables + net_se.variables +
                                                       net_decoder.variables)
         self.imshow_count = 0
+        self.num = 1
 
     def declare_update(self):
         return self._update_operation
@@ -335,11 +335,17 @@ class EnvModelUpdater(network.NetworkUpdater):
     def update(self, sess, batch, *args, **kwargs):
         state, action, reward, next_state = batch["state"], batch["action"], batch["reward"], batch["next_state"]
         state = np.concatenate((state, next_state[-1:]), axis=0)
+        if self.imshow_count <= 10000:
+            self.num = 1
+        elif self.imshow_count > 25000:
+            self.num = 5
+        else:
+            self.num = 3
         feed_dict = {
             self._input_state: state,
             self._input_action: action,
             self._input_reward: reward,
-            self._count: self.imshow_count
+            self._count: self.num
         }
         self.imshow_count += 1
         logging.warning("----------------%s episodes-------------" % self.imshow_count)
@@ -352,10 +358,10 @@ class EnvModelUpdater(network.NetworkUpdater):
                       "flow_regulation_loss": self._flow_regulation_loss
                       }#,
                       # "goal_reg_loss": self._goal_reg_loss}
-        if self.imshow_count % 2 == 0:
+        if self.imshow_count % 1000 == 0:
             fetch_dict["s0"] = self._s0
             fetch_dict["update_step"] = self.imshow_count
-            for i in range(self._depth):
+            for i in range(self.num):
                 fetch_dict.update({
                     "f%d" % i: self._fn[i],
                     "f%d_predict" % i: self._f_predict[i],
@@ -633,7 +639,7 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                                         flow_to_color(flow.astype(np.float32), max_len=16.0) * 255)
                 del info[prefix + "s0"]
                 del info[prefix + "update_step"]
-                for d in range(self._max_rollout):
+                for d in range(num):
                     del info[prefix + "f%d" % d], info[prefix + "f%d_predict" % d]
                     del info[prefix + "a%d_predict" % d]
                     del info[prefix + "m%d_predict" % d]
