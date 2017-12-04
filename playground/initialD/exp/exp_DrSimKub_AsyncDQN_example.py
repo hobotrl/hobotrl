@@ -38,25 +38,25 @@ state_shape = env.observation_space.shape
 ALL_ACTIONS = env.env._ALL_ACTIONS
 AGENT_ACTIONS = ALL_ACTIONS[:3]
 num_actions = len(AGENT_ACTIONS)
-gamma = 0.9  # discount factor
-greedy_epsilon = CappedLinear(10000, 0.2, 0.05)  #exploration rate accroding to step
+gamma = 0.9
+greedy_epsilon = CappedLinear(10000, 0.2, 0.05)
 # --- replay buffer
-replay_capacity = 15000  #in MB, maxd buf at disk. i step about 1MB
-replay_bucket_size = 100  #how many step in a block
-replay_ratio_active = 0.1  # ddr ratio
-replay_max_sample_epoch = 2  # max times
-replay_upsample_bias = (1, 1, 1, 0.1)  # upsample for replay redistribute, accroding to ?
+replay_capacity = 300000
+replay_bucket_size = 100
+replay_ratio_active = 0.05
+replay_max_sample_epoch = 2
+replay_upsample_bias = (1, 1, 1, 0.1)
 # --- NN architecture
 f_net = lambda inputs: f_dueling_q(inputs, num_actions)
 if_ddqn = True
 # --- optimization
-batch_size = 8  # mini batch
+batch_size = 8
 learning_rate = 1e-4
-target_sync_interval = 1  # lay update?
-target_sync_rate = 1e-3  # para for a filter which is similar to lazy update
+target_sync_interval = 1
+target_sync_rate = 1e-3
 update_interval = 1
-max_grad_norm = 1.0  # limit max gradient
-sample_mimimum_count = 100  # what?
+max_grad_norm = 1.0
+sample_mimimum_count = 10
 # --- logging and ckpt
 tf_log_dir = "./experiment"
 replay_cache_dir = "./ReplayBufferCache/experiment"
@@ -233,7 +233,7 @@ def log_info(update_info):
             tag='q_vals_min',
             simple_value=np.min(q_vals))
     if cnt_skip == 0 or n_steps == 0:
-        next_q_vals_nt = agent._agent.learn_q(np.asarray(next_state)[np.newaxis, :])[0]
+        next_q_vals_nt = agent.learn_q(np.asarray(next_state)[np.newaxis, :])[0]
         for i, ac in enumerate(AGENT_ACTIONS):
             summary_proto.value.add(
                 tag='next_q_vals_{}'.format(ac[0]),
