@@ -5,6 +5,7 @@ import traceback
 import logging
 import Queue
 import threading
+import wrapt
 
 import tensorflow as tf
 from core import Agent
@@ -105,20 +106,16 @@ class ClusterAgent(Agent):
         return self._agent.sess
 
 
-class AsynchronousAgent(Agent):
+class AsynchronousAgent(wrapt.ObjectProxy):
 
     def __init__(self, agent, *args, **kwargs):
-        super(AsynchronousAgent, self).__init__(*args, **kwargs)
-        self._agent = agent
+        super(AsynchronousAgent, self).__init__(agent)
         self._queue = Queue.Queue(maxsize=-1)
         self._infoq = Queue.Queue(maxsize=-1)
         self._thread = RateControlTrainingThread(
-            self._agent, self._queue, self._infoq, **kwargs
+            self.__wrapped__, self._queue, self._infoq, **kwargs
         )
         self._thread.start()
-
-    def new_episode(self, state):
-        return self._agent.new_episode(state)
 
     def step(self, state, action, reward, next_state, episode_done=False, **kwargs):
         self._queue.put({"kwargs": kwargs, "args": (state, action, reward, next_state, episode_done)})
@@ -128,29 +125,11 @@ class AsynchronousAgent(Agent):
             info = self._infoq.get()
         return info
 
-    def act(self, state, **kwargs):
-        return self._agent.act(state, **kwargs)
-
-    def set_session(self, sess):
-        self._agent.set_session(sess)
-
-    def create_session(self, config=None, save_dir=None, **kwargs):
-        return self._agent.create_session(config=config,
-                                          save_dir=save_dir)
-
-    @property
-    def sess(self):
-        return self._agent.sess
-
     def stop(self, blocking=True):
         print "[AsynchronousAgent.stop()]: stopping training thread."
         self._thread.stop()
         if blocking:
             self._thread.join()
-
-    @property
-    def sess(self):
-        return self._agent.sess
 
     def __enter__(self):
         return self

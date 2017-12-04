@@ -3,7 +3,7 @@ from collections import namedtuple
 import tensorflow as tf
 import numpy as np
 
-import utils
+import exp.utils
 import sys
 
 HParams = namedtuple('HParams',
@@ -304,7 +304,7 @@ class ResNet(object):
     # Helper functions(counts FLOPs and number of weights)
     def _conv(self, x, filter_size, out_channel, stride, pad="SAME", input_q=None, output_q=None, name="conv"):
         b, h, w, in_channel = x.get_shape().as_list()
-        x = utils._conv(x, filter_size, out_channel, stride, pad, input_q, output_q, name)
+        x = exp.utils._conv(x, filter_size, out_channel, stride, pad, input_q, output_q, name)
         f = 2 * (h/stride) * (w/stride) * in_channel * out_channel * filter_size * filter_size
         w = in_channel * out_channel * filter_size * filter_size
         scope_name = tf.get_variable_scope().name + "/" + name
@@ -313,7 +313,7 @@ class ResNet(object):
 
     def _fc(self, x, out_dim, input_q=None, output_q=None, name="fc"):
         b, in_dim = x.get_shape().as_list()
-        x = utils._fc(x, out_dim, input_q, output_q, name)
+        x = exp.utils._fc(x, out_dim, input_q, output_q, name)
         f = 2 * (in_dim + 1) * out_dim
         w = (in_dim + 1) * out_dim
         scope_name = tf.get_variable_scope().name + "/" + name
@@ -321,7 +321,7 @@ class ResNet(object):
         return x
 
     def _bn(self, x, name="bn"):
-        x = utils._bn(x, self.is_train, self._global_step, name)
+        x = exp.utils._bn(x, self.is_train, self._global_step, name)
         # f = 8 * self._get_data_size(x)
         # w = 4 * x.get_shape().as_list()[-1]
         # scope_name = tf.get_variable_scope().name + "/" + name
@@ -329,7 +329,7 @@ class ResNet(object):
         return x
 
     def _relu(self, x, name="relu"):
-        x = utils._relu(x, 0.0, name)
+        x = exp.utils._relu(x, 0.0, name)
         # f = self._get_data_size(x)
         # scope_name = tf.get_variable_scope().name + "/" + name
         # self._add_flops_weights(scope_name, f, 0)
