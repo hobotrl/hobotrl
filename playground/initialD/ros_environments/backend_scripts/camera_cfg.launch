@@ -4,7 +4,7 @@
   <group ns="camera1">
   <node pkg="tf" type="static_transform_publisher" name="camera_broadcaster"
       args="0 0 36
-            0 0  0 1
+            1.0 0.0 0.0 0.0
             /car/center/rotate /camera1 20" />
   <node name="camera_info" pkg="rostopic" type="rostopic"
       args="pub camera_info sensor_msgs/CameraInfo
