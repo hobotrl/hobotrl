@@ -1,5 +1,7 @@
+import os
 import tensorflow as tf
 import numpy as np
+import cv2
 
 def print_qvals(n_steps, agent, state, action, AGENT_ACTIONS):
     q_vals = agent.learn_q(np.asarray(state)[np.newaxis, :])[0]
@@ -20,7 +22,7 @@ def print_qvals(n_steps, agent, state, action, AGENT_ACTIONS):
 def log_info(agent_info, env_info,
              done,
              cum_reward,
-             n_ep, n_ep_steps, n_env_steps, n_agent_steps):
+             n_ep, n_ep_steps, n_total_steps):
     summary_proto = tf.Summary()
     for tag in agent_info:
         summary_proto.value.add(
@@ -28,8 +30,8 @@ def log_info(agent_info, env_info,
         )
     if done:
         summary_proto.value.add(tag='exp/n_ep_steps', simple_value=n_ep_steps)
-        summary_proto.value.add(tag='exp/n_env_steps', simple_value=n_env_steps)
-        summary_proto.value.add(tag='exp/n_agent_steps', simple_value=n_agent_steps)
+        summary_proto.value.add(tag='exp/n_total_steps',
+                                simple_value=n_total_steps)
         summary_proto.value.add(
             tag='exp/num_episodes', simple_value=n_ep)
         summary_proto.value.add(
@@ -41,3 +43,43 @@ def log_info(agent_info, env_info,
                 tag='exp/flag_success', simple_value=env_info['flag_success'])
 
     return summary_proto
+
+class StepsSaver(object):
+    def __init__(self, savedir):
+        self.savedir = savedir
+        os.makedirs(self.savedir)
+        self.eps_dir = None
+        self.file = None
+        self.stat_file = open(self.savedir + "/0000.txt", "w")
+
+    def close(self):
+        self.stat_file.close()
+
+    def parse_state(self, state):
+        return np.array(state)[:, :, 6:]
+
+    def save(self, n_ep, n_step, state, action, vec_reward, reward,
+                  done, cum_reward, flag_success):
+        if self.file is None:
+            self.eps_dir = self.savedir + "/" + str(n_ep).zfill(4)
+            os.mkdir(self.eps_dir)
+            self.file = open(self.eps_dir + "/0000.txt", "w")
+
+        img_path = self.eps_dir + "/" + str(n_step + 1).zfill(4) + "_" + str(action) + ".jpg"
+        cv2.imwrite(
+            img_path,
+            cv2.cvtColor(self.parse_state(state), cv2.COLOR_RGB2BGR)
+        )
+        self.file.write(str(n_step) + ',' + str(action) + ',' + str(reward) + '\n')
+        vec_reward = vec_reward.tolist()
+        str_reward = ""
+        for r in vec_reward:
+            str_reward += str(r)
+            str_reward += ","
+        str_reward += "\n"
+        self.file.write(str_reward)
+        self.file.write("\n")
+        if done:
+            self.file.close()
+            self.file = None
+            self.stat_file.write("{}, {}, {}, {}\n".format(n_ep, cum_reward, flag_success, done))

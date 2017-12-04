@@ -16,7 +16,7 @@ class EnvRewardVec2Scalar(wrapt.ObjectProxy):
         self._road_change = False
         self._mom_opp = 0.0
         self._mom_biking = 0.0
-        self._last_steer = False
+        self._steering = False
 
     def reset(self):
         state = self.__wrapped__.reset()
@@ -27,7 +27,7 @@ class EnvRewardVec2Scalar(wrapt.ObjectProxy):
         self._road_change = False
         self._mom_opp = 0.0
         self._mom_biking = 0.0
-        self._last_steer = False
+        self._steering = False
 
         return state
 
@@ -38,8 +38,6 @@ class EnvRewardVec2Scalar(wrapt.ObjectProxy):
         early_done, info_diff = self._func_early_stopping()
         done = done | early_done
         info.update(info_diff)
-        if done:
-            info['flag_success'] = reward > 0.0
         return next_state, reward, done, info
 
     def _func_scalar_reward(self, rewards, action):
@@ -48,7 +46,6 @@ class EnvRewardVec2Scalar(wrapt.ObjectProxy):
 
         # append a reward that is 1 when action is lane switching
         rewards = rewards.tolist()
-        rewards.append(np.logical_or(action == 1, action == 2))
         print (' '*3 + 'R: [' + '{:4.2f} ' * len(rewards) + ']').format(
             *rewards),
 
@@ -62,20 +59,23 @@ class EnvRewardVec2Scalar(wrapt.ObjectProxy):
         biking = rewards[6]
         # inner = rewards[7]
         # outter = rewards[8]
-        steer = rewards[-1]
+        steer = np.logical_or(action == 1, action == 2)
 
         # update reward-related state vars
         ema_speed = 0.5 * self._ema_speed + 0.5 * speed
         ema_dist = 1.0 if dist > 2.0 else 0.9 * self._ema_dist
         mom_opp = min((opp < 0.5) * (self._mom_opp + 1), 20)
         mom_biking = min((biking > 0.5) * (self._mom_biking + 1), 12)
+        steering = steer if action != 3 else self._steering
         self._ema_speed = ema_speed
         self._ema_dist = ema_dist
         self._obs_risk = obs_risk
         self._road_change = road_change
         self._mom_opp = mom_opp
         self._mom_biking = mom_biking
-        print '{:4.2f}, {:4.2f}, {:4.2f}'.format(mom_opp, mom_biking, ema_dist),
+        self._steering = steering
+        print '{:3.0f}, {:3.0f}, {:4.2f}, {:3.0f}'.format(
+            mom_opp, mom_biking, ema_dist, self._steering),
 
         # calculate scalar reward
         reward = [
@@ -88,7 +88,7 @@ class EnvRewardVec2Scalar(wrapt.ObjectProxy):
             # ped
             -40 * (0.9 + 0.1 * mom_biking) * (mom_biking > 1.0),
             # steer
-            steer * -40.0,
+            steering * -40.0,
         ]
         reward = np.sum(reward) / 100.0
         print ': {:5.2f}'.format(reward)
@@ -160,9 +160,10 @@ class EnvNoOpSkipping(wrapt.ObjectProxy):
         # from this infinite series
         if done:
             total_skip_reward /= (1 - self.__gamma)
-
+        # update info
         info['t_step'] = time.time() - t
-
+        if done:
+            info['flag_success'] = total_skip_reward > 0.0
         self.__cnt_skip = self.__n_skip
         logging.warning(
             'Mean skip reward: {:5.2f}'.format(total_skip_reward)

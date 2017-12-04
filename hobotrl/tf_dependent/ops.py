@@ -57,6 +57,20 @@ def l2_distance(x1, y1, x2, y2, name=None):
             return tf.sqrt(tf.square(x1 - x2) + tf.square(y1 - y2))
 
 
+def l2_distance_weight(x1, y1, x2, y2, limit, name=None):
+    return limit - l2_distance(x1, y1, x2, y2)
+
+
+def trilinear_distance_weight(x1, y1, x2, y2, limit=2.0, name=None):
+    with ops.name_scope(name, "TrilinearDistance", [x1, y1, x2, y2]) as name:
+        return (limit - tf.abs(x1 - x2)) * (limit - tf.abs(y1 - y2)) / (2.0 * limit)
+
+
+def l1_distance_weight(x1, y1, x2, y2, limit=2.0, name=None):
+    with ops.name_scope(name, "L1Distance", [x1, y1, x2, y2]) as name:
+        return ((limit - tf.abs(x1 - x2)) + (limit - tf.abs(y1 - y2))) / (2.0 * limit)
+
+
 class CoordUtil(object):
 
     @staticmethod
@@ -86,45 +100,30 @@ def frame_trans(frame, move, kernel_size=3, name=None):
         y_map_int = tf.to_int32(y_map + 0.5) * (1 - test) + tf.to_int32(y_map - 0.5) * test
         test = tf.stop_gradient(tf.to_int32(x_map < 0.0))
         x_map_int = tf.to_int32(x_map + 0.5) * (1 - test) + tf.to_int32(x_map - 0.5) * test
-        #
-        # h, w = tf.stop_gradient(h), tf.stop_gradient(w)
-        # test = tf.stop_gradient(tf.to_float(y_map < 0.0))
-        # y_map = y_map * (1 - test)
-        # test = tf.stop_gradient(tf.to_float(y_map > (tf.to_float(h) - 1.0)))
-        # y_map = y_map * (1 - test) + (tf.to_float(h) - 1.0) * test
-        # test = tf.stop_gradient(tf.to_float(x_map < 0.0))
-        # x_map = x_map * (1 - test)
-        # test = tf.stop_gradient(tf.to_float(x_map > (tf.to_float(w) - 1.0)))
-        # x_map = x_map * (1 - test) + (tf.to_float(w) - 1.0) * test
 
-        # y_map_int, x_map_int = tf.to_int32(y_map + 0.5), tf.to_int32(x_map + 0.5)
-        # y_map_int, x_map_int = tf.stop_gradient(y_map_int), tf.stop_gradient(x_map_int)
         weights, activations = [], []
-        # with tf.control_dependencies([tf.assert_positive(
-        #     tf.to_float(tf.logical_not(
-        #         tf.logical_or(tf.is_nan(y_map), tf.is_nan(x_map))
-        #     ))
-        # )]):
-        #     with tf.control_dependencies([tf.assert_less_equal(
-        #         tf.sqrt(tf.square(tf.to_float(y_map_int)-y_map) + tf.square(tf.to_float(x_map_int) - x_map)),
-        #                     math.sqrt(2.0)/2)]):
 
         max_distance = kernel_size / math.sqrt(2.0)
         batch_index = CoordUtil.get_batch_index(n, h, w)
+        y_neighbors, x_neighbors = [], []
+
+        for dy in range(kernel_size):
+            y_neighbors.append(y_map_int + (dy - kernel_size / 2))
+        for dx in range(kernel_size):
+            x_neighbors.append(x_map_int + (dx - kernel_size / 2))
+
         for dx in range(kernel_size):
             for dy in range(kernel_size):
-                y_neighbor, x_neighbor = y_map_int + (dy - kernel_size / 2), x_map_int + (dx - kernel_size / 2)
+                y_neighbor, x_neighbor = y_neighbors[dy], x_neighbors[dx]
                 y_valid = tf.logical_and(y_neighbor >= 0, y_neighbor < h)
                 x_valid = tf.logical_and(x_neighbor >= 0, x_neighbor < w)
                 valid = tf.logical_and(y_valid, x_valid)
                 # logging.warning("y_neighbor, x_neighbor, y_valid, x_valid, y_map, x_map: %s, %s, %s, %s, %s, %s,", y_neighbor, x_neighbor, y_valid, x_valid, y_map, x_map)
                 weights.append(
-                    tf.subtract(
-                        tf.to_float(max_distance),
-                        l2_distance(tf.to_float(x_neighbor), tf.to_float(y_neighbor), x_map, y_map)
-                    , name="weight")
+                    # l2_distance_weight(tf.to_float(x_neighbor), tf.to_float(y_neighbor), x_map, y_map, max_distance)
+                    # trilinear_distance_weight(tf.to_float(x_neighbor), tf.to_float(y_neighbor), x_map, y_map)
+                    l1_distance_weight(tf.to_float(x_neighbor), tf.to_float(y_neighbor), x_map, y_map)
                 )
-                # with tf.control_dependencies([tf.assert_greater_equal(weights[-1], -0.0)]):
                 # validate coordinates
                 y_neighbor = y_neighbor * tf.to_int32(y_valid)
                 x_neighbor = x_neighbor * tf.to_int32(x_valid)

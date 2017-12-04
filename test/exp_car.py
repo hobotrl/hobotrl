@@ -386,7 +386,7 @@ class I2A(A3CExperimentWithI2A):
                  entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4), batch_size=8):
         if env is None:
             env = gym.make('CarRacing-v0')
-            env = Downsample(env, length_factor=1.0)
+            env = wrap_car(env, 3, 3)
             # env = ScaledFloatFrame(EnvNoOpSkipping(
             #     env=EnvRewardVec2Scalar(FrameStack(Downsample(DrSimDecisionK8S(), length_factor=2), 4)),
             #     n_skip=6, gamma=0.9, if_random_phase=True

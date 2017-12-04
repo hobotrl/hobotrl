@@ -1,9 +1,9 @@
-import os
 import signal
-import time
 import sys
 import traceback
-from collections import deque
+
+import os
+
 sys.path.append('../../..')
 sys.path.append('..')
 
@@ -11,27 +11,16 @@ sys.path.append('..')
 import numpy as np
 
 import tensorflow as tf
-from tensorflow import layers
-from tensorflow.contrib.layers import l2_regularizer
-
-from hobotrl.playback import MapPlayback
-from playground.initialD.imitaion_learning.TmpPretrainedAgent import TmpPretrainedAgent
-from hobotrl.environments.environments import FrameStack
 
 from playground.initialD.ros_environments.core import DrivingSimulatorEnv
 
-import rospy
-import message_filters
 from std_msgs.msg import Char, Bool, Int16, Float32
 from sensor_msgs.msg import CompressedImage
 import sklearn.metrics
 
-from gym.spaces import Discrete, Box
 import cv2
 
-from playground.initialD.imitaion_learning.sl import initialD_input
-import random
-import resnet
+from exp.utils import resnet
 import hobotrl as hrl
 
 
@@ -143,11 +132,11 @@ env = DrivingSimulatorEnv(
 
 batch_size = 1
 hp = resnet.HParams(batch_size=batch_size,
-                            num_gpus=1,
-                            num_classes=3,
-                            weight_decay=0.001,
-                            momentum=0.9,
-                            finetune=True)
+                    num_gpus=1,
+                    num_classes=3,
+                    weight_decay=0.001,
+                    momentum=0.9,
+                    finetune=True)
 
 
 def f_net(inputs):
