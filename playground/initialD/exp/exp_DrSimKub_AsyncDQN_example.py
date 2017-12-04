@@ -38,25 +38,25 @@ state_shape = env.observation_space.shape
 ALL_ACTIONS = env.env._ALL_ACTIONS
 AGENT_ACTIONS = ALL_ACTIONS[:3]
 num_actions = len(AGENT_ACTIONS)
-gamma = 0.9
-greedy_epsilon = CappedLinear(10000, 0.2, 0.05)
+gamma = 0.9  # discount factor
+greedy_epsilon = CappedLinear(10000, 0.2, 0.05)  #exploration rate accroding to step
 # --- replay buffer
-replay_capacity = 300000
-replay_bucket_size = 100
-replay_ratio_active = 0.05
-replay_max_sample_epoch = 2
-replay_upsample_bias = (1, 1, 1, 0.1)
+replay_capacity = 15000  #in MB, maxd buf at disk. i step about 1MB
+replay_bucket_size = 100  #how many step in a block
+replay_ratio_active = 0.1  # ddr ratio
+replay_max_sample_epoch = 2  # max times
+replay_upsample_bias = (1, 1, 1, 0.1)  # upsample for replay redistribute, accroding to ?
 # --- NN architecture
 f_net = lambda inputs: f_dueling_q(inputs, num_actions)
 if_ddqn = True
 # --- optimization
-batch_size = 8
+batch_size = 8  # mini batch
 learning_rate = 1e-4
-target_sync_interval = 1
-target_sync_rate = 1e-3
+target_sync_interval = 1  # lay update?
+target_sync_rate = 1e-3  # para for a filter which is similar to lazy update
 update_interval = 1
-max_grad_norm = 1.0
-sample_mimimum_count = 100
+max_grad_norm = 1.0  # limit max gradient
+sample_mimimum_count = 100  # what?
 # --- logging and ckpt
 tf_log_dir = "./experiment"
 replay_cache_dir = "./ReplayBufferCache/experiment"
@@ -407,5 +407,4 @@ finally:
     env.env.exit()
     replay_buffer.close()
     os.killpg(os.getpgid(os.getpid()), signal.SIGKILL)
-    print "="*30
-
+print "="*30
