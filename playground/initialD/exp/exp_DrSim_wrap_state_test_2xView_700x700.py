@@ -52,7 +52,7 @@ num_actions = len(AGENT_ACTIONS)
 gamma = 0.9  # discount factor
 greedy_epsilon = CappedLinear(50000, 0.5, 0.05)  # exploration rate accroding to step
 # --- replay buffer
-replay_capacity = 20000 # in MB, maxd buf at disk. i step about 1MB
+replay_capacity = 30000 # in MB, maxd buf at disk. i step about 1MB
 replay_bucket_size = 100  # how many step in a block
 replay_ratio_active = 0.1  # ddr ratio
 replay_max_sample_epoch = 2  # max replay times
@@ -70,8 +70,8 @@ max_grad_norm = 1.0  # limit max gradient
 sample_mimimum_count = 1000  # what?
 update_rate = 4.0  # updates per second by the async wrapper
 # --- logging and ckpt
-tf_log_dir = "./experiment"
-replay_cache_dir = "./ReplayBufferCache/experiment"
+tf_log_dir = "./experiment700"
+replay_cache_dir = "./ReplayBufferCache/experiment700"
 # ==========================================
 
 
@@ -198,7 +198,7 @@ class DrSimDecisionK8S(wrapt.ObjectProxy):
             # Generate obstacle configuration and write to launch file
             ['python', utils_path+'gen_launch_dynamic_v1.py',
              utils_path+'road_segment_info.txt', ws_path,
-             utils_path+'state_remap_test.launch', 32, '--random_n_obs'],
+             utils_path+'state_remap_test_2xView_700x700.launch', 32, '--random_n_obs'],
             # Start roscore
             ['roscore'],
             # Reward function script
@@ -291,10 +291,10 @@ mapy = ratio * (mapy - map_min)
 
 def remap_process(frame):
     # remap
-    dst = cv2.remap(np.asarray(frame), mapx, mapy, cv2.INTER_LINEAR)
+    dst = np.asarray(frame)  # cv2.remap(np.asarray(frame), mapx, mapy, cv2.INTER_LINEAR)
     # for display
     last_frame = dst[:, :, 0:3]
-    cv2.imshow("image1", cv2.resize(last_frame, (480, 480), interpolation=cv2.INTER_LINEAR))
+    cv2.imshow("image1", last_frame)
     cv2.waitKey(10)
     return dst
 

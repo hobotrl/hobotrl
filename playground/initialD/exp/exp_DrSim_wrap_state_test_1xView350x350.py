@@ -291,10 +291,10 @@ mapy = ratio * (mapy - map_min)
 
 def remap_process(frame):
     # remap
-    dst = cv2.remap(np.asarray(frame), mapx, mapy, cv2.INTER_LINEAR)
+    dst = np.asarray(frame)  # cv2.remap(np.asarray(frame), mapx, mapy, cv2.INTER_LINEAR)
     # for display
     last_frame = dst[:, :, 0:3]
-    cv2.imshow("image1", cv2.resize(last_frame, (480, 480), interpolation=cv2.INTER_LINEAR))
+    cv2.imshow("image1", last_frame)
     cv2.waitKey(10)
     return dst
 
@@ -363,14 +363,14 @@ try:
             cum_reward = 0.0
             n_ep_steps = 0
             state = env.reset()
-            state = remap_process(state)
+            #state = remap_process(state)
             while True:
                 action = agent.act(state)
                 print_qvals(
                     n_ep_steps, _agent, state, action, AGENT_ACTIONS
                 )
                 next_state, reward, done, env_info = env.step(action)
-                state = remap_process(state)
+                #state = remap_process(state)
                 agent_info = agent.step(
                     sess=sess, state=state, action=action,
                     reward=reward, next_state=next_state,

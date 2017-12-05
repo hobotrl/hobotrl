@@ -70,8 +70,8 @@ max_grad_norm = 1.0  # limit max gradient
 sample_mimimum_count = 1000  # what?
 update_rate = 4.0  # updates per second by the async wrapper
 # --- logging and ckpt
-tf_log_dir = "./experiment"
-replay_cache_dir = "./ReplayBufferCache/experiment"
+tf_log_dir = "./experiment350r"
+replay_cache_dir = "./ReplayBufferCache/experiment350r"
 # ==========================================
 
 
@@ -198,7 +198,7 @@ class DrSimDecisionK8S(wrapt.ObjectProxy):
             # Generate obstacle configuration and write to launch file
             ['python', utils_path+'gen_launch_dynamic_v1.py',
              utils_path+'road_segment_info.txt', ws_path,
-             utils_path+'state_remap_test.launch', 32, '--random_n_obs'],
+             utils_path+'state_remap_test_2xView_700x700.launch', 32, '--random_n_obs'],
             # Start roscore
             ['roscore'],
             # Reward function script
@@ -232,12 +232,12 @@ env = EnvNoOpSkipping(
 
 # ==========================================
 # State Wrapper
-src_size = (350,350)
+src_size = (700,700)
 dst_size = (350,350)
-center_src = (175,175)
+center_src = (350,350)
 center_dst = (175,175)
 linear_part_ratio_dst = 0.2
-k_scale = 1.0  # dst_size[0]/src_size[0] typically, set by hand if needed
+k_scale = 0.5  # dst_size[0]/src_size[0] typically, set by hand if needed
 d = 1.0 / k_scale
 
 mapx = np.zeros((dst_size[1], dst_size[0]), dtype=np.float32)
