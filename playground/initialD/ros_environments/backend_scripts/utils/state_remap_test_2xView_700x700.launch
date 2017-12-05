@@ -27,13 +27,13 @@
 <node name="camera_info" pkg="rostopic" type="rostopic"
   args="pub camera_info sensor_msgs/CameraInfo
  '{header: {seq: 0, stamp: {secs: 0, nsecs: 0}, frame_id: '/camera1'},
-  height: 350, width: 350, distortion_model: 'plumb_bob',
+  height: 700, width: 700, distortion_model: 'plumb_bob',
   D: [0],
   K: [125.0, 0.0, 175, 0.0, 125.0, 175.0, 0.0, 0.0, 1.0],
   R: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
   P: [125.0, 0.0, 175, 0.0, 0.0, 125.0, 175.0, 0.0, 0.0, 0.0, 1.0, 0.0],
   binning_x: 0, binning_y: 0,
-  roi: {x_offset: 0, y_offset: 0, height: 350, width: 350, do_rectify: false}}' -r 2"
+  roi: {x_offset: 0, y_offset: 0, height: 700, width: 700, do_rectify: false}}' -r 2"
   output="screen"/>
 </group>
 
