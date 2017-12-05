@@ -33,7 +33,7 @@
   R: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
   P: [250.0, 0.0, 350, 0.0, 0.0, 250.0, 350.0, 0.0, 0.0, 0.0, 1.0, 0.0],
   binning_x: 0, binning_y: 0,
-  roi: {x_offset: 175, y_offset: 175, height: 350, width: 350, do_rectify: false}}' -r 2"
+  roi: {x_offset: 175, y_offset: 175, height: 350, width: 350, do_rectify: true}}' -r 2"
   output="screen"/>
 </group>
 
