@@ -1,0 +1,49 @@
+# yaml file for deploying env-api-server
+apiVersion: v1
+kind: Service
+metadata:
+  name: http-file-server
+  labels:
+    run: http-file-server
+spec:
+  type: NodePort
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: web
+  selector:
+    run: http-file-server
+---
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: http-file-server
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        run: http-file-server
+    spec:
+      containers:
+      - name: http-file-server
+        image: docker.hobot.cc/carsim/api:0.1.1
+        ports:
+        - containerPort: 8080
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: workdir
+          mountPath: /mnt
+        command:
+        - "/bin/bash"
+        args:
+        - "-c"
+        - "cd /mnt; python -m SimpleHTTPServer 8080"
+      volumes:
+      - name: workdir
+        hostPath:
+          path: /mnt/glusterfs/lisen.mu
+   
+
