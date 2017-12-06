@@ -98,7 +98,7 @@ class CoordUtil(object):
         return tf.tile(tf.reshape(tf.range(n), shape=(n, 1, 1, 1)), multiples=(1, h, w, 1))
 
 
-def frame_trans(frame, move, kernel_size=3, name=None):
+def frame_trans(frame, move, kernel_size=3, name=None, weight_valid=True):
     # default kernel: 3x3
     with ops.name_scope(name, "FrameTrans", [frame, move, kernel_size]) as name:
         g = tf.get_default_graph()
@@ -160,6 +160,11 @@ def frame_trans(frame, move, kernel_size=3, name=None):
                 nyx_coord = tf.concat((batch_index, y_neighbor, x_neighbor), axis=3)
                 # activations.append(tf.stop_gradient(tf.gather_nd(frame, nyx_coord) * tf.to_float(valid)))
                 activations.append(tf.gather_nd(frame, nyx_coord))
+                if weight_valid:
+                    weights[-1] = weights[-1] * tf.to_float(valid)
+                else:
+                    # actionvation valid
+                    activations[-1] = activations[-1] * tf.to_float(valid)
                 # logging.warning("weight:%s, activation:%s", weights[-1], activations[-1])
         # reweight
         sum_weights = tf.add(tf.add_n(weights), 1e-7, name="sum_weight")
