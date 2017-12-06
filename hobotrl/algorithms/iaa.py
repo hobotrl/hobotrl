@@ -358,7 +358,7 @@ class EnvModelUpdater(network.NetworkUpdater):
                       "flow_regulation_loss": self._flow_regulation_loss
                       }#,
                       # "goal_reg_loss": self._goal_reg_loss}
-        if self.imshow_count % 1000 == 0:
+        if self.imshow_count % 2 == 0:
             fetch_dict["s0"] = self._s0
             fetch_dict["update_step"] = self.imshow_count
             for i in range(self.num):
@@ -386,6 +386,7 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                  # sampler arguments
                  sampler=None,
                  policy_with_iaa=False,
+                 compute_with_diff=False,
                  with_momentum=True,
                  rollout_depth=3,
                  rollout_lane=3,
@@ -421,6 +422,11 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
 
         def f_iaa(inputs):
             input_observation = inputs[0]
+            if compute_with_diff:
+                logging.warning("use diff 2333")
+                diff_ob = []
+                for i in range(input_observation.shape[-1] / 3 - 1):
+                    diff_ob.append(input_observation[:, :, :, (i+1)*3:(i+1)*3+3] - input_observation[:, :, :, i*3:i*3+3])
             input_action = inputs[1]
             action_dim = inputs[2]
             input_action = tf.one_hot(indices=input_action, depth=action_dim, on_value=1.0, off_value=0.0, axis=-1)
