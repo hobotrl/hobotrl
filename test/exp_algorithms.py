@@ -931,6 +931,7 @@ class A3CExperimentWithI2A(Experiment):
                 # sampler arguments
                 sampler=None,
                 policy_with_iaa=False,
+                compute_with_diff=False,
                 with_momentum=True,
                 batch_size=self._batch_size,
                 log_dir=args.logdir,
