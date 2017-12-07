@@ -156,21 +156,16 @@ class EnvModelUpdater(network.NetworkUpdater):
                 self._count = tf.placeholder(dtype=tf.int32, name="count")
 
             with tf.name_scope("inputs"):
-                s0 = self._input_state[:-depth]
+                s0 = self._input_state[:-1]
                 state_shape = tf.shape(self._input_state)[1:]
 
                 f0 = s0[:, :, :, -3:]
                 logging.warning("s0:%s, f0:%s", s0.shape, f0.shape)
                 sn, an, rn, fn =[], [], [], []
                 for i in range(depth):
-                    if i < depth - 1:
-                        sn.append(self._input_state[i+1:i-depth+1])
-                        an.append(self._input_action[i:i-depth+1])
-                        rn.append(self._input_reward[i:i-depth+1])
-                    else:
-                        sn.append(self._input_state[i+1:])
-                        an.append(self._input_action[i:])
-                        rn.append(self._input_reward[i:])
+                    sn.append(self._input_state[i+1:])
+                    an.append(self._input_action[i:])
+                    rn.append(self._input_reward[i:])
                     fn.append(sn[-1][:, :, :, -3:])
 
             with tf.name_scope("rollout"):
@@ -187,18 +182,15 @@ class EnvModelUpdater(network.NetworkUpdater):
                 mom_decoder_predict = []
                 action_related_decoder_predict = []
                 ses = net_se([self._input_state])["se"].op
-                se0 = ses[:-depth]
+                se0 = ses[:-1]
                 sen = []
                 for i in range(depth):
-                    if i < depth - 1:
-                        sen.append(ses[i+1:i-depth+1])
-                    else:
-                        sen.append(ses[i+1:])
+                    sen.append(ses[i+1:])
                 cur_se = se0
                 cur_goal = None
                 cur_mom = None
                 cur_action_related = None
-
+                se0_truncate, f0_truncate = se0, f0
                 flows = []
                 flow_regulations = []
                 for i in range(self._depth):
@@ -214,28 +206,28 @@ class EnvModelUpdater(network.NetworkUpdater):
                         momfrom0_predict.append(cur_mom)
                         cur_action_related = action_related if cur_goal is None else cur_goal + action_related
                         action_relatedfrom0_predict.append(cur_action_related)
-                        cur_se_mom = se0 + cur_mom
-                        cur_se_action_related = se0 + cur_action_related
-                        momentum_loss.append(network.Utils.clipped_square(cur_se_mom - sen[i]))
+                        cur_se_mom = se0_truncate + cur_mom
+                        cur_se_action_related = se0_truncate + cur_action_related
+                        momentum_loss.append(tf.reduce_mean(network.Utils.clipped_square(cur_se_mom - sen[i])))
 
                     goal = net_trans["next_state"].op
                     # socalled_state = net_trans["action_related"].op
                     cur_goal = goal if cur_goal is None else tf.stop_gradient(cur_goal) + goal
                     goalfrom0_predict.append(cur_goal)
-                    cur_se = se0 + cur_goal
+                    cur_se = se0_truncate + cur_goal
                     # cur_se = socalled_state
 
                     ses_predict.append(cur_se)
                     r_predict.append(net_trans["reward"].op)
-                    r_predict_loss.append(network.Utils.clipped_square(r_predict[-1] - rn[i]))
+                    r_predict_loss.append(tf.reduce_mean(network.Utils.clipped_square(r_predict[-1] - rn[i])))
                     # f_predict.append(net_decoder([tf.concat([se0, cur_goal], axis=1), f0],
                     #                              name_scope="frame_decoder%d" % i)["next_frame"].op)
-                    mom_decoder_predict.append(net_decoder([tf.concat([se0, cur_se_mom], axis=1), f0],
+                    mom_decoder_predict.append(net_decoder([tf.concat([se0_truncate, cur_se_mom], axis=1), f0_truncate],
                                                            name_scope="mom_decoder%d" % i)["next_frame"].op)
-                    action_related_decoder_predict.append(net_decoder([tf.concat([se0, cur_se_action_related], axis=1), f0],
+                    action_related_decoder_predict.append(net_decoder([tf.concat([se0_truncate, cur_se_action_related], axis=1), f0_truncate],
                                                           name_scope="action_related_decoder%d" % i)["next_frame"].op)
 
-                    net_decoded = net_decoder([tf.concat([se0, cur_se], axis=1), f0],
+                    net_decoded = net_decoder([tf.concat([se0_truncate, cur_se], axis=1), f0_truncate],
                                               name_scope="frame_decoder%d" % i)
                     f_predict.append(net_decoded["next_frame"].op)
                     frame_2 = net_decoded["frame_2"]
@@ -263,7 +255,11 @@ class EnvModelUpdater(network.NetworkUpdater):
                         l1_x = tf.reduce_mean(tf.abs(o2_x))
                         flow_regulations.append(l1_x + l1_y)
                     f_predict_loss.append(tf.reduce_mean(network.Utils.clipped_square(f_predict[-1] - fn[i])))
-                    transition_loss.append(network.Utils.clipped_square(ses_predict[-1] - sen[i]))
+                    transition_loss.append(tf.reduce_mean(network.Utils.clipped_square(ses_predict[-1] - sen[i])))
+                    cur_goal = cur_goal[:-1]
+                    cur_se = cur_se[:-1]
+                    f0_truncate = f0_truncate[:-1]
+                    se0_truncate = se0_truncate[:-1]
 
                 if len(flow_regulations) > 0:
                     self._flow_regulation_loss = tf.reduce_mean(tf.add_n(flow_regulations) / depth, name="flow_loss") * 1e-1
@@ -337,10 +333,10 @@ class EnvModelUpdater(network.NetworkUpdater):
         state = np.concatenate((state, next_state[-1:]), axis=0)
         if self.imshow_count <= 10000:
             self.num = 1
-        elif self.imshow_count > 25000:
-            self.num = 5
-        else:
+        elif self.imshow_count <= 25000:
             self.num = 3
+        else:
+            self.num = 5
         feed_dict = {
             self._input_state: state,
             self._input_action: action,
@@ -394,7 +390,8 @@ class EnvModelUpdater(network.NetworkUpdater):
                     f = s[:, :, 3 * j: 3 * j + 3]
                     cv2.imwrite(path_prefix + "%d_%03d_f0_%d.png" % (update_step, i, j),
                                 cv2.cvtColor(255 * f.astype(np.float32), cv2.COLOR_RGB2BGR))
-                for d in range(num):
+            for d in range(num):
+                for i in range(len(s0) - d):
                     fn = info[prefix + "f%d" % d][i]
                     fn_predict = info[prefix + "f%d_predict" % d][i]
                     an_predict = info[prefix + "a%d_predict" % d][i]
