@@ -164,21 +164,16 @@ class EnvModelUpdater(network.NetworkUpdater):
                 self._count = tf.placeholder(dtype=tf.int32, name="count")
 
             with tf.name_scope("inputs"):
-                s0 = self._input_state[:-self._depth]
+                s0 = self._input_state[:-1]
                 state_shape = tf.shape(self._input_state)[1:]
 
                 f0 = s0[:, :, :, -3:]
                 logging.warning("s0:%s, f0:%s", s0.shape, f0.shape)
                 sn, an, rn, fn =[], [], [], []
                 for i in range(self._depth):
-                    if i < self._depth - 1:
-                        sn.append(self._input_state[i+1:i-self._depth+1])
-                        an.append(self._input_action[i:i-self._depth+1])
-                        rn.append(self._input_reward[i:i-self._depth+1])
-                    else:
-                        sn.append(self._input_state[i+1:])
-                        an.append(self._input_action[i:])
-                        rn.append(self._input_reward[i:])
+                    sn.append(self._input_state[i+1:])
+                    an.append(self._input_action[i:])
+                    rn.append(self._input_reward[i:])
                     fn.append(sn[-1][:, :, :, -3:])
 
             with tf.name_scope("rollout"):
@@ -195,18 +190,15 @@ class EnvModelUpdater(network.NetworkUpdater):
                 mom_decoder_predict = []
                 action_related_decoder_predict = []
                 ses = net_se([self._input_state])["se"].op
-                se0 = ses[:-self._depth]
+                se0 = ses[:-1]
                 sen = []
                 for i in range(self._depth):
-                    if i < self._depth - 1:
-                        sen.append(ses[i+1:i-self._depth+1])
-                    else:
-                        sen.append(ses[i+1:])
+                    sen.append(ses[i+1:])
                 cur_se = se0
                 cur_goal = None
                 cur_mom = None
                 cur_action_related = None
-
+                se0_truncate, f0_truncate = se0, f0
                 flows = []
                 flow_regulations = []
                 for i in range(self._depth):
@@ -222,28 +214,28 @@ class EnvModelUpdater(network.NetworkUpdater):
                         momfrom0_predict.append(cur_mom)
                         cur_action_related = action_related if cur_goal is None else cur_goal + action_related
                         action_relatedfrom0_predict.append(cur_action_related)
-                        cur_se_mom = se0 + cur_mom
-                        cur_se_action_related = se0 + cur_action_related
-                        momentum_loss.append(network.Utils.clipped_square(cur_se_mom - sen[i]))
+                        cur_se_mom = se0_truncate + cur_mom
+                        cur_se_action_related = se0_truncate + cur_action_related
+                        momentum_loss.append(tf.reduce_mean(network.Utils.clipped_square(cur_se_mom - sen[i])))
 
                     goal = net_trans["next_state"].op
                     # socalled_state = net_trans["action_related"].op
                     cur_goal = goal if cur_goal is None else tf.stop_gradient(cur_goal) + goal
                     goalfrom0_predict.append(cur_goal)
-                    cur_se = se0 + cur_goal
+                    cur_se = se0_truncate + cur_goal
                     # cur_se = socalled_state
 
                     ses_predict.append(cur_se)
                     r_predict.append(net_trans["reward"].op)
-                    r_predict_loss.append(network.Utils.clipped_square(r_predict[-1] - rn[i]))
+                    r_predict_loss.append(tf.reduce_mean(network.Utils.clipped_square(r_predict[-1] - rn[i])))
                     # f_predict.append(net_decoder([tf.concat([se0, cur_goal], axis=1), f0],
                     #                              name_scope="frame_decoder%d" % i)["next_frame"].op)
-                    mom_decoder_predict.append(net_decoder([tf.concat([se0, cur_se_mom], axis=1), f0],
+                    mom_decoder_predict.append(net_decoder([tf.concat([se0_truncate, cur_se_mom], axis=1), f0_truncate],
                                                            name_scope="mom_decoder%d" % i)["next_frame"].op)
-                    action_related_decoder_predict.append(net_decoder([tf.concat([se0, cur_se_action_related], axis=1), f0],
+                    action_related_decoder_predict.append(net_decoder([tf.concat([se0_truncate, cur_se_action_related], axis=1), f0_truncate],
                                                           name_scope="action_related_decoder%d" % i)["next_frame"].op)
 
-                    net_decoded = net_decoder([tf.concat([se0, cur_se], axis=1), f0],
+                    net_decoded = net_decoder([tf.concat([se0_truncate, cur_se], axis=1), f0_truncate],
                                               name_scope="frame_decoder%d" % i)
                     f_predict.append(net_decoded["next_frame"].op)
                     frame_2 = net_decoded["frame_2"]
@@ -271,7 +263,11 @@ class EnvModelUpdater(network.NetworkUpdater):
                         l1_x = tf.reduce_mean(tf.abs(o2_x))
                         flow_regulations.append(l1_x + l1_y)
                     f_predict_loss.append(tf.reduce_mean(network.Utils.clipped_square(f_predict[-1] - fn[i])))
-                    transition_loss.append(network.Utils.clipped_square(ses_predict[-1] - sen[i]))
+                    transition_loss.append(tf.reduce_mean(network.Utils.clipped_square(ses_predict[-1] - sen[i])))
+                    cur_goal = cur_goal[:-1]
+                    cur_se = cur_se[:-1]
+                    f0_truncate = f0_truncate[:-1]
+                    se0_truncate = se0_truncate[:-1]
 
                 self._reward_loss = []
                 self._env_loss = []
@@ -339,6 +335,7 @@ class EnvModelUpdater(network.NetworkUpdater):
     def update(self, sess, batch, *args, **kwargs):
         state, action, reward, next_state = batch["state"], batch["action"], batch["reward"], batch["next_state"]
         state = np.concatenate((state, next_state[-1:]), axis=0)
+
         for j in range(len(self._skip_step)):
             if self.imshow_count < self._skip_step[j]:
                 self.num = self._curriculum[j]
@@ -378,6 +375,60 @@ class EnvModelUpdater(network.NetworkUpdater):
                         "flow%d" % i: self._flows[i]
                     })
         return network.UpdateRun(feed_dict=feed_dict, fetch_dict=fetch_dict)
+
+    @staticmethod
+    def check_save_image(updater_name, info, log_dir):
+        prefix = "EnvModelUpdater/%s/" % updater_name
+
+        num = info[prefix + "num"]
+        logging.warning("-----------%s steps for loss------------", num)
+        if prefix + "s0" in info:
+            s0 = info[prefix + "s0"]
+            update_step = info[prefix + "update_step"]
+            path_prefix = os.sep.join([log_dir, "Img", ""])
+            if not os.path.isdir(path_prefix):
+                os.makedirs(path_prefix)
+            logging.warning("writing images to %s", path_prefix)
+            for i in range(len(s0)):
+                s = s0[i]
+                frame_n = s.shape[-1] / 3
+                for j in range(frame_n):
+                    f = s[:, :, 3 * j: 3 * j + 3]
+                    cv2.imwrite(path_prefix + "%d_%03d_f0_%d.png" % (update_step, i, j),
+                                cv2.cvtColor(255 * f.astype(np.float32), cv2.COLOR_RGB2BGR))
+            for d in range(num):
+                for i in range(len(s0) - d):
+                    fn = info[prefix + "f%d" % d][i]
+                    fn_predict = info[prefix + "f%d_predict" % d][i]
+                    an_predict = info[prefix + "a%d_predict" % d][i]
+                    mn_predict = info[prefix + "m%d_predict" % d][i]
+                    flow = None
+                    if prefix + "flow0" in info:
+                        flow = info[prefix + "flow%d" % d][i]
+                    # logging.warning("---------------------------------")
+                    # logging.warning(np.mean(fn_predict))
+                    # logging.warning(np.mean(an_predict))
+                    # logging.warning(np.mean(mn_predict))
+
+                    cv2.imwrite(path_prefix + "%d_%03d_f%d_raw.png" % (update_step, i, d + 1),
+                                cv2.cvtColor(255 * fn.astype(np.float32), cv2.COLOR_RGB2BGR))
+                    cv2.imwrite(path_prefix + "%d_%03d_f%d_predict.png" % (update_step, i, d + 1),
+                                cv2.cvtColor(255 * fn_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
+                    cv2.imwrite(path_prefix + "%d_%03d_y_actionf%d_predict.png" % (update_step, i, d + 1),
+                                cv2.cvtColor(255 * an_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
+                    cv2.imwrite(path_prefix + "%d_%03d_z_momf%d_predict.png" % (update_step, i, d + 1),
+                                cv2.cvtColor(255 * mn_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
+                    if flow is not None:
+                        cv2.imwrite(path_prefix + "%d_%03d_g_flow%d.png" % (update_step, i, d + 1),
+                                    flow_to_color(flow.astype(np.float32), max_len=16.0) * 255)
+            del info[prefix + "s0"]
+            del info[prefix + "update_step"]
+            for d in range(num):
+                del info[prefix + "f%d" % d], info[prefix + "f%d_predict" % d]
+                del info[prefix + "a%d_predict" % d]
+                del info[prefix + "m%d_predict" % d]
+                if prefix + "flow0" in info:
+                    del info[prefix + "flow%d" % d]
 
 
 class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
@@ -617,55 +668,7 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
             self.network_optimizer.update("ac", self.sess, batch)
             self.network_optimizer.update("l2", self.sess)
             info = self.network_optimizer.optimize_step(self.sess)
-            prefix = "EnvModelUpdater/env_model/"
-            num = info[prefix + "num"]
-            logging.warning("-----------%s steps for loss------------", num)
-            if prefix+"s0" in info:
-                s0 = info[prefix + "s0"]
-                update_step = info[prefix + "update_step"]
-                path_prefix = os.sep.join([self._log_dir, "Img", ""])
-                if not os.path.isdir(path_prefix):
-                    os.makedirs(path_prefix)
-                logging.warning("writing images to %s", path_prefix)
-                for i in range(len(s0)):
-                    s = s0[i]
-                    frame_n = s.shape[-1] / 3
-                    for j in range(frame_n):
-                        f = s[:, :,  3 * j: 3 * j + 3]
-                        cv2.imwrite(path_prefix + "%d_%03d_f0_%d.png" % (update_step, i, j),
-                                    cv2.cvtColor(255 * f.astype(np.float32), cv2.COLOR_RGB2BGR))
-                    for d in range(num):
-                        fn = info[prefix + "f%d" % d][i]
-                        fn_predict = info[prefix + "f%d_predict" % d][i]
-                        an_predict = info[prefix + "a%d_predict" % d][i]
-                        mn_predict = info[prefix + "m%d_predict" % d][i]
-                        flow = None
-                        if prefix + "flow0" in info:
-                            flow = info[prefix + "flow%d" % d][i]
-                        # logging.warning("---------------------------------")
-                        # logging.warning(np.mean(fn_predict))
-                        # logging.warning(np.mean(an_predict))
-                        # logging.warning(np.mean(mn_predict))
-
-                        cv2.imwrite(path_prefix + "%d_%03d_f%d_raw.png" % (update_step, i, d+1),
-                                    cv2.cvtColor(255 * fn.astype(np.float32), cv2.COLOR_RGB2BGR))
-                        cv2.imwrite(path_prefix + "%d_%03d_f%d_predict.png" % (update_step, i, d+1),
-                                    cv2.cvtColor(255 * fn_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
-                        cv2.imwrite(path_prefix + "%d_%03d_y_actionf%d_predict.png" % (update_step, i, d + 1),
-                                    cv2.cvtColor(255 * an_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
-                        cv2.imwrite(path_prefix + "%d_%03d_z_momf%d_predict.png" % (update_step, i, d + 1),
-                                    cv2.cvtColor(255 * mn_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
-                        if flow is not None:
-                            cv2.imwrite(path_prefix + "%d_%03d_g_flow%d.png" % (update_step, i, d + 1),
-                                        flow_to_color(flow.astype(np.float32), max_len=16.0) * 255)
-                del info[prefix + "s0"]
-                del info[prefix + "update_step"]
-                for d in range(num):
-                    del info[prefix + "f%d" % d], info[prefix + "f%d_predict" % d]
-                    del info[prefix + "a%d_predict" % d]
-                    del info[prefix + "m%d_predict" % d]
-                    if prefix + "flow0" in info:
-                        del info[prefix + "flow%d" % d]
+            EnvModelUpdater.check_save_image("env_model", info, self._log_dir)
             return info, {}
         else:
             return {}, {}
