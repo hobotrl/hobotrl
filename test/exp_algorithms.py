@@ -16,6 +16,7 @@ from tensorflow.contrib.layers import l2_regularizer
 import hobotrl as hrl
 from hobotrl.experiment import Experiment
 from hobotrl.environments import *
+from hobotrl.async import AsynchronousAgent
 import hobotrl.sampling as sampling
 import hobotrl.algorithms.ac as ac
 import hobotrl.algorithms.dqn as dqn
@@ -23,6 +24,7 @@ import hobotrl.algorithms.dpg as dpg
 import hobotrl.algorithms.ot as ot
 import playground.a3c_onoff as a3coo
 import playground.a3c_continuous_onoff as a3ccoo
+import playground.ot_model as ot_model
 
 
 class DQNExperiment(Experiment):
@@ -933,8 +935,8 @@ class A3CExperimentWithI2A(Experiment):
                 policy_with_iaa=False,
                 compute_with_diff=False,
                 with_momentum=True,
-                dynamic_rollout=[1, 3, 5],
-                dynamic_skip_step=[5000, 15000],
+                dynamic_rollout=[1, 3, 5, 7],
+                dynamic_skip_step=[2, 5, 8],
                 batch_size=self._batch_size,
                 log_dir=args.logdir,
                 global_step=global_step,
@@ -949,7 +951,7 @@ class A3CExperimentWithI2A(Experiment):
             agent.set_session(sess)
             runner = hrl.envs.EnvRunner(self._env, agent, reward_decay=self._discount_factor, max_episode_len=10000,
                                         evaluate_interval=sys.maxint, render_interval=args.render_interval,
-                                        render_once=True,
+                                        render_once=args.render_once,
                                         logdir=args.logdir if args.index == 0 else None)
             runner.episode(self._episode_n)
 
@@ -1004,3 +1006,84 @@ class PPOExperiment(Experiment):
                 render_interval=args.render_interval, logdir=args.logdir
             )
             runner.episode(self._episode_n)
+
+
+class OTDQNModelExperiment(Experiment):
+
+    def __init__(self, env, episode_n,
+                 f_create_q, f_se, f_transition,
+                 f_decoder,
+                 lower_weight=1.0, upper_weight=1.0,
+                 rollout_depth=5, discount_factor=0.99, ddqn=False, target_sync_interval=100, target_sync_rate=1.0,
+                 greedy_epsilon=0.1,
+                 network_optimizer=None,
+                 max_gradient=10.0,
+                 update_interval=4,
+                 replay_size=1024,
+                 batch_size=12,
+                 sampler_creator=None,
+                 asynchronous=False,
+                 ):
+        super(OTDQNModelExperiment, self).__init__()
+
+        self._env, self._episode_n, \
+            self._f_create_q, self._f_se, self._f_transition, \
+            self._f_decoder, \
+            self._lower_weight, self._upper_weight, \
+            self._rollout_depth, self._discount_factor, self._ddqn, self._target_sync_interval, self._target_sync_rate, \
+            self._greedy_epsilon, \
+            self._network_optimizer, \
+            self._max_gradient, \
+            self._update_interval, \
+            self._replay_size, \
+            self._batch_size, \
+            self._sampler_creator = \
+            env, episode_n, \
+            f_create_q, f_se, f_transition, \
+            f_decoder, \
+            lower_weight, upper_weight, \
+            rollout_depth, discount_factor, ddqn, target_sync_interval, target_sync_rate, \
+            greedy_epsilon, \
+            network_optimizer, \
+            max_gradient, \
+            update_interval, \
+            replay_size, \
+            batch_size, \
+            sampler_creator
+        self._asynchronous = asynchronous
+
+    def run(self, args):
+        global_step = tf.get_variable(
+            'global_step', [], dtype=tf.int32,
+             initializer=tf.constant_initializer(0), trainable=False
+        )
+        sampler = None if self._sampler_creator is None else self._sampler_creator(args)
+
+        agent = ot_model.OTModel(f_create_q=self._f_create_q, f_se=self._f_se, f_transition=self._f_transition,
+                        f_decoder=self._f_decoder,
+                        lower_weight=self._lower_weight, upper_weight=self._upper_weight,
+                        state_shape=self._env.observation_space.shape, num_actions=self._env.action_space.n,
+                        rollout_depth=self._rollout_depth, discount_factor=self._discount_factor,
+                        ddqn=self._ddqn,
+                        target_sync_interval=self._target_sync_interval, target_sync_rate=self._target_sync_rate,
+                        greedy_epsilon=self._greedy_epsilon,
+                        network_optimizer=self._network_optimizer,
+                        max_gradient=self._max_gradient,
+                        update_interval=self._update_interval,
+                        replay_size=self._replay_size,
+                        batch_size=self._batch_size,
+                        sampler=sampler,
+                        log_dir=args.logdir,
+                        global_step=global_step)
+        if self._asynchronous:
+            agent = AsynchronousAgent(agent=agent, method='rate', rate=4.0)
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        with agent.create_session(config=config, save_dir=args.logdir) as sess:
+            runner = hrl.envs.EnvRunner(
+                self._env, agent, evaluate_interval=sys.maxint,
+                render_interval=args.render_interval, logdir=args.logdir,
+                render_once=args.render_once,
+            )
+            runner.episode(1000)
+        super(OTDQNModelExperiment, self).run(args)

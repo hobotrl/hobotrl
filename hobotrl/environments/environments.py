@@ -907,19 +907,22 @@ class CropMsPacman(gym.ObservationWrapper):
 
 
 class Downsample(gym.ObservationWrapper):
-    def __init__(self, env=None, length_factor=False):
+    def __init__(self, env=None, length_factor=None, dst_size=None):
         super(Downsample, self).__init__(env)
-        self._length_factor = int(length_factor)
-        self.ob_shape = self.observation_space.shape
-        self.ob_shape = list(self.ob_shape)
-        self.raw_shape = copy.copy(self.ob_shape)
-        self.ob_shape[:2] = map(lambda x: x / self._length_factor, self.ob_shape[:2])
-        self.ob_shape = tuple(self.ob_shape)
-        self.observation_space = gym.spaces.Box(low=0, high=255, shape=self.ob_shape)
+        length_factor = int(length_factor)
+        self.org_shape = copy.copy(list(self.observation_space.shape))
+        assert length_factor is not None or dst_size is not None
+        self.dst_shape = copy.copy(self.org_shape)
+        if dst_size is not None:
+            self.dst_shape[:2] = dst_size
+        else:
+            self.dst_shape[:2] = [x / length_factor for x in self.org_shape[:2]]
+        self.dst_shape = tuple(self.dst_shape)
+        self.observation_space = gym.spaces.Box(low=0, high=255, shape=self.dst_shape)
 
     def _observation(self, obs):
-        img = np.reshape(obs, self.raw_shape).astype(np.float32)
-        img = cv2.resize(img, self.ob_shape[:2][::-1]) # resize to half
+        img = np.reshape(obs, self.org_shape).astype(np.float32)
+        img = cv2.resize(img, self.dst_shape[:2][::-1])
         return img.astype(np.uint8)
 
 
