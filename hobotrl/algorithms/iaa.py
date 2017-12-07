@@ -374,6 +374,59 @@ class EnvModelUpdater(network.NetworkUpdater):
                     })
         return network.UpdateRun(feed_dict=feed_dict, fetch_dict=fetch_dict)
 
+    @staticmethod
+    def check_save_image(updater_name, info, log_dir):
+        prefix = "EnvModelUpdater/%s/" % updater_name
+
+        num = info[prefix + "num"]
+        logging.warning("-----------%s steps for loss------------", num)
+        if prefix + "s0" in info:
+            s0 = info[prefix + "s0"]
+            update_step = info[prefix + "update_step"]
+            path_prefix = os.sep.join([log_dir, "Img", ""])
+            if not os.path.isdir(path_prefix):
+                os.makedirs(path_prefix)
+            logging.warning("writing images to %s", path_prefix)
+            for i in range(len(s0)):
+                s = s0[i]
+                frame_n = s.shape[-1] / 3
+                for j in range(frame_n):
+                    f = s[:, :, 3 * j: 3 * j + 3]
+                    cv2.imwrite(path_prefix + "%d_%03d_f0_%d.png" % (update_step, i, j),
+                                cv2.cvtColor(255 * f.astype(np.float32), cv2.COLOR_RGB2BGR))
+                for d in range(num):
+                    fn = info[prefix + "f%d" % d][i]
+                    fn_predict = info[prefix + "f%d_predict" % d][i]
+                    an_predict = info[prefix + "a%d_predict" % d][i]
+                    mn_predict = info[prefix + "m%d_predict" % d][i]
+                    flow = None
+                    if prefix + "flow0" in info:
+                        flow = info[prefix + "flow%d" % d][i]
+                    # logging.warning("---------------------------------")
+                    # logging.warning(np.mean(fn_predict))
+                    # logging.warning(np.mean(an_predict))
+                    # logging.warning(np.mean(mn_predict))
+
+                    cv2.imwrite(path_prefix + "%d_%03d_f%d_raw.png" % (update_step, i, d + 1),
+                                cv2.cvtColor(255 * fn.astype(np.float32), cv2.COLOR_RGB2BGR))
+                    cv2.imwrite(path_prefix + "%d_%03d_f%d_predict.png" % (update_step, i, d + 1),
+                                cv2.cvtColor(255 * fn_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
+                    cv2.imwrite(path_prefix + "%d_%03d_y_actionf%d_predict.png" % (update_step, i, d + 1),
+                                cv2.cvtColor(255 * an_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
+                    cv2.imwrite(path_prefix + "%d_%03d_z_momf%d_predict.png" % (update_step, i, d + 1),
+                                cv2.cvtColor(255 * mn_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
+                    if flow is not None:
+                        cv2.imwrite(path_prefix + "%d_%03d_g_flow%d.png" % (update_step, i, d + 1),
+                                    flow_to_color(flow.astype(np.float32), max_len=16.0) * 255)
+            del info[prefix + "s0"]
+            del info[prefix + "update_step"]
+            for d in range(num):
+                del info[prefix + "f%d" % d], info[prefix + "f%d_predict" % d]
+                del info[prefix + "a%d_predict" % d]
+                del info[prefix + "m%d_predict" % d]
+                if prefix + "flow0" in info:
+                    del info[prefix + "flow%d" % d]
+
 
 class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
           BaseDeepAgent):
@@ -596,55 +649,7 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
             self.network_optimizer.update("ac", self.sess, batch)
             self.network_optimizer.update("l2", self.sess)
             info = self.network_optimizer.optimize_step(self.sess)
-            prefix = "EnvModelUpdater/env_model/"
-            num = info[prefix + "num"]
-            logging.warning("-----------%s steps for loss------------", num)
-            if prefix+"s0" in info:
-                s0 = info[prefix + "s0"]
-                update_step = info[prefix + "update_step"]
-                path_prefix = os.sep.join([self._log_dir, "Img", ""])
-                if not os.path.isdir(path_prefix):
-                    os.makedirs(path_prefix)
-                logging.warning("writing images to %s", path_prefix)
-                for i in range(len(s0)):
-                    s = s0[i]
-                    frame_n = s.shape[-1] / 3
-                    for j in range(frame_n):
-                        f = s[:, :,  3 * j: 3 * j + 3]
-                        cv2.imwrite(path_prefix + "%d_%03d_f0_%d.png" % (update_step, i, j),
-                                    cv2.cvtColor(255 * f.astype(np.float32), cv2.COLOR_RGB2BGR))
-                    for d in range(num):
-                        fn = info[prefix + "f%d" % d][i]
-                        fn_predict = info[prefix + "f%d_predict" % d][i]
-                        an_predict = info[prefix + "a%d_predict" % d][i]
-                        mn_predict = info[prefix + "m%d_predict" % d][i]
-                        flow = None
-                        if prefix + "flow0" in info:
-                            flow = info[prefix + "flow%d" % d][i]
-                        # logging.warning("---------------------------------")
-                        # logging.warning(np.mean(fn_predict))
-                        # logging.warning(np.mean(an_predict))
-                        # logging.warning(np.mean(mn_predict))
-
-                        cv2.imwrite(path_prefix + "%d_%03d_f%d_raw.png" % (update_step, i, d+1),
-                                    cv2.cvtColor(255 * fn.astype(np.float32), cv2.COLOR_RGB2BGR))
-                        cv2.imwrite(path_prefix + "%d_%03d_f%d_predict.png" % (update_step, i, d+1),
-                                    cv2.cvtColor(255 * fn_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
-                        cv2.imwrite(path_prefix + "%d_%03d_y_actionf%d_predict.png" % (update_step, i, d + 1),
-                                    cv2.cvtColor(255 * an_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
-                        cv2.imwrite(path_prefix + "%d_%03d_z_momf%d_predict.png" % (update_step, i, d + 1),
-                                    cv2.cvtColor(255 * mn_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
-                        if flow is not None:
-                            cv2.imwrite(path_prefix + "%d_%03d_g_flow%d.png" % (update_step, i, d + 1),
-                                        flow_to_color(flow.astype(np.float32), max_len=16.0) * 255)
-                del info[prefix + "s0"]
-                del info[prefix + "update_step"]
-                for d in range(num):
-                    del info[prefix + "f%d" % d], info[prefix + "f%d_predict" % d]
-                    del info[prefix + "a%d_predict" % d]
-                    del info[prefix + "m%d_predict" % d]
-                    if prefix + "flow0" in info:
-                        del info[prefix + "flow%d" % d]
+            EnvModelUpdater.check_save_image("env_model", info, self._log_dir)
             return info, {}
         else:
             return {}, {}
