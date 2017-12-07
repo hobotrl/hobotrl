@@ -19,12 +19,15 @@ class OTModel(OTDQN):
                  rollout_depth,
                  discount_factor,
                  ddqn, target_sync_interval, target_sync_rate, greedy_epsilon, network_optimizer=None,
-                 max_gradient=10.0, update_interval=4, replay_size=1000, batch_size=32, sampler=None, *args, **kwargs):
+                 max_gradient=10.0, update_interval=4, replay_size=1000, batch_size=32, sampler=None,
+                 log_dir=None,
+                 *args, **kwargs):
         kwargs.update({
             "f_se": f_se,
             "f_transition": f_transition,
             "f_decoder": f_decoder,
-            "rollout_depth": rollout_depth
+            "rollout_depth": rollout_depth,
+            "log_dir": log_dir
         })
         self._state_shape, self._num_actions = state_shape, num_actions
         self._rollout_depth = rollout_depth
@@ -37,6 +40,7 @@ class OTModel(OTDQN):
                                       discount_factor, ddqn, target_sync_interval, target_sync_rate, greedy_epsilon,
                                       network_optimizer, max_gradient, update_interval, replay_size, batch_size,
                                       sampler, *args, **kwargs)
+        self._log_dir = log_dir
 
     def init_network(self, f_create_q, f_se, f_transition, f_decoder, state_shape, num_actions, *args, **kwargs):
         def f(inputs):
@@ -96,6 +100,7 @@ class OTModel(OTDQN):
         self.network_optimizer.update("env", self.sess, traj0)
 
         info = self.network_optimizer.optimize_step(self.sess)
+        EnvModelUpdater.check_save_image("env", info, self._log_dir)
         if self._update_count % self._target_sync_interval == 0:
             self.network.sync_target(self.sess, self._target_sync_rate)
         return info, {}
