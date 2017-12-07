@@ -310,7 +310,7 @@ class TruncateTrajectorySampler2(Sampler):
                 break
             if len(truncated) < self._batch_size:
                 # sample failed
-                print "sample failed!"
+                logging.warning("sample failed!")
                 return None
             return truncated
         else:
