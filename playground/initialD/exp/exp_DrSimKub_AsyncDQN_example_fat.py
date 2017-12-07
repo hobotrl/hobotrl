@@ -208,7 +208,7 @@ class FuncReward(object):
         early_done, info_diff = self._func_early_stopping()
         done = done | early_done
         info.update(info_diff)
-        reward. info_diff = self._func_skipping_bias(
+        reward, info_diff = self._func_skipping_bias(
             reward, done, info, n_skip, cnt_skip)
         info.update(info_diff)
         if done:
