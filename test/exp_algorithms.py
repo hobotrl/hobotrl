@@ -933,7 +933,10 @@ class A3CExperimentWithI2A(Experiment):
                 # sampler arguments
                 sampler=None,
                 policy_with_iaa=False,
+                compute_with_diff=False,
                 with_momentum=True,
+                dynamic_rollout=[1, 3, 5],
+                dynamic_skip_step=[5000, 15000],
                 batch_size=self._batch_size,
                 log_dir=args.logdir,
                 global_step=global_step,
