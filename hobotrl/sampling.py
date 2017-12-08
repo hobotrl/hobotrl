@@ -425,6 +425,7 @@ class TransitionBatchUpdate(SamplerAgentMixin):
         if sampler is None:
             sampler = TransitionSampler(playback.MapPlayback(1000), 32, 4)
         self._sampler = sampler
+        self._n_update = 0
 
     def reinforce_(self, state, action, reward, next_state, episode_done, **kwargs):
         super(TransitionBatchUpdate, self).reinforce_(state, action, reward, next_state, episode_done, **kwargs)
@@ -434,6 +435,8 @@ class TransitionBatchUpdate(SamplerAgentMixin):
         else:
             info, sample_info = self.update_on_transition(batch)
             self._sampler.post_step(batch, sample_info)
+            self._n_update += 1
+            info['TransitionBatchUpdate/n_update_step'] = self._n_update
             return info
 
     def update_on_transition(self, batch):
