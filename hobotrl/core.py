@@ -69,7 +69,7 @@ class BaseAgent(Agent):
         called when single interaction step with outside world occurs.
         The agent receive an experience tuple ("state", "action",
         "reward", "next_state") from the outside world and returns an action and
-        relevante info.
+        relevant info.
 
         Optionally the outside world provides a "episode_done" argument to
         indicate the end of an interaction episode.
@@ -83,7 +83,9 @@ class BaseAgent(Agent):
         episode_done : true if episode ends in this step.
         kwargs : other params
         """
-        self._stepper.step()
+        if not (state is None or action is None or reward is None or
+                next_state is None or episode_done is None):
+            self._stepper.step()
         learning_off = kwargs['learning_off'] if 'learning_off' in kwargs else False
         # Agent improve itself with new experience
         if not learning_off:

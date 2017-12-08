@@ -28,6 +28,10 @@ def log_info(agent_info, env_info,
         summary_proto.value.add(
             tag=tag, simple_value=np.mean(agent_info[tag])
         )
+    for tag in env_info:
+        summary_proto.value.add(
+            tag=tag, simple_value=np.mean(env_info[tag])
+        )
     if done:
         summary_proto.value.add(tag='exp/n_ep_steps', simple_value=n_ep_steps)
         summary_proto.value.add(tag='exp/n_total_steps',
