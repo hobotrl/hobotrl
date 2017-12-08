@@ -41,6 +41,7 @@ class Experiment(object):
         if not args.logdir:
             args.logdir = args.name
         experiment_class = Experiment.experiments[name]
+        logging.warning("Experiment %s running with arg: %s", name, args)
         experiment_class().run(args)
         logging.warning("Experiment %s end.", name)
         pass
