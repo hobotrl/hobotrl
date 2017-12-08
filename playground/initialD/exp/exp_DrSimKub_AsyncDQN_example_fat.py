@@ -44,7 +44,7 @@ AGENT_ACTIONS = ALL_ACTIONS[:3]
 num_actions = len(AGENT_ACTIONS)
 noop = 3
 gamma = 0.9
-greedy_epsilon = CappedLinear(int(5e5), 0.2, 0.05)
+greedy_epsilon = CappedLinear(int(5e4), 0.2, 0.05)
 # --- replay buffer
 replay_capacity = 300000
 replay_bucket_size = 100
@@ -62,7 +62,7 @@ target_sync_rate = 1e-3
 update_interval = 1
 max_grad_norm = 1.0
 sample_mimimum_count = 100
-update_rate = 4.0  # updates per second by the async wrapper
+update_rate = 2.0  # updates per second by the async wrapper
 # --- logging and ckpt
 
 tf.app.flags.DEFINE_string(
