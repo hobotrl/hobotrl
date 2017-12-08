@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-
+import sys
 import time
 import traceback
 import logging
@@ -247,9 +247,12 @@ class TrainingThread(threading.Thread):
         # async_buffer_end signal for asynchronous samplers, representing end of step queue
         # TODO: ??? aync_buffer end, async_buffer_empty?
         if self._first_sample_arrived:
+            t = time.time()
             info = self._agent.step(
                 *step["args"], async_buffer_end=queue_empty, **step["kwargs"]
             )
+            t_learn = time.time() - t
+            info['TrainingThread/t_step'] = t_learn
             self.__n_step += 1
             # update the item in info_queue with the latest info
             old_info = {}
@@ -258,6 +261,7 @@ class TrainingThread(threading.Thread):
             info['TrainingThread/n_step'] = self.__n_step
             old_info.update(info)
             self._info_queue.put(old_info)
+        return {}
 
     def stop(self):
         print "[TrainingThread.step()]: setting poison pill."
@@ -303,6 +307,7 @@ class RateControlMixin(object):
     Assumes super class has a `step()` method. Also assume super class has a
     `len_step_queue` attribute to make `ratio` control work.
     """
+
     def __init__(self, *args, **kwargs):
         """Initialization.
 
@@ -334,40 +339,45 @@ class RateControlMixin(object):
         if self.__method == 'rate':
             if rate is None:
                 self.__rate = 1.0
-                print "[ThrottleMixin.__init__()]: using default rate = 1.0."
+                print "[RateControlMixin.__init__()]: using default rate = 1.0."
             else:
                 assert rate > 0
                 self.__rate = rate
+                print "[RateControlMixin.__init__()]: using rate = {}.".format(
+                    rate)
             self.__t_last_call = time.time()
         elif self.__method == 'ratio':
             if ratio is None:
                 self.__ratio = 1.0
-                print "[ThrottleMixin.__init__()]: using default ratio = 1.0."
+                print "[RateControlMixin.__init__()]: using default ratio = 1.0."
             else:
                 assert ratio > 0
                 self.__ratio = ratio
+                print "[RateControlMixin.__init__()]: using ratio = {}.".format(
+                    ratio)
             self.__len_step_queue = 0
         else:
             self.__method = 'best_effort'
-            print "[ThrottleMixin.__init__()]: will run thread with best " \
+            print "[RateControlMixin.__init__()]: will run thread with best " \
                   "effort."
 
         # initialize quota
         self.__quota = 0
-        self.__MAX_QUOTA = 65535
+        self.__MAX_QUOTA = sys.maxsize
 
     def step(self, *args, **kwargs):
+        len_step_queue = self.len_step_queue
+
         # adjust quota
         if self.__method == "ratio":
             self.__quota += self.__ratio * max(
-                self.len_step_queue - self.__len_step_queue, 0
+                len_step_queue - self.__len_step_queue, 0
             )
-            self.__len_step_queue = self.len_step_queue
+            self.__len_step_queue = len_step_queue
         elif self.__method == 'rate':
-            self.__quota += self.__rate * max(
-                time.time() - self.__t_last_call, 0
-            )
-            self.__t_last_call = time.time()
+            t = time.time()
+            self.__quota += self.__rate * max(t - self.__t_last_call, 0)
+            self.__t_last_call = t
         self.__quota = max(min(self.__quota, self.__MAX_QUOTA), 0)
 
         # print "[RateControlMixin.step()]: current quota", self.__quota
@@ -375,12 +385,16 @@ class RateControlMixin(object):
         if self.__quota > 1 or self.__method == 'best_effort':
             # logging.warning(
             #     "[RateControlMixin.step()]: "
-            #     "got quota {} to step once.".format(self.__quota)
+            #     "got quota {} to step once @ {} {}.".format(
+            #         self.__quota, len_step_queue, t
+            #     )
             # )
-            super(RateControlMixin, self).step(*args, **kwargs)
+            info = super(RateControlMixin, self).step(*args, **kwargs)
             self.__quota -= 1
         else:
-            time.sleep(0.001)
+            info = {}
+            time.sleep(0.05)
+        return info
 
 
 class RateControlTrainingThread(RateControlMixin, TrainingThread):
