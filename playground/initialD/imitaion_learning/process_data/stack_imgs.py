@@ -37,11 +37,12 @@ def stack_one_eps(eps_imgs, eps_acts, stack_num):
     #     eps_acts.insert(0, eps_acts[0])
     img_num = len(eps_imgs)
     stack_info = []
-    for i in range(img_num-stack_num):
+    # Take action delay into consideration
+    for i in range(img_num-stack_num-2):
         info = []
         for j in range(stack_num):
             info.append(eps_imgs[i+j])
-        action = eps_acts[i+stack_num]
+        action = eps_acts[i+stack_num+2]
         info.append(action)
         stack_info.append(info)
     return stack_info
