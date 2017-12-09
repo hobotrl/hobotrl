@@ -387,19 +387,19 @@ class RateControlMixin(object):
 
         # throttle calls to the step() method of super class
         if self.__quota >= 1 or self.__method == 'best_effort':
-            logging.warning(
-                "[RateControlMixin.step()]: "
-                "got quota {} to step once @ {}.".format(
-                    self.__quota, len_step_queue
-                )
-            )
+            # logging.warning(
+            #     "[RateControlMixin.step()]: "
+            #     "got quota {} to step once @ {}.".format(
+            #         self.__quota, len_step_queue
+            #     )
+            # )
             info = super(RateControlMixin, self).step(*args, **kwargs)
             self.__quota -= 1
-            if self.__quota < 1:
-                logging.warning(
-                    "[RateControlMixin.step()]: "
-                    "emptied quota, quota ={}".format(self.__quota)
-                )
+            # if self.__quota < 1:
+            #     logging.warning(
+            #         "[RateControlMixin.step()]: "
+            #         "emptied quota, quota ={}".format(self.__quota)
+            #     )
         else:
             info = {}
             time.sleep(0.05)
