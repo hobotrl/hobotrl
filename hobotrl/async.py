@@ -126,7 +126,10 @@ class AsynchronousAgent(wrapt.ObjectProxy):
         return info
 
     def stop(self, blocking=True):
-        print "[AsynchronousAgent.stop()]: stopping training thread."
+        logging.warning(
+            "[AsynchronousAgent.stop()]: "
+            "stopping training thread."
+        )
         self._thread.stop()
         if blocking:
             self._thread.join()
@@ -264,7 +267,10 @@ class TrainingThread(threading.Thread):
         return {}
 
     def stop(self):
-        print "[TrainingThread.step()]: setting poison pill."
+        logging.warning(
+            "[TrainingThread.step()]: "
+            "setting poison pill."
+        )
         self._stopped = True
 
     @property
@@ -373,27 +379,34 @@ class RateControlMixin(object):
             self.__quota += self.__ratio * max(
                 len_step_queue - self.__len_step_queue, 0
             )
-            self.__len_step_queue = len_step_queue
         elif self.__method == 'rate':
             t = time.time()
             self.__quota += self.__rate * max(t - self.__t_last_call, 0)
             self.__t_last_call = t
         self.__quota = max(min(self.__quota, self.__MAX_QUOTA), 0)
 
-        # print "[RateControlMixin.step()]: current quota", self.__quota
         # throttle calls to the step() method of super class
-        if self.__quota > 1 or self.__method == 'best_effort':
-            # logging.warning(
-            #     "[RateControlMixin.step()]: "
-            #     "got quota {} to step once @ {} {}.".format(
-            #         self.__quota, len_step_queue, t
-            #     )
-            # )
+        if self.__quota >= 1 or self.__method == 'best_effort':
+            logging.warning(
+                "[RateControlMixin.step()]: "
+                "got quota {} to step once @ {}.".format(
+                    self.__quota, len_step_queue
+                )
+            )
             info = super(RateControlMixin, self).step(*args, **kwargs)
             self.__quota -= 1
+            if self.__quota < 1:
+                logging.warning(
+                    "[RateControlMixin.step()]: "
+                    "emptied quota, quota ={}".format(self.__quota)
+                )
         else:
             info = {}
             time.sleep(0.05)
+
+        if self.__method == "ratio":
+            self.__len_step_queue = len_step_queue
+
         return info
 
 
