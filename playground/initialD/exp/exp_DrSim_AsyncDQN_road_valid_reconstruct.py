@@ -188,7 +188,7 @@ tf.app.flags.DEFINE_string("savedir",
                            """records data""")
 tf.app.flags.DEFINE_string("readme", "direct dqn. Use new reward function.", """readme""")
 tf.app.flags.DEFINE_string("host", "10.31.40.197", """host""")
-tf.app.flags.DEFINE_string("port", '10034', "Docker port")
+tf.app.flags.DEFINE_string("port", '10024', "Docker port")
 tf.app.flags.DEFINE_string("cache_path", './dqn_ReplayBufferCache', "Replay buffer cache path")
 
 FLAGS = tf.app.flags.FLAGS
@@ -432,8 +432,8 @@ class StepsSaver(object):
     def close(self):
         self.stat_file.close()
 
-    def parse_state(self):
-        return np.array(self.state)[:, :, 6:]
+    def parse_state(self, state):
+        return np.array(state)[:, :, -3:]
 
     def save(self, n_ep, n_step, state, action, vec_reward, reward,
                   done, cum_reward, flag_success):
@@ -443,7 +443,7 @@ class StepsSaver(object):
             self.file = open(self.eps_dir + "/0000.txt", "w")
 
         img_path = self.eps_dir + "/" + str(n_step + 1).zfill(4) + "_" + str(action) + ".jpg"
-        cv2.imwrite(img_path, cv2.cvtColor(self.parse_state(), cv2.COLOR_RGB2BGR))
+        cv2.imwrite(img_path, cv2.cvtColor(self.parse_state(state), cv2.COLOR_RGB2BGR))
         self.file.write(str(n_step) + ',' + str(action) + ',' + str(reward) + '\n')
         vec_reward = np.mean(np.array(vec_reward), axis=0)
         vec_reward = vec_reward.tolist()
@@ -503,7 +503,7 @@ try:
                 # save intermediate info
                 stepsSaver.save(n_ep, n_steps, state, action, vec_reward, reward,
                                     done, cum_reward, flag_success)
-                logger.log(update_info, action, n_ep, total_steps, n_steps)
+                logger.log(update_info, state, action, n_ep, total_steps, n_steps)
 
                 state = next_state
 
