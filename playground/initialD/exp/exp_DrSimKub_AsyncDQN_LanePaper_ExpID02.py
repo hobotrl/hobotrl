@@ -197,7 +197,8 @@ class FuncReward(object):
         if 'banned_road_change' in info:
             reward -= 1.0 * (n_skip - cnt_skip)
         if done:
-            reward /= (1 - self.__gamma) / (n_skip - cnt_skip)
+            pass
+            # reward /= (1 - self.__gamma) / (n_skip - cnt_skip)
         new_info['reward_fun/reward'] = reward
         return reward, new_info
 
@@ -289,7 +290,7 @@ try:
             config=config, save_dir=tf_log_dir,
             save_checkpoint_secs=save_checkpoint_secs) as sess, \
         AsynchronousAgent(
-            agent=__agent, method='ratio', ratio=update_ratio) as _agent:
+            agent=__agent, method='ratio', rate=update_ratio) as _agent:
         agent = SkippingAgent(
             # n_skip_vec=(2, 6, 6),
             agent=_agent, n_skip=n_skip, specific_act=noop
