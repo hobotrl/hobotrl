@@ -290,7 +290,7 @@ try:
             config=config, save_dir=tf_log_dir,
             save_checkpoint_secs=save_checkpoint_secs) as sess, \
         AsynchronousAgent(
-            agent=__agent, method='ratio', rate=update_ratio) as _agent:
+            agent=__agent, method='ratio', ratio=update_ratio) as _agent:
         agent = SkippingAgent(
             # n_skip_vec=(2, 6, 6),
             agent=_agent, n_skip=n_skip, specific_act=noop
