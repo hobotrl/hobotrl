@@ -20,6 +20,8 @@ class SkippingAgent(wrapt.ObjectProxy):
     def act(self, state, **kwargs):
         if self.cnt_skip == self.n_skip - 1:
             action = self.__wrapped__.act(state, **kwargs)
+        elif self._specific_act is None:
+            action = self._action
         else:
             action = self._specific_act
         return action
