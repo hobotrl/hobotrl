@@ -10,6 +10,7 @@ import argparse
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Test File Iterator.')
     parser.add_argument('test_folder', type=str)
+    parser.add_argument('ckpt_folder', type=str, default="/root/")
     parser.add_argument('planning_path', type=str)
     args = parser.parse_args()
 
@@ -17,7 +18,7 @@ if __name__ == '__main__':
         tests = f.readlines()
 
     try:
-        with open(os.sep.join([args.test_folder, 'finished.list']), 'rb') as f:
+        with open(os.sep.join([args.ckpt_folder, 'finished.list']), 'rb') as f:
             finished = f.readlines()
     except IOError:
         print "finished list not found."
