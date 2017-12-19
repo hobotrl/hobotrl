@@ -32,7 +32,7 @@ if __name__ == '__main__':
         os.sep.join([args.ckpt_folder, 'next.launch'])
     )
 
-    with open(os.sep.join([args.test_folder, 'finished.list']), 'wb') as f:
+    with open(os.sep.join([args.ckpt_folder, 'finished.list']), 'wb') as f:
         finished.append(test)
         f.writelines(finished)
 
