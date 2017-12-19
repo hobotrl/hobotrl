@@ -9,9 +9,8 @@ import argparse
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Test File Iterator.')
-    parser.add_argument('test_folder', type=str)
-    parser.add_argument('ckpt_folder', type=str, default="/root/")
-    parser.add_argument('planning_path', type=str)
+    parser.add_argument('--test_folder', type=str, default="/Projects/hobotrl/playground/initialD/test/experiment/test_cases")
+    parser.add_argument('--ckpt_folder', type=str, default="/root/")
     args = parser.parse_args()
 
     with open(os.sep.join([args.test_folder, 'test.list']), 'rb') as f:
@@ -30,7 +29,7 @@ if __name__ == '__main__':
 
     shutil.copy(
         os.sep.join([args.test_folder, test[:-1]]),
-        os.sep.join([args.planning_path, 'next.launch'])
+        os.sep.join([args.ckpt_folder, 'next.launch'])
     )
 
     with open(os.sep.join([args.test_folder, 'finished.list']), 'wb') as f:
