@@ -266,10 +266,6 @@ try:
             ['python', utils_path + 'parse_map.py',
              ws_path + 'src/Map/src/map_api/data/honda_wider.xodr',
              utils_path + 'road_segment_info.txt'],
-                # Generate obstacle configuration and write to launch file
-            ['python', utils_path+'gen_launch_dynamic_v1.py',
-             utils_path+'road_segment_info.txt', ws_path,
-             '/root/next.launch', 32, '--random_n_obs'],
             # Start roscore
             ['roscore'],
             # Reward function script
@@ -278,7 +274,7 @@ try:
             ['python', backend_path + 'road_validity.py',
              utils_path + 'road_segment_info.txt.signal'],
             # Simulation restarter backend
-            ['python', backend_path+'rviz_restart.py', 'honda_dynamic_obs.launch'],
+            ['python', backend_path+'rviz_restart.py', 'next.launch'],
             # Video capture
             ['python', backend_path+'non_stop_data_capture.py']
         ]
@@ -342,7 +338,7 @@ try:
         n_ep = 0
         n_total_steps = 0
         # GoGoGo
-        while n_total_steps <= 2.5e5:
+        for _ in range(100):
             cum_reward = 0.0
             n_ep_steps = 0
             state = env.reset()
