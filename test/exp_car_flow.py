@@ -4,9 +4,6 @@
 
 import sys
 
-from hobotrl.async import AsynchronousAgent
-from hobotrl.utils import CappedLinear
-
 sys.path.append(".")
 
 from exp_car import *
@@ -14,7 +11,8 @@ from hobotrl.tf_dependent.ops import frame_trans, CoordUtil
 from playground.initialD.ros_environments.clients import DrSimDecisionK8S
 from hobotrl.environments.environments import RemapFrame
 from playground.ot_model import OTModel
-
+from hobotrl.async import AsynchronousAgent
+from hobotrl.utils import CappedLinear
 
 class F(object):
     def __init__(self, env):
