@@ -10,7 +10,7 @@ import argparse
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Test File Iterator.')
     parser.add_argument('--test_folder', type=str, default="/Projects/hobotrl/playground/initialD/test/experiment/test_cases")
-    parser.add_argument('--ckpt_folder', type=str, default="/root/")
+    parser.add_argument('--ckpt_folder', type=str, default="/Projects/catkin_ws/src/Planning/planning/launch")
     args = parser.parse_args()
 
     with open(os.sep.join([args.test_folder, 'test.list']), 'rb') as f:
