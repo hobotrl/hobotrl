@@ -528,6 +528,13 @@ class I2A(A3CExperimentWithI2A):
                 Action_unrelated_goal = Utils.scale_gradient(Action_unrelated_goal, 1e-3)
                 next_goal = Action_related_goal + Action_unrelated_goal
 
+                next_goal_concat = tf.concat([Action_related_goal, Action_unrelated_goal], axis=1)
+                next_goal_concat = hrl.utils.Network.layer_fcs(next_goal_concat, [], 256,
+                                                               activation_hidden=tf.nn.relu,
+                                                               activation_out=None,
+                                                               l2=l2,
+                                                               var_scope="TM_concat")
+
                 return {"next_state": next_goal, "reward": reward, "momentum": Action_unrelated_goal,
                         "action_related": Action_related_goal}
 
