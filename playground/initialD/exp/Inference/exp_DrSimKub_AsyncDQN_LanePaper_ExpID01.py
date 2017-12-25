@@ -14,16 +14,16 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.python.training.summary_io import SummaryWriterCache
 # Hobotrl
-sys.path.append('../../..')  # hobotrl home
+sys.path.append('../../../..')  # hobotrl home
 from hobotrl.algorithms import DQN
 from hobotrl.network import LocalOptimizer
 from hobotrl.environments import FrameStack
 from hobotrl.sampling import TransitionSampler
-from hobotrl.playback import BalancedMapPlayback, BigPlayback
+from hobotrl.playback import MapPlayback, BalancedMapPlayback, BigPlayback
 from hobotrl.async import AsynchronousAgent
 from hobotrl.utils import CappedLinear
 # initialD
-sys.path.append('..')  # initialD home
+sys.path.append('../..')  # initialD home
 from ros_environments.clients import DrSimDecisionK8S
 from exp.utils.func_networks import f_dueling_q
 # from exp.utils.skipping_masking import NonUniformSkip as SkippingAgent
@@ -46,11 +46,11 @@ noop = 3
 gamma = 0.9
 greedy_epsilon = CappedLinear(int(3e4), 0.2, 0.05)
 # --- replay buffer
-replay_capacity = 300000
+replay_capacity = 100
 replay_bucket_size = 100
-replay_ratio_active = 0.01
+replay_ratio_active = 1.0
 replay_max_sample_epoch = 2
-replay_upsample_bias = (1, 1, 1, 0.1)
+# replay_upsample_bias = (1, 1, 1, 0.1)
 # --- NN architecture
 f_net = lambda inputs: f_dueling_q(inputs, num_actions)
 if_ddqn = True
@@ -66,7 +66,7 @@ update_ratio = 8.0
 # --- logging and ckpt
 
 tf.app.flags.DEFINE_string(
-    "dir_prefix", "./experiment/1/",
+    "dir_prefix", "./experiment_mask",
     "Prefix for model ckpt and event file.")
 tf.app.flags.DEFINE_string(
     "tf_log_dir", "ckpt",
@@ -83,6 +83,19 @@ tf.app.flags.DEFINE_float(
 tf.app.flags.DEFINE_float(
     "save_checkpoint_secs", 3600,
     "Seconds to save tf model check points.")
+
+
+# mask action
+def mask_action(rewards, action):
+    if rewards[7] and action == 1 \
+            or rewards[8] and action == 2:
+        return 0
+    elif rewards[6]:
+        return 1
+    elif rewards[5] < 0.5:
+        return 2
+    return action
+
 
 # ===  Reward function
 class FuncReward(object):
@@ -197,7 +210,8 @@ class FuncReward(object):
         if 'banned_road_change' in info:
             reward -= 1.0 * (n_skip - cnt_skip)
         if done:
-            reward /= (1 - self.__gamma) / (n_skip - cnt_skip)
+            pass
+            #reward /= (1 - self.__gamma) / (n_skip - cnt_skip)
         new_info['reward_fun/reward'] = reward
         return reward, new_info
 
@@ -245,18 +259,47 @@ try:
     global_step = tf.get_variable(
         'global_step', [], dtype=tf.int32,
         initializer=tf.constant_initializer(0), trainable=False)
+
+    def gen_default_backend_cmds():
+        ws_path = '/Projects/catkin_ws/'
+        initialD_path = '/Projects/hobotrl/playground/initialD/'
+        backend_path = initialD_path + 'ros_environments/backend_scripts/'
+        utils_path = initialD_path + 'ros_environments/backend_scripts/utils/'
+        backend_cmds = [
+            ['python', utils_path + '/iterate_test_case.py']
+            # Parse maps
+            ['python', utils_path + 'parse_map.py',
+             ws_path + 'src/Map/src/map_api/data/honda_wider.xodr',
+             utils_path + 'road_segment_info.txt'],
+            # Generate obstacle configuration and write to launch file
+            ['python', utils_path+'gen_launch_dynamic_v1.py',
+             utils_path+'road_segment_info.txt', ws_path,
+             '/root/next.launch', 32, '--random_n_obs'],
+            # Start roscore
+            ['roscore'],
+            # Reward function script
+            ['python', backend_path + 'gazebo_rl_reward.py'],
+            # Road validity node script
+            ['python', backend_path + 'road_validity.py',
+             utils_path + 'road_segment_info.txt.signal'],
+            # Simulation restarter backend
+            ['python', backend_path+'rviz_restart.py', 'honda_dynamic_obs.launch'],
+            # Video capture
+            ['python', backend_path+'non_stop_data_capture.py']
+        ]
+        return backend_cmds
+
+
     # Environment
-    env = FrameStack(DrSimDecisionK8S(), n_stack)
+    env = FrameStack(DrSimDecisionK8S(backend_cmds=gen_default_backend_cmds()), n_stack)
     # Agent
     replay_buffer = BigPlayback(
-        bucket_cls=BalancedMapPlayback,
+        bucket_cls=MapPlayback,
         cache_path=replay_cache_dir,
         capacity=replay_capacity,
         bucket_size=replay_bucket_size,
         ratio_active=replay_ratio_active,
         max_sample_epoch=replay_max_sample_epoch,
-        num_actions=num_actions,
-        upsample_bias=replay_upsample_bias
     )
     state_shape = env.observation_space.shape
     __agent = DQN(
@@ -305,20 +348,26 @@ try:
             cum_reward = 0.0
             n_ep_steps = 0
             state = env.reset()
+            last_vec_reward = None
+
             while True:
-                action = agent.act(state)
+                action = agent.act(state, exploration=False)
                 if action != 3:
                     print_qvals(
                         n_ep_steps, __agent, state, action, AGENT_ACTIONS
                     )
+                    if n_ep_steps != 0:
+                        action = mask_action(last_vec_reward, action)
+
                 next_state, vec_reward, done, env_info = env.step(action)
+                last_vec_reward = vec_reward
                 reward, done, reward_info = reward_vector2scalar(
                     action, vec_reward, done, agent.n_skip, agent.cnt_skip
                 )
                 agent_info = agent.step(
                     sess=sess, state=state, action=action,
                     reward=reward, next_state=next_state,
-                    episode_done=done
+                    episode_done=done, learning_off=True,
                 )
                 env_info.update(reward_info)
                 summary_proto = log_info(

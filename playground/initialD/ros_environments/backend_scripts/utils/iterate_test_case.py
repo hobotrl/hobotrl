@@ -9,15 +9,15 @@ import argparse
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser('Test File Iterator.')
-    parser.add_argument('test_folder', type=str)
-    parser.add_argument('planning_path', type=str)
+    parser.add_argument('--test_folder', type=str, default="/Projects/hobotrl/playground/initialD/test/experiment/test_cases")
+    parser.add_argument('--ckpt_folder', type=str, default="/Projects/catkin_ws/src/Planning/planning/launch")
     args = parser.parse_args()
 
     with open(os.sep.join([args.test_folder, 'test.list']), 'rb') as f:
         tests = f.readlines()
 
     try:
-        with open(os.sep.join([args.test_folder, 'finished.list']), 'rb') as f:
+        with open(os.sep.join([args.ckpt_folder, 'finished.list']), 'rb') as f:
             finished = f.readlines()
     except IOError:
         print "finished list not found."
@@ -29,10 +29,10 @@ if __name__ == '__main__':
 
     shutil.copy(
         os.sep.join([args.test_folder, test[:-1]]),
-        os.sep.join([args.planning_path, 'next.launch'])
+        os.sep.join([args.ckpt_folder, 'next.launch'])
     )
 
-    with open(os.sep.join([args.test_folder, 'finished.list']), 'wb') as f:
+    with open(os.sep.join([args.ckpt_folder, 'finished.list']), 'wb') as f:
         finished.append(test)
         f.writelines(finished)
 

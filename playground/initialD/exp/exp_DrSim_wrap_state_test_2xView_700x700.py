@@ -177,7 +177,7 @@ class DrSimDecisionK8S(wrapt.ObjectProxy):
         super(DrSimDecisionK8S, self).__init__(_env)
 
         # Gym env required attributes
-        self.observation_space = Box(low=0, high=255, shape=(350, 350, 3))
+        self.observation_space = Box(low=0, high=255, shape=(700, 700, 3))
         self.reward_range = Box(
             low=-np.inf, high=np.inf, shape=(len(_defs_reward),)
         )
@@ -232,8 +232,8 @@ env = EnvNoOpSkipping(
 
 # ==========================================
 # State Wrapper
-src_size = (350,350)
-dst_size = (350,350)
+src_size = (700,700)
+dst_size = (700,700)
 center_src = (175,175)
 center_dst = (175,175)
 linear_part_ratio_dst = 0.2
@@ -362,15 +362,15 @@ try:
         while True:
             cum_reward = 0.0
             n_ep_steps = 0
-            state = env.reset()
-            state = remap_process(state)
+            state2x = env.reset()
+            state = remap_process(state2x)
             while True:
                 action = agent.act(state)
                 print_qvals(
                     n_ep_steps, _agent, state, action, AGENT_ACTIONS
                 )
-                next_state, reward, done, env_info = env.step(action)
-                state = remap_process(state)
+                next_state2x, reward, done, env_info = env.step(action)
+                next_state = remap_process(next_state2x)
                 agent_info = agent.step(
                     sess=sess, state=state, action=action,
                     reward=reward, next_state=next_state,

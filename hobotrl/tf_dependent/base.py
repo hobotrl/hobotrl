@@ -14,10 +14,10 @@ class BaseDeepAgent(BaseAgent):
         self.__global_step = global_step
         if self.__global_step is not None:
             with tf.name_scope("update_global_step"):
-                # self.__step_input = tf.placeholder(tf.int32, shape=None, name="input_global_step")
-                # self.__op_update_step = tf.assign(self.__global_step, self.__step_input)
-                self.__op_update_step = tf.assign_add(self.__global_step, 1)
-        self.__step_n = 0
+                self.__step_input = tf.placeholder(
+                    tf.int32, shape=None, name="input_global_step")
+                self.__op_update_step = tf.assign(
+                    self.__global_step, self.__step_input)
         self._network = self.init_network(**kwargs)
 
     def init_network(self, *args, **kwargs):
@@ -72,11 +72,12 @@ class BaseDeepAgent(BaseAgent):
         return self.graph
 
     def step(self, state, action, reward, next_state, episode_done=False, **kwargs):
-        self.__step_n += 1
         # increment global_step variable by 1
         if self.__global_step is not None:
-            # self.sess.run(self.__op_update_step, feed_dict={self.__step_input: self.__step_n})
-            self.sess.run(self.__op_update_step)
+            self.sess.run(
+                self.__op_update_step,
+                feed_dict={self.__step_input: self._stepper.value()}
+            )
         # set session for super calls
         if 'sess' not in kwargs:
             kwargs['sess'] = self.sess

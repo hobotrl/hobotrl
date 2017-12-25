@@ -19,15 +19,15 @@ from hobotrl.algorithms import DQN
 from hobotrl.network import LocalOptimizer
 from hobotrl.environments import FrameStack
 from hobotrl.sampling import TransitionSampler
-from hobotrl.playback import BalancedMapPlayback, BigPlayback
+from hobotrl.playback import MapPlayback, BigPlayback
 from hobotrl.async import AsynchronousAgent
 from hobotrl.utils import CappedLinear
 # initialD
 sys.path.append('..')  # initialD home
 from ros_environments.clients import DrSimDecisionK8S
 from exp.utils.func_networks import f_dueling_q
-# from exp.utils.skipping_masking import NonUniformSkip as SkippingAgent
-from exp.utils.skipping_masking import RandFirstSkip as SkippingAgent
+from exp.utils.skipping_masking import NonUniformSkip as SkippingAgent
+# from exp.utils.skipping_masking import RandFirstSkip as SkippingAgent
 from exp.utils.logging_fun import StepsSaver, print_qvals, log_info
 
 # ==============================================
@@ -44,7 +44,7 @@ AGENT_ACTIONS = ALL_ACTIONS[:3]
 num_actions = len(AGENT_ACTIONS)
 noop = 3
 gamma = 0.9
-greedy_epsilon = CappedLinear(int(3e4), 0.2, 0.05)
+greedy_epsilon = CappedLinear(50000, 0.2, 0.05)
 # --- replay buffer
 replay_capacity = 300000
 replay_bucket_size = 100
@@ -62,23 +62,18 @@ target_sync_rate = 1e-3
 update_interval = 1
 max_grad_norm = 1.0
 sample_mimimum_count = 100
-update_ratio = 8.0
+update_rate = 4.0  # updates per second by the async wrapper
 # --- logging and ckpt
 
+dir_prefix = "./experiment/rule_skipping/3/"
 tf.app.flags.DEFINE_string(
-    "dir_prefix", "./experiment/1/",
-    "Prefix for model ckpt and event file.")
-tf.app.flags.DEFINE_string(
-    "tf_log_dir", "ckpt",
+    "tf_log_dir", dir_prefix+"ckpt",
     "Path for model ckpt and event file.")
 tf.app.flags.DEFINE_string(
-    "our_log_dir", "logging",
+    "our_log_dir", dir_prefix+"logging",
     "Path for our logging data.")
 tf.app.flags.DEFINE_string(
-    "replay_cache_dir", "ReplayBufferCache",
-    "Replay buffer cache path.")
-tf.app.flags.DEFINE_float(
-    "gpu_mem_fraction", 0.2,
+    "replay_cache_dir", dir_prefix+"ReplayBufferCache",
     "Replay buffer cache path.")
 tf.app.flags.DEFINE_float(
     "save_checkpoint_secs", 3600,
@@ -141,15 +136,6 @@ class FuncReward(object):
         self._steering = steering
         print '{:3.0f}, {:3.0f}, {:4.2f}, {:3.0f}'.format(
             mom_opp, mom_biking, ema_dist, self._steering),
-        info['reward_fun/speed'] = speed
-        info['reward_fun/dist2longest'] = dist
-        info['reward_fun/obs_risk'] = obs_risk
-        info['reward_fun/road_change'] = road_change
-        info['reward_fun/on_opposite'] = opp
-        info['reward_fun/on_biking'] = biking
-        info['reward_fun/steer'] = steer
-        info['reward_fun/mom_opposite'] = mom_opp
-        info['reward_fun/mom_biking'] = mom_biking
 
         # calculate scalar reward
         reward = [
@@ -193,13 +179,11 @@ class FuncReward(object):
         return done, info
 
     def _func_skipping_bias(self, reward, done, info, n_skip, cnt_skip):
-        new_info = {}
         if 'banned_road_change' in info:
             reward -= 1.0 * (n_skip - cnt_skip)
-        if done:
-            reward /= (1 - self.__gamma) / (n_skip - cnt_skip)
-        new_info['reward_fun/reward'] = reward
-        return reward, new_info
+        # if done:
+        #     reward /= (1 - self.__gamma) / (n_skip - cnt_skip)
+        return reward
 
     def __call__(self, action, rewards, done, n_skip=1, cnt_skip=0):
         info = {}
@@ -208,9 +192,7 @@ class FuncReward(object):
         early_done, info_diff = self._func_early_stopping()
         done = done | early_done
         info.update(info_diff)
-        reward, info_diff = self._func_skipping_bias(
-            reward, done, info, n_skip, cnt_skip)
-        info.update(info_diff)
+        reward = self._func_skipping_bias(reward, done, info, n_skip, cnt_skip)
         if done:
             info['flag_success'] = reward > 0.0
             self.reset()
@@ -224,13 +206,6 @@ env, replay_buffer, _agent = None, None, None
 try:
     # Parse flags
     FLAGS = tf.app.flags.FLAGS
-    dir_prefix = FLAGS.dir_prefix
-    tf_log_dir = os.sep.join([dir_prefix, FLAGS.tf_log_dir])
-    our_log_dir = os.sep.join([dir_prefix, FLAGS.our_log_dir])
-    replay_cache_dir = os.sep.join([dir_prefix, FLAGS.replay_cache_dir])
-    save_checkpoint_secs = FLAGS.save_checkpoint_secs
-    gpu_mem_fraction = FLAGS.gpu_mem_fraction
-
     # Modify tf graph
     graph = tf.get_default_graph()
     # -- create learning rate var and optimizer
@@ -249,8 +224,8 @@ try:
     env = FrameStack(DrSimDecisionK8S(), n_stack)
     # Agent
     replay_buffer = BigPlayback(
-        bucket_cls=BalancedMapPlayback,
-        cache_path=replay_cache_dir,
+        bucket_cls=MapPlayback,
+        cache_path=FLAGS.replay_cache_dir,
         capacity=replay_capacity,
         bucket_size=replay_bucket_size,
         ratio_active=replay_ratio_active,
@@ -280,28 +255,28 @@ try:
         global_step=global_step
      )
     # Utilities
-    stepsSaver = StepsSaver(our_log_dir)
+    stepsSaver = StepsSaver(FLAGS.our_log_dir)
     reward_vector2scalar = FuncReward(gamma)
     # Configure sess
     config = tf.ConfigProto()
-    config.gpu_options.per_process_gpu_memory_fraction = gpu_mem_fraction
+    config.gpu_options.allow_growth = True
     with __agent.create_session(
-            config=config, save_dir=tf_log_dir,
-            save_checkpoint_secs=save_checkpoint_secs) as sess, \
+            config=config, save_dir=FLAGS.tf_log_dir,
+            save_checkpoint_secs=FLAGS.save_checkpoint_secs) as sess, \
         AsynchronousAgent(
-            agent=__agent, method='ratio', ratio=update_ratio) as _agent:
+            agent=__agent, method='rate', rate=update_rate) as _agent:
         agent = SkippingAgent(
-            # n_skip_vec=(2, 6, 6),
+            n_skip_vec=(2, 6, 6),
             agent=_agent, n_skip=n_skip, specific_act=noop
         )
-        summary_writer = SummaryWriterCache.get(tf_log_dir)
+        summary_writer = SummaryWriterCache.get(FLAGS.tf_log_dir)
         # set vars
         sess.run(op_set_lr, feed_dict={lr_in: learning_rate})
         print "Using learning rate {}".format(sess.run(lr))
         n_ep = 0
         n_total_steps = 0
         # GoGoGo
-        while n_total_steps <= 2.5e5:
+        for _ in range(1000):
             cum_reward = 0.0
             n_ep_steps = 0
             state = env.reset()
@@ -351,9 +326,9 @@ except Exception as e:
     print e.message
     traceback.print_exc()
 finally:
-    logging.warning("="*30)
-    logging.warning("="*30)
-    logging.warning("Tidying up...")
+    print "="*30
+    print "="*30
+    print "Tidying up..."
     # kill orphaned monitor daemon process
     if env is not None:
         env.env.exit()
@@ -363,5 +338,5 @@ finally:
     if _agent is not None:
         _agent.stop()
     os.killpg(os.getpgid(os.getpid()), signal.SIGKILL)
-    logging.warning("="*30)
+    print "="*30
 

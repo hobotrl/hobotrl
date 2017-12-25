@@ -5,6 +5,7 @@ import operator
 import logging
 import tensorflow as tf
 import numpy as np
+import copy
 import hobotrl as hrl
 
 import hobotrl.network as network
@@ -144,7 +145,7 @@ class PolicyNetUpdater(network.NetworkUpdater):
 
 class EnvModelUpdater(network.NetworkUpdater):
     def __init__(self, net_se, net_transition, net_decoder, state_shape, dim_action,
-                 curriculum=None, skip_step=None, transition_weight=0.0, with_momentum=True):
+                 curriculum=None, skip_step=None, transition_weight=0.0, with_momentum=True, compute_with_diff=False):
         super(EnvModelUpdater, self).__init__()
         if curriculum is None:
             self._curriculum = [1, 3, 5]
@@ -191,7 +192,15 @@ class EnvModelUpdater(network.NetworkUpdater):
                 momentum_loss = []
                 mom_decoder_predict = []
                 action_related_decoder_predict = []
-                ses = net_se([self._input_state])["se"].op
+                if compute_with_diff:
+                    diff_ob = []
+                    for i in range(self._input_state.shape[-1] / 3 - 1):
+                        diff_ob.append(
+                            self._input_state[:, :, :, (i + 1) * 3:(i + 1) * 3 + 3] - self._input_state[:, :, :,
+                                                                                      i * 3:i * 3 + 3])
+                    ses = net_se([tf.concat(diff_ob[:], axis=3)])["se"].op
+                else:
+                    ses = net_se([self._input_state])["se"].op
                 se0 = ses[:-1]
                 sen = []
                 for i in range(self._depth):
@@ -504,6 +513,7 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
         :param kwargs:
         """
 
+        self.processed_state_shape = []
         def f_iaa(inputs):
             input_observation = inputs[0]
             if compute_with_diff:
@@ -511,9 +521,12 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                 diff_ob = []
                 for i in range(input_observation.shape[-1] / 3 - 1):
                     diff_ob.append(input_observation[:, :, :, (i+1)*3:(i+1)*3+3] - input_observation[:, :, :, i*3:i*3+3])
-                net_se = network.Network([diff_ob], f_se, var_scope="se_1")
+                net_se = network.Network([tf.concat(diff_ob[:], axis=3)], f_se, var_scope="se_1")
+                self.processed_state_shape = copy.copy(state_shape)
+                self.processed_state_shape[-1] = state_shape[-1] - 3
             else:
                 net_se = network.Network([input_observation], f_se, var_scope="se_1")
+                self.processed_state_shape = state_shape
             input_action = inputs[1]
             action_dim = inputs[2]
             input_action = tf.one_hot(indices=input_action, depth=action_dim, on_value=1.0, off_value=0.0, axis=-1)
@@ -675,7 +688,9 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                 state_shape=state_shape,
                 dim_action=num_action,
                 transition_weight=1.0,
-                with_momentum=with_momentum),
+                with_momentum=with_momentum,
+                compute_with_diff=compute_with_diff
+            ),
             name="env_model")
         # network_optimizer.freeze(self.network.sub_net("transition").variables)
         network_optimizer.compile()

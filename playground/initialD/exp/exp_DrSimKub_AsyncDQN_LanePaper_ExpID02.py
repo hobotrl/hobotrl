@@ -197,7 +197,8 @@ class FuncReward(object):
         if 'banned_road_change' in info:
             reward -= 1.0 * (n_skip - cnt_skip)
         if done:
-            reward /= (1 - self.__gamma) / (n_skip - cnt_skip)
+            pass
+            # reward /= (1 - self.__gamma) / (n_skip - cnt_skip)
         new_info['reward_fun/reward'] = reward
         return reward, new_info
 

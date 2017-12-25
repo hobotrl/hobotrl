@@ -78,9 +78,13 @@ class OTModel(OTDQN):
             self.network.sub_net("decoder"),
             state_shape=self._state_shape,
             dim_action=self._num_actions,
-            curriculum=[1, self._rollout_depth],
-            skip_step=[10000],
-            transition_weight=1.0, with_momentum=True
+            # curriculum=[1, self._rollout_depth],
+            # skip_step=[10000],
+            # transition_weight=1.0, with_momentum=True
+            curriculum=[1, 3, 5],
+            skip_step=[5000, 15000],
+            transition_weight=1.0,
+            with_momentum=True
         ), name="env")
         self.network_optimizer.compile()
 

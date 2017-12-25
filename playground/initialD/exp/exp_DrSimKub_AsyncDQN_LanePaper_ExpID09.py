@@ -19,7 +19,7 @@ from hobotrl.algorithms import DQN
 from hobotrl.network import LocalOptimizer
 from hobotrl.environments import FrameStack
 from hobotrl.sampling import TransitionSampler
-from hobotrl.playback import BalancedMapPlayback, BigPlayback
+from hobotrl.playback import MapPlayback, BalancedMapPlayback, BigPlayback
 from hobotrl.async import AsynchronousAgent
 from hobotrl.utils import CappedLinear
 # initialD
@@ -34,7 +34,7 @@ from exp.utils.logging_fun import StepsSaver, print_qvals, log_info
 # =========== Set Parameters Below =============
 # ==============================================
 # === Env
-n_skip = 6
+n_skip = 1
 n_stack = 3
 if_random_phase = True
 # === Agent
@@ -50,7 +50,7 @@ replay_capacity = 300000
 replay_bucket_size = 100
 replay_ratio_active = 0.01
 replay_max_sample_epoch = 2
-replay_upsample_bias = (1, 1, 1, 0.1)
+# replay_upsample_bias = (1, 1, 1, 0.1)
 # --- NN architecture
 f_net = lambda inputs: f_dueling_q(inputs, num_actions)
 if_ddqn = True
@@ -62,7 +62,7 @@ target_sync_rate = 1e-3
 update_interval = 1
 max_grad_norm = 1.0
 sample_mimimum_count = 100
-update_ratio = 8.0
+update_ratio = 8.0/6.0
 # --- logging and ckpt
 
 tf.app.flags.DEFINE_string(
@@ -197,7 +197,8 @@ class FuncReward(object):
         if 'banned_road_change' in info:
             reward -= 1.0 * (n_skip - cnt_skip)
         if done:
-            reward /= (1 - self.__gamma) / (n_skip - cnt_skip)
+            pass
+            #reward /= (1 - self.__gamma) / (n_skip - cnt_skip)
         new_info['reward_fun/reward'] = reward
         return reward, new_info
 
@@ -249,14 +250,12 @@ try:
     env = FrameStack(DrSimDecisionK8S(), n_stack)
     # Agent
     replay_buffer = BigPlayback(
-        bucket_cls=BalancedMapPlayback,
+        bucket_cls=MapPlayback,
         cache_path=replay_cache_dir,
         capacity=replay_capacity,
         bucket_size=replay_bucket_size,
         ratio_active=replay_ratio_active,
         max_sample_epoch=replay_max_sample_epoch,
-        num_actions=num_actions,
-        upsample_bias=replay_upsample_bias
     )
     state_shape = env.observation_space.shape
     __agent = DQN(

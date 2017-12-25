@@ -10,6 +10,7 @@ import logging
 import traceback
 # Data
 import numpy as np
+import cv2
 # Tensorflow
 import tensorflow as tf
 from tensorflow.python.training.summary_io import SummaryWriterCache
@@ -19,7 +20,7 @@ from hobotrl.algorithms import DQN
 from hobotrl.network import LocalOptimizer
 from hobotrl.environments import FrameStack
 from hobotrl.sampling import TransitionSampler
-from hobotrl.playback import BalancedMapPlayback, BigPlayback
+from hobotrl.playback import BalancedMapPlayback, MapPlayback, BigPlayback
 from hobotrl.async import AsynchronousAgent
 from hobotrl.utils import CappedLinear
 # initialD
@@ -83,6 +84,34 @@ tf.app.flags.DEFINE_float(
 tf.app.flags.DEFINE_float(
     "save_checkpoint_secs", 3600,
     "Seconds to save tf model check points.")
+
+def gen_backend_cmds():
+    ws_path = '/Projects/catkin_ws/'
+    initialD_path = '/Projects/hobotrl/playground/initialD/'
+    backend_path = initialD_path + 'ros_environments/backend_scripts/'
+    utils_path = initialD_path + 'ros_environments/backend_scripts/utils/'
+    backend_cmds = [
+        # Parse maps
+        ['python', utils_path + 'parse_map.py',
+         ws_path + 'src/Map/src/map_api/data/honda_wider.xodr',
+         utils_path + 'road_segment_info.txt'],
+        # Generate obstacle configuration and write to launch file
+        ['python', utils_path+'gen_launch_dynamic_v1.py',
+         utils_path+'road_segment_info.txt', ws_path,
+         utils_path+'state_remap_test_2xView_700x700.launch', 32, '--random_n_obs'],
+        # Start roscore
+        ['roscore'],
+        # Reward function script
+        ['python', backend_path + 'gazebo_rl_reward.py'],
+        # Road validity node script
+        ['python', backend_path + 'road_validity.py',
+         utils_path + 'road_segment_info.txt.signal'],
+        # Simulation restarter backend
+        ['python', backend_path+'rviz_restart.py', 'honda_dynamic_obs.launch'],
+        # Video capture
+        ['python', backend_path+'non_stop_data_capture.py']
+    ]
+    return backend_cmds
 
 # ===  Reward function
 class FuncReward(object):
@@ -216,6 +245,13 @@ class FuncReward(object):
             self.reset()
 
         return reward, done, info
+
+def resize_state(state):
+    """resize from (700, 700) to (350, 350)"""
+    frames = [cv2.resize(f, (350,350)).astype('uint8') for f in state._frames]
+    state._frames = frames
+    return state
+    
 # ==========================================
 # ==========================================
 # ==========================================
@@ -246,7 +282,7 @@ try:
         'global_step', [], dtype=tf.int32,
         initializer=tf.constant_initializer(0), trainable=False)
     # Environment
-    env = FrameStack(DrSimDecisionK8S(), n_stack)
+    env = FrameStack(DrSimDecisionK8S(backend_cmds=gen_backend_cmds()), n_stack)
     # Agent
     replay_buffer = BigPlayback(
         bucket_cls=BalancedMapPlayback,
@@ -305,6 +341,7 @@ try:
             cum_reward = 0.0
             n_ep_steps = 0
             state = env.reset()
+            state = resize_state(state)
             while True:
                 action = agent.act(state)
                 if action != 3:
@@ -312,6 +349,7 @@ try:
                         n_ep_steps, __agent, state, action, AGENT_ACTIONS
                     )
                 next_state, vec_reward, done, env_info = env.step(action)
+                next_state = resize_state(next_state)
                 reward, done, reward_info = reward_vector2scalar(
                     action, vec_reward, done, agent.n_skip, agent.cnt_skip
                 )
