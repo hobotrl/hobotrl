@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+import operator
 import logging
 import tensorflow as tf
 import numpy as np
@@ -184,6 +185,7 @@ class EnvModelUpdater(network.NetworkUpdater):
                 r_predict = []
                 r_predict_loss = []
                 f_predict = []
+                image_channel = None
                 f_predict_loss = []
                 transition_loss = []
                 momentum_loss = []
@@ -235,26 +237,29 @@ class EnvModelUpdater(network.NetworkUpdater):
                     action_related_decoder_predict.append(net_decoder([tf.concat([se0_truncate, cur_se_action_related], axis=1), f0_truncate],
                                                           name_scope="action_related_decoder%d" % i)["next_frame"].op)
 
-                    net_decoded = net_decoder([tf.concat([se0_truncate, cur_se], axis=1), f0_truncate],
+                    net_decoded = net_decoder([tf.concat([se0_truncate, cur_goal], axis=1), f0_truncate],
                                               name_scope="frame_decoder%d" % i)
                     f_predict.append(net_decoded["next_frame"].op)
+                    predicted_channel = net_decoded["image_channel"]
+                    if predicted_channel is not None and image_channel is None:
+                        image_channel = predicted_channel.op
                     frame_2 = net_decoded["frame_2"]
+                    frame_losses = []
                     if frame_2 is not None:
-                        frame_2 = net_decoded["frame_2"].op
-                        f_predict_loss.append(tf.reduce_mean(network.Utils.clipped_square(
-                            frame_2 - tf.image.resize_images(fn[i], frame_2.shape.as_list()[1:3]))
-                        ))
-                        frame_4 = net_decoded["frame_4"].op
-                        f_predict_loss.append(tf.reduce_mean(network.Utils.clipped_square(
-                            frame_4 - tf.image.resize_images(fn[i], frame_4.shape.as_list()[1:3]))
-                        ))
-                        frame_8 = net_decoded["frame_8"].op
-                        f_predict_loss.append(tf.reduce_mean(network.Utils.clipped_square(
-                            frame_8 - tf.image.resize_images(fn[i], frame_8.shape.as_list()[1:3]))
-                        ))
-                        flow = net_decoded["flow"].op
+                        sub_i = 1
+                        while True:
+                            sub = "frame_%d" % (2**sub_i)
+                            sub_frame = net_decoded[sub]
+                            if sub_frame is None:
+                                break
+                            sub_frame = sub_frame.op
+                            frame_losses.append(tf.reduce_mean(network.Utils.clipped_square(
+                                sub_frame - tf.image.resize_images(fn[i], sub_frame.shape.as_list()[1:3]))
+                            ))
+                            sub_i = sub_i + 1
+                    flow = net_decoded["flow"].op
+                    if flow is not None:
                         flows.append(flow)
-
                         o1_y = flow[:, :-1, :, :] - flow[:, 1:, :, :]
                         o2_y = o1_y[:, :-1, :, :] - o1_y[:, 1:, :, :]
                         o1_x = flow[:, :, :-1, :] - flow[:, :, 1:, :]
@@ -262,7 +267,9 @@ class EnvModelUpdater(network.NetworkUpdater):
                         l1_y = tf.reduce_mean(tf.abs(o2_y))
                         l1_x = tf.reduce_mean(tf.abs(o2_x))
                         flow_regulations.append(l1_x + l1_y)
-                    f_predict_loss.append(tf.reduce_mean(network.Utils.clipped_square(f_predict[-1] - fn[i])))
+
+                    frame_losses.append(tf.reduce_mean(network.Utils.clipped_square(f_predict[-1] - fn[i])))
+                    f_predict_loss.append(frame_losses)
                     transition_loss.append(tf.reduce_mean(network.Utils.clipped_square(ses_predict[-1] - sen[i])))
                     cur_goal = cur_goal[:-1]
                     cur_se = cur_se[:-1]
@@ -280,7 +287,7 @@ class EnvModelUpdater(network.NetworkUpdater):
                                                             name="reward_loss%d" % curriculum[i]) / 2.0)
 
                     self._env_loss.append(tf.reduce_mean(tf.add_n(
-                        f_predict_loss[0:curriculum[i]]) / float(curriculum[i]),
+                        reduce(operator.add, f_predict_loss[0:curriculum[i]], [])) / float(curriculum[i]),
                                                          name="env_loss%d" % curriculum[i]) / 2.0 * 255.0)
 
                     self._transition_loss.append(tf.reduce_mean(tf.add_n(
@@ -323,6 +330,7 @@ class EnvModelUpdater(network.NetworkUpdater):
                 mom_decoder_predict, action_related_decoder_predict
 
             self._flows = flows
+            self._image_channel = image_channel
         self._update_operation = network.MinimizeLoss(self._op_loss,
                                                       var_list=net_transition.variables + net_se.variables +
                                                       net_decoder.variables)
@@ -336,12 +344,15 @@ class EnvModelUpdater(network.NetworkUpdater):
         state, action, reward, next_state = batch["state"], batch["action"], batch["reward"], batch["next_state"]
         state = np.concatenate((state, next_state[-1:]), axis=0)
 
-        for j in range(len(self._skip_step)):
-            if self.imshow_count < self._skip_step[j]:
-                self.num = self._curriculum[j]
-                break
-        if self.imshow_count >= self._skip_step[-1]:
-            self.num = self._curriculum[-1]
+        if len(self._skip_step) == 0:
+            self.num = self._curriculum[0]
+        else:
+            for j in range(len(self._skip_step)):
+                if self.imshow_count < self._skip_step[j]:
+                    self.num = self._curriculum[j]
+                    break
+            if self.imshow_count >= self._skip_step[-1]:
+                self.num = self._curriculum[-1]
 
         feed_dict = {
             self._input_state: state,
@@ -350,7 +361,7 @@ class EnvModelUpdater(network.NetworkUpdater):
             self._count: self.num
         }
         self.imshow_count += 1
-        logging.warning("----------------%s episodes-------------" % self.imshow_count)
+        logging.warning("----------------%s minibatches-------------" % self.imshow_count)
         fetch_dict = {"env_model_loss": self._op_loss,
                       "reward_loss": self._reward_loss,
                       "observation_loss": self._env_loss,
@@ -358,7 +369,8 @@ class EnvModelUpdater(network.NetworkUpdater):
                       "momentum_loss": self._momentum_loss,
                       "num": self._num,
                       "flow_regulation_loss": self._flow_regulation_loss
-                      }#,
+                      }
+                      #,
                       # "goal_reg_loss": self._goal_reg_loss}
         if self.imshow_count % 1000 == 0:
             fetch_dict["s0"] = self._s0
@@ -373,6 +385,10 @@ class EnvModelUpdater(network.NetworkUpdater):
                 if len(self._flows) > 0:
                     fetch_dict.update({
                         "flow%d" % i: self._flows[i]
+                    })
+                if self._image_channel is not None:
+                    fetch_dict.update({
+                        "image_channel": self._image_channel
                     })
         return network.UpdateRun(feed_dict=feed_dict, fetch_dict=fetch_dict)
 
@@ -419,8 +435,18 @@ class EnvModelUpdater(network.NetworkUpdater):
                     cv2.imwrite(path_prefix + "%d_%03d_z_momf%d_predict.png" % (update_step, i, d + 1),
                                 cv2.cvtColor(255 * mn_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
                     if flow is not None:
-                        cv2.imwrite(path_prefix + "%d_%03d_g_flow%d.png" % (update_step, i, d + 1),
-                                    flow_to_color(flow.astype(np.float32), max_len=16.0) * 255)
+                        for channel in range(flow.shape[-1] / 2):
+                            f = flow[:, :, 2*channel:2*channel+2]
+                            cv2.imwrite(path_prefix + "%d_%03d_g_flow%d_%d.png" % (update_step, i, d + 1, channel),
+                                        flow_to_color(f.astype(np.float32), max_len=16.0) * 255)
+                    if d == 0 and prefix + "image_channel" in info:
+                        image_channel = info[prefix + "image_channel"][i]
+                        logging.warning("image_channel: %s", image_channel.shape)
+                        for channel in range(image_channel.shape[-1] / 3):
+                            image = image_channel[:, :, 3*channel:3*channel+3]
+                            cv2.imwrite(path_prefix + "%d_%03d_g_channels_%d.png" % (update_step, i, channel),
+                                        cv2.cvtColor(255 * image.astype(np.float32), cv2.COLOR_RGB2BGR))
+
             del info[prefix + "s0"]
             del info[prefix + "update_step"]
             for d in range(num):

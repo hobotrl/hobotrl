@@ -98,7 +98,7 @@ class CoordUtil(object):
         return tf.tile(tf.reshape(tf.range(n), shape=(n, 1, 1, 1)), multiples=(1, h, w, 1))
 
 
-def frame_trans(frame, move, kernel_size=3, name=None, weight_valid=True):
+def frame_trans(frame, move, kernel_size=3, name=None, weight_valid=False):
     # default kernel: 3x3
     with ops.name_scope(name, "FrameTrans", [frame, move, kernel_size]) as name:
         g = tf.get_default_graph()

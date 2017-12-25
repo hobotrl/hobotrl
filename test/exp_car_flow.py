@@ -3,6 +3,7 @@
 
 
 import sys
+import logging
 
 from hobotrl.async import AsynchronousAgent
 from hobotrl.utils import CappedLinear
@@ -11,7 +12,7 @@ sys.path.append(".")
 
 from exp_car import *
 from hobotrl.tf_dependent.ops import frame_trans, CoordUtil
-from playground.initialD.ros_environments.clients import DrSimDecisionK8S
+from playground.initialD.ros_environments.clients import DrSimDecisionK8STopView
 from hobotrl.environments.environments import RemapFrame
 from playground.ot_model import OTModel
 
@@ -734,7 +735,201 @@ class F(object):
                    "flow": flow_sum_1}
             return out
         return create_decoder_deform_flow
-        
+
+    def decoder_multiflow(self):
+        feature_channel_n = 2
+        l2 = 1e-5
+
+        def feature_extractor(input_image):
+            # /1
+            feature_1 = hrl.utils.Network.conv2ds(input_image,
+                                                  shape=[(8, 3, 1)],
+                                                  out_flatten=False,
+                                                  activation=self.nonlinear,
+                                                  l2=l2,
+                                                  var_scope="conv_0")
+            # /2
+            feature_2 = hrl.utils.Network.conv2ds(feature_1,
+                                                  shape=[(8, 4, 2)],
+                                                  out_flatten=False,
+                                                  activation=self.nonlinear,
+                                                  l2=l2,
+                                                  var_scope="conv_1")
+            # /4
+            feature_4 = hrl.utils.Network.conv2ds(feature_2,
+                                                  shape=[(16, 4, 2)],
+                                                  out_flatten=False,
+                                                  activation=self.nonlinear,
+                                                  l2=l2,
+                                                  var_scope="conv_2")
+            # /8
+            feature_8 = hrl.utils.Network.conv2ds(feature_4,
+                                                  shape=[(32, 4, 2)],
+                                                  out_flatten=False,
+                                                  activation=self.nonlinear,
+                                                  l2=l2,
+                                                  var_scope="conv_3")
+            # /16
+            feature_16 = hrl.utils.Network.conv2ds(feature_8,
+                                                   shape=[(64, 4, 2)],
+                                                   out_flatten=False,
+                                                   activation=self.nonlinear,
+                                                   l2=l2,
+                                                   var_scope="conv_4")
+            return {"features": [feature_1, feature_2, feature_4, feature_8, feature_16]}
+
+        def fcn(feature_tower, image):
+            out = None
+            reverse_feature_tower = []
+            for i in range(len(feature_tower)):
+                feature = feature_tower[len(feature_tower)-1-i]
+                feature_shape = feature.shape.as_list()
+                if out is not None:
+                    out = tf.image.resize_images(out, feature_shape[1:3])
+                    out = tf.concat([out, feature], axis=3)
+                    out = hrl.utils.Network.conv2d(out, 1, 1, feature_shape[3], (1, 1),
+                                                   activation=self.nonlinear,
+                                                   l2=l2, var_scope="fcn%d" % i)
+                else:
+                    out = feature
+                reverse_feature_tower.append(out)
+            out = tf.image.resize_images(out, image.shape.as_list()[1:3])
+            segment_class = hrl.utils.Network.conv2d(out, 1, 1, feature_channel_n, (1, 1),
+                                                   activation=self.nonlinear,
+                                                   l2=l2, var_scope="segment")
+            segment_class = tf.nn.softmax(segment_class, dim=3)
+            return {"feature": reverse_feature_tower,
+                    "class": segment_class}
+
+        def pwc_resflow_multi(input_goal, reverse_feature_tower, input_image):
+            # predict optical flows and weights for each image channels
+            frame_shape = tf.shape(input_image)
+            n, h, w, c = frame_shape[0], frame_shape[1], frame_shape[2], frame_shape[3]
+            coord_y, coord_x = CoordUtil.get_coord_tensor(n, h, w)
+            coord = tf.concat((coord_y, coord_x), axis=3)
+            shape_short = reverse_feature_tower[0].shape.as_list()[1:3]
+            goal = hrl.utils.Network.layer_fcs(input_goal, [], shape_short[0] * shape_short[1] * self.chn_se_2d,
+                                               activation_hidden=self.nonlinear,
+                                               activation_out=self.nonlinear,
+                                               l2=l2, var_scope="fc1")
+
+            twoD_out = tf.reshape(goal, [-1, shape_short[0], shape_short[1], self.chn_se_2d])
+            trunk = twoD_out
+            flows, weights = [], []
+            for i in range(len(reverse_feature_tower)):
+                feature = reverse_feature_tower[i]
+                h, w = feature.shape.as_list()[1:3]
+                sub_coord = tf.image.resize_images(coord, (h, w))
+                feature_to_warp = feature
+                if len(flows) == 0:
+                    up_flow = None
+                else:
+                    up_flow = tf.image.resize_images(flows[-1], (h, w)) * 2
+                    up_weight = tf.image.resize_images(weights[-1], (h, w))
+                    logging.warning("flow shape:%s", up_flow)
+                    feature_to_warp = warp_trunk_feature(
+                        [feature_to_warp],
+                        tf.concat([trunk, sub_coord], axis=3),
+                        up_flow)
+                    feature_to_warp = tf.concat(feature_to_warp + [up_weight, up_flow], axis=3)
+                feature_to_warp = tf.concat([feature_to_warp, sub_coord], axis=3)
+                flow_weight = hrl.network.Utils.conv2ds(feature_to_warp,
+                                          shape=[(3 * feature_channel_n, 3, 1)],
+                                          out_flatten=False,
+                                          activation=None,
+                                          l2=l2,
+                                          var_scope="flow_weight_%d" % i)
+                logging.warning("flow_weight shape:%s", flow_weight)
+                flow, weight = flow_weight[:, :, :, 0:2 * feature_channel_n], flow_weight[:, :, :, 2*feature_channel_n:]
+                logging.warning("flow:%s, weight :%s", flow, weight)
+                if up_flow is not None:
+                    flow = flow + up_flow
+                weight = tf.nn.sigmoid(weight) * 1.2
+                # weight = tf.nn.softplus(weight)
+                flows.append(flow)
+                weights.append(weight)
+                trunk = tf.concat((trunk, feature), axis=3)
+                trunk = hrl.network.Utils.deconv(trunk, kernel_size=3, out_channel=4, stride=2,
+                                                 activation=self.nonlinear, l2=l2, var_scope="up_%d" % i)
+            return {"motion": [m for m in reversed(flows)], "weight": [w for w in reversed(weights)]}
+
+        def warp_trunk_feature(channeled_features, trunk, flow):
+            # duplicate trunk into each channel of (feature, flow)
+            flows = tf.split(flow, feature_channel_n, axis=3)
+            features = [tf.split(f, feature_channel_n, axis=3) for f in channeled_features]
+            features = [[features[i][j] for i in range(len(channeled_features))] for j in range(feature_channel_n)]
+            out = []
+            for f, fl in zip(features, flows):
+                logging.warning("channel shape:, flow shape:%s", fl.shape)
+                out.append(frame_trans(tf.concat(f+[trunk], axis=3), fl))
+            return out
+
+        def warp_channels(image_channel, flow, split_channel=True):
+            if split_channel:
+                image_channels = tf.split(image_channel, feature_channel_n, axis=3)
+            else:
+                image_channels = [image_channel] * feature_channel_n
+            flows = tf.split(flow, feature_channel_n, axis=3)
+            out = []
+            for c, f in zip(image_channels, flows):
+                logging.warning("channel shape:%s, flow shape:%s", c.shape, f.shape)
+                out.append(frame_trans(c, f))
+            return out
+            # return [frame_trans(c, f) for c, f in zip(image_channels, flows)]
+
+        def combine_channels(image_channel, flow, weight):
+            weights = tf.split(weight, feature_channel_n, axis=3)
+            warpped_channels = warp_channels(image_channel, flow)
+            channels = [c * w for c, w in zip(warpped_channels, weights)]
+            return tf.add_n(channels)
+
+        def decoder_multiflow(inputs):
+            input_goal = inputs[0]
+            input_image = inputs[1]
+            image_hw = input_image.shape.as_list()[1:3]
+            with tf.name_scope("feature_extractor"):
+                feature_tower = feature_extractor(input_image)["features"]
+            with tf.name_scope("fcn"):
+                segment = fcn(feature_tower, input_image)
+            reverse_feature_tower, segment_class = segment["feature"], segment["class"]
+            # from single image to segmented image
+            image_channel = tf.tile(input_image, [1, 1, 1, feature_channel_n])
+            segment_channel = tf.reshape(segment_class, [-1, image_hw[0], image_hw[1], feature_channel_n, 1])
+            segment_channel = tf.reshape(
+                tf.tile(segment_channel, [1, 1, 1, 1, 3]),
+                [-1, image_hw[0], image_hw[1], 3 * feature_channel_n]
+            )
+            image_channel = image_channel * segment_channel
+            with tf.name_scope("flow"):
+                # use resized segment_class, instead of reverse_feature_tower
+                resized_segment = [segment_class]
+                for i in range(len(reverse_feature_tower) - 1):
+                    resized_segment.append(
+                        tf.image.resize_images(segment_class,
+                                               (image_hw[0] / (2**(i+1)), image_hw[1] / (2**(i+1)))
+                                               )
+                    )
+
+                # pwc = pwc_resflow_multi(input_goal, reverse_feature_tower, input_image)
+                pwc = pwc_resflow_multi(input_goal, [s for s in reversed(resized_segment)], input_image)
+            motions, weights = pwc["motion"], pwc["weight"]
+            with tf.name_scope("combine_image"):
+                next_image = combine_channels(image_channel, motions[0], weights[0])
+            sub_next_images = []
+            if len(motions) > 1:
+                for i in range(len(motions)-1):
+                    motion, weight = motions[i+1], weights[i+1]
+                    sub_image_channel = tf.image.resize_images(image_channel, motion.shape.as_list()[1:3])
+                    with tf.name_scope("combine_image%d" % i):
+                        sub_next_images.append(combine_channels(sub_image_channel, motion, weight))
+            out = {"next_frame": next_image,
+                   "flow": motions[0]}
+            for i in range(len(sub_next_images)):
+                out["frame_%d" % (2**(i + 1))] = sub_next_images[i]
+            out["image_channel"] = image_channel
+            return out
+        return decoder_multiflow
+
     def create_env_upsample_little(self):
         def create_env_upsample_little(inputs):
             l2 = 1e-7
@@ -882,7 +1077,7 @@ class F(object):
 class I2AFlow(A3CExperimentWithI2A):
     def __init__(self, env=None, f_se = None, f_ac=None, f_tran=None, f_decoder=None, f_rollout=None, f_encoder = None,
                  episode_n=10000, learning_rate=1e-4, discount_factor=0.99,
-                 entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4), batch_size=12):
+                 entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4), batch_size=8):
         if env is None:
             env = gym.make('CarRacing-v0')
             env = wrap_car(env, 3, 3)
@@ -890,12 +1085,11 @@ class I2AFlow(A3CExperimentWithI2A):
             f = F(env)
             f_se = f.create_se()
             f_ac = f.create_ac()
-            # f_env = create_env_upsample_little
             f_rollout = f.create_rollout()
             f_encoder = f.create_encoder()
             f_tran = f.create_transition_momentum()
-            # f_decoder = create_decoder
             f_decoder = f.create_decoder_deform_flow()
+            # f_decoder = f.decoder_multiflow()
 
         super(I2AFlow, self).__init__(env, f_se, f_ac, f_tran, f_decoder, f_rollout, f_encoder, episode_n, learning_rate,
                                                  discount_factor, entropy, batch_size)
@@ -933,7 +1127,8 @@ class OTDQNModelCar(OTDQNModelExperiment):
             f_create_q = f.create_q()
             f_se = f.create_se()
             f_transition = f.create_transition_momentum()
-            f_decoder = f.create_decoder_deform_flow()
+            f_decoder = f.decoder_multiflow()
+            # f_decoder = f.create_decoder_deform_flow()
         super(OTDQNModelCar, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder, lower_weight,
                                             upper_weight, rollout_depth, discount_factor, ddqn, target_sync_interval,
                                             target_sync_rate, greedy_epsilon, network_optimizer, max_gradient,
@@ -945,13 +1140,21 @@ class OTDQNModelDriving(OTDQNModelCar):
     def __init__(self, env=None, episode_n=10000, f_create_q=None, f_se=None, f_transition=None, f_decoder=None,
                  lower_weight=1.0, upper_weight=1.0, rollout_depth=5, discount_factor=0.99, ddqn=False,
                  target_sync_interval=100, target_sync_rate=1.0, greedy_epsilon=0.1, network_optimizer=None,
-                 max_gradient=10.0, update_interval=4, replay_size=100000, batch_size=12, sampler_creator=None,
+                 max_gradient=10.0, update_interval=4, replay_size=100000, batch_size=10, sampler_creator=None,
                  asynchronous=True):
         if env is None:
             env = ScaledFloatFrame(EnvNoOpSkipping(
-                        env=EnvRewardVec2Scalar(FrameStack(Downsample(DrSimDecisionK8S(), dst_size=(128, 128)), 4)),
+                        env=EnvRewardVec2Scalar(
+                            FrameStack(
+                                Downsample(
+                                    DrSimDecisionK8STopView()
+                                    , dst_size=(128, 128)
+                                ), 4
+                            )
+                        ),
                         n_skip=6, gamma=0.99, if_random_phase=True
-                    ))
+                    )
+            )
         if sampler_creator is None:
             max_traj_length = 200
 
