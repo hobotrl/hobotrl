@@ -1125,8 +1125,8 @@ class OTDQNModelCar(OTDQNModelExperiment):
             f_create_q = f.create_q()
             f_se = f.create_se()
             f_transition = f.create_transition_momentum()
-            f_decoder = f.decoder_multiflow()
-            # f_decoder = f.create_decoder_deform_flow()
+            # f_decoder = f.decoder_multiflow()
+            f_decoder = f.create_decoder()
         super(OTDQNModelCar, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder, lower_weight,
                                             upper_weight, rollout_depth, discount_factor, ddqn, target_sync_interval,
                                             target_sync_rate, greedy_epsilon, network_optimizer, max_gradient,
