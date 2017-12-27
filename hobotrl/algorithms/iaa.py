@@ -266,8 +266,9 @@ class EnvModelUpdater(network.NetworkUpdater):
                                 sub_frame - tf.image.resize_images(fn[i], sub_frame.shape.as_list()[1:3]))
                             ))
                             sub_i = sub_i + 1
-                    flow = net_decoded["flow"].op
+                    flow = net_decoded["flow"]
                     if flow is not None:
+                        flow = flow.op
                         flows.append(flow)
                         o1_y = flow[:, :-1, :, :] - flow[:, 1:, :, :]
                         o2_y = o1_y[:, :-1, :, :] - o1_y[:, 1:, :, :]
