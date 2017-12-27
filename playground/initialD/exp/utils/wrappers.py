@@ -46,8 +46,8 @@ class EnvRewardVec2Scalar(wrapt.ObjectProxy):
 
         # append a reward that is 1 when action is lane switching
         rewards = rewards.tolist()
-        print (' '*3 + 'R: [' + '{:4.2f} ' * len(rewards) + ']').format(
-            *rewards),
+        logging.warning((' '*3 + 'R: [' + '{:4.2f} ' * len(rewards) + ']').format(
+            *rewards)),
 
         # extract relevant rewards.
         speed = rewards[0]
@@ -74,8 +74,8 @@ class EnvRewardVec2Scalar(wrapt.ObjectProxy):
         self._mom_opp = mom_opp
         self._mom_biking = mom_biking
         self._steering = steering
-        print '{:3.0f}, {:3.0f}, {:4.2f}, {:3.0f}'.format(
-            mom_opp, mom_biking, ema_dist, self._steering),
+        logging.warning('{:3.0f}, {:3.0f}, {:4.2f}, {:3.0f}'.format(
+            mom_opp, mom_biking, ema_dist, self._steering)),
 
         # calculate scalar reward
         reward = [
@@ -91,7 +91,7 @@ class EnvRewardVec2Scalar(wrapt.ObjectProxy):
             steering * -40.0,
         ]
         reward = np.sum(reward) / 100.0
-        print ': {:5.2f}'.format(reward)
+        logging.warning(': {:5.2f}'.format(reward))
 
         return reward, info
 
@@ -101,19 +101,19 @@ class EnvRewardVec2Scalar(wrapt.ObjectProxy):
         done = False
         # switched lane while going into intersection.
         if self._road_change and self._ema_dist > 0.2:
-            print "[Episode early stopping] turned into intersection."
+            logging.warning("[Episode early stopping] turned into intersection.")
             done = True
             info['banned_road_change'] = True
 
         # used biking lane to cross intersection
         if self._road_change and self._mom_biking > 0:
-            print "[Episode early stopping] entered intersection on biking lane."
+            logging.warning("[Episode early stopping] entered intersection on biking lane.")
             done = True
             info['banned_road_change'] = True
 
         # hit obstacle
         if self._obs_risk > 1.0:
-            print "[Episode early stopping] hit obstacle."
+            logging.warning("[Episode early stopping] hit obstacle.")
             done = True
 
         return done, info

@@ -67,7 +67,11 @@ class DrSimDecisionK8S(wrapt.ObjectProxy):
         # bash commands to be executed in each episode to start simulation
         # backend
         if backend_cmds is None:
-            _backend_cmds = self.gen_default_backend_cmds()
+            if "launch" in kwargs:
+                launch = kwargs["launch"]
+            else:
+                launch = None
+            _backend_cmds = self.gen_default_backend_cmds(launch)
         else:
             _backend_cmds = backend_cmds
 
@@ -121,11 +125,13 @@ class DrSimDecisionK8S(wrapt.ObjectProxy):
         self.metadata = {}
 
     @staticmethod
-    def gen_default_backend_cmds():
+    def gen_default_backend_cmds(launch=None):
         ws_path = '/Projects/catkin_ws/'
         initialD_path = '/Projects/hobotrl/playground/initialD/'
         backend_path = initialD_path + 'ros_environments/backend_scripts/'
         utils_path = initialD_path + 'ros_environments/backend_scripts/utils/'
+        if launch is None:
+            launch = 'honda_dynamic_obs_template_tilt.launch'
         backend_cmds = [
             # Parse maps
             ['python', utils_path + 'parse_map.py',
@@ -134,7 +140,7 @@ class DrSimDecisionK8S(wrapt.ObjectProxy):
             # Generate obstacle configuration and write to launch file
             ['python', utils_path+'gen_launch_dynamic_v1.py',
              utils_path+'road_segment_info.txt', ws_path,
-             utils_path+'honda_dynamic_obs_template_tilt.launch', 32, '--random_n_obs'],
+             utils_path+launch, 32, '--random_n_obs'],
             # Start roscore
             ['roscore'],
             # Reward function script
@@ -158,3 +164,10 @@ class DrSimDecisionK8S(wrapt.ObjectProxy):
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.exit()
 
+
+class DrSimDecisionK8STopView(DrSimDecisionK8S):
+    def __init__(self, image_uri=None, backend_cmds=None, *args, **kwargs):
+        kwargs.update({
+            "launch": "state_remap_test.launch"
+        })
+        super(DrSimDecisionK8STopView, self).__init__(image_uri, backend_cmds, *args, **kwargs)
