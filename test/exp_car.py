@@ -945,7 +945,7 @@ class I2A(A3CExperimentWithI2A):
 Experiment.register(I2A, "A3C with I2A for CarRacing")
 
 
-class I2A_ob(A3CExperimentWithI2A):
+class I2A_ob(A3CExperimentWithI2AOB):
     def __init__(self, env=None, f_se = None, f_ac=None, f_env=None, f_rollout=None, f_encoder = None, episode_n=10000,
                  learning_rate=1e-4, discount_factor=0.99, entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4),
                  batch_size=32):
@@ -1160,7 +1160,7 @@ class I2A_ob(A3CExperimentWithI2A):
             f_rollout = create_rollout
             f_encoder = create_encoder
 
-        super(I2A, self).__init__(env, f_se, f_ac, f_env, f_rollout, f_encoder, episode_n, learning_rate,
+        super(I2A_ob, self).__init__(env, f_se, f_ac, f_env, f_rollout, f_encoder, episode_n, learning_rate,
                                                  discount_factor, entropy, batch_size)
 Experiment.register(I2A_ob, "A3C with I2A for complex observation state experiments")
 

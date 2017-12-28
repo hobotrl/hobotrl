@@ -14,6 +14,7 @@ import async as async
 from algorithms.ac import ActorCritic
 from algorithms.icm import ActorCriticWithICM
 from algorithms.iaa import ActorCriticWithI2A
+from algorithms.iaa_ob import ActorCriticWithI2AOB
 from algorithms.dqn import DQN
 from algorithms.dpg import DPG
 from algorithms.ppo import PPO

@@ -291,7 +291,7 @@ class EnvModelUpdater(network.NetworkUpdater):
                                                                   "observation_loss": self._env_loss})
 
 
-class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
+class ActorCriticWithI2AOB(sampling.TrajectoryBatchUpdate,
           BaseDeepAgent):
     def __init__(self, num_action,
                  f_se, f_ac, f_env, f_rollout, f_encoder, state_shape,
@@ -458,7 +458,7 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
             sampler = sampling.TrajectoryOnSampler(interval=batch_size)
             kwargs.update({"sampler": sampler})
 
-        super(ActorCriticWithI2A, self).__init__(*args, **kwargs)
+        super(ActorCriticWithI2AOB, self).__init__(*args, **kwargs)
         pi = self.network["pi"]
         if pi is not None:
             # discrete action: pi is categorical probability distribution
@@ -546,7 +546,7 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
             return {}, {}
 
     def set_session(self, sess):
-        super(ActorCriticWithI2A, self).set_session(sess)
+        super(ActorCriticWithI2AOB, self).set_session(sess)
         self.network.set_session(sess)
         self._pi_distribution.set_session(sess)
 
