@@ -945,5 +945,32 @@ class I2A(A3CExperimentWithI2A):
 Experiment.register(I2A, "A3C with I2A for CarRacing")
 
 
+class TailDQN(DQNCarRacing):
+    def __init__(self, discount_factor=0.99):
+        env = gym.make("CarRacing-v0")
+        env = wrap_car(env, 3, 3)
+        env = CarEarlyTermWrapper(env)
+        env = CarTailCompensationWrapper(
+            env, discount_factor=discount_factor, if_compensate=False)
+        super(TailDQN, self).__init__(env=env)
+Experiment.register(
+    TailDQN,
+    "DQN car racing with random early termination."
+)
+
+
+class TailCompensateDQN(DQNCarRacing):
+    def __init__(self, discount_factor=0.99):
+        env = gym.make("CarRacing-v0")
+        env = wrap_car(env, 3, 3)
+        env = CarEarlyTermWrapper(env)
+        env = CarTailCompensationWrapper(
+            env, discount_factor=discount_factor, if_compensate=True)
+        super(TailCompensateDQN, self).__init__(env=env)
+Experiment.register(
+    TailCompensateDQN,
+    "DQN car racing with random early termination and tail compensation."
+)
+
 if __name__ == '__main__':
     Experiment.main()
