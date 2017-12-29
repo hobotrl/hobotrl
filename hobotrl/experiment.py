@@ -13,6 +13,7 @@ import argparse
 
 from utils import clone_params, escape_path
 
+logging.basicConfig(format='[%(asctime)s] (%(filename)s): |%(levelname)s| %(message)s')
 
 class Experiment(object):
     """

@@ -1143,7 +1143,7 @@ class OTDQNModelExperiment(Experiment):
                         log_dir=args.logdir,
                         global_step=global_step)
         if self._asynchronous:
-            agent = AsynchronousAgent(agent=agent, method='rate', rate=4.0)
+            agent = AsynchronousAgent(agent=agent, method='ratio', rate=6.0)
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
         with agent.create_session(config=config, save_dir=args.logdir) as sess:
