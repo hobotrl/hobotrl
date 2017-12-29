@@ -152,7 +152,8 @@ class CarEarlyTermWrapper(gym.Wrapper):
                 "early termination at step {}.".format(self._n_step)
             )
         if done:
-            info['episode_total_reward_original'] = self._ep_total_reward
+            info['episode_step_reward_original'] = \
+                self._ep_total_reward / self._n_step
         return next_state, reward, done, info
 
     def _reset(self, **kwargs):
