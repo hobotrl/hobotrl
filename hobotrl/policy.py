@@ -49,10 +49,12 @@ class MaskEpsilonGreedyPolicy(EpsilonGreedyPolicy):
     def candidate(self, rewards):
         if rewards is None:
             return [0, 1, 2]
-        if rewards[7]:
+        if rewards[7] and not rewards[8]:
             return [0, 2]
-        elif rewards[8]:
+        elif rewards[8] and not rewards[7]:
             return [0, 1]
+        elif rewards[7] and rewards[8]:
+            return [0]
         elif rewards[6]:
             return [1]
         elif rewards[5] < 0.5:
