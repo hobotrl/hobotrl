@@ -16,6 +16,11 @@ def default_make_sample(state, action, reward, next_state, episode_done, **kwarg
             "episode_done": episode_done}
 
 
+def mask_carsim_sample(state, action, reward, next_state, episode_done, **kwargs):
+    return {"state": state, "action": action, "reward": reward, "next_state": next_state,
+            "episode_done": episode_done, "vec_reward": kwargs["vec_reward"]}
+
+
 class Sampler(object):
     """Transition data storage and sampling management class.
 

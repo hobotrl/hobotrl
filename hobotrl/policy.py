@@ -5,6 +5,7 @@ import numpy as np
 from network import NetworkFunction
 from hobotrl.tf_dependent.distribution import NNDistribution, DiscreteDistribution, NormalDistribution
 from core import Policy
+import random
 
 
 class GreedyPolicy(Policy):
@@ -41,6 +42,34 @@ class EpsilonGreedyPolicy(Policy):
         else:
             q_values = self.q_function(np.asarray(state)[np.newaxis, :])[0]
             action = np.argmax(q_values)
+        return action
+
+
+class MaskEpsilonGreedyPolicy(EpsilonGreedyPolicy):
+    def candidate(self, rewards):
+        if rewards is None:
+            return [0, 1, 2]
+        if rewards[7]:
+            return [0, 2]
+        elif rewards[8]:
+            return [0, 1]
+        elif rewards[6]:
+            return [1]
+        elif rewards[5] < 0.5:
+            return [2]
+        else:
+            return [0, 1, 2]
+
+    def act(self, state, exploration=True, **kwargs):
+        vec_rewards = kwargs["vec_reward"]
+        candidate_actions = self.candidate(vec_rewards)
+
+        if exploration and np.random.rand() < self._epsilon:
+            action = random.choice(candidate_actions)
+            # action = np.random.randint(self._num_actions)
+        else:
+            q_values = self.q_function(np.asarray(state)[np.newaxis, :])[0]
+            action = candidate_actions[np.argmax(q_values[candidate_actions])]
         return action
 
 

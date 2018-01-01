@@ -13,7 +13,7 @@ from hobotrl.tf_dependent.base import BaseDeepAgent
 from hobotrl.playback import MapPlayback
 from value_based import ValueBasedAgent, GreedyStateValueFunction
 import hobotrl.target_estimate as target_estimate
-
+from hobotrl.policy import MaskEpsilonGreedyPolicy
 
 class DQN(sampling.TransitionBatchUpdate,
           ValueBasedAgent,
@@ -107,9 +107,34 @@ class DQN(sampling.TransitionBatchUpdate,
         info = self.network_optimizer.optimize_step(self.sess)
         if self._update_count % self._target_sync_interval == 0:
             self.network.sync_target(self.sess, self._target_sync_rate)
+        print "dqn info: ", 
+        print info
         return info, {"score": info["FitTargetQ/td/td_losses"]}
 
     def set_session(self, sess):
         super(DQN, self).set_session(sess)
         self.network.set_session(sess)
+
+
+class MaskDQN(DQN):
+    def init_policy(self, greedy_epsilon, num_actions, *args, **kwargs):
+        return MaskEpsilonGreedyPolicy(self._q_function, greedy_epsilon, num_actions)
+
+    def init_updaters_(self):
+        estimator = target_estimate.MaskOneStepTD(self.target_q, self._discount_factor)
+        self.network_optimizer.add_updater(network.FitTargetMaskQ(self.learn_q, estimator), name="td")
+        self.network_optimizer.add_updater(network.L2(self.network), name="l2")
+        self.network_optimizer.compile()
+        pass
+
+    def update_on_transition(self, batch):
+        self._update_count += 1
+        self.network_optimizer.update("td", self.sess, batch)
+        self.network_optimizer.update("l2", self.sess)
+        info = self.network_optimizer.optimize_step(self.sess)
+        if self._update_count % self._target_sync_interval == 0:
+            self.network.sync_target(self.sess, self._target_sync_rate)
+        # print "dqn info: ",
+        # print info
+        return info, {"score": info["FitTargetMaskQ/td/td_losses"]}
 

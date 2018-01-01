@@ -48,6 +48,44 @@ class OneStepTD(TargetEstimator):
         return target_q_val
 
 
+class MaskOneStepTD(TargetEstimator):
+    def __init__(self, q_function, discount_factor):
+        super(MaskOneStepTD, self).__init__(discount_factor)
+        self._q_function = q_function
+
+    def candidate(self, rewards):
+        if rewards is None:
+            return [0, 1, 2]
+        if rewards[7]:
+            return [0, 2]
+        elif rewards[8]:
+            return [0, 1]
+        elif rewards[6]:
+            return [1]
+        elif rewards[5] < 0.5:
+            return [2]
+        else:
+            return [0, 1, 2]
+
+    def estimate(self, state, action, reward, next_state, episode_done, vec_reward):
+        # print "estimate reward: ",
+        # print reward
+        # print "estimate reward shape: ", reward.shape
+        target_q_val = self._q_function(next_state)
+        # print "target_q_val shape: ", target_q_val.shape
+        # print "target_q_val: ",
+        # print target_q_val
+        candidate_target_q_val = []
+        for vr, tq in zip(vec_reward, target_q_val):
+            # print "vr: ", vr
+            # print "tq: ", tq
+            candidate_actions = self.candidate(vr)
+            candidate_target_q_val.append(candidate_actions[np.argmax(tq[candidate_actions])])
+        candidate_target_q_val = np.array(candidate_target_q_val)
+        candidate_target_q_val = reward + self._discount_factor * candidate_target_q_val * (1.0 - episode_done)
+        return candidate_target_q_val
+
+
 class DDQNOneStepTD(TargetEstimator):
     def __init__(self, q_function, target_q_function, discount_factor=0.99):
         """

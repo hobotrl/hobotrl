@@ -95,3 +95,23 @@ class FitTargetQ(network.NetworkUpdater):
 
         return update_run
 
+
+class FitTargetMaskQ(FitTargetQ):
+    def update(self, sess, batch, *args, **kwargs):
+        assert "state" in batch and "action" in batch and \
+               "reward" in batch and "next_state" in batch and \
+               "episode_done" in batch and "vec_reward" in batch
+        target_q_val = self._target_estimator.estimate(
+            batch["state"], batch["action"], batch["reward"],
+            batch["next_state"], batch["episode_done"], batch["vec_reward"])
+        feed_dict = {self._input_target_q: target_q_val,
+                     self._input_action: batch["action"]}
+        feed_dict.update(self._q.input_dict(batch["state"]))
+        fetch_dict = {
+            "action": batch["action"], "reward": batch["reward"],
+            "done": batch["episode_done"],
+            "q": self.selected_q, "target_q": target_q_val,
+            "td_loss": self._sym_loss, "td_losses": self._op_losses}
+        update_run = network.UpdateRun(feed_dict=feed_dict, fetch_dict=fetch_dict)
+        return update_run
+
