@@ -1144,10 +1144,11 @@ class OTDQNModelDriving(OTDQNModelCar):
             env = ScaledFloatFrame(EnvNoOpSkipping(
                         env=EnvRewardVec2Scalar(
                             FrameStack(
-                                Downsample(
+                                # Downsample(
                                     DrSimDecisionK8STopView()
-                                    , dst_size=(128, 128)
-                                ), 4
+                                #    , dst_size=(128, 128)
+                                #)
+                                , 4
                             )
                         ),
                         n_skip=6, gamma=0.99, if_random_phase=True

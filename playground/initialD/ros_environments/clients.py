@@ -168,6 +168,6 @@ class DrSimDecisionK8S(wrapt.ObjectProxy):
 class DrSimDecisionK8STopView(DrSimDecisionK8S):
     def __init__(self, image_uri=None, backend_cmds=None, *args, **kwargs):
         kwargs.update({
-            "launch": "state_remap_test_2xView_700x700.launch"
+            "launch": "state_remap_test.launch"
         })
         super(DrSimDecisionK8STopView, self).__init__(image_uri, backend_cmds, *args, **kwargs)
