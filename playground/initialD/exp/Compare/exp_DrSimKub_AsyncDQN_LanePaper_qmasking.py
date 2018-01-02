@@ -66,7 +66,7 @@ update_ratio = 8.0
 # --- logging and ckpt
 
 tf.app.flags.DEFINE_string(
-    "dir_prefix", "/home/pirate03/hobotrl_data/Compare/qmasking3/3",
+    "dir_prefix", "/home/pirate03/hobotrl_data/Compare/qmasking_inc_lr/3",
     "Prefix for model ckpt and event file.")
 tf.app.flags.DEFINE_string(
     "tf_log_dir", "ckpt",

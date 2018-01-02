@@ -82,7 +82,7 @@ class MaskOneStepTD(TargetEstimator):
             # print "vr: ", vr
             # print "tq: ", tq
             candidate_actions = self.candidate(vr)
-            candidate_target_q_val.append(candidate_actions[np.argmax(tq[candidate_actions])])
+            candidate_target_q_val.append(np.max(tq[candidate_actions]))
         candidate_target_q_val = np.array(candidate_target_q_val)
         candidate_target_q_val = reward + self._discount_factor * candidate_target_q_val * (1.0 - episode_done)
         return candidate_target_q_val
