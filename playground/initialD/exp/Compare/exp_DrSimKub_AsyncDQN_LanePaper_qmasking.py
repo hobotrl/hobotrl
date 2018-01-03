@@ -66,7 +66,7 @@ update_ratio = 8.0
 # --- logging and ckpt
 
 tf.app.flags.DEFINE_string(
-    "dir_prefix", "/home/pirate03/hobotrl_data/Compare/qmasking_inc_lr/3",
+    "dir_prefix", "/home/pirate03/hobotrl_data/Compare/qmasking_really_inc_lr/1",
     "Prefix for model ckpt and event file.")
 tf.app.flags.DEFINE_string(
     "tf_log_dir", "ckpt",
@@ -238,7 +238,7 @@ try:
     # -- create learning rate var and optimizer
     lr = tf.get_variable(
         'learning_rate', [], dtype=tf.float32,
-        initializer=tf.constant_initializer(1e-3), trainable=False
+        initializer=tf.constant_initializer(1e-2), trainable=False
     )
     lr_in = tf.placeholder(dtype=tf.float32)
     op_set_lr = tf.assign(lr, lr_in)
