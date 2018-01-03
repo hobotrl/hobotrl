@@ -261,6 +261,10 @@ class DQNCarRacing(DQNExperiment):
                                            target_sync_rate, update_interval, replay_size, batch_size, greedy_epsilon,
                                            network_optimizer_ctor)
 
+    def run(self, args):
+        self._episode_n = args.episode_n
+        super(DQNCarRacing, self).run(args)
+
 Experiment.register(DQNCarRacing, "DQN for CarRacing, tuned with ddqn, duel network, etc.")
 
 

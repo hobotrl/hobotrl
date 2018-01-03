@@ -87,6 +87,9 @@ class EnvRunner(object):
         :return:
         """
         rewards = []
+        logging.warning(
+            "EnvRunner running {} episodes.".format(n)
+        )
         for i in range(n):
             self.episode_n += 1
             self.state = self.env.reset()
