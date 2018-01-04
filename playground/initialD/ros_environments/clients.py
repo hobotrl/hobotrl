@@ -6,7 +6,7 @@ import numpy as np
 # HobotRL
 sys.path.append('../../../')
 from hobotrl.environments.kubernetes.client import KubernetesEnv
-from server import DrSimDecisionK8SServer
+from server import DrSimDecisionK8SServer, DrSimRuleDecisionK8SServer
 # Gym
 from gym.spaces import Discrete, Box
 
@@ -57,7 +57,7 @@ class DrivingSimulatorEnvClient(object):
 class DrSimDecisionK8S(wrapt.ObjectProxy):
     _version = '20171127'
     _ALL_ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0,)]
-    def __init__(self, image_uri=None, backend_cmds=None, *args, **kwargs):
+    def __init__(self, image_uri=None, backend_cmds=None, is_dummy_action=False, *args, **kwargs):
         # Simulator Docker image to use
         if image_uri is None:
             _image_uri = "docker.hobot.cc/carsim/simulator_gpu_kub:latest"
@@ -94,9 +94,9 @@ class DrSimDecisionK8S(wrapt.ObjectProxy):
         ]
         _defs_action = [('/autoDrive_KeyboardMode', 'std_msgs.msg.Char')]
 
-        _func_compile_obs = DrSimDecisionK8SServer.func_compile_obs
-        _func_compile_reward = DrSimDecisionK8SServer.func_compile_reward
-        _func_compile_action = DrSimDecisionK8SServer.func_compile_action
+        _func_compile_obs = DrSimRuleDecisionK8SServer.func_compile_obs
+        _func_compile_reward = DrSimRuleDecisionK8SServer.func_compile_reward
+        _func_compile_action = DrSimRuleDecisionK8SServer.func_compile_action
 
         # Build wrapped environment, expose step() an reset()
         _env = KubernetesEnv(
@@ -113,6 +113,7 @@ class DrSimDecisionK8S(wrapt.ObjectProxy):
             func_compile_reward=_func_compile_reward,
             func_compile_action=_func_compile_action,
             step_delay_target=0.5,
+            is_dummy_action=is_dummy_action,
             **kwargs
         )
         super(DrSimDecisionK8S, self).__init__(_env)
@@ -132,7 +133,7 @@ class DrSimDecisionK8S(wrapt.ObjectProxy):
         backend_path = initialD_path + 'ros_environments/backend_scripts/'
         utils_path = initialD_path + 'ros_environments/backend_scripts/utils/'
         if launch is None:
-            launch = 'honda_dynamic_obs_template_tilt.launch'
+            launch = 'state_remap_test_2xView_700x700.launch'
         backend_cmds = [
             # Parse maps
             ['python', utils_path + 'parse_map.py',
@@ -152,7 +153,9 @@ class DrSimDecisionK8S(wrapt.ObjectProxy):
             # Simulation restarter backend
             ['python', backend_path+'rviz_restart.py', 'honda_dynamic_obs.launch'],
             # Video capture
-            ['python', backend_path+'non_stop_data_capture.py']
+            ['python', backend_path+'non_stop_data_capture.py'],
+            ['python', backend_path+'car_go.py', '--use-dummy-action']
+
         ]
         return backend_cmds
 

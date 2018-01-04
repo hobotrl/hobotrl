@@ -181,7 +181,7 @@ class DrSimRuleDecisionK8SServer(object):
         obs = np.maximum(img1, img2)
         print decision
         print speed
-        return obs, decision
+        return img1, decision
 
     @staticmethod
     def func_compile_action(action):
