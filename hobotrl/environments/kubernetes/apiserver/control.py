@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import logging
+import traceback
 import threading
 import time
 import random
@@ -180,8 +181,11 @@ class EvictThread(threading.Thread):
 
     def run(self):
         while not self.stopped:
-            self._sleeper.wait(self.INTERVAL)
-            self.env_tracker.evict()
+            try:
+                self._sleeper.wait(self.INTERVAL)
+                self.env_tracker.evict()
+            except Exception:
+                logging.warning("error happened: %s", traceback.print_exc())
 
     def stop(self):
         self.stopped = True
