@@ -10,6 +10,7 @@ import logging
 import traceback
 # Data
 import numpy as np
+import cv2
 # Tensorflow
 import tensorflow as tf
 from tensorflow.python.training.summary_io import SummaryWriterCache
@@ -19,7 +20,7 @@ from hobotrl.algorithms import DQN
 from hobotrl.network import LocalOptimizer
 from hobotrl.environments import FrameStack
 from hobotrl.sampling import TransitionSampler
-from hobotrl.playback import MapPlayback, BalancedMapPlayback, BigPlayback
+from hobotrl.playback import BalancedMapPlayback, MapPlayback, BigPlayback
 from hobotrl.async import AsynchronousAgent
 from hobotrl.utils import CappedLinear
 # initialD
@@ -29,6 +30,8 @@ from exp.utils.func_networks import f_dueling_q
 # from exp.utils.skipping_masking import NonUniformSkip as SkippingAgent
 from exp.utils.skipping_masking import RandFirstSkip as SkippingAgent
 from exp.utils.logging_fun import StepsSaver, print_qvals, log_info
+
+from gym.spaces import Discrete, Box
 
 # ==============================================
 # =========== Set Parameters Below =============
@@ -52,7 +55,7 @@ replay_capacity = 300000
 replay_bucket_size = 100
 replay_ratio_active = 0.01
 replay_max_sample_epoch = 2
-# replay_upsample_bias = (1, 1, 1, 0.1)
+replay_upsample_bias = (1, 1, 1, 0.1)
 # --- NN architecture
 f_net = lambda inputs: f_dueling_q(inputs, num_actions)
 if_ddqn = True
@@ -85,34 +88,6 @@ tf.app.flags.DEFINE_float(
 tf.app.flags.DEFINE_float(
     "save_checkpoint_secs", 3600,
     "Seconds to save tf model check points.")
-
-def gen_backend_cmds():
-    ws_path = '/Projects/catkin_ws/'
-    initialD_path = '/Projects/hobotrl/playground/initialD/'
-    backend_path = initialD_path + 'ros_environments/backend_scripts/'
-    utils_path = initialD_path + 'ros_environments/backend_scripts/utils/'
-    backend_cmds = [
-        # Parse maps
-        ['python', utils_path + 'parse_map.py',
-         ws_path + 'src/Map/src/map_api/data/honda_wider.xodr',
-         utils_path + 'road_segment_info.txt'],
-        # Generate obstacle configuration and write to launch file
-        ['python', utils_path+'gen_launch_dynamic_v1.py',
-         utils_path+'road_segment_info.txt', ws_path,
-         utils_path+'state_remap_test.launch', 32, '--random_n_obs'],
-        # Start roscore
-        ['roscore'],
-        # Reward function script
-        ['python', backend_path + 'gazebo_rl_reward.py'],
-        # Road validity node script
-        ['python', backend_path + 'road_validity.py',
-         utils_path + 'road_segment_info.txt.signal'],
-        # Simulation restarter backend
-        ['python', backend_path+'rviz_restart.py', 'honda_dynamic_obs.launch'],
-        # Video capture
-        ['python', backend_path+'non_stop_data_capture.py']
-    ]
-    return backend_cmds
 
 # ===  Reward function
 class FuncReward(object):
@@ -159,8 +134,8 @@ class FuncReward(object):
         # update reward-related state vars
         ema_speed = 0.5 * self._ema_speed + 0.5 * speed
         ema_dist = 1.0 if dist > 2.0 else 0.9 * self._ema_dist
-        mom_opp = min((opp < 0.5) * (self._mom_opp + 1), 20)
-        mom_biking = min((biking > 0.5) * (self._mom_biking + 1), 12)
+        mom_opp = min((opp < 0.5) * (self._mom_opp + 1), 1)
+        mom_biking = min((biking > 0.5) * (self._mom_biking + 1), 1)
         steering = steer if action != 3 else self._steering
         self._ema_speed = ema_speed
         self._ema_dist = ema_dist
@@ -188,9 +163,9 @@ class FuncReward(object):
             # obs factor
             -100.0 * obs_risk,
             # opposite
-            -20 * (0.9 + 0.1 * mom_opp) * (mom_opp > 1.0),
+            # -20 * (0.9 + 0.1 * mom_opp) * (mom_opp > 0.99),
             # ped
-            -40 * (0.9 + 0.1 * mom_biking) * (mom_biking > 1.0),
+            -40 * (0.9 + 0.1 * mom_biking) * (mom_biking > 0.99),
             # steer
             steering * -40.0,
         ]
@@ -225,10 +200,10 @@ class FuncReward(object):
     def _func_skipping_bias(self, reward, done, info, n_skip, cnt_skip):
         new_info = {}
         if 'banned_road_change' in info:
-            reward -= 1.0 * (n_skip - cnt_skip)
+            reward -= 20.0 * (n_skip - cnt_skip)
         if done:
             pass
-            #reward /= (1 - self.__gamma) / (n_skip - cnt_skip)
+            # reward /= (1 - self.__gamma) / (n_skip - cnt_skip)
         new_info['reward_fun/reward'] = reward
         return reward, new_info
 
@@ -244,9 +219,16 @@ class FuncReward(object):
         info.update(info_diff)
         if done:
             info['flag_success'] = reward > 0.0
+            if info['flag_success']:
+                reward = 10.0
+            else:
+                reward = -10.0
             self.reset()
+        else:
+            reward = 0
 
         return reward, done, info
+
 # ==========================================
 # ==========================================
 # ==========================================
@@ -276,16 +258,18 @@ try:
     global_step = tf.get_variable(
         'global_step', [], dtype=tf.int32,
         initializer=tf.constant_initializer(0), trainable=False)
-    # Environment
-    env = FrameStack(DrSimDecisionK8S(backend_cmds=gen_backend_cmds()), n_stack)
+    # Environmenth
+    env = FrameStack(DrSimDecisionK8S(), n_stack)
     # Agent
     replay_buffer = BigPlayback(
-        bucket_cls=MapPlayback,
+        bucket_cls=BalancedMapPlayback,
         cache_path=replay_cache_dir,
         capacity=replay_capacity,
         bucket_size=replay_bucket_size,
         ratio_active=replay_ratio_active,
         max_sample_epoch=replay_max_sample_epoch,
+        num_actions=num_actions,
+        upsample_bias=replay_upsample_bias
     )
     state_shape = env.observation_space.shape
     __agent = DQN(

@@ -5,6 +5,7 @@ import gym
 import gym.spaces
 import numpy as np
 import matplotlib.colors as colors
+import logging
 
 from hobotrl.environments.environments import *
 
@@ -131,3 +132,49 @@ def wrap_car(env, steer_n, speed_n, skipFrame=2):
     # env = RemapFrame(env)
     #env = HalfFrame(env)
     return env
+
+
+class CarEarlyTermWrapper(gym.Wrapper):
+    def __init__(self, env):
+        super(CarEarlyTermWrapper, self).__init__(env)
+        self._n_term = None
+        self._n_step = None
+        self._ep_total_reward = None
+
+    def _step(self, action):
+        next_state, reward, done, info = self.env.step(action)
+        self._ep_total_reward += reward
+        self._n_step += 1
+        if self._n_step >= self._n_term:
+            done = True
+            logging.warning(
+                "CarEarlyTermWrapper._step(): "
+                "early termination at step {}.".format(self._n_step)
+            )
+        if done:
+            info['episode_step_reward_original'] = \
+                self._ep_total_reward / self._n_step
+        return next_state, reward, done, info
+
+    def _reset(self, **kwargs):
+        self._n_step = 0
+        self._n_term = np.random.randint(1, 301)
+        self._ep_total_reward = 0.0
+        return self.env.reset(**kwargs)
+
+
+class CarTailCompensationWrapper(gym.Wrapper):
+    def __init__(self, env, discount_factor, if_compensate=True):
+        super(CarTailCompensationWrapper, self).__init__(env)
+        self._if_compensate = if_compensate
+        self._gamma = discount_factor
+
+    def _step(self, action):
+        next_state, reward, done, info = self.env.step(action)
+        if done and self._if_compensate:
+            reward /= (1 - self._gamma)
+            logging.warning(
+                "CarTailCompensationWrapper._step(): "
+                "compensated reward {}".format(reward)
+            )
+        return next_state, reward, done, info

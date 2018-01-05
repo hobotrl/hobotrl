@@ -2,4 +2,4 @@
 #
 #	usage: . ./scripts/iaa.sh
 #
-. ./scripts/cluster.sh ./test/exp_car_flow.py OTDQNModelDriving 1 1 --log_dir ./log/OTDQNModelDriving --start_port 2345 --start_device 0
+. ./scripts/cluster.sh ./test/exp_car.py I2A 1 1 --log_dir ./log/CarRacing --start_port 2345 --start_device 0
