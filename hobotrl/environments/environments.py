@@ -909,14 +909,13 @@ class CropMsPacman(gym.ObservationWrapper):
 class Downsample(gym.ObservationWrapper):
     def __init__(self, env=None, length_factor=None, dst_size=None):
         super(Downsample, self).__init__(env)
-        if length_factor is not None:
-            length_factor = int(length_factor)
         self.org_shape = copy.copy(list(self.observation_space.shape))
         assert length_factor is not None or dst_size is not None
         self.dst_shape = copy.copy(self.org_shape)
         if dst_size is not None:
             self.dst_shape[:2] = dst_size
         else:
+            length_factor = int(length_factor)
             self.dst_shape[:2] = [x / length_factor for x in self.org_shape[:2]]
         self.dst_shape = tuple(self.dst_shape)
         self.observation_space = gym.spaces.Box(low=0, high=255, shape=self.dst_shape)

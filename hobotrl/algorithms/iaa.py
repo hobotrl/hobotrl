@@ -382,7 +382,7 @@ class EnvModelUpdater(network.NetworkUpdater):
                       }
                       #,
                       # "goal_reg_loss": self._goal_reg_loss}
-        if self.imshow_count % 1000 == 0:
+        if self.imshow_count % 1 == 0:
             fetch_dict["s0"] = self._s0
             fetch_dict["update_step"] = self.imshow_count
             for i in range(self.num):
