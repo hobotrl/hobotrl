@@ -894,14 +894,22 @@ class A3CExperimentWithI2A(Experiment):
                  learning_rate=1e-4,
                  discount_factor=0.9,
                  entropy=1e-2,
-                 batch_size=8
+                 batch_size=8,
+                 policy_with_iaa=False,
+                 compute_with_diff=False,
+                 with_momentum=True,
+                 dynamic_rollout=[1, 3, 5],
+                 dynamic_skip_step=[5000, 15000]
                  ):
         super(A3CExperimentWithI2A, self).__init__()
         self._env, self._f_se, self._f_ac, self._f_tran, self._f_decoder,\
             self._f_rollout, self._f_encoder, self._episode_n, self._learning_rate, \
-            self._discount_factor, self._entropy, self._batch_size = \
+            self._discount_factor, self._entropy, self._batch_size, \
+            self.policy_with_iaa, self.compute_with_diff, self.with_momentum, \
+            self.dynamic_rollout, self.dynamic_skip_step = \
             env, f_se, f_ac, f_tran, f_decoder, f_rollout, f_encoder, episode_n, learning_rate, \
-            discount_factor, entropy, batch_size
+            discount_factor, entropy, batch_size, policy_with_iaa, compute_with_diff, with_momentum, dynamic_rollout,\
+            dynamic_skip_step
 
     def run(self, args):
         state_shape = list(self._env.observation_space.shape)
@@ -931,11 +939,11 @@ class A3CExperimentWithI2A(Experiment):
                 network_optimizer=n_optimizer,
                 # sampler arguments
                 sampler=None,
-                policy_with_iaa=False,
-                compute_with_diff=False,
-                with_momentum=True,
-                dynamic_rollout=[1, 3, 5],
-                dynamic_skip_step=[5000, 15000],
+                policy_with_iaa=self.policy_with_iaa,
+                compute_with_diff=self.compute_with_diff,
+                with_momentum=self.with_momentum,
+                dynamic_rollout=self.dynamic_rollout,
+                dynamic_skip_step=self.dynamic_skip_step,
                 batch_size=self._batch_size,
                 log_dir=args.logdir,
                 global_step=global_step,
