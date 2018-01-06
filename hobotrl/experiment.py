@@ -52,7 +52,7 @@ class Experiment(object):
         msg = ""
         for k in Experiment.experiments:
             v = Experiment.experiments[k]
-            msg += str(k) + ":\t" + str(v.desc) + "\n"
+            msg += "{:20}".format(str(k)) + ":\t" + str(v.desc) + "\n"
         return msg
 
     @staticmethod

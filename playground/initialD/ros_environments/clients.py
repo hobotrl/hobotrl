@@ -112,7 +112,8 @@ class DrSimDecisionK8S(wrapt.ObjectProxy):
             func_compile_obs=_func_compile_obs,
             func_compile_reward=_func_compile_reward,
             func_compile_action=_func_compile_action,
-            step_delay_target=0.5
+            step_delay_target=0.5,
+            **kwargs
         )
         super(DrSimDecisionK8S, self).__init__(_env)
 

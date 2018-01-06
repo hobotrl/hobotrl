@@ -261,6 +261,10 @@ class DQNCarRacing(DQNExperiment):
                                            target_sync_rate, update_interval, replay_size, batch_size, greedy_epsilon,
                                            network_optimizer_ctor)
 
+    def run(self, args):
+        self._episode_n = args.episode_n
+        super(DQNCarRacing, self).run(args)
+
 Experiment.register(DQNCarRacing, "DQN for CarRacing, tuned with ddqn, duel network, etc.")
 
 
@@ -1164,6 +1168,33 @@ class I2A_ob(A3CExperimentWithI2AOB):
                                                  discount_factor, entropy, batch_size)
 Experiment.register(I2A_ob, "A3C with I2A for complex observation state experiments")
 
+
+class TailDQN(DQNCarRacing):
+    def __init__(self, discount_factor=0.99):
+        env = gym.make("CarRacing-v0")
+        env = wrap_car(env, 3, 3)
+        env = CarEarlyTermWrapper(env)
+        env = CarTailCompensationWrapper(
+            env, discount_factor=discount_factor, if_compensate=False)
+        super(TailDQN, self).__init__(env=env)
+Experiment.register(
+    TailDQN,
+    "DQN car racing with random early termination."
+)
+
+
+class TailCompensateDQN(DQNCarRacing):
+    def __init__(self, discount_factor=0.99):
+        env = gym.make("CarRacing-v0")
+        env = wrap_car(env, 3, 3)
+        env = CarEarlyTermWrapper(env)
+        env = CarTailCompensationWrapper(
+            env, discount_factor=discount_factor, if_compensate=True)
+        super(TailCompensateDQN, self).__init__(env=env)
+Experiment.register(
+    TailCompensateDQN,
+    "DQN car racing with random early termination and tail compensation."
+)
 
 if __name__ == '__main__':
     Experiment.main()

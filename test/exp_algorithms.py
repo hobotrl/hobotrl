@@ -625,7 +625,6 @@ class ACOOExperiment(Experiment):
                 runner.episode(self.episode_n)
 
 
-
 class ACOOExperimentCon(Experiment):
     def __init__(self, env,
                  f_create_net,

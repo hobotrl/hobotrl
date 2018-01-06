@@ -10,25 +10,28 @@ import logging
 import traceback
 # Data
 import numpy as np
+import cv2
 # Tensorflow
 import tensorflow as tf
 from tensorflow.python.training.summary_io import SummaryWriterCache
 # Hobotrl
-sys.path.append('../../../..')  # hobotrl home
+sys.path.append('../../..')  # hobotrl home
 from hobotrl.algorithms import DQN
 from hobotrl.network import LocalOptimizer
 from hobotrl.environments import FrameStack
 from hobotrl.sampling import TransitionSampler
-from hobotrl.playback import MapPlayback, BalancedMapPlayback, BigPlayback
+from hobotrl.playback import BalancedMapPlayback, MapPlayback, BigPlayback
 from hobotrl.async import AsynchronousAgent
 from hobotrl.utils import CappedLinear
 # initialD
-sys.path.append('../..')  # initialD home
+sys.path.append('..')  # initialD home
 from ros_environments.clients import DrSimDecisionK8S
 from exp.utils.func_networks import f_dueling_q
 # from exp.utils.skipping_masking import NonUniformSkip as SkippingAgent
 from exp.utils.skipping_masking import RandFirstSkip as SkippingAgent
 from exp.utils.logging_fun import StepsSaver, print_qvals, log_info
+
+from gym.spaces import Discrete, Box
 
 # ==============================================
 # =========== Set Parameters Below =============
@@ -44,13 +47,15 @@ AGENT_ACTIONS = ALL_ACTIONS[:3]
 num_actions = len(AGENT_ACTIONS)
 noop = 3
 gamma = 0.9
-greedy_epsilon = CappedLinear(int(3e4), 0.2, 0.05)
+ckpt_step = 0
+greedy_epsilon = CappedLinear(int(3e4)-ckpt_step, 0.2-(0.15/3e4*ckpt_step), 0.05)
+start_step = ckpt_step*6
 # --- replay buffer
-replay_capacity = 300
+replay_capacity = 300000
 replay_bucket_size = 100
-replay_ratio_active = 1.0
+replay_ratio_active = 0.01
 replay_max_sample_epoch = 2
-# replay_upsample_bias = (1, 1, 1, 0.1)
+replay_upsample_bias = (1, 1, 1, 0.1)
 # --- NN architecture
 f_net = lambda inputs: f_dueling_q(inputs, num_actions)
 if_ddqn = True
@@ -65,11 +70,8 @@ sample_mimimum_count = 100
 update_ratio = 8.0
 # --- logging and ckpt
 
-tf.app.flags.DEFINE_bool(
-    "test", False,
-    "Test or not.")
 tf.app.flags.DEFINE_string(
-    "dir_prefix", "/home/pirate03/work/agents/Compare/AgentStepAsCkpt/tail_reward/2_test",
+    "dir_prefix", "./experiment/1/",
     "Prefix for model ckpt and event file.")
 tf.app.flags.DEFINE_string(
     "tf_log_dir", "ckpt",
@@ -86,16 +88,6 @@ tf.app.flags.DEFINE_float(
 tf.app.flags.DEFINE_float(
     "save_checkpoint_secs", 3600,
     "Seconds to save tf model check points.")
-
-FLAGS = tf.app.flags.FLAGS
-
-if FLAGS.test:
-    replay_capacity = 300
-    replay_ratio_active = 1.0
-else:
-    replay_capacity = 300000
-    replay_ratio_active = 0.01
-
 
 # ===  Reward function
 class FuncReward(object):
@@ -142,8 +134,8 @@ class FuncReward(object):
         # update reward-related state vars
         ema_speed = 0.5 * self._ema_speed + 0.5 * speed
         ema_dist = 1.0 if dist > 2.0 else 0.9 * self._ema_dist
-        mom_opp = min((opp < 0.5) * (self._mom_opp + 1), 20)
-        mom_biking = min((biking > 0.5) * (self._mom_biking + 1), 12)
+        mom_opp = min((opp < 0.5) * (self._mom_opp + 1), 1)
+        mom_biking = min((biking > 0.5) * (self._mom_biking + 1), 1)
         steering = steer if action != 3 else self._steering
         self._ema_speed = ema_speed
         self._ema_dist = ema_dist
@@ -171,9 +163,9 @@ class FuncReward(object):
             # obs factor
             -100.0 * obs_risk,
             # opposite
-            -20 * (0.9 + 0.1 * mom_opp) * (mom_opp > 1.0),
+            # -20 * (0.9 + 0.1 * mom_opp) * (mom_opp > 0.99),
             # ped
-            -40 * (0.9 + 0.1 * mom_biking) * (mom_biking > 1.0),
+            -40 * (0.9 + 0.1 * mom_biking) * (mom_biking > 0.99),
             # steer
             steering * -40.0,
         ]
@@ -208,10 +200,10 @@ class FuncReward(object):
     def _func_skipping_bias(self, reward, done, info, n_skip, cnt_skip):
         new_info = {}
         if 'banned_road_change' in info:
-            reward -= 1.0 * (n_skip - cnt_skip)
+            reward -= 20.0 * (n_skip - cnt_skip)
         if done:
-            # pass
-            reward /= (1 - self.__gamma) / (n_skip - cnt_skip)
+            pass
+            # reward /= (1 - self.__gamma) / (n_skip - cnt_skip)
         new_info['reward_fun/reward'] = reward
         return reward, new_info
 
@@ -227,9 +219,16 @@ class FuncReward(object):
         info.update(info_diff)
         if done:
             info['flag_success'] = reward > 0.0
+            if info['flag_success']:
+                reward = 10.0
+            else:
+                reward = -10.0
             self.reset()
+        else:
+            reward = 0
 
         return reward, done, info
+
 # ==========================================
 # ==========================================
 # ==========================================
@@ -237,6 +236,7 @@ class FuncReward(object):
 env, replay_buffer, _agent = None, None, None
 try:
     # Parse flags
+    FLAGS = tf.app.flags.FLAGS
     dir_prefix = FLAGS.dir_prefix
     tf_log_dir = os.sep.join([dir_prefix, FLAGS.tf_log_dir])
     our_log_dir = os.sep.join([dir_prefix, FLAGS.our_log_dir])
@@ -257,47 +257,19 @@ try:
     # -- create global step variable
     global_step = tf.get_variable(
         'global_step', [], dtype=tf.int32,
-        initializer=tf.constant_initializer(0), trainable=False)\
-
-    def gen_default_backend_cmds():
-        ws_path = '/Projects/catkin_ws/'
-        initialD_path = '/Projects/hobotrl/playground/initialD/'
-        backend_path = initialD_path + 'ros_environments/backend_scripts/'
-        utils_path = initialD_path + 'ros_environments/backend_scripts/utils/'
-        backend_cmds = [
-            ['python', utils_path + '/iterate_test_case.py'],
-            # Parse maps
-            ['python', utils_path + 'parse_map.py',
-             ws_path + 'src/Map/src/map_api/data/honda_wider.xodr',
-             utils_path + 'road_segment_info.txt'],
-            # Start roscore
-            ['roscore'],
-            # Reward function script
-            ['python', backend_path + 'gazebo_rl_reward.py'],
-            # Road validity node script
-            ['python', backend_path + 'road_validity.py',
-             utils_path + 'road_segment_info.txt.signal'],
-            # Simulation restarter backend
-            ['python', backend_path+'rviz_restart.py', 'next.launch'],
-            # Video capture
-            ['python', backend_path+'non_stop_data_capture.py']
-        ]
-        return backend_cmds
-
-    # Environment
-    if tf.test:
-        env = FrameStack(DrSimDecisionK8S(backend_cmds=gen_default_backend_cmds()), n_stack)
-    else:
-        env = FrameStack(DrSimDecisionK8S(), n_stack)
-
+        initializer=tf.constant_initializer(0), trainable=False)
+    # Environmenth
+    env = FrameStack(DrSimDecisionK8S(), n_stack)
     # Agent
     replay_buffer = BigPlayback(
-        bucket_cls=MapPlayback,
+        bucket_cls=BalancedMapPlayback,
         cache_path=replay_cache_dir,
         capacity=replay_capacity,
         bucket_size=replay_bucket_size,
         ratio_active=replay_ratio_active,
         max_sample_epoch=replay_max_sample_epoch,
+        num_actions=num_actions,
+        upsample_bias=replay_upsample_bias
     )
     state_shape = env.observation_space.shape
     __agent = DQN(
@@ -340,15 +312,14 @@ try:
         sess.run(op_set_lr, feed_dict={lr_in: learning_rate})
         print "Using learning rate {}".format(sess.run(lr))
         n_ep = 0
-        n_total_steps = 0
+        n_total_steps = start_step
         # GoGoGo
-        # while n_total_steps <= 2.5e5:
-        for _ in range(100):
+        while n_total_steps <= 2.5e5:
             cum_reward = 0.0
             n_ep_steps = 0
             state = env.reset()
             while True:
-                action = agent.act(state, exploration=not tf.test)
+                action = agent.act(state)
                 if action != 3:
                     print_qvals(
                         n_ep_steps, __agent, state, action, AGENT_ACTIONS
@@ -360,7 +331,7 @@ try:
                 agent_info = agent.step(
                     sess=sess, state=state, action=action,
                     reward=reward, next_state=next_state,
-                    episode_done=done, learning_off=FLAGS.test
+                    episode_done=done
                 )
                 env_info.update(reward_info)
                 summary_proto = log_info(

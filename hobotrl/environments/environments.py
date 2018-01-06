@@ -58,12 +58,13 @@ class EnvRunner(object):
         self.action = self.agent.act(
             state=self.state, evaluate=evaluate, sess=self.agent.sess
         )
-        next_state, reward, done, info = self.env.step(self.action)
+        next_state, reward, done, env_info = self.env.step(self.action)
         self.total_reward = reward + self.reward_decay * self.total_reward
         info = self.agent.step(
             state=self.state, action=self.action, reward=reward,
             next_state=next_state, episode_done=done
         )
+        info.update(env_info)
         self.record(info)
         self.state = next_state
         if self.render_once:
@@ -86,6 +87,9 @@ class EnvRunner(object):
         :return:
         """
         rewards = []
+        logging.warning(
+            "EnvRunner running {} episodes.".format(n)
+        )
         for i in range(n):
             self.episode_n += 1
             self.state = self.env.reset()
@@ -371,6 +375,7 @@ class EnvRunner2(object):
                 render()
                 if pause_before_start:
                     raw_input("Press Enter to start demonstration")
+
 
 class AugmentEnvWrapper(gym.Wrapper):
     """
