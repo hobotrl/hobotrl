@@ -2,5 +2,5 @@
 #
 #	usage: . ./scripts/iaa.sh
 #
-exp_name="Freeway_mom_I2A"
-. ./scripts/cluster.sh ./test/exp_freeway.py ${exp_name} 1 1 --log_dir ./log/Freeway/${exp_name} --start_port 2345 --start_device 0
+exp_name="Freeway_A3C_half"
+. ./scripts/cluster.sh ./test/exp_freeway.py ${exp_name} 2 1 --log_dir ~/hobotrl/log/Freeway/${exp_name} --start_port 2365 --start_device 3

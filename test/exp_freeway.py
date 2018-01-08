@@ -9,7 +9,7 @@ sys.path.append(".")
 from exp_car_flow import *
 
 
-class FreewayA3C(A3CExperiment):
+class Freeway_A3C(A3CExperiment):
     def __init__(self, env=None, f_create_net=None, episode_n=10000, learning_rate=5e-5, discount_factor=0.99,
                  entropy=hrl.utils.CappedLinear(1e6, 2e-2, 5e-3),
                  batch_size=32):
@@ -45,9 +45,50 @@ class FreewayA3C(A3CExperiment):
 
                 return {"v": v, "pi": pi}
             f_create_net = create_ac_car
-        super(FreewayA3C, self).__init__(env, f_create_net, episode_n, learning_rate, discount_factor, entropy,
+        super(Freeway_A3C, self).__init__(env, f_create_net, episode_n, learning_rate, discount_factor, entropy,
                                               batch_size)
-Experiment.register(FreewayA3C, "A3C for Freeway")
+Experiment.register(Freeway_A3C, "A3C for Freeway")
+
+
+class Freeway_A3C_half(A3CExperiment):
+    def __init__(self, env=None, f_create_net=None, episode_n=10000, learning_rate=5e-5, discount_factor=0.99,
+                 entropy=hrl.utils.CappedLinear(1e6, 2e-2, 5e-3),
+                 batch_size=32):
+        if env is None:
+            env = gym.make('Freeway-v0')
+            env = Downsample(env, length_factor=2.0)
+            env = ScaledFloatFrame(env)
+            env = MaxAndSkipEnv(env, skip=4, max_len=1)
+            env = FrameStack(env, k=4)
+        if f_create_net is None:
+            dim_action = env.action_space.n
+
+            def create_ac_car(inputs):
+                l2 = 1e-7
+                input_state = inputs[0]
+                se = hrl.utils.Network.conv2ds(input_state,
+                                               shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
+                                               out_flatten=True,
+                                               activation=tf.nn.relu,
+                                               l2=l2,
+                                               var_scope="se")
+
+                v = hrl.utils.Network.layer_fcs(se, [256], 1,
+                                                activation_hidden=tf.nn.relu,
+                                                l2=l2,
+                                                var_scope="v")
+                v = tf.squeeze(v, axis=1)
+                pi = hrl.utils.Network.layer_fcs(se, [256], dim_action,
+                                                 activation_hidden=tf.nn.relu,
+                                                 activation_out=tf.nn.softmax,
+                                                 l2=l2,
+                                                 var_scope="pi")
+
+                return {"v": v, "pi": pi}
+            f_create_net = create_ac_car
+        super(Freeway_A3C_half, self).__init__(env, f_create_net, episode_n, learning_rate, discount_factor, entropy,
+                                              batch_size)
+Experiment.register(Freeway_A3C_half, "A3C for Freeway with half input observation")
 
 
 class Freeway(A3CExperimentWithI2A):
