@@ -7,6 +7,16 @@ import logging
 
 sys.path.append(".")
 from exp_car_flow import *
+import hobotrl as hrl
+
+class Freeway_search(hrl.experiment.GridSearch):
+    def __init__(self):
+        super(Freeway_search, self).__init__(Freeway_A3C_half, {
+            "entropy": [CappedLinear(1e6, 2e-2, 5e-3), CappedLinear(1e6, 5e-2, 5e-3), CappedLinear(1e6, 8e-2, 5e-3)],
+            "batch_size": [8, 16, 32],
+            "episode_n": [2000],
+        })
+Experiment.register(Freeway_search, "Hyperparam search for Freeway with A3C")
 
 
 class Freeway_A3C(A3CExperiment):
@@ -89,6 +99,30 @@ class Freeway_A3C_half(A3CExperiment):
         super(Freeway_A3C_half, self).__init__(env, f_create_net, episode_n, learning_rate, discount_factor, entropy,
                                               batch_size)
 Experiment.register(Freeway_A3C_half, "A3C for Freeway with half input observation")
+
+
+class Freeway_A3C_halfE1(Freeway_A3C_half):
+    def __init__(self, entropy=CappedLinear(1e6, 5e-2, 5e-3)):
+        super(Freeway_A3C_halfE1, self).__init__(entropy=entropy)
+Experiment.register(Freeway_A3C_halfE1, "A3C for Freeway with half input observation")
+
+
+class Freeway_A3C_halfE2(Freeway_A3C_half):
+    def __init__(self, entropy=CappedLinear(1e6, 8e-2, 5e-3)):
+        super(Freeway_A3C_halfE2, self).__init__(entropy=entropy)
+Experiment.register(Freeway_A3C_halfE2, "A3C for Freeway with half input observation")
+
+
+class Freeway_A3C_halfLR1(Freeway_A3C_half):
+    def __init__(self, learning_rate=1e-5):
+        super(Freeway_A3C_halfLR1, self).__init__(learning_rate=learning_rate)
+Experiment.register(Freeway_A3C_halfLR1, "A3C for Freeway with half input observation")
+
+
+class Freeway_A3C_halfLR2(Freeway_A3C_half):
+    def __init__(self, learning_rate=5e-6):
+        super(Freeway_A3C_halfLR2, self).__init__(learning_rate=learning_rate)
+Experiment.register(Freeway_A3C_halfLR2, "A3C for Freeway with half input observation")
 
 
 class Freeway(A3CExperimentWithI2A):
