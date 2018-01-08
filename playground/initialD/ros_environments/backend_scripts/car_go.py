@@ -35,6 +35,11 @@ class CarGo:
             '/autoDrive_KeyboardMode', Char, queue_size=10, latch=True)
         # self.car_go_loop = Timer(rospy.Duration(5.0), self.car_go_callback)
         self.ema_speed_loop = Timer(rospy.Duration(0.1), self.ema_speed_callback)
+        if self.is_dummy_action:
+            print "[CarGo]: using dummy action, forming loop.."
+            self.dummy_action_loop = Timer(
+                rospy.Duration(5.0), lambda *args, **kwargs: self.start_pub.publish(ord('0'))
+            )
 
     def car_control_callback(self, data):
         """Check if control is in autodrive mode, and activate if not.

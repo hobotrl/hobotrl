@@ -36,6 +36,7 @@ spec:
         volumeMounts:
         - name: workdir
           mountPath: /mnt
+          subPath: lisen.mu
         command:
         - "/bin/bash"
         args:
@@ -43,7 +44,6 @@ spec:
         - "cd /mnt; python -m SimpleHTTPServer 8080"
       volumes:
       - name: workdir
-        hostPath:
-          path: /mnt/glusterfs/lisen.mu
-   
+        persistentVolumeClaim:
+          claimName: http-log-lisenmu
 
