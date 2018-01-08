@@ -60,7 +60,7 @@ class StepsSaver(object):
         self.stat_file.close()
 
     def parse_state(self, state):
-        return np.array(state)[:, :, 6:]
+        return np.array(state)[:, :, -3:]
 
     def save(self, n_ep, n_step, state, action, vec_reward, reward,
                   done, cum_reward, flag_success):
