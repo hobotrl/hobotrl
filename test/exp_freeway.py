@@ -26,7 +26,7 @@ class Freeway_A3C(A3CExperiment):
                 l2 = 1e-7
                 input_state = inputs[0]
                 se = hrl.utils.Network.conv2ds(input_state,
-                                               shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
+                                               shape=[(32, 8, 4), (64, 4, 2), (32, 3, 2)],
                                                out_flatten=True,
                                                activation=tf.nn.relu,
                                                l2=l2,
@@ -67,7 +67,7 @@ class Freeway_A3C_half(A3CExperiment):
                 l2 = 1e-7
                 input_state = inputs[0]
                 se = hrl.utils.Network.conv2ds(input_state,
-                                               shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
+                                               shape=[(32, 8, 4), (64, 4, 2), (32, 3, 2)],
                                                out_flatten=True,
                                                activation=tf.nn.relu,
                                                l2=l2,
