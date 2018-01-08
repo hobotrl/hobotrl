@@ -15,10 +15,10 @@ import tensorflow as tf
 from tensorflow.python.training.summary_io import SummaryWriterCache
 # Hobotrl
 sys.path.append('../../../..')  # hobotrl home
-from hobotrl.algorithms.dqn import DQN, MaskDQN
+from hobotrl.algorithms.dqn import DQN
 from hobotrl.network import LocalOptimizer
 from hobotrl.environments import FrameStack
-from hobotrl.sampling import TransitionSampler, mask_carsim_sample
+from hobotrl.sampling import TransitionSampler
 from hobotrl.playback import MapPlayback, BalancedMapPlayback, BigPlayback
 from hobotrl.async import AsynchronousAgent
 from hobotrl.utils import CappedLinear
@@ -259,7 +259,9 @@ try:
         max_sample_epoch=replay_max_sample_epoch,
     )
     state_shape = env.observation_space.shape
-    __agent = MaskDQN(
+    print "state shape: ", state_shape
+    state_shape = (700, 700, 9)
+    __agent = DQN(
         f_create_q=f_net, state_shape=state_shape,
         # OneStepTD arguments
         num_actions=num_actions, discount_factor=gamma, ddqn=if_ddqn,
@@ -275,8 +277,7 @@ try:
             replay_buffer,
             batch_size=batch_size,
             interval=update_interval,
-            minimum_count=sample_mimimum_count,
-            sample_maker=mask_carsim_sample),
+            minimum_count=sample_mimimum_count),
         # checkpoint
         global_step=global_step
      )
@@ -310,10 +311,10 @@ try:
             while True:
                 # action = agent.act(state, vec_reward=last_vec_reward)
                 # m_action = action
-                if rule_action != 3:
-                    print_qvals(
-                        n_ep_steps, __agent, state, rule_action, AGENT_ACTIONS
-                    )
+                # if rule_action != 3:
+                #     print_qvals(
+                #         n_ep_steps, __agent, state, rule_action, AGENT_ACTIONS
+                #     )
 
                 next_state_rule_action, vec_reward, done, env_info = env.step(3)
                 next_state, next_rule_action = next_state_rule_action

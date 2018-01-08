@@ -65,7 +65,7 @@ tf.app.flags.DEFINE_bool(
     "test", False,
     "Test or not.")
 tf.app.flags.DEFINE_string(
-    "dir_prefix", "/home/pirate03/work/agents/k8s_rule/1",
+    "dir_prefix", "/home/pirate03/work/agents/Compare/AgentStepAsCkpt/rule/1_test",
     "Prefix for model ckpt and event file.")
 tf.app.flags.DEFINE_string(
     "tf_log_dir", "ckpt",
@@ -231,7 +231,34 @@ try:
     #     initializer=tf.constant_initializer(0), trainable=False)
 
     # Environment
-    env = DrSimDecisionK8S(is_dummy_action=True)
+    def gen_default_backend_cmds():
+        ws_path = '/Projects/catkin_ws/'
+        initialD_path = '/Projects/hobotrl/playground/initialD/'
+        backend_path = initialD_path + 'ros_environments/backend_scripts/'
+        utils_path = initialD_path + 'ros_environments/backend_scripts/utils/'
+        backend_cmds = [
+            ['python', utils_path + '/iterate_test_case.py'],
+            # Parse maps
+            ['python', utils_path + 'parse_map.py',
+             ws_path + 'src/Map/src/map_api/data/honda_wider.xodr',
+             utils_path + 'road_segment_info.txt'],
+            # Start roscore
+            ['roscore'],
+            # Reward function script
+            ['python', backend_path + 'gazebo_rl_reward.py'],
+            # Road validity node script
+            ['python', backend_path + 'road_validity.py',
+             utils_path + 'road_segment_info.txt.signal'],
+            # Simulation restarter backend
+            ['python', backend_path+'rviz_restart.py', 'next.launch'],
+            # Video capture
+            ['python', backend_path+'non_stop_data_capture.py'],
+            ['python', backend_path + 'car_go.py', '--use-dummy-action']
+
+        ]
+        return backend_cmds
+
+    env = DrSimDecisionK8S(backend_cmds=gen_default_backend_cmds(), is_dummy_action=True)
     # Agent
     state_shape = env.observation_space.shape
     # Utilities
@@ -243,7 +270,7 @@ try:
     n_total_steps = 0
     # GoGoGo
     # while n_total_steps <= 2.5e5:
-    for _ in range(1000):
+    for _ in range(100):
         cum_reward = 0.0
         n_ep_steps = 0
         state_action = env.reset()

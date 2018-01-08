@@ -153,9 +153,8 @@ class DrSimDecisionK8S(wrapt.ObjectProxy):
             # Simulation restarter backend
             ['python', backend_path+'rviz_restart.py', 'honda_dynamic_obs.launch'],
             # Video capture
-            ['python', backend_path+'non_stop_data_capture.py'],
+            # ['python', backend_path+'non_stop_data_capture.py'],
             ['python', backend_path+'car_go.py', '--use-dummy-action']
-
         ]
         return backend_cmds
 
