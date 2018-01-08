@@ -102,13 +102,13 @@ Experiment.register(Freeway_A3C_half, "A3C for Freeway with half input observati
 
 
 class Freeway_A3C_halfE1(Freeway_A3C_half):
-    def __init__(self, entropy=CappedLinear(1e6, 5e-2, 5e-3)):
+    def __init__(self, entropy=CappedLinear(1e6, 1e-2, 5e-3)):
         super(Freeway_A3C_halfE1, self).__init__(entropy=entropy)
 Experiment.register(Freeway_A3C_halfE1, "A3C for Freeway with half input observation")
 
 
 class Freeway_A3C_halfE2(Freeway_A3C_half):
-    def __init__(self, entropy=CappedLinear(1e6, 8e-2, 5e-3)):
+    def __init__(self, entropy=CappedLinear(1e6, 5e-3, 1e-3)):
         super(Freeway_A3C_halfE2, self).__init__(entropy=entropy)
 Experiment.register(Freeway_A3C_halfE2, "A3C for Freeway with half input observation")
 
