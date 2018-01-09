@@ -69,7 +69,7 @@ tf.app.flags.DEFINE_bool(
     "test", False,
     "Test or not.")
 tf.app.flags.DEFINE_string(
-    "dir_prefix", "./experiment/1/",
+    "dir_prefix", "/home/pirate03/work/agents/Compare/AgentStepAsCkpt/exp09/3",
     "Prefix for model ckpt and event file.")
 tf.app.flags.DEFINE_string(
     "tf_log_dir", "ckpt",
@@ -81,7 +81,7 @@ tf.app.flags.DEFINE_string(
     "replay_cache_dir", "ReplayBufferCache",
     "Replay buffer cache path.")
 tf.app.flags.DEFINE_float(
-    "gpu_mem_fraction", 0.2,
+    "gpu_mem_fraction", 0.15,
     "Replay buffer cache path.")
 tf.app.flags.DEFINE_float(
     "save_checkpoint_secs", 3600,
@@ -290,7 +290,6 @@ try:
     else:
         env = FrameStack(DrSimDecisionK8S(), n_stack)
 
-
     # Agent
     replay_buffer = BigPlayback(
         bucket_cls=MapPlayback,
@@ -389,6 +388,9 @@ try:
                         )
                     )
                     break
+            if n_ep >= 100:
+                break
+
 except Exception as e:
     print e.message
     traceback.print_exc()
