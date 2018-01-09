@@ -24,7 +24,7 @@ from hobotrl.async import AsynchronousAgent
 from hobotrl.utils import CappedLinear
 # initialD
 sys.path.append('../..')  # initialD home
-from ros_environments.clients import DrSimDecisionK8S
+from ros_environments.clients import DrSimDecisionK8SAgg
 from exp.utils.func_networks import f_dueling_q
 # from exp.utils.skipping_masking import NonUniformSkip as SkippingAgent
 from exp.utils.skipping_masking import RandFirstSkip as SkippingAgent
@@ -66,7 +66,7 @@ update_ratio = 8.0
 # --- logging and ckpt
 
 tf.app.flags.DEFINE_string(
-    "dir_prefix", "/home/pirate03/hobotrl_data/Compare/qmasking_really_inc_lr/2",
+    "dir_prefix", "/home/pirate03/work/agents/Compare/AgentStepAsCkpt/qmasking_realtime/1",
     "Prefix for model ckpt and event file.")
 tf.app.flags.DEFINE_string(
     "tf_log_dir", "ckpt",
@@ -236,10 +236,10 @@ try:
     # Modify tf graph
     graph = tf.get_default_graph()
     # -- create learning rate var and optimizer
-    print "learning rate is 5e-3"
+    print "learning rate is 1e-3"
     lr = tf.get_variable(
         'learning_rate', [], dtype=tf.float32,
-        initializer=tf.constant_initializer(5e-3), trainable=False
+        initializer=tf.constant_initializer(1e-3), trainable=False
     )
     lr_in = tf.placeholder(dtype=tf.float32)
     op_set_lr = tf.assign(lr, lr_in)
@@ -249,7 +249,7 @@ try:
         'global_step', [], dtype=tf.int32,
         initializer=tf.constant_initializer(0), trainable=False)
     # Environment
-    env = FrameStack(DrSimDecisionK8S(image_uri="docker.hobot.cc/carsim/simulator_gpu_kub:0.0.8_384.90"), n_stack)
+    env = FrameStack(DrSimDecisionK8SAgg(), n_stack)
     # Agent
     replay_buffer = BigPlayback(
         bucket_cls=MapPlayback,
@@ -260,6 +260,7 @@ try:
         max_sample_epoch=replay_max_sample_epoch,
     )
     state_shape = env.observation_space.shape
+
     __agent = MaskDQN(
         f_create_q=f_net, state_shape=state_shape,
         # OneStepTD arguments
@@ -306,18 +307,20 @@ try:
         while n_total_steps <= 2.5e5:
             cum_reward = 0.0
             n_ep_steps = 0
-            state = env.reset()
-            last_vec_reward = None
+            agg_state = env.reset()
+            state = agg_state[:3, :, :]
+            vec_reward = agg_state[3, 0, 0:4]
             while True:
-                action = agent.act(state, vec_reward=last_vec_reward)
+                action = agent.act(state, vec_reward=vec_reward)
                 # m_action = action
                 if action != 3:
                     print_qvals(
                         n_ep_steps, __agent, state, action, AGENT_ACTIONS
                     )
 
-                next_state, vec_reward, done, env_info = env.step(action)
-                last_vec_reward = vec_reward
+                next_agg_state, vec_reward, done, env_info = env.step(action)
+                next_state = next_agg_state[:3, :, :]
+                # last_vec_reward = vec_reward
                 reward, done, reward_info = reward_vector2scalar(
                     action, vec_reward, done, agent.n_skip, agent.cnt_skip
                 )

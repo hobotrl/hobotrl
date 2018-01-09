@@ -144,6 +144,16 @@ class DrSimDecisionK8SServer(object):
         return DrSimDecisionK8SServer._ALL_ACTIONS[action]
 
 
+    @staticmethod
+    def func_compile_state(obss, rewards):
+        img1, img2 = obss[-1][0], obss[-2][0]
+        img = np.maximum(img1, img2)
+        rewards = np.mean(np.array(rewards), axis=0)
+        img
+
+
+
+
 class DrSimRuleDecisionK8SServer(object):
     _version = '20180103'
     _ALL_ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0,)]
@@ -186,4 +196,64 @@ class DrSimRuleDecisionK8SServer(object):
     @staticmethod
     def func_compile_action(action):
         return DrSimDecisionK8SServer._ALL_ACTIONS[action]
+
+
+class DrSimDecisionK8SServerAgg(object):
+    _version = '20180103'
+    _ALL_ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0,)]
+    @staticmethod
+    def func_compile_reward(rewards):
+        """Server-side reward compilation function.
+        Rewards are nested lists. Outter index is the time step, inner index
+        is the reward type.
+
+        :param rewards: raw rewards vectors.
+        :return:
+        """
+        rewards = np.mean(np.array(rewards), axis=0)
+        return rewards
+
+    @staticmethod
+    def func_compile_obs(obss):
+        """Server side observation compilation function.
+
+        The observations are:
+        1. ('/training/image/compressed', sensor_msgs.msg.CompressedImage'),
+        2. ('/decision_result', 'std_msgs.msg.Int16'),
+        3. ('/rl/car_velocity_front', 'std_msgs.msg.Float32'),
+
+        1. The last two image frames are max-poolled to combat flickering.
+           Image observations are casted as `uint8` to save memory.
+        2. Decision result is printed and discarded.
+        3. Ego speed is printed and discarded.
+
+        :param obss: original observations.
+        :return: compiled obseravation tensor.
+        """
+        img1, img2 = obss[-1][0], obss[-2][0]
+        decision, speed = obss[-1][1], obss[-1][2]
+
+        vec_rewards = np.mean(np.array(obss[:, 2:]), axis=0)
+        print "vec rewards {}".format(vec_rewards)
+        on_opposite_path = vec_rewards[0]
+        on_biking_lane = vec_rewards[1]
+        on_innerest_lane = vec_rewards[2]
+        on_outterest_lane = vec_rewards[3]
+        obs = np.maximum(img1, img2)
+        print "decision {} : opp: {} biking: {} " \
+              "innerest: {} outtest: {}".format(decision, on_opposite_path, on_biking_lane,
+                                                on_innerest_lane, on_outterest_lane)
+        # print speed
+
+        x = np.zeros((1, obs.shape[1], obs.shape[2]))
+        x[0][0][:4] = on_opposite_path, on_biking_lane, on_innerest_lane, on_outterest_lane
+        obs = np.concatenate((obs, x))
+
+        return obs
+
+    @staticmethod
+    def func_compile_action(action):
+        return DrSimDecisionK8SServer._ALL_ACTIONS[action]
+
+
 
