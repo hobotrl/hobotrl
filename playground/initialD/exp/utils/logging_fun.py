@@ -23,6 +23,13 @@ def log_info(agent_info, env_info,
              done,
              cum_reward,
              n_ep, n_ep_steps, n_total_steps):
+    if 'FitTargetMaskQ/td/td_losses' in agent_info:
+        prt_str = zip(
+            agent_info['FitTargetMaskQ/td/action'], agent_info['FitTargetMaskQ/td/q'],
+            agent_info['FitTargetMaskQ/td/target_q'], agent_info['FitTargetMaskQ/td/td_losses'],
+            agent_info['FitTargetMaskQ/td/reward'], agent_info['FitTargetMaskQ/td/done'])
+        for s in prt_str:
+            print ("{} "+"{:10.5f} "*4+"{}").format(*s)
     summary_proto = tf.Summary()
     for tag in agent_info:
         summary_proto.value.add(
