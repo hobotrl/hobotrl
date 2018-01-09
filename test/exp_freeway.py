@@ -12,8 +12,8 @@ import hobotrl as hrl
 class Freeway_search(hrl.experiment.GridSearch):
     def __init__(self):
         super(Freeway_search, self).__init__(Freeway_A3C_half, {
-            "entropy": [CappedLinear(1e6, 2e-2, 5e-3), CappedLinear(1e6, 5e-2, 5e-3), CappedLinear(1e6, 8e-2, 5e-3)],
-            "batch_size": [8, 16, 32],
+            "entropy": [CappedLinear(1e6, 2e-2, 5e-3), CappedLinear(1e6, 5e-2, 5e-3)],
+            "batch_size": [16, 32],
             "episode_n": [2000],
         })
 Experiment.register(Freeway_search, "Hyperparam search for Freeway with A3C")
