@@ -391,8 +391,9 @@ try:
                         )
                     )
                     break
-            if n_ep >= 100:
-                break
+            if FLAGS.test:
+                if n_ep >= 100:
+                    break
 except Exception as e:
     print e.message
     traceback.print_exc()
