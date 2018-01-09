@@ -42,7 +42,10 @@ class OneStepTD(TargetEstimator):
         self._q_function = q_function
 
     def estimate(self, state, action, reward, next_state, episode_done):
+        # print "next_state shape: ", next_state.shape
+        # target_q_val = self._q_function(next_state)[0]
         target_q_val = self._q_function(next_state)
+        # print "target_q_val: ", target_q_val
         target_q_val = np.max(target_q_val, axis=1)
         target_q_val = reward + self._discount_factor * target_q_val * (1.0 - episode_done)
         return target_q_val
@@ -87,6 +90,23 @@ class MaskOneStepTD(TargetEstimator):
         candidate_target_q_val = reward + self._discount_factor * candidate_target_q_val * (1.0 - episode_done)
         return candidate_target_q_val
 
+
+class MaskOneStepTD2(TargetEstimator):
+    def __init__(self, q_function, discount_factor, candidate_func):
+        super(MaskOneStepTD2, self).__init__(discount_factor)
+        self._q_function = q_function
+        self._candidate_func = candidate_func
+
+    def estimate(self, state, action, reward, next_state, episode_done, **kwargs):
+        target_q_val = self._q_function(next_state)
+        candidate_target_q_val = []
+        for s, tq in zip(state, target_q_val):
+            candidate_actions = self._candidate_func(s)
+            candidate_target_q_val.append(np.max(tq[candidate_actions]))
+
+        candidate_target_q_val = np.array(candidate_target_q_val)
+        candidate_target_q_val = reward + self._discount_factor * candidate_target_q_val * (1.0 - episode_done)
+        return candidate_target_q_val
 
 class DDQNOneStepTD(TargetEstimator):
     def __init__(self, q_function, target_q_function, discount_factor=0.99):

@@ -13,7 +13,7 @@ from hobotrl.tf_dependent.base import BaseDeepAgent
 from hobotrl.playback import MapPlayback
 from value_based import ValueBasedAgent, GreedyStateValueFunction
 import hobotrl.target_estimate as target_estimate
-from hobotrl.policy import MaskEpsilonGreedyPolicy
+from hobotrl.policy import MaskEpsilonGreedyPolicy, MaskEpsilonGreedyPolicy2
 
 class DQN(sampling.TransitionBatchUpdate,
           ValueBasedAgent,
@@ -107,8 +107,8 @@ class DQN(sampling.TransitionBatchUpdate,
         info = self.network_optimizer.optimize_step(self.sess)
         if self._update_count % self._target_sync_interval == 0:
             self.network.sync_target(self.sess, self._target_sync_rate)
-        print "dqn info: ", 
-        print info
+        # print "dqn info: ",
+        # print info
         return info, {"score": info["FitTargetQ/td/td_losses"]}
 
     def set_session(self, sess):
@@ -137,4 +137,50 @@ class MaskDQN(DQN):
         # print "dqn info: ",
         # print info
         return info, {"score": info["FitTargetMaskQ/td/td_losses"]}
+
+
+class MaskDQN2(DQN):
+    def __init__(self,
+                 f_create_q, state_shape,
+                 # OneStepTD arguments
+                 num_actions, discount_factor, ddqn,
+                 # target network sync arguments
+                 target_sync_interval,
+                 target_sync_rate,
+                 # epsilon greeedy arguments
+                 greedy_epsilon,
+                 # optimizer arguments
+                 network_optimizer=None, max_gradient=10.0,
+                 # sampler arguments
+                 update_interval=4, replay_size=1000, batch_size=32,
+                 sampler=None,
+                 candidate_func=None,
+                 *args, **kwargs):
+        self._candidate_func = candidate_func
+        super(MaskDQN2, self).__init__(
+                 f_create_q, state_shape,
+                 # OneStepTD arguments
+                 num_actions, discount_factor, ddqn,
+                 # target network sync arguments
+                 target_sync_interval,
+                 target_sync_rate,
+                 # epsilon greeedy arguments
+                 greedy_epsilon,
+                 # optimizer arguments
+                 network_optimizer, max_gradient,
+                 # sampler arguments
+                 update_interval, replay_size, batch_size,
+                 sampler,
+                 *args, **kwargs)
+
+    def init_policy(self, greedy_epsilon, num_actions, *args, **kwargs):
+        print "self._candidate_func: ", self._candidate_func
+        return MaskEpsilonGreedyPolicy2(self._q_function, greedy_epsilon, num_actions, self._candidate_func)
+
+    def init_updaters_(self):
+        estimator = target_estimate.MaskOneStepTD2(self.target_q, self._discount_factor, self._candidate_func)
+        self.network_optimizer.add_updater(network.FitTargetQ(self.learn_q, estimator), name="td")
+        self.network_optimizer.add_updater(network.L2(self.network), name="l2")
+        self.network_optimizer.compile()
+        pass
 

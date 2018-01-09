@@ -19,6 +19,8 @@ class GreedyPolicy(Policy):
         self._num_actions = q_function.output().op.shape.as_list()[-1]
 
     def act(self, state, **kwargs):
+        print "state shape: ", state.shape
+        # q_values = self.q_function(np.asarray(state)[np.newaxis, :])[0][0]
         q_values = self.q_function(np.asarray(state)[np.newaxis, :])[0]
         action = np.argmax(q_values)
         return action
@@ -66,6 +68,31 @@ class MaskEpsilonGreedyPolicy(EpsilonGreedyPolicy):
         vec_rewards = kwargs["vec_reward"]
         candidate_actions = self.candidate(vec_rewards)
 
+        if exploration and np.random.rand() < self._epsilon:
+            action = random.choice(candidate_actions)
+            # action = np.random.randint(self._num_actions)
+        else:
+            q_values = self.q_function(np.asarray(state)[np.newaxis, :])[0]
+            action = candidate_actions[np.argmax(q_values[candidate_actions])]
+        return action
+
+
+class MaskEpsilonGreedyPolicy2(EpsilonGreedyPolicy):
+    def __init__(self, q_function, epsilon, num_actions, candidate_func):
+        """
+
+        :param q_function:
+        :type q_function: NetworkFunction
+        :param epsilon:
+        :param num_actions:
+        """
+        self._candidate_func = candidate_func
+        super(MaskEpsilonGreedyPolicy2, self).__init__(q_function, epsilon, num_actions)
+        # self.q_function, self._epsilon, self._num_actions, self._candidate_func = \
+        #     q_function, epsilon, num_actions, candidate_func
+
+    def act(self, state, exploration=True, **kwargs):
+        candidate_actions = self._candidate_func(state)
         if exploration and np.random.rand() < self._epsilon:
             action = random.choice(candidate_actions)
             # action = np.random.randint(self._num_actions)
