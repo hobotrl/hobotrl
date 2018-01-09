@@ -101,30 +101,6 @@ class Freeway_A3C_half(A3CExperiment):
 Experiment.register(Freeway_A3C_half, "A3C for Freeway with half input observation")
 
 
-class Freeway_A3C_halfE1(Freeway_A3C_half):
-    def __init__(self, entropy=CappedLinear(1e6, 1e-2, 5e-3)):
-        super(Freeway_A3C_halfE1, self).__init__(entropy=entropy)
-Experiment.register(Freeway_A3C_halfE1, "A3C for Freeway with half input observation")
-
-
-class Freeway_A3C_halfE2(Freeway_A3C_half):
-    def __init__(self, entropy=CappedLinear(1e6, 5e-3, 1e-3)):
-        super(Freeway_A3C_halfE2, self).__init__(entropy=entropy)
-Experiment.register(Freeway_A3C_halfE2, "A3C for Freeway with half input observation")
-
-
-class Freeway_A3C_halfLR1(Freeway_A3C_half):
-    def __init__(self, learning_rate=1e-5):
-        super(Freeway_A3C_halfLR1, self).__init__(learning_rate=learning_rate)
-Experiment.register(Freeway_A3C_halfLR1, "A3C for Freeway with half input observation")
-
-
-class Freeway_A3C_halfLR2(Freeway_A3C_half):
-    def __init__(self, learning_rate=5e-6):
-        super(Freeway_A3C_halfLR2, self).__init__(learning_rate=learning_rate)
-Experiment.register(Freeway_A3C_halfLR2, "A3C for Freeway with half input observation")
-
-
 class Freeway(A3CExperimentWithI2A):
     def __init__(self, env=None, f_se = None, f_ac=None, f_tran=None, f_decoder=None, f_rollout=None, f_encoder = None,
                  episode_n=10000, learning_rate=5e-5, discount_factor=0.99,
@@ -161,10 +137,34 @@ class Freeway_mom(Freeway):
 Experiment.register(Freeway_mom, "Momentum exp for Freeway")
 
 
+class Freeway_mom_half(Freeway):
+    def __init__(self, env=None):
+        if env is None:
+            env = gym.make('Freeway-v0')
+            env = Downsample(env, length_factor=2.0)
+            env = ScaledFloatFrame(env)
+            env = MaxAndSkipEnv(env, skip=4, max_len=1)
+            env = FrameStack(env, k=4)
+        super(Freeway_mom_half, self).__init__(env=env)
+Experiment.register(Freeway_mom_half, "Momentum exp for Freeway with half input")
+
+
 class Freeway_mom_I2A(Freeway):
     def __init__(self, policy_with_iaa=True):
         super(Freeway_mom_I2A, self).__init__(policy_with_iaa=policy_with_iaa)
 Experiment.register(Freeway_mom_I2A, "I2A with Momentum exp for Freeway")
+
+
+class Freeway_mom_I2A_half(Freeway):
+    def __init__(self, env=None, policy_with_iaa=True):
+        if env is None:
+            env = gym.make('Freeway-v0')
+            env = Downsample(env, length_factor=2.0)
+            env = ScaledFloatFrame(env)
+            env = MaxAndSkipEnv(env, skip=4, max_len=1)
+            env = FrameStack(env, k=4)
+        super(Freeway_mom_I2A_half, self).__init__(env=env, policy_with_iaa=policy_with_iaa)
+Experiment.register(Freeway_mom_I2A_half, "I2A with Momentum exp for Freeway with half input")
 
 
 if __name__ == '__main__':
