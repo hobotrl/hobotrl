@@ -212,7 +212,7 @@ class FuncReward(object):
             done = True
 
         # waiting too long
-        if self._waiting_steps > 80:
+        if FLAGS.test and self._waiting_steps > 80:
             print "[Episode early stopping] waiting too long"
             done = True
 
@@ -402,9 +402,8 @@ try:
                         )
                     )
                     break
-            if FLAGS.test:
-                if n_ep >= 100:
-                    break
+            if FLAGS.test and n_ep >= 100:
+                break
 
 except Exception as e:
     print e.message
