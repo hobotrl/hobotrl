@@ -69,7 +69,7 @@ tf.app.flags.DEFINE_bool(
     "test", False,
     "Test or not.")
 tf.app.flags.DEFINE_string(
-    "dir_prefix", "/home/pirate03/work/agents/Compare/AgentStepAsCkpt/exp09/3",
+    "dir_prefix", "./exp09/3",
     "Prefix for model ckpt and event file.")
 tf.app.flags.DEFINE_string(
     "tf_log_dir", "ckpt",
@@ -107,6 +107,7 @@ class FuncReward(object):
         self._mom_opp = 0.0
         self._mom_biking = 0.0
         self._steering = False
+        self._waiting_steps = 0
 
     def reset(self):
         self._ema_speed = 10.0
@@ -138,6 +139,11 @@ class FuncReward(object):
         # outter = rewards[8]
         steer = np.logical_or(action == 1, action == 2)
 
+        if speed < 0.1:
+            self._waiting_steps += 1
+        else:
+            self._waiting_steps = 0
+
         # update reward-related state vars
         ema_speed = 0.5 * self._ema_speed + 0.5 * speed
         ema_dist = 1.0 if dist > 2.0 else 0.9 * self._ema_dist
@@ -162,6 +168,7 @@ class FuncReward(object):
         info['reward_fun/steer'] = steer
         info['reward_fun/mom_opposite'] = mom_opp
         info['reward_fun/mom_biking'] = mom_biking
+        info['waiting_steps'] = self._waiting_steps
 
         # calculate scalar reward
         reward = [
@@ -200,6 +207,11 @@ class FuncReward(object):
         # hit obstacle
         if self._obs_risk > 1.0:
             print "[Episode early stopping] hit obstacle."
+            done = True
+
+        # waiting too long
+        if FLAGS.test and self._waiting_steps > 80:
+            print "[Episode early stopping] waiting too long"
             done = True
 
         return done, info
@@ -388,9 +400,8 @@ try:
                         )
                     )
                     break
-            if FLAGS.test:
-                if n_ep >= 100:
-                    break
+            if FLAGS.test and n_ep >= 100:
+                break
 
 except Exception as e:
     print e.message
