@@ -11,6 +11,7 @@ import importlib
 import signal
 import time
 import traceback
+import logging
 # Threading and Multiprocessing
 import threading
 import subprocess
@@ -25,6 +26,7 @@ from rospy.timer import Timer
 from std_msgs.msg import Bool
 from message_composer import MetaMessageComposer
 import utils.message_filters as message_filters
+
 
 # the persisitent part
 class DrivingSimulatorEnv(object):
@@ -103,7 +105,7 @@ class DrivingSimulatorEnv(object):
 
         self.STEP_DELAY_TARGET = step_delay_target  # target delay for each step()
         self.last_step_t = None
-        self.phase_target = 0.0
+        self.PHASE_TARGET = 0.0
         self.phase_err = None
         self.phase_err_i = 0.0
         self.phase_delta = 0.0
@@ -140,7 +142,7 @@ class DrivingSimulatorEnv(object):
         if self.is_env_resetting.is_set():
             raise Exception('[step()]: reset() is in progress and not returned.')
 
-        # step delay and phase regularization
+        # step delay regularization, compensate self delay and phase error
         delay = time.time() - self.last_step_t
         delay_delta = self.STEP_DELAY_TARGET - delay + self.phase_delta
 
@@ -148,23 +150,35 @@ class DrivingSimulatorEnv(object):
             if delay_delta > 0:
                 time.sleep(delay_delta)
             else:
-                pass
-                print (
-                    "[step()]: delay delta < 0. Delay {:.3f}/{:.3f}, Phase {:.5f}/{:.5f}."
-                ).format(
-                           delay, self.STEP_DELAY_TARGET,
-                           self.phase_err, self.phase_target
+                logging.warning(
+                    "[DrivingSimulatorEnv.step()]: "
+                    "Negative delay delta, no sleeping. "
+                    "(delay={:.3f}/{:.3f}, phase={:.5f}/{:.5f})".format(
+                        delay, self.STEP_DELAY_TARGET,
+                        self.phase_err, self.PHASE_TARGET
+                    )
                 )
 
         # set point
         self.last_step_t = time.time()
+
+        # PLL
         phase_err = \
-            (self.phase_target - self.last_step_t + self.STEP_DELAY_TARGET/2) \
+            (self.PHASE_TARGET - self.last_step_t + self.STEP_DELAY_TARGET/2) \
             % self.STEP_DELAY_TARGET - self.STEP_DELAY_TARGET/2
         self.phase_err_i += phase_err
         phase_err_d = (phase_err - self.phase_err) if self.phase_err is not None else 0
         self.phase_err = phase_err
         self.phase_delta = 0.1*(self.phase_err + self.phase_err_i + phase_err_d)
+        # max amplitude 0.25 step delay
+        self.phase_delta = max(
+            min(1.0 * self.phase_delta, 1.0 * self.STEP_DELAY_TARGET / 4),
+            -1.0 * self.STEP_DELAY_TARGET / 4
+        )
+        logging.info(
+            "[DrivingSimulatorEnv.step()]: "
+            "phase delta {}".format(self.phase_delta)
+        )
 
         # build action ROS msg
         # Note: users need to make sure the ROS msg can be initialized with the
@@ -197,7 +211,10 @@ class DrivingSimulatorEnv(object):
             self.is_env_done.set()
 
         step_self_delay = time.time() - self.last_step_t
-        #print "[step()]: step self delay {}".format(step_self_delay)
+        logging.info(
+            "[DrivingSimulatorEnv.step()]: "
+            "step self delay {}".format(step_self_delay)
+        )
 
         return next_state, reward, done, info
 
@@ -396,12 +413,12 @@ class DrivingSimulatorEnv(object):
                 time.sleep(0.5)
 
         # start step delay clock and correct phase
-        phase_err = (self.phase_target - time.time())% self.STEP_DELAY_TARGET
+        phase_err = (self.PHASE_TARGET - time.time()) % self.STEP_DELAY_TARGET
         time.sleep(phase_err)
         print "Initial phase error = {}".format(phase_err)
         self.last_step_t = time.time()
         phase_err = \
-            (self.phase_target - self.last_step_t + self.STEP_DELAY_TARGET/2.0) \
+            (self.PHASE_TARGET - self.last_step_t + self.STEP_DELAY_TARGET / 2.0) \
             % self.STEP_DELAY_TARGET - self.STEP_DELAY_TARGET/2.0
         self.phase_err_i += phase_err
         phase_err_d = (phase_err - self.phase_err) if self.phase_err is not None else 0

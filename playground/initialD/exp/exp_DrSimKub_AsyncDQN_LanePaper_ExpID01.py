@@ -67,8 +67,11 @@ sample_mimimum_count = 100
 update_ratio = 8.0
 # --- logging and ckpt
 
+tf.app.flags.DEFINE_bool(
+    "test", False,
+    "Test or not.")
 tf.app.flags.DEFINE_string(
-    "dir_prefix", "./experiment/1/",
+    "dir_prefix", "/home/pirate03/work/agents/Compare/AgentStepAsCkpt/experiment_ExpID01/5",
     "Prefix for model ckpt and event file.")
 tf.app.flags.DEFINE_string(
     "tf_log_dir", "ckpt",
@@ -80,11 +83,20 @@ tf.app.flags.DEFINE_string(
     "replay_cache_dir", "ReplayBufferCache",
     "Replay buffer cache path.")
 tf.app.flags.DEFINE_float(
-    "gpu_mem_fraction", 0.2,
+    "gpu_mem_fraction", 0.15,
     "Replay buffer cache path.")
 tf.app.flags.DEFINE_float(
     "save_checkpoint_secs", 3600,
     "Seconds to save tf model check points.")
+
+FLAGS = tf.app.flags.FLAGS
+
+if FLAGS.test:
+    replay_capacity = 300
+    replay_ratio_active = 1.0
+else:
+    replay_capacity = 300000
+    replay_ratio_active = 0.01
 
 # ===  Reward function
 class FuncReward(object):
@@ -226,7 +238,7 @@ class FuncReward(object):
 env, replay_buffer, _agent = None, None, None
 try:
     # Parse flags
-    FLAGS = tf.app.flags.FLAGS
+    # FLAGS = tf.app.flags.FLAGS
     dir_prefix = FLAGS.dir_prefix
     tf_log_dir = os.sep.join([dir_prefix, FLAGS.tf_log_dir])
     our_log_dir = os.sep.join([dir_prefix, FLAGS.our_log_dir])
@@ -248,8 +260,39 @@ try:
     global_step = tf.get_variable(
         'global_step', [], dtype=tf.int32,
         initializer=tf.constant_initializer(0), trainable=False)
+
+    def gen_default_backend_cmds():
+        ws_path = '/Projects/catkin_ws/'
+        initialD_path = '/Projects/hobotrl/playground/initialD/'
+        backend_path = initialD_path + 'ros_environments/backend_scripts/'
+        utils_path = initialD_path + 'ros_environments/backend_scripts/utils/'
+        backend_cmds = [
+            ['python', utils_path + '/iterate_test_case.py'],
+            # Parse maps
+            ['python', utils_path + 'parse_map.py',
+             ws_path + 'src/Map/src/map_api/data/honda_wider.xodr',
+             utils_path + 'road_segment_info.txt'],
+            # Start roscore
+            ['roscore'],
+            # Reward function script
+            ['python', backend_path + 'gazebo_rl_reward.py'],
+            # Road validity node script
+            ['python', backend_path + 'road_validity.py',
+             utils_path + 'road_segment_info.txt.signal'],
+            # Simulation restarter backend
+            ['python', backend_path+'rviz_restart.py', 'next.launch'],
+            # Video capture
+            # ['python', backend_path+'non_stop_data_capture.py'],
+        ]
+        return backend_cmds
+
     # Environment
-    env = FrameStack(DrSimDecisionK8S(), n_stack)
+    if tf.test:
+        env = FrameStack(DrSimDecisionK8S(backend_cmds=gen_default_backend_cmds()), n_stack)
+    else:
+        env = FrameStack(DrSimDecisionK8S(), n_stack)
+
+
     # Agent
     replay_buffer = BigPlayback(
         bucket_cls=MapPlayback,
@@ -307,7 +350,7 @@ try:
             n_ep_steps = 0
             state = env.reset()
             while True:
-                action = agent.act(state)
+                action = agent.act(state, exploration=not tf.test)
                 if action != 3:
                     print_qvals(
                         n_ep_steps, __agent, state, action, AGENT_ACTIONS
@@ -319,7 +362,7 @@ try:
                 agent_info = agent.step(
                     sess=sess, state=state, action=action,
                     reward=reward, next_state=next_state,
-                    episode_done=done
+                    episode_done=done, learning_off=FLAGS.test
                 )
                 env_info.update(reward_info)
                 summary_proto = log_info(
@@ -347,6 +390,9 @@ try:
                             n_ep, n_ep_steps, cum_reward,
                         )
                     )
+                    break
+            if FLAGS.test:
+                if n_ep >= 100:
                     break
 except Exception as e:
     print e.message

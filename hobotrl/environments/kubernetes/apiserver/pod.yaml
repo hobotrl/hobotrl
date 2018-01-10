@@ -8,6 +8,11 @@ spec:
   containers:
   - name: ${id}
     image: ${image}
+    resources:
+      requests:
+        cpu: 1.5
+      limits:
+        cpu: 2.0
     ports:
     - containerPort: 22224
     - containerPort: 5901
@@ -25,7 +30,7 @@ spec:
       path: /var/xserver-daemon/X0
       type: File
   - name: workdir
-    hostPath:
-      path: /mnt/glusterfs/lisen.mu
+    persistentVolumeClaim:
+      claimName: http-log-lisenmu
   nodeSelector:
-    xserver-daemon: "yes"
+    carsim: "yes"
