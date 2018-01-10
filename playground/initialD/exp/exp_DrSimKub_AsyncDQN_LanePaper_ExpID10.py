@@ -44,7 +44,9 @@ AGENT_ACTIONS = ALL_ACTIONS[:3]
 num_actions = len(AGENT_ACTIONS)
 noop = None
 gamma = 0.9
-greedy_epsilon = CappedLinear(int(3e4)-17093, 0.2-(0.15/3e4*17093), 0.05)
+ckpt_step = 0
+greedy_epsilon = CappedLinear(int(3e4)-ckpt_step, 0.2-(0.15/3e4*ckpt_step), 0.05)
+start_step = ckpt_step*6
 # --- replay buffer
 replay_capacity = 300000
 replay_bucket_size = 100
@@ -352,7 +354,7 @@ try:
         sess.run(op_set_lr, feed_dict={lr_in: learning_rate})
         print "Using learning rate {}".format(sess.run(lr))
         n_ep = 0
-        n_total_steps = 0
+        n_total_steps = start_step
         # GoGoGo
         while n_total_steps <= 2.5e5:
             cum_reward = 0.0
