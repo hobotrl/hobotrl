@@ -6,6 +6,8 @@ import logging
 import os
 import sys
 import traceback
+from multiprocessing import Pool
+import dill
 
 import tensorflow as tf
 import gym
@@ -94,6 +96,13 @@ class HelloWorld(Experiment):
 Experiment.register(HelloWorld, "first experiment")
 
 
+def multi_process_run_proxy(GridSearchInstance, serialized_parameter_pair, args):
+    GridSearchInstance = dill.loads(GridSearchInstance)
+    logging.warning("-------%s ", GridSearchInstance)
+    parameter_pair = dill.loads(serialized_parameter_pair)
+    GridSearchInstance.multi_process_run(parameter_pair, args)
+
+
 class GridSearch(Experiment):
     def __init__(self, exp_class, parameters):
         """
@@ -119,24 +128,54 @@ class GridSearch(Experiment):
             ]
 
         """
+        self.pool = Pool(4)
         super(GridSearch, self).__init__()
         self._exp_class, self._parameters = exp_class, parameters
 
+    def multi_process_run(self, parameter_pair, args):
+        parameter = parameter_pair[0]
+        label = parameter_pair[1]
+        args.logdir = self.find_new(os.sep.join([self.log_root, label]))
+        with tf.Graph().as_default():
+            experiment = self._exp_class(**parameter)
+            try:
+                logging.warning("starting experiment: %s", args.logdir)
+                rewards = experiment.run(args)
+            except Exception, e:
+                type_, value_, traceback_ = sys.exc_info()
+                traceback_ = traceback.format_tb(traceback_)
+                traceback_ = "\n".join(traceback_)
+                logging.warning("experiment[%s] failed:%s, %s, %s", label, type_, value_, traceback_)
+
+    def func(self, i):
+        logging.warning(i)
+        return i
+
     def run(self, args):
-        log_root = args.logdir
+        self.log_root = args.logdir
+        parameter_list = []
         for parameter in self.product(self._parameters):
             label = self.labelize(parameter)
-            args.logdir = self.find_new(os.sep.join([log_root, label]))
-            with tf.Graph().as_default():
-                experiment = self._exp_class(**parameter)
-                try:
-                    logging.warning("starting experiment: %s", args.logdir)
-                    rewards = experiment.run(args)
-                except Exception, e:
-                    type_, value_, traceback_ = sys.exc_info()
-                    traceback_ = traceback.format_tb(traceback_)
-                    traceback_ = "\n".join(traceback_)
-                    logging.warning("experiment[%s] failed:%s, %s, %s", label, type_, value_, traceback_)
+            parameter_list.append([parameter, label])
+
+        # pool = Pool(4)
+        for one_pair_param in parameter_list:
+            logging.warning(one_pair_param)
+            self.pool.apply_async(multi_process_run_proxy, (dill.dumps(self), dill.dumps(one_pair_param), args))
+            # pool.apply_async(run, (dill.dumps(one_pair_param), args))
+        self.pool.close()
+        self.pool.join()
+            # args.logdir = self.find_new(os.sep.join([log_root, label]))
+            # with tf.Graph().as_default():
+            #     experiment = self._exp_class(**parameter)
+            #     try:
+            #         logging.warning("starting experiment: %s", args.logdir)
+            #         rewards = experiment.run(args)
+            #     except Exception, e:
+            #         type_, value_, traceback_ = sys.exc_info()
+            #         traceback_ = traceback.format_tb(traceback_)
+            #         traceback_ = "\n".join(traceback_)
+            #         logging.warning("experiment[%s] failed:%s, %s, %s", label, type_, value_, traceback_)
 
     def product(self, parameters):
         if isinstance(parameters, dict):
@@ -159,6 +198,31 @@ class GridSearch(Experiment):
     def labelize(self, parameter):
         names = sorted(parameter.keys())
         return "_".join(["%s%s" % (f, escape_path(str(parameter[f]))) for f in names])
+
+    def __getstate__(self):
+        self_dict = self.__dict__.copy()
+        print self.__dict__
+        del self_dict['pool']
+        return self_dict
+
+    def __setstate__(self, state):
+        print state
+        self.__dict__.update(state)
+
+
+def run(a, b):
+    a = dill.loads(a)
+    logging.warning("------------------------------------------------------------------")
+    return GridSearch.func(a, b)
+
+
+class Runner(object):
+    def __init__(self):
+        pass
+    def func(self, a, b):
+        logging.warning(a)
+        logging.warning(b)
+        return a, b
 
 
 if __name__ == "__main__":
