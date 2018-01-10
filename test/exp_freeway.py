@@ -138,14 +138,14 @@ Experiment.register(Freeway_mom, "Momentum exp for Freeway")
 
 
 class Freeway_mom_half(Freeway):
-    def __init__(self, env=None):
+    def __init__(self, env=None, dynamic_skip_step=[30000, 60000]):
         if env is None:
             env = gym.make('Freeway-v0')
             env = Downsample(env, length_factor=2.0)
             env = ScaledFloatFrame(env)
             env = MaxAndSkipEnv(env, skip=4, max_len=1)
             env = FrameStack(env, k=4)
-        super(Freeway_mom_half, self).__init__(env=env)
+        super(Freeway_mom_half, self).__init__(env=env, dynamic_skip_step=dynamic_skip_step)
 Experiment.register(Freeway_mom_half, "Momentum exp for Freeway with half input")
 
 
