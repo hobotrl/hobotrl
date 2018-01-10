@@ -156,14 +156,14 @@ Experiment.register(Freeway_mom_I2A, "I2A with Momentum exp for Freeway")
 
 
 class Freeway_mom_I2A_half(Freeway):
-    def __init__(self, env=None, policy_with_iaa=True):
+    def __init__(self, env=None, policy_with_iaa=True, dynamic_skip_step=[30000, 60000]):
         if env is None:
             env = gym.make('Freeway-v0')
             env = Downsample(env, length_factor=2.0)
             env = ScaledFloatFrame(env)
             env = MaxAndSkipEnv(env, skip=4, max_len=1)
             env = FrameStack(env, k=4)
-        super(Freeway_mom_I2A_half, self).__init__(env=env, policy_with_iaa=policy_with_iaa)
+        super(Freeway_mom_I2A_half, self).__init__(env=env, policy_with_iaa=policy_with_iaa, dynamic_skip_step=dynamic_skip_step)
 Experiment.register(Freeway_mom_I2A_half, "I2A with Momentum exp for Freeway with half input")
 
 
