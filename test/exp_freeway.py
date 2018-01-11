@@ -173,5 +173,17 @@ class Freeway_mom_I2A_half(Freeway):
 Experiment.register(Freeway_mom_I2A_half, "I2A with Momentum exp for Freeway with half input")
 
 
+class otdqn(OTDQNModelCar):
+    def __init__(self, env = None):
+        if env is None:
+            env = gym.make('Freeway-v0')
+            env = Downsample(env, length_factor=2.0)
+            env = ScaledFloatFrame(env)
+            env = MaxAndSkipEnv(env, skip=4, max_len=1)
+            env = FrameStack(env, k=4)
+        super(otdqn, self).__init__(env=env)
+Experiment.register(otdqn, "OTDQN for Freeway with half input")
+
+
 if __name__ == '__main__':
     Experiment.main()
