@@ -37,7 +37,7 @@ class F(object):
                                                 l2=l2,
                                                 var_scope="se_conv")
         
-            se_linear = hrl.utils.Network.layer_fcs(se_conv, [256], self.dim_se,
+            se_linear = hrl.utils.Network.layer_fcs(se_conv, [self.dim_se], self.dim_se,
                                                     activation_hidden=self.nonlinear,
                                                     activation_out=None,
                                                     l2=l2,
@@ -100,7 +100,7 @@ class F(object):
             input_action = inputs[1]
             # input_action = tf.one_hot(indices=input_action, depth=dim_action, on_value=1.0, off_value=0.0, axis=-1)
         
-            fc_action = hrl.utils.Network.layer_fcs(input_action, [], 256,
+            fc_action = hrl.utils.Network.layer_fcs(input_action, [], self.dim_se,
                                                     activation_hidden=self.nonlinear,
                                                     activation_out=self.nonlinear,
                                                     l2=l2,
@@ -109,7 +109,7 @@ class F(object):
             concat = tf.multiply(input_state, fc_action)
             # concat = tf.concat([input_state, fc_action], axis=-1)
         
-            fc_out = hrl.utils.Network.layer_fcs(concat, [], 256,
+            fc_out = hrl.utils.Network.layer_fcs(concat, [], self.dim_se,
                                                  activation_hidden=self.nonlinear,
                                                  activation_out=self.nonlinear,
                                                  l2=l2,
@@ -123,7 +123,7 @@ class F(object):
             reward = tf.squeeze(reward, axis=1)
         
             # next_state
-            next_state = hrl.utils.Network.layer_fcs(fc_out, [256], 256,
+            next_state = hrl.utils.Network.layer_fcs(fc_out, [self.dim_se], self.dim_se,
                                                      activation_hidden=self.nonlinear,
                                                      activation_out=None,
                                                      l2=l2,
@@ -140,7 +140,7 @@ class F(object):
             input_action = inputs[1]
             # input_action = tf.one_hot(indices=input_action, depth=dim_action, on_value=1.0, off_value=0.0, axis=-1)
         
-            fc_action = hrl.utils.Network.layer_fcs(input_action, [], 256,
+            fc_action = hrl.utils.Network.layer_fcs(input_action, [], self.dim_se,
                                                     activation_hidden=self.nonlinear,
                                                     activation_out=self.nonlinear,
                                                     l2=l2,
@@ -148,7 +148,7 @@ class F(object):
         
             concat = tf.multiply(input_state, fc_action)
         
-            fc_out = hrl.utils.Network.layer_fcs(concat, [], 256,
+            fc_out = hrl.utils.Network.layer_fcs(concat, [], self.dim_se,
                                                  activation_hidden=self.nonlinear,
                                                  activation_out=self.nonlinear,
         
@@ -163,13 +163,13 @@ class F(object):
             reward = tf.squeeze(reward, axis=1)
         
             # next_goal
-            Action_related_goal = hrl.utils.Network.layer_fcs(fc_out, [256], self.dim_se,
+            Action_related_goal = hrl.utils.Network.layer_fcs(fc_out, [self.dim_se], self.dim_se,
                                                               activation_hidden=self.nonlinear,
                                                               activation_out=None,
                                                               l2=l2,
                                                               var_scope="TC")
         
-            Action_unrelated_goal = hrl.utils.Network.layer_fcs(input_state, [256], self.dim_se,
+            Action_unrelated_goal = hrl.utils.Network.layer_fcs(input_state, [self.dim_se], self.dim_se,
                                                                 activation_hidden=self.nonlinear,
                                                                 activation_out=None,
                                                                 l2=l2,
@@ -210,14 +210,14 @@ class F(object):
         
             conv_3_shape = conv_3.shape.as_list()
             fc_1 = hrl.utils.Network.layer_fcs(input_goal, [], conv_3_shape[1] * conv_3_shape[2] *
-                                               (2 * 256 / conv_3_shape[1] / conv_3_shape[2]),
+                                               (2 * self.dim_se / conv_3_shape[1] / conv_3_shape[2]),
                                                activation_hidden=self.nonlinear,
                                                activation_out=self.nonlinear,
                                                l2=l2,
                                                var_scope="fc_goal")
         
             twoD_out = tf.reshape(fc_1, [-1, conv_3_shape[1], conv_3_shape[2],
-                                         2 * 256 / conv_3_shape[1] / conv_3_shape[2]])
+                                         2 * self.dim_se / conv_3_shape[1] / conv_3_shape[2]])
         
             concat_0 = tf.concat([conv_3, twoD_out], axis=3)
         
@@ -1062,7 +1062,7 @@ class F(object):
             # # re_conv = tf.concat([re_conv, tf.reshape(input_reward, [-1, 1])], axis=1)
             # re_conv = tf.concat([re_conv, input_reward], axis=1)
         
-            re = hrl.utils.Network.layer_fcs(input_argu, [256], 256,
+            re = hrl.utils.Network.layer_fcs(input_argu, [self.dim_se], self.dim_se,
                                              activation_hidden=self.nonlinear,
                                              activation_out=self.nonlinear,
                                              l2=l2,
