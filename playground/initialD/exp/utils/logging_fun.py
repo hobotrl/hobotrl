@@ -2,6 +2,7 @@ import os
 import tensorflow as tf
 import numpy as np
 import cv2
+import logging
 
 def print_qvals(n_steps, agent, state, action, AGENT_ACTIONS):
     q_vals = agent.learn_q(np.asarray(state)[np.newaxis, :])[0]
@@ -50,8 +51,20 @@ def log_info(agent_info, env_info,
 
 class StepsSaver(object):
     def __init__(self, savedir):
-        self.savedir = savedir
-        os.makedirs(self.savedir)
+        self.savedir_prefix = savedir
+        self.index = 0
+        self.savedir = None
+        while True:
+            try:
+                self.savedir = self.savedir_prefix + '_{}'.format(self.index)
+                os.makedirs(self.savedir)
+                break
+            except OSError:
+                logging.warning(
+                    "[StepSaver.__init__]: "
+                    "failed creating {}.".format(self.savedir)
+                )
+                self.index += 1
         self.eps_dir = None
         self.file = None
         self.stat_file = open(self.savedir + "/0000.txt", "a", 0)
@@ -60,7 +73,7 @@ class StepsSaver(object):
         self.stat_file.close()
 
     def parse_state(self, state):
-        return np.array(state)[:, :, 6:]
+        return np.array(state)[:, :, -3:]
 
     def save(self, n_ep, n_step, state, action, vec_reward, reward,
                   done, cum_reward, flag_success):
@@ -87,3 +100,4 @@ class StepsSaver(object):
             self.file.close()
             self.file = None
             self.stat_file.write("{}, {}, {}, {}\n".format(n_ep, cum_reward, flag_success, done))
+
