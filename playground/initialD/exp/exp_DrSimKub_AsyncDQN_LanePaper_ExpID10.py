@@ -67,11 +67,8 @@ sample_mimimum_count = 100
 update_ratio = 8.0
 # --- logging and ckpt
 
-tf.app.flags.DEFINE_bool(
-    "test", False,
-    "Test or not.")
 tf.app.flags.DEFINE_string(
-    "dir_prefix", "../../../../../work/agents/Compare/AgentStepAsCkpt/exp10/2",
+    "dir_prefix", "./experiment/1/",
     "Prefix for model ckpt and event file.")
 tf.app.flags.DEFINE_string(
     "tf_log_dir", "ckpt",
@@ -83,20 +80,11 @@ tf.app.flags.DEFINE_string(
     "replay_cache_dir", "ReplayBufferCache",
     "Replay buffer cache path.")
 tf.app.flags.DEFINE_float(
-    "gpu_mem_fraction", 0.15,
+    "gpu_mem_fraction", 0.2,
     "Replay buffer cache path.")
 tf.app.flags.DEFINE_float(
     "save_checkpoint_secs", 3600,
     "Seconds to save tf model check points.")
-
-FLAGS = tf.app.flags.FLAGS
-
-if FLAGS.test:
-    replay_capacity = 300
-    replay_ratio_active = 1.0
-else:
-    replay_capacity = 300000
-    replay_ratio_active = 0.01
 
 # ===  Reward function
 class FuncReward(object):
@@ -109,7 +97,6 @@ class FuncReward(object):
         self._mom_opp = 0.0
         self._mom_biking = 0.0
         self._steering = False
-        self._waiting_steps = 0
 
     def reset(self):
         self._ema_speed = 10.0
@@ -141,11 +128,6 @@ class FuncReward(object):
         # outter = rewards[8]
         steer = np.logical_or(action == 1, action == 2)
 
-        if speed < 0.1:
-            self._waiting_steps += 1
-        else:
-            self._waiting_steps = 0
-
         # update reward-related state vars
         ema_speed = 0.5 * self._ema_speed + 0.5 * speed
         ema_dist = 1.0 if dist > 2.0 else 0.9 * self._ema_dist
@@ -170,7 +152,6 @@ class FuncReward(object):
         info['reward_fun/steer'] = steer
         info['reward_fun/mom_opposite'] = mom_opp
         info['reward_fun/mom_biking'] = mom_biking
-        info['waiting_steps'] = self._waiting_steps
 
         # calculate scalar reward
         reward = [
@@ -211,11 +192,6 @@ class FuncReward(object):
             print "[Episode early stopping] hit obstacle."
             done = True
 
-        # waiting too long
-        if FLAGS.test and self._waiting_steps > 80:
-            print "[Episode early stopping] waiting too long"
-            done = True
-
         return done, info
 
     def _func_skipping_bias(self, reward, done, info, n_skip, cnt_skip):
@@ -250,7 +226,7 @@ class FuncReward(object):
 env, replay_buffer, _agent = None, None, None
 try:
     # Parse flags
-    # FLAGS = tf.app.flags.FLAGS
+    FLAGS = tf.app.flags.FLAGS
     dir_prefix = FLAGS.dir_prefix
     tf_log_dir = os.sep.join([dir_prefix, FLAGS.tf_log_dir])
     our_log_dir = os.sep.join([dir_prefix, FLAGS.our_log_dir])
@@ -272,38 +248,8 @@ try:
     global_step = tf.get_variable(
         'global_step', [], dtype=tf.int32,
         initializer=tf.constant_initializer(0), trainable=False)
-
-    def gen_default_backend_cmds():
-        ws_path = '/Projects/catkin_ws/'
-        initialD_path = '/Projects/hobotrl/playground/initialD/'
-        backend_path = initialD_path + 'ros_environments/backend_scripts/'
-        utils_path = initialD_path + 'ros_environments/backend_scripts/utils/'
-        backend_cmds = [
-            ['python', utils_path + '/iterate_test_case.py'],
-            # Parse maps
-            ['python', utils_path + 'parse_map.py',
-             ws_path + 'src/Map/src/map_api/data/honda_wider.xodr',
-             utils_path + 'road_segment_info.txt'],
-            # Start roscore
-            ['roscore'],
-            # Reward function script
-            ['python', backend_path + 'gazebo_rl_reward.py'],
-            # Road validity node script
-            ['python', backend_path + 'road_validity.py',
-             utils_path + 'road_segment_info.txt.signal'],
-            # Simulation restarter backend
-            ['python', backend_path+'rviz_restart.py', 'next.launch'],
-            # Video capture
-            # ['python', backend_path+'non_stop_data_capture.py'],
-        ]
-        return backend_cmds
-
     # Environment
-    if tf.test:
-        env = FrameStack(DrSimDecisionK8S(backend_cmds=gen_default_backend_cmds()), n_stack)
-    else:
-        env = FrameStack(DrSimDecisionK8S(), n_stack)
-
+    env = FrameStack(DrSimDecisionK8S(), n_stack)
     # Agent
     replay_buffer = BigPlayback(
         bucket_cls=MapPlayback,
@@ -361,7 +307,7 @@ try:
             n_ep_steps = 0
             state = env.reset()
             while True:
-                action = agent.act(state, exploration=not tf.test)
+                action = agent.act(state)
                 if action != 3:
                     print_qvals(
                         n_ep_steps, __agent, state, action, AGENT_ACTIONS
@@ -373,7 +319,7 @@ try:
                 agent_info = agent.step(
                     sess=sess, state=state, action=action,
                     reward=reward, next_state=next_state,
-                    episode_done=done, learning_off=FLAGS.test
+                    episode_done=done
                 )
                 env_info.update(reward_info)
                 summary_proto = log_info(
@@ -402,9 +348,6 @@ try:
                         )
                     )
                     break
-            if FLAGS.test and n_ep >= 100:
-                break
-
 except Exception as e:
     print e.message
     traceback.print_exc()
