@@ -1095,6 +1095,8 @@ class OTDQNModelExperiment(Experiment):
                  update_interval=4,
                  replay_size=1024,
                  batch_size=12,
+                 curriculum=[1, 3, 5],
+                 skip_step=[10000, 20000],
                  sampler_creator=None,
                  asynchronous=False,
                  ):
@@ -1111,6 +1113,8 @@ class OTDQNModelExperiment(Experiment):
             self._update_interval, \
             self._replay_size, \
             self._batch_size, \
+            self._curriculum, \
+            self._skip_step, \
             self._sampler_creator = \
             env, episode_n, \
             f_create_q, f_se, f_transition, \
@@ -1123,6 +1127,8 @@ class OTDQNModelExperiment(Experiment):
             update_interval, \
             replay_size, \
             batch_size, \
+            curriculum, \
+            skip_step, \
             sampler_creator
         self._asynchronous = asynchronous
 
@@ -1147,6 +1153,8 @@ class OTDQNModelExperiment(Experiment):
                         replay_size=self._replay_size,
                         batch_size=self._batch_size,
                         sampler=sampler,
+                        curriculum=self._curriculum,
+                        skip_step=self._skip_step,
                         log_dir=args.logdir,
                         global_step=global_step)
         if self._asynchronous:
@@ -1159,5 +1167,5 @@ class OTDQNModelExperiment(Experiment):
                 render_interval=args.render_interval, logdir=args.logdir,
                 render_once=args.render_once,
             )
-            runner.episode(1000)
+            runner.episode(self._episode_n)
         super(OTDQNModelExperiment, self).run(args)

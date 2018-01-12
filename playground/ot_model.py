@@ -20,6 +20,8 @@ class OTModel(OTDQN):
                  discount_factor,
                  ddqn, target_sync_interval, target_sync_rate, greedy_epsilon, network_optimizer=None,
                  max_gradient=10.0, update_interval=4, replay_size=1000, batch_size=32, sampler=None,
+                 curriculum=[1, 3, 5],
+                 skip_step=[10000, 20000],
                  log_dir=None,
                  *args, **kwargs):
         kwargs.update({
@@ -31,6 +33,7 @@ class OTModel(OTDQN):
         })
         self._state_shape, self._num_actions = state_shape, num_actions
         self._rollout_depth = rollout_depth
+        self.curriculum, self.skip_step = curriculum, skip_step
         if sampler is None:
             max_traj_length = 200
             sampler = sampling.TruncateTrajectorySampler2(None, replay_size / max_traj_length, max_traj_length,
@@ -81,8 +84,8 @@ class OTModel(OTDQN):
             # curriculum=[1, self._rollout_depth],
             # skip_step=[10000],
             # transition_weight=1.0, with_momentum=True
-            curriculum=[1, 3, 5],
-            skip_step=[10000, 20000],
+            curriculum=self.curriculum,
+            skip_step=self.skip_step,
             transition_weight=1.0,
             with_momentum=True
         ), name="env")
