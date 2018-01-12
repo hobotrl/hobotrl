@@ -7,4 +7,4 @@
 
 log_dir="./log/Freeway/OTDQNFreeway"
 mkdir -p ${log_dir}
-CUDA_VISIBLE_DEVICES=3 python test/exp_freeway.py run --name otdqn --logdir ${log_dir} > ${log_dir}/log.txt 2>&1 &
+CUDA_VISIBLE_DEVICES=0 python test/exp_freeway.py run --name OTDQNFreeway --logdir ${log_dir} > ${log_dir}/log.txt 2>&1 &
