@@ -1115,8 +1115,8 @@ class OTDQNModelCar(OTDQNModelExperiment):
     def __init__(self, env=None, episode_n=10000,
                  f_create_q=None, f_se=None, f_transition=None, f_decoder=None, lower_weight=1.0, upper_weight=1.0,
                  rollout_depth=5, discount_factor=0.99, ddqn=False, target_sync_interval=100, target_sync_rate=1.0,
-                 greedy_epsilon=0.1, network_optimizer=None, max_gradient=10.0, update_interval=4, replay_size=1024,
-                 batch_size=16, sampler_creator=None, asynchronous=False):
+                 greedy_epsilon=0.1, network_optimizer=None, max_gradient=10.0, update_interval=4, replay_size=100000,
+                 batch_size=16, curriculum=[1, 3, 5], skip_step=[500000, 1000000], sampler_creator=None, asynchronous=False):
         if env is None:
             env = gym.make('CarRacing-v0')
             env = wrap_car(env, 3, 3)
@@ -1130,7 +1130,8 @@ class OTDQNModelCar(OTDQNModelExperiment):
         super(OTDQNModelCar, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder, lower_weight,
                                             upper_weight, rollout_depth, discount_factor, ddqn, target_sync_interval,
                                             target_sync_rate, greedy_epsilon, network_optimizer, max_gradient,
-                                            update_interval, replay_size, batch_size, sampler_creator, asynchronous)
+                                            update_interval, replay_size, batch_size, curriculum, skip_step,
+                                            sampler_creator, asynchronous)
 Experiment.register(OTDQNModelCar, "transition model with dqn, for CarRacing")
 
 
@@ -1138,7 +1139,7 @@ class OTDQNModelDriving(OTDQNModelCar):
     def __init__(self, env=None, episode_n=10000, f_create_q=None, f_se=None, f_transition=None, f_decoder=None,
                  lower_weight=1.0, upper_weight=1.0, rollout_depth=5, discount_factor=0.99, ddqn=False,
                  target_sync_interval=100, target_sync_rate=1.0, greedy_epsilon=0.1, network_optimizer=None,
-                 max_gradient=10.0, update_interval=4, replay_size=100000, batch_size=10, sampler_creator=None,
+                     max_gradient=10.0, update_interval=4, replay_size=100000, batch_size=10, sampler_creator=None,
                  asynchronous=True):
         if env is None:
             env = ScaledFloatFrame(EnvNoOpSkipping(
