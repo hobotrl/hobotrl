@@ -145,7 +145,8 @@ class PolicyNetUpdater(network.NetworkUpdater):
 
 class EnvModelUpdater(network.NetworkUpdater):
     def __init__(self, net_se, net_transition, net_decoder, state_shape, dim_action,
-                 curriculum=None, skip_step=None, transition_weight=0.0, with_momentum=True, compute_with_diff=False):
+                 curriculum=None, skip_step=None, transition_weight=0.0, with_momentum=True, compute_with_diff=False,
+                 save_image_interval=1000):
         super(EnvModelUpdater, self).__init__()
         if curriculum is None:
             self._curriculum = [1, 3, 5]
@@ -155,6 +156,7 @@ class EnvModelUpdater(network.NetworkUpdater):
             self._skip_step = skip_step
 
         self._depth = self._curriculum[-1]
+        self.save_image_interval = save_image_interval
 
         with tf.name_scope("EnvModelUpdater"):
             with tf.name_scope("input"):
@@ -382,7 +384,7 @@ class EnvModelUpdater(network.NetworkUpdater):
                       }
                       #,
                       # "goal_reg_loss": self._goal_reg_loss}
-        if self.imshow_count % 1000 == 0:
+        if self.imshow_count % self.save_image_interval == 0:
             fetch_dict["s0"] = self._s0
             fetch_dict["update_step"] = self.imshow_count
             for i in range(self.num):
@@ -486,6 +488,7 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                  dynamic_skip_step=None,
                  model_train_depth=3,
                  batch_size=32,
+                 save_image_interval=1000,
                  log_dir="./log/img",
                  *args, **kwargs):
         """
@@ -690,7 +693,8 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                 dim_action=num_action,
                 transition_weight=1.0,
                 with_momentum=with_momentum,
-                compute_with_diff=compute_with_diff
+                compute_with_diff=compute_with_diff,
+                save_image_interval=save_image_interval
             ),
             name="env_model")
         # network_optimizer.freeze(self.network.sub_net("transition").variables)

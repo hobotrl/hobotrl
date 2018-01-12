@@ -178,7 +178,8 @@ class OTDQNFreeway(OTDQNModelExperiment):
                  f_create_q=None, f_se=None, f_transition=None, f_decoder=None, lower_weight=1.0, upper_weight=1.0,
                  rollout_depth=5, discount_factor=0.99, ddqn=False, target_sync_interval=100, target_sync_rate=1.0,
                  greedy_epsilon=0.1, network_optimizer=None, max_gradient=10.0, update_interval=4, replay_size=100000,
-                 batch_size=16, curriculum=[1, 3, 5], skip_step=[500000, 1000000], sampler_creator=None, asynchronous=False):
+                 batch_size=16, curriculum=[1, 3, 5], skip_step=[500000, 1000000], sampler_creator=None,
+                 asynchronous=False, save_image_interval=10000):
         if env is None:
             env = gym.make('Freeway-v0')
             env = Downsample(env, length_factor=2.0)
@@ -223,7 +224,7 @@ class OTDQNFreeway(OTDQNModelExperiment):
                                            upper_weight, rollout_depth, discount_factor, ddqn, target_sync_interval,
                                            target_sync_rate, greedy_epsilon, network_optimizer, max_gradient,
                                            update_interval, replay_size, batch_size, curriculum, skip_step,
-                                           sampler_creator, asynchronous)
+                                           sampler_creator, asynchronous, save_image_interval)
 Experiment.register(OTDQNFreeway, "OTDQN for Freeway with half input")
 
 
