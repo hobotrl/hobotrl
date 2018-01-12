@@ -175,7 +175,7 @@ class DrivingSimulatorEnv(object):
             min(1.0 * self.phase_delta, 1.0 * self.STEP_DELAY_TARGET / 4),
             -1.0 * self.STEP_DELAY_TARGET / 4
         )
-        logging.warning(
+        logging.info(
             "[DrivingSimulatorEnv.step()]: "
             "phase delta {}".format(self.phase_delta)
         )
@@ -211,7 +211,7 @@ class DrivingSimulatorEnv(object):
             self.is_env_done.set()
 
         step_self_delay = time.time() - self.last_step_t
-        logging.warning(
+        logging.info(
             "[DrivingSimulatorEnv.step()]: "
             "step self delay {}".format(step_self_delay)
         )

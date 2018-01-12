@@ -46,7 +46,7 @@ num_actions = len(AGENT_ACTIONS)
 noop = 3
 gamma = 0.9
 ckpt_step = 0
-greedy_epsilon = CappedLinear(int(3e4)-ckpt_step, 0.2-(0.15/3e4*ckpt_step), 0.05)
+greedy_epsilon = 0.05  # CappedLinear(int(3e4)-ckpt_step, 0.2-(0.15/3e4*ckpt_step), 0.05)
 start_step = ckpt_step*6
 # --- replay buffer
 replay_capacity = 300000

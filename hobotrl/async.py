@@ -107,32 +107,66 @@ class ClusterAgent(Agent):
 
 
 class AsynchronousAgent(wrapt.ObjectProxy):
-
+    """Agent with async. training and inference thread.
+    Creates a rate-controlled training thread for updating network. Training
+    thread is monitored and re-spawned if stopped unexpectedly.
+    """
     def __init__(self, agent, *args, **kwargs):
         super(AsynchronousAgent, self).__init__(agent)
-        self._queue = Queue.Queue(maxsize=-1)
-        self._infoq = Queue.Queue(maxsize=-1)
-        self._thread = RateControlTrainingThread(
-            self.__wrapped__, self._queue, self._infoq, **kwargs
+        self._queue_step = Queue.Queue(maxsize=-1)
+        self._queue_info = Queue.Queue(maxsize=-1)
+        self._stop_monitor = threading.Event()
+        self._stop_monitor.clear()
+
+        self._trn_thread_monitor = threading.Thread(
+            target=self.monitor_loop,
+            args=(RateControlTrainingThread,
+                  (self.__wrapped__, self._queue_step, self._queue_info),
+                  kwargs, self._stop_monitor,)
         )
-        self._thread.start()
+        self._trn_thread_monitor.start()
 
     def step(self, state, action, reward, next_state, episode_done=False, **kwargs):
-        self._queue.put({"kwargs": kwargs, "args": (state, action, reward, next_state, episode_done)})
+        self._queue_step.put(
+            {"args": (state, action, reward, next_state, episode_done),
+             "kwargs": kwargs,}
+        )
         info = {}
         # TODO: if only return the latest info, why not assume _infoq.size = 1?
-        while self._infoq.qsize() > 0:
-            info = self._infoq.get()
+        while self._queue_info.qsize() > 0:
+            info = self._queue_info.get()
         return info
 
-    def stop(self, blocking=True):
+    def stop(self, *args, **kwargs):
         logging.warning(
-            "[AsynchronousAgent.stop()]: "
-            "stopping training thread."
+            "[AsynchronousAgent.stop()]: stopping monitoring thread."
         )
-        self._thread.stop()
-        if blocking:
-            self._thread.join()
+        self._stop_monitor.set()
+        self._trn_thread_monitor.join()
+
+    def monitor_loop(self, class_trn_thread, args_trn_thread, kwargs_trn_thread,
+                     stop_event, *args, **kwargs):
+        _thread_train = class_trn_thread(*args_trn_thread, **kwargs_trn_thread)
+        _thread_train.start()
+        while not stop_event.is_set():
+            if not _thread_train.is_stopped() and not _thread_train.is_alive():
+                logging.warning(
+                    "[AsynchronousAgent.monitor_loop()]: "
+                    "training thread stopped unexpectedly, respawning..."
+                )
+                _thread_train = class_trn_thread(
+                    *args_trn_thread, **kwargs_trn_thread)
+                _thread_train.start()
+            time.sleep(10.0)
+        logging.warning(
+            "[AsynchronousAgent.monitor_loop()]: stopping training thread."
+        )
+        _thread_train.stop()
+        _thread_train.join()
+        logging.warning(
+            "[AsynchronousAgent.monitor()]: quiting monitoring thread."
+        )
+        return
 
     def __enter__(self):
         return self
@@ -194,7 +228,9 @@ class AsynchronousAgent2(Agent):
 
 class TrainingThread(threading.Thread):
 
-    def __init__(self, agent, step_queue, info_queue, group=None, target=None, name=None, args=(), kwargs=None, verbose=None):
+    def __init__(self, agent, step_queue, info_queue,
+                 group=None, target=None, name=None, args=(),
+                 kwargs=None, verbose=None):
         """
 
         :param agent:
@@ -268,10 +304,12 @@ class TrainingThread(threading.Thread):
 
     def stop(self):
         logging.warning(
-            "[TrainingThread.step()]: "
-            "setting poison pill."
+            "[TrainingThread.step()]: setting poison pill."
         )
         self._stopped = True
+
+    def is_stopped(self):
+        return self._stopped
 
     @property
     def len_step_queue(self):
