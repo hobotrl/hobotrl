@@ -1,6 +1,7 @@
 
 import sys
 sys.path.append(".")
+import logging
 
 import numpy as np
 import tensorflow as tf
@@ -8,7 +9,7 @@ import gym
 
 from playground.noisy import NoisySD
 from playground.noisy_dpg import NoisyDPG
-from hobotrl.experiment import Experiment, GridSearch
+from hobotrl.experiment import Experiment, GridSearch, ParallelGridSearch
 from hobotrl.utils import CappedLinear
 import hobotrl as hrl
 
@@ -303,6 +304,22 @@ class NoisyPendulumSearch(GridSearch):
             "_r": [0, 1],
         })
 Experiment.register(NoisyPendulumSearch, "Noisy explore for pendulum")
+
+
+class ParallelNoisyPendulumSearch(ParallelGridSearch):
+    def __init__(self):
+        super(ParallelNoisyPendulumSearch, self).__init__(NoisyPendulum, {
+            "episode_n": [10],
+            "achievable_weight": [1e-1, 1e-4],
+            "explicit_momentum": [True, False],
+            "manager_entropy": [1e-2],
+            "worker_explore_param": [(0, 0.2, CappedLinear(2e5, 0.2, 0.01))],
+            "imagine_history": [True],
+            "momentum_weight": [1e-1],
+            "imagine_weight": [1.0, 0.1],
+            "_r": [0, 1],
+        })
+Experiment.register(ParallelNoisyPendulumSearch, "Noisy explore for pendulum")
 
 
 class NoisyDPGExperiment(Experiment):

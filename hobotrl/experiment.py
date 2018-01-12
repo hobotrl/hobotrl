@@ -4,18 +4,18 @@
 import itertools
 import logging
 import os
+import random
 import sys
 import traceback
-from multiprocessing import Pool
-import dill
+from pathos.multiprocessing import ProcessingPool as Pool
 
 import tensorflow as tf
-import gym
 import argparse
 
 from utils import clone_params, escape_path
 
 logging.basicConfig(format='[%(asctime)s] (%(filename)s): |%(levelname)s| %(message)s')
+
 
 class Experiment(object):
     """
@@ -87,20 +87,20 @@ class Experiment(object):
 
 
 class HelloWorld(Experiment):
+
+    def __init__(self, *args, **kwargs):
+        super(HelloWorld, self).__init__()
+
     def run(self, args):
         """
         hello world
         :return:
         """
-        print "hello experiment!"
+        x = 0
+        for i in range(100000000):
+            x = x + i
+        logging.warning("hello experiment!")
 Experiment.register(HelloWorld, "first experiment")
-
-
-def multi_process_run_proxy(GridSearchInstance, serialized_parameter_pair, args):
-    GridSearchInstance = dill.loads(GridSearchInstance)
-    logging.warning("-------%s ", GridSearchInstance)
-    parameter_pair = dill.loads(serialized_parameter_pair)
-    GridSearchInstance.multi_process_run(parameter_pair, args)
 
 
 class GridSearch(Experiment):
@@ -128,56 +128,27 @@ class GridSearch(Experiment):
             ]
 
         """
-        self.pool = Pool(4)
         super(GridSearch, self).__init__()
         self._exp_class, self._parameters = exp_class, parameters
 
-    def multi_process_run(self, parameter_pair, args):
-        parameter = parameter_pair[0]
-        label = parameter_pair[1]
-        args.logdir = self.find_new(os.sep.join([self.log_root, label]))
-        with tf.Graph().as_default():
-            experiment = self._exp_class(**parameter)
-            try:
-                logging.warning("starting experiment: %s", args.logdir)
-                rewards = experiment.run(args)
-            except Exception, e:
-                type_, value_, traceback_ = sys.exc_info()
-                traceback_ = traceback.format_tb(traceback_)
-                traceback_ = "\n".join(traceback_)
-                logging.warning("experiment[%s] failed:%s, %s, %s", label, type_, value_, traceback_)
-
-    def func(self, i):
-        logging.warning(i)
-        return i
-
     def run(self, args):
-        self.log_root = args.logdir
-        parameter_list = []
-        for parameter in self.product(self._parameters):
-            label = self.labelize(parameter)
-            parameter_list.append([parameter, label])
+        log_root = args.logdir
+        for parameter in GridSearch.product(self._parameters):
+            label = GridSearch.labelize(parameter)
+            args.logdir = GridSearch.find_new(os.sep.join([log_root, label]))
+            with tf.Graph().as_default():
+                experiment = self._exp_class(**parameter)
+                try:
+                    logging.warning("starting experiment: %s", args.logdir)
+                    rewards = experiment.run(args)
+                except Exception, e:
+                    type_, value_, traceback_ = sys.exc_info()
+                    traceback_ = traceback.format_tb(traceback_)
+                    traceback_ = "\n".join(traceback_)
+                    logging.warning("experiment[%s] failed:%s, %s, %s", label, type_, value_, traceback_)
 
-        # pool = Pool(4)
-        for one_pair_param in parameter_list:
-            logging.warning(one_pair_param)
-            self.pool.apply_async(multi_process_run_proxy, (dill.dumps(self), dill.dumps(one_pair_param), args))
-            # pool.apply_async(run, (dill.dumps(one_pair_param), args))
-        self.pool.close()
-        self.pool.join()
-            # args.logdir = self.find_new(os.sep.join([log_root, label]))
-            # with tf.Graph().as_default():
-            #     experiment = self._exp_class(**parameter)
-            #     try:
-            #         logging.warning("starting experiment: %s", args.logdir)
-            #         rewards = experiment.run(args)
-            #     except Exception, e:
-            #         type_, value_, traceback_ = sys.exc_info()
-            #         traceback_ = traceback.format_tb(traceback_)
-            #         traceback_ = "\n".join(traceback_)
-            #         logging.warning("experiment[%s] failed:%s, %s, %s", label, type_, value_, traceback_)
-
-    def product(self, parameters):
+    @staticmethod
+    def product(parameters):
         if isinstance(parameters, dict):
             parameters = [parameters]
         for param in parameters:
@@ -186,7 +157,8 @@ class GridSearch(Experiment):
             for values in itertools.product(*valuelists):
                 yield clone_params(**dict(zip(names, values)))
 
-    def find_new(self, path):
+    @staticmethod
+    def find_new(path):
         if not os.path.exists(path):
             return path
         for i in range(10000):
@@ -195,34 +167,72 @@ class GridSearch(Experiment):
                 return ipath
         return path
 
-    def labelize(self, parameter):
+    @staticmethod
+    def labelize(parameter):
         names = sorted(parameter.keys())
         return "_".join(["%s%s" % (f, escape_path(str(parameter[f]))) for f in names])
 
-    def __getstate__(self):
-        self_dict = self.__dict__.copy()
-        print self.__dict__
-        del self_dict['pool']
-        return self_dict
 
-    def __setstate__(self, state):
-        print state
-        self.__dict__.update(state)
-
-
-def run(a, b):
-    a = dill.loads(a)
-    logging.warning("------------------------------------------------------------------")
-    return GridSearch.func(a, b)
+def subprocess_run(exp_key, log_root, parameter, label, args):
+    try:
+        args.logdir = GridSearch.find_new(os.sep.join([log_root, label]))
+        with tf.Graph().as_default():
+            exp_class = ParallelGridSearch.class_cache[exp_key]
+            experiment = exp_class(**parameter)
+            rewards = experiment.run(args)
+    except Exception, e:
+        type_, value_, traceback_ = sys.exc_info()
+        traceback_ = traceback.format_tb(traceback_)
+        traceback_ = "\n".join(traceback_)
+        logging.warning("experiment[%s] failed:%s, %s, %s", label, type_, value_, traceback_)
 
 
-class Runner(object):
-    def __init__(self):
-        pass
-    def func(self, a, b):
-        logging.warning(a)
-        logging.warning(b)
-        return a, b
+class ParallelGridSearch(Experiment):
+
+    class_cache = {}
+
+    def __init__(self, exp_class, parameters, parallel=4):
+        """
+        :param exp_class: subclass of Experiment to run
+        :type exp_class: class<Experiment>
+        :param parameters: dict of list, experiment parameters to search within, i.e.:
+            {
+                "entropy": [1e-2, 1e-3],
+                "learning_rate": [1e-3, 1e-4],
+                ...
+            }
+            or list of dict-of-list, representing multiple groups of parameters:
+            [
+            {
+                "entropy": [1e-2, 1e-3],
+                "learning_rate": [1e-3, 1e-4],
+                ...
+            },
+            {
+                "batch_size": [32, 64],
+                ...
+            }
+            ]
+
+        """
+        super(ParallelGridSearch, self).__init__()
+        self._exp_class, self._parameters, self._parallel = exp_class, parameters, parallel
+        self._key = random.random()
+        ParallelGridSearch.class_cache[self._key] = exp_class
+        logging.warning("cache content:%s %s", id(ParallelGridSearch.class_cache), ParallelGridSearch.class_cache)
+
+    def run(self, args):
+        self.pool = Pool(self._parallel)
+        self.log_root = args.logdir
+        parameters = list(GridSearch.product(self._parameters))
+        labels = [GridSearch.labelize(p) for p in parameters]
+        n = len(labels)
+        logging.warning("total searched combination:%s", n)
+        ret = self.pool.amap(subprocess_run,
+                             [self._key] * n, [self.log_root] * n, parameters, labels, [args] * n)
+        ret.wait()
+        self.pool.close()
+        self.pool.join()
 
 
 if __name__ == "__main__":
