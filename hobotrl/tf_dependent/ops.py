@@ -8,6 +8,8 @@ import tensorflow as tf
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import gen_math_ops
 
+from hobotrl.network import Utils
+
 
 @ops.RegisterGradient("ATanhGrad")
 def atanh_grad(op, grad):
@@ -88,9 +90,13 @@ def l1_distance_weight_delta(x_delta, y_delta, limit=2.0, name=None):
 class CoordUtil(object):
 
     @staticmethod
-    def get_coord_tensor(n, h, w):
+    def get_coord_tensor(n, h, w, normalize=False):
         x = tf.tile(tf.reshape(tf.range(w), shape=(1, 1, w, 1)), multiples=(n, h, 1, 1))
         y = tf.tile(tf.reshape(tf.range(h), shape=(1, h, 1, 1)), multiples=(n, 1, w, 1))
+        if normalize:
+            # normalize to [-1.0, 1.0]
+            y = tf.to_float(y) / tf.to_float(h) * 2.0 - 1.0
+            x = tf.to_float(x) / tf.to_float(w) * 2.0 - 1.0
         return (y, x)
 
     @staticmethod
@@ -98,7 +104,7 @@ class CoordUtil(object):
         return tf.tile(tf.reshape(tf.range(n), shape=(n, 1, 1, 1)), multiples=(1, h, w, 1))
 
 
-def frame_trans(frame, move, kernel_size=3, name=None, weight_valid=False):
+def frame_trans(frame, move, kernel_size=3, name=None, weight_valid=1e-1):
     # default kernel: 3x3
     with ops.name_scope(name, "FrameTrans", [frame, move, kernel_size]) as name:
         g = tf.get_default_graph()
@@ -151,7 +157,7 @@ def frame_trans(frame, move, kernel_size=3, name=None, weight_valid=False):
                 # logging.warning("y_neighbor, x_neighbor, y_valid, x_valid, y_map, x_map: %s, %s, %s, %s, %s, %s,", y_neighbor, x_neighbor, y_valid, x_valid, y_map, x_map)
                 weights.append(
                     # l2_distance_weight_delta(x_delta, y_delta, max_distance) * tf.to_float(valid)
-                    trilinear_distance_weight_delta(x_delta, y_delta, limit=kernel_size / 2.0) * tf.to_float(valid)
+                    trilinear_distance_weight_delta(x_delta, y_delta, limit=kernel_size / 2.0)
                     # l1_distance_weight_delta(x_delta, y_delta, limit=kernel_size / 2.0) * tf.to_float(valid)
                 )
                 # validate coordinates: invalid coordinates to [0, 0]
@@ -160,11 +166,14 @@ def frame_trans(frame, move, kernel_size=3, name=None, weight_valid=False):
                 nyx_coord = tf.concat((batch_index, y_neighbor, x_neighbor), axis=3)
                 # activations.append(tf.stop_gradient(tf.gather_nd(frame, nyx_coord) * tf.to_float(valid)))
                 activations.append(tf.gather_nd(frame, nyx_coord))
+                valid = tf.to_float(valid)
                 if weight_valid:
-                    weights[-1] = weights[-1] * tf.to_float(valid)
-                else:
-                    # actionvation valid
-                    activations[-1] = activations[-1] * tf.to_float(valid)
+                    if type(weight_valid) == float:
+                        weights[-1] = weights[-1] * valid + Utils.scale_gradient(weights[-1], weight_valid) * (1 - valid)
+                    else:
+                        weights[-1] = weights[-1] * valid
+                # actionvation valid
+                activations[-1] = activations[-1] * valid
                 # logging.warning("weight:%s, activation:%s", weights[-1], activations[-1])
         # reweight
         sum_weights = tf.add(tf.add_n(weights), 1e-7, name="sum_weight")

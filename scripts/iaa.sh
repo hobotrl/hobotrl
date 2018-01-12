@@ -7,4 +7,4 @@
 
 log_dir="./log/MsPacman/OTDQN"
 mkdir -p ${log_dir}
-CUDA_VISIBLE_DEVICES=2 python test/exp_iaa.py run --name OTDQN --logdir ${log_dir} > ${log_dir}/log.txt 2>&1
+CUDA_VISIBLE_DEVICES=2 python test/exp_iaa.py run --name OTDQN --logdir ${log_dir} > ${log_dir}/log.txt 2>&1 &
