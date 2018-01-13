@@ -7,7 +7,7 @@ import traceback
 import json
 import operator
 import Queue
-from threading import Thread
+from threading import Thread, Event
 import wrapt
 import numpy as np
 from externals.joblib import joblib
@@ -974,11 +974,12 @@ class BigPlayback(Playback):
         self._buckets_to_save = Queue.Queue()
         self._buckets_to_load = Queue.Queue()
         self._close_flag = False
-        self.thread_io = Thread(
-            group=None, target=self.bucket_io, name='thread_io'
+        self._monitor_stop_event = Event()
+        self._monitor_stop_event.clear()
+        self._thread_io_monitor = Thread(
+            target=self.__monitor_loop, args=(self._monitor_stop_event,)
         )
-        self.thread_io.start()
-
+        self._thread_io_monitor.start()
         # Read back state from disk
         self.__init_from_cache()
 
@@ -1101,6 +1102,37 @@ class BigPlayback(Playback):
                 "number of samples < batch size."
             )
             return []
+
+    def __monitor_loop(self, stop_event, *args, **kwargs):
+        _thread_io = None
+        while not stop_event.is_set():
+            if _thread_io is None or not _thread_io.is_alive():
+                logging.warning(
+                    "[BigPlayback.monitor_loop()]: "
+                    "io thread not running, respawning..."
+                )
+                _stop_event = Event()
+                _stop_event.clear()
+                _thread_io = Thread(
+                    target=self.bucket_io, args=(_stop_event,),
+                    name='thread_io', group=None,
+                )
+                _thread_io.start()
+            else:
+                logging.warning(
+                    "[BigPlayback.monitor_loop()]: "
+                    "io thread running okay!"
+                )
+            time.sleep(60.0)
+        logging.warning(
+            "[BigPlayback.monitor_loop()]: stopping io thread."
+        )
+        _stop_event.set()
+        _thread_io.join()
+        logging.warning(
+            "[BigPlayback.monitor_loop()]: quiting monitoring thread."
+        )
+        return
 
     def __next_batch_index(self, batch_size):
         # get an ordered list of active bucket ids.
@@ -1322,7 +1354,7 @@ class BigPlayback(Playback):
         )
         pass
 
-    def bucket_io(self):
+    def bucket_io(self, stop_event):
         """Thread function for bucket IO.
         Monitors two queues: `self._buckets_to_save` and `self._buckets_to_load`.
         Save/load bucket to/from disk from/to memory if there is bucket id data
@@ -1334,7 +1366,7 @@ class BigPlayback(Playback):
 
         return from this thread if `self._close_flag` is set to True.
         """
-        while True:
+        while not stop_event.is_set():
             try:
                 # Save buckets
                 try:
@@ -1388,13 +1420,10 @@ class BigPlayback(Playback):
                     traceback.format_exc()
                 )
             finally:
-                if self._close_flag:
-                    break
-                else:
-                    time.sleep(0.1)
+                time.sleep(0.1)
 
         logging.warning(
-            "[BigPlayback]: returning from IO thread."
+            "[BigPlayback.bucket_io()]: returning from IO thread."
         )
 
     def __load_one(self, bucket_id):
@@ -1408,11 +1437,15 @@ class BigPlayback(Playback):
         self._buckets_sample_quota[bucket_id] = \
             self._max_sample_epoch * self._buckets[bucket_id].count
         self._buckets_active[bucket_id] = True
+        logging.warning(
+            "[BigPlayback.__load_one()]: "
+            "loaded bucket {} into mem.".format(bucket_id)
+        )
 
     def __save_one(self, bucket_id):
         logging.warning(
             "[BigPlayback.__save_one()]: "
-            "going to save bucket {}".format(bucket_id)
+            "going to save bucket {}.".format(bucket_id)
         )
         self._buckets[bucket_id].save()
         # Sync meta to truly persist the saved meta.
@@ -1422,12 +1455,17 @@ class BigPlayback(Playback):
         #  meta of BigPlayback and its buckets. Should double
         #  check at initialization to prevent this.
         self.__save_meta()
+        logging.warning(
+            "[BigPlayback.__save_one()]: "
+            "saved meta of bucket {}.".format(bucket_id)
+        )
 
     def close(self):
         """Release memory and close IO thread."""
         self.reset()             # release bucket memory
         self._close_flag = True  # signal IO thread to return
-        self.thread_io.join()
+        self._monitor_stop_event.set()
+        self._thread_io_monitor.join()
 
     def reset(self):
         """Release bucket memory and reset super class."""
