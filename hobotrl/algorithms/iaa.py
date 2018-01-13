@@ -145,7 +145,10 @@ class PolicyNetUpdater(network.NetworkUpdater):
 
 class EnvModelUpdater(network.NetworkUpdater):
     def __init__(self, net_se, net_transition, net_decoder, state_shape, dim_action,
-                 curriculum=None, skip_step=None, transition_weight=0.0, with_momentum=True, compute_with_diff=False):
+                 curriculum=None, skip_step=None, transition_weight=0.0, with_momentum=True,
+                 detailed_decoder=False,
+                 compute_with_diff=False,
+                 ):
         super(EnvModelUpdater, self).__init__()
         if curriculum is None:
             self._curriculum = [1, 3, 5]
@@ -155,7 +158,7 @@ class EnvModelUpdater(network.NetworkUpdater):
             self._skip_step = skip_step
 
         self._depth = self._curriculum[-1]
-
+        self._detailed_decoder = detailed_decoder
         with tf.name_scope("EnvModelUpdater"):
             with tf.name_scope("input"):
                 self._input_action = tf.placeholder(dtype=tf.uint8, shape=[None],
@@ -241,10 +244,11 @@ class EnvModelUpdater(network.NetworkUpdater):
                     r_predict_loss.append(tf.reduce_mean(network.Utils.clipped_square(r_predict[-1] - rn[i])))
                     # f_predict.append(net_decoder([tf.concat([se0, cur_goal], axis=1), f0],
                     #                              name_scope="frame_decoder%d" % i)["next_frame"].op)
-                    mom_decoder_predict.append(net_decoder([tf.concat([se0_truncate, cur_se_mom], axis=1), f0_truncate],
-                                                           name_scope="mom_decoder%d" % i)["next_frame"].op)
-                    action_related_decoder_predict.append(net_decoder([tf.concat([se0_truncate, cur_se_action_related], axis=1), f0_truncate],
-                                                          name_scope="action_related_decoder%d" % i)["next_frame"].op)
+                    if detailed_decoder:
+                        mom_decoder_predict.append(net_decoder([tf.concat([se0_truncate, cur_se_mom], axis=1), f0_truncate],
+                                                               name_scope="mom_decoder%d" % i)["next_frame"].op)
+                        action_related_decoder_predict.append(net_decoder([tf.concat([se0_truncate, cur_se_action_related], axis=1), f0_truncate],
+                                                              name_scope="action_related_decoder%d" % i)["next_frame"].op)
 
                     net_decoded = net_decoder([tf.concat([se0_truncate, cur_goal], axis=1), f0_truncate],
                                               name_scope="frame_decoder%d" % i)
@@ -389,9 +393,12 @@ class EnvModelUpdater(network.NetworkUpdater):
                 fetch_dict.update({
                     "f%d" % i: self._fn[i],
                     "f%d_predict" % i: self._f_predict[i],
-                    "a%d_predict" % i: self._action_related_decoder_predict[i],
-                    "m%d_predict" % i: self._mom_decoder_predict[i]
                 })
+                if self._detailed_decoder:
+                    fetch_dict.update({
+                        "a%d_predict" % i: self._action_related_decoder_predict[i],
+                        "m%d_predict" % i: self._mom_decoder_predict[i]
+                    })
                 if len(self._flows) > 0:
                     fetch_dict.update({
                         "flow%d" % i: self._flows[i]
@@ -426,8 +433,11 @@ class EnvModelUpdater(network.NetworkUpdater):
                 for i in range(len(s0) - d):
                     fn = info[prefix + "f%d" % d][i]
                     fn_predict = info[prefix + "f%d_predict" % d][i]
-                    an_predict = info[prefix + "a%d_predict" % d][i]
-                    mn_predict = info[prefix + "m%d_predict" % d][i]
+                    an_predict, mn_predict = None, None
+                    if prefix + "a%d_predict" % d in info:
+                        an_predict = info[prefix + "a%d_predict" % d][i]
+                    if prefix + "m%d_predict" % d in info:
+                        mn_predict = info[prefix + "m%d_predict" % d][i]
                     flow = None
                     if prefix + "flow0" in info:
                         flow = info[prefix + "flow%d" % d][i]
@@ -440,10 +450,12 @@ class EnvModelUpdater(network.NetworkUpdater):
                                 cv2.cvtColor(255 * fn.astype(np.float32), cv2.COLOR_RGB2BGR))
                     cv2.imwrite(path_prefix + "%d_%03d_f%d_predict.png" % (update_step, i, d + 1),
                                 cv2.cvtColor(255 * fn_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
-                    cv2.imwrite(path_prefix + "%d_%03d_y_actionf%d_predict.png" % (update_step, i, d + 1),
-                                cv2.cvtColor(255 * an_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
-                    cv2.imwrite(path_prefix + "%d_%03d_z_momf%d_predict.png" % (update_step, i, d + 1),
-                                cv2.cvtColor(255 * mn_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
+                    if an_predict is not None:
+                        cv2.imwrite(path_prefix + "%d_%03d_y_actionf%d_predict.png" % (update_step, i, d + 1),
+                                    cv2.cvtColor(255 * an_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
+                    if mn_predict is not None:
+                        cv2.imwrite(path_prefix + "%d_%03d_z_momf%d_predict.png" % (update_step, i, d + 1),
+                                    cv2.cvtColor(255 * mn_predict.astype(np.float32), cv2.COLOR_RGB2BGR))
                     if flow is not None:
                         for channel in range(flow.shape[-1] / 2):
                             f = flow[:, :, 2*channel:2*channel+2]
@@ -461,8 +473,10 @@ class EnvModelUpdater(network.NetworkUpdater):
             del info[prefix + "update_step"]
             for d in range(num):
                 del info[prefix + "f%d" % d], info[prefix + "f%d_predict" % d]
-                del info[prefix + "a%d_predict" % d]
-                del info[prefix + "m%d_predict" % d]
+                if prefix + "a%d_predict" % d in info:
+                    del info[prefix + "a%d_predict" % d]
+                if prefix + "m%d_predict" % d in info:
+                    del info[prefix + "m%d_predict" % d]
                 if prefix + "flow0" in info:
                     del info[prefix + "flow%d" % d]
 
