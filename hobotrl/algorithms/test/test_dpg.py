@@ -101,3 +101,7 @@ class TestDPG(unittest.TestCase):
             )
             runner.episode(50)
             agent.stop()
+
+
+if __name__ == '__main__':
+    unittest.main()
