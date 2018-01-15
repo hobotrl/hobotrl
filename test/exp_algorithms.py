@@ -1101,7 +1101,8 @@ class OTDQNModelExperiment(Experiment):
                  skip_step=[10000, 20000],
                  sampler_creator=None,
                  asynchronous=False,
-                 save_image_interval=10000
+                 save_image_interval=10000,
+                 with_ob=False
                  ):
         super(OTDQNModelExperiment, self).__init__()
 
@@ -1119,7 +1120,8 @@ class OTDQNModelExperiment(Experiment):
             self._curriculum, \
             self._skip_step, \
             self._sampler_creator,\
-            self._save_image_interval = \
+            self._save_image_interval,\
+            self._with_ob = \
             env, episode_n, \
             f_create_q, f_se, f_transition, \
             f_decoder, \
@@ -1134,7 +1136,8 @@ class OTDQNModelExperiment(Experiment):
             curriculum, \
             skip_step, \
             sampler_creator, \
-            save_image_interval
+            save_image_interval, \
+            with_ob
         self._asynchronous = asynchronous
 
     def run(self, args):
@@ -1162,6 +1165,7 @@ class OTDQNModelExperiment(Experiment):
                         skip_step=self._skip_step,
                         save_image_interval=self._save_image_interval,
                         log_dir=args.logdir,
+                        with_ob=self._with_ob,
                         global_step=global_step)
         if self._asynchronous:
             agent = AsynchronousAgent(agent=agent, method='ratio', rate=6.0)

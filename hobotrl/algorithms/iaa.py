@@ -146,7 +146,7 @@ class PolicyNetUpdater(network.NetworkUpdater):
 class EnvModelUpdater(network.NetworkUpdater):
     def __init__(self, net_se, net_transition, net_decoder, state_shape, dim_action,
                  curriculum=None, skip_step=None, transition_weight=0.0, with_momentum=True, compute_with_diff=False,
-                 save_image_interval=1000, detailed_decoder=False):
+                 save_image_interval=1000, detailed_decoder=False, with_ob=False):
         super(EnvModelUpdater, self).__init__()
         if curriculum is None:
             self._curriculum = [1, 3, 5]
@@ -158,6 +158,10 @@ class EnvModelUpdater(network.NetworkUpdater):
         self._depth = self._curriculum[-1]
         self.save_image_interval = save_image_interval
         self._detailed_decoder = detailed_decoder
+
+        if with_ob:
+            with_momentum = False
+
         with tf.name_scope("EnvModelUpdater"):
             with tf.name_scope("input"):
                 self._input_action = tf.placeholder(dtype=tf.uint8, shape=[None],
@@ -173,8 +177,9 @@ class EnvModelUpdater(network.NetworkUpdater):
 
                 f0 = s0[:, :, :, -3:]
                 logging.warning("s0:%s, f0:%s", s0.shape, f0.shape)
-                sn, an, rn, fn =[], [], [], []
+                ob, sn, an, rn, fn =[], [], [], [], []
                 for i in range(self._depth):
+                    ob.append(self._input_state[i:-1])
                     sn.append(self._input_state[i+1:])
                     an.append(self._input_action[i:])
                     rn.append(self._input_reward[i:])
@@ -218,7 +223,10 @@ class EnvModelUpdater(network.NetworkUpdater):
                     logging.warning("[%s]: state:%s, action:%s", i, cur_se.shape, an[i].shape)
                     input_action = tf.one_hot(indices=an[i], depth=dim_action, on_value=1.0, off_value=0.0,
                                               axis=-1)
-                    net_trans = net_transition([cur_se, input_action], name_scope="transition_%d" % i)
+                    if not with_ob:
+                        net_trans = net_transition([cur_se, input_action], name_scope="transition_%d" % i)
+                    else:
+                        net_trans = net_transition([ob[i], input_action], name_scope="transition_%d" % i)
 
                     if with_momentum:
                         TM_goal = net_trans["momentum"].op
@@ -232,11 +240,14 @@ class EnvModelUpdater(network.NetworkUpdater):
                         momentum_loss.append(tf.reduce_mean(network.Utils.clipped_square(cur_se_mom - sen[i])))
 
                     goal = net_trans["next_state"].op
-                    # socalled_state = net_trans["action_related"].op
-                    cur_goal = goal if cur_goal is None else tf.stop_gradient(cur_goal) + goal
-                    goalfrom0_predict.append(cur_goal)
-                    cur_se = se0_truncate + cur_goal
-                    # cur_se = socalled_state
+                    if not with_ob:
+                        # socalled_state = net_trans["action_related"].op
+                        cur_goal = goal if cur_goal is None else tf.stop_gradient(cur_goal) + goal
+                        goalfrom0_predict.append(cur_goal)
+                        cur_se = se0_truncate + cur_goal
+                        # cur_se = socalled_state
+                    else:
+                        cur_se = goal
 
                     ses_predict.append(cur_se)
                     r_predict.append(net_trans["reward"].op)
@@ -249,8 +260,11 @@ class EnvModelUpdater(network.NetworkUpdater):
                         action_related_decoder_predict.append(net_decoder([tf.concat([se0_truncate, cur_se_action_related], axis=1), f0_truncate],
                                                               name_scope="action_related_decoder%d" % i)["next_frame"].op)
 
-                    net_decoded = net_decoder([tf.concat([se0_truncate, cur_goal], axis=1), f0_truncate],
-                                              name_scope="frame_decoder%d" % i)
+                    if not with_ob:
+                        net_decoded = net_decoder([tf.concat([se0_truncate, cur_goal], axis=1), f0_truncate],
+                                                  name_scope="frame_decoder%d" % i)
+                    else:
+                        net_decoded = net_decoder([cur_se], name_scope="frame_decoder%d" % i)
                     f_predict.append(net_decoded["next_frame"].op)
                     predicted_channel = net_decoded["image_channel"]
                     if predicted_channel is not None and image_channel is None:
@@ -283,8 +297,9 @@ class EnvModelUpdater(network.NetworkUpdater):
 
                     frame_losses.append(tf.reduce_mean(network.Utils.clipped_square(f_predict[-1] - fn[i])))
                     f_predict_loss.append(frame_losses)
-                    transition_loss.append(tf.reduce_mean(network.Utils.clipped_square(ses_predict[-1] - sen[i])))
-                    cur_goal = cur_goal[:-1]
+                    if not with_ob:
+                        transition_loss.append(tf.reduce_mean(network.Utils.clipped_square(ses_predict[-1] - sen[i])))
+                        cur_goal = cur_goal[:-1]
                     cur_se = cur_se[:-1]
                     f0_truncate = f0_truncate[:-1]
                     se0_truncate = se0_truncate[:-1]
@@ -303,16 +318,19 @@ class EnvModelUpdater(network.NetworkUpdater):
                         reduce(operator.add, f_predict_loss[0:curriculum[i]], [])) / float(curriculum[i]),
                                                          name="env_loss%d" % curriculum[i]) / 2.0 * 255.0)
 
-                    self._transition_loss.append(tf.reduce_mean(tf.add_n(
-                        transition_loss[0:curriculum[i]]) / float(curriculum[i]),
-                                                                name="transition_loss%d" % curriculum[i]))
+                    if not with_ob:
+                        self._transition_loss.append(tf.reduce_mean(tf.add_n(
+                            transition_loss[0:curriculum[i]]) / float(curriculum[i]),
+                                                                    name="transition_loss%d" % curriculum[i]))
+                    else:
+                        self._transition_loss.append(0.0)
 
                     if with_momentum:
                         self._momentum_loss.append(tf.reduce_mean(tf.add_n(
                             momentum_loss[0:curriculum[i]]) / float(curriculum[i]),
                                                                   name="momentum_loss%d" % curriculum[i]))
                     else:
-                        self._momentum_loss.append(0)
+                        self._momentum_loss.append(0.0)
 
                     if len(flow_regulations) > 0:
                         self._flow_regulation_loss.append(tf.reduce_mean(tf.add_n(
@@ -347,7 +365,7 @@ class EnvModelUpdater(network.NetworkUpdater):
         self._update_operation = network.MinimizeLoss(self._op_loss,
                                                       var_list=net_transition.variables + net_se.variables +
                                                       net_decoder.variables)
-        self.imshow_count = 693687
+        self.imshow_count = 0
         self.num = 1
 
     def declare_update(self):
