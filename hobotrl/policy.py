@@ -77,7 +77,7 @@ class OUExplorationPolicy(Policy):
         action = self._action_function(np.asarray(state)[np.newaxis, :])[0]
         noise = self._ou_noise.tick()
         action0 = self.action_add(action, noise)
-        logging.warning("action: %s + %s -> %s", action, noise, action0)
+        # logging.warning("action: %s + %s -> %s", action, noise, action0)
         return action0
 
 
