@@ -894,14 +894,22 @@ class A3CExperimentWithI2A(Experiment):
                  learning_rate=1e-4,
                  discount_factor=0.9,
                  entropy=1e-2,
-                 batch_size=8
+                 batch_size=8,
+                 policy_with_iaa=False,
+                 compute_with_diff=False,
+                 with_momentum=True,
+                 dynamic_rollout=[1, 3, 5],
+                 dynamic_skip_step=[5000, 15000]
                  ):
         super(A3CExperimentWithI2A, self).__init__()
         self._env, self._f_se, self._f_ac, self._f_tran, self._f_decoder,\
             self._f_rollout, self._f_encoder, self._episode_n, self._learning_rate, \
-            self._discount_factor, self._entropy, self._batch_size = \
+            self._discount_factor, self._entropy, self._batch_size, \
+            self.policy_with_iaa, self.compute_with_diff, self.with_momentum, \
+            self.dynamic_rollout, self.dynamic_skip_step = \
             env, f_se, f_ac, f_tran, f_decoder, f_rollout, f_encoder, episode_n, learning_rate, \
-            discount_factor, entropy, batch_size
+            discount_factor, entropy, batch_size, policy_with_iaa, compute_with_diff, with_momentum, dynamic_rollout,\
+            dynamic_skip_step
 
     def run(self, args):
         state_shape = list(self._env.observation_space.shape)
@@ -931,11 +939,11 @@ class A3CExperimentWithI2A(Experiment):
                 network_optimizer=n_optimizer,
                 # sampler arguments
                 sampler=None,
-                policy_with_iaa=False,
-                compute_with_diff=False,
-                with_momentum=True,
-                dynamic_rollout=[1, 3, 5],
-                dynamic_skip_step=[5000, 15000],
+                policy_with_iaa=self.policy_with_iaa,
+                compute_with_diff=self.compute_with_diff,
+                with_momentum=self.with_momentum,
+                dynamic_rollout=self.dynamic_rollout,
+                dynamic_skip_step=self.dynamic_skip_step,
                 batch_size=self._batch_size,
                 log_dir=args.logdir,
                 global_step=global_step,
@@ -951,6 +959,73 @@ class A3CExperimentWithI2A(Experiment):
             runner = hrl.envs.EnvRunner(self._env, agent, reward_decay=self._discount_factor, max_episode_len=10000,
                                         evaluate_interval=sys.maxint, render_interval=args.render_interval,
                                         render_once=args.render_once,
+                                        logdir=args.logdir if args.index == 0 else None)
+            runner.episode(self._episode_n)
+
+
+class A3CExperimentWithI2AOB(Experiment):
+    def __init__(self,
+                 env, f_se, f_ac, f_env, f_rollout, f_encoder,
+                 # env, f_se_1, f_se_2, f_se_3, f_se_4, f_ac, f_env, f_rollout, f_encoder,
+                 episode_n=1000,
+                 learning_rate=1e-4,
+                 discount_factor=0.9,
+                 entropy=1e-2,
+                 batch_size=8
+                 ):
+        super(A3CExperimentWithI2AOB, self).__init__()
+        self._env, self._f_se, self._f_ac, self._f_env,\
+            self._f_rollout, self._f_encoder, self._episode_n, self._learning_rate, \
+            self._discount_factor, self._entropy, self._batch_size = \
+            env, f_se, f_ac, f_env, f_rollout, f_encoder, episode_n, learning_rate, \
+            discount_factor, entropy, batch_size
+
+    def run(self, args):
+        state_shape = list(self._env.observation_space.shape)
+
+        def create_optimizer():
+            return tf.train.AdamOptimizer(self._learning_rate)
+
+        def create_agent(n_optimizer, global_step):
+            # all ScheduledParam hyper parameters are mutable objects.
+            # so we will not want to use same object for different Agent instances.
+            entropy = hrl.utils.clone_params(self._entropy)
+            agent = hrl.ActorCriticWithI2AOB(
+                num_action=self._env.action_space.n,
+                f_se=self._f_se,
+                # f_se_1=self._f_se_1,
+                # f_se_2=self._f_se_2,
+                # f_se_3=self._f_se_3,
+                # f_se_4=self._f_se_4,
+                f_ac=self._f_ac,
+                f_env=self._f_env,
+                f_rollout=self._f_rollout,
+                f_encoder = self._f_encoder,
+                state_shape=state_shape,
+                # ACUpdate arguments
+                discount_factor=self._discount_factor,
+                entropy=entropy,
+                target_estimator=None,
+                max_advantage=100.0,
+                # optimizer arguments
+                network_optimizer=n_optimizer,
+                # sampler arguments
+                sampler=None,
+                batch_size=self._batch_size,
+
+                global_step=global_step,
+            )
+            return agent
+
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+
+        agent = hrl.async.ClusterAgent(create_agent, create_optimizer, args.cluster, args.job, args.index, args.logdir)
+        with agent.create_session(config=config) as sess:
+            agent.set_session(sess)
+            runner = hrl.envs.EnvRunner(self._env, agent, reward_decay=self._discount_factor, max_episode_len=10000,
+                                        evaluate_interval=sys.maxint, render_interval=args.render_interval,
+                                        render_once=True,
                                         logdir=args.logdir if args.index == 0 else None)
             runner.episode(self._episode_n)
 
@@ -1075,7 +1150,7 @@ class OTDQNModelExperiment(Experiment):
                         log_dir=args.logdir,
                         global_step=global_step)
         if self._asynchronous:
-            agent = AsynchronousAgent(agent=agent, method='rate', rate=4.0)
+            agent = AsynchronousAgent(agent=agent, method='ratio', rate=6.0)
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
         with agent.create_session(config=config, save_dir=args.logdir) as sess:

@@ -42,7 +42,7 @@ if_random_phase = True
 ALL_ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0,)]
 AGENT_ACTIONS = ALL_ACTIONS[:3]
 num_actions = len(AGENT_ACTIONS)
-noop = None
+noop = 3
 gamma = 0.9
 ckpt_step = 0
 greedy_epsilon = CappedLinear(int(3e4)-ckpt_step, 0.2-(0.15/3e4*ckpt_step), 0.05)
@@ -165,6 +165,8 @@ class FuncReward(object):
             -40 * (0.9 + 0.1 * mom_biking) * (mom_biking > 1.0),
             # steer
             steering * -40.0,
+            # distance to longest
+            -20.0 * (dist > 3.75/2)
         ]
         reward = np.sum(reward) / 100.0
         print ': {:5.2f}'.format(reward)

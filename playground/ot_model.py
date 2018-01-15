@@ -82,7 +82,7 @@ class OTModel(OTDQN):
             # skip_step=[10000],
             # transition_weight=1.0, with_momentum=True
             curriculum=[1, 3, 5],
-            skip_step=[5000, 15000],
+            skip_step=[10000, 20000],
             transition_weight=1.0,
             with_momentum=True
         ), name="env")

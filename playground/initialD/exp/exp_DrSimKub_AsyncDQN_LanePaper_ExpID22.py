@@ -10,6 +10,7 @@ import logging
 import traceback
 # Data
 import numpy as np
+import cv2
 # Tensorflow
 import tensorflow as tf
 from tensorflow.python.training.summary_io import SummaryWriterCache
@@ -19,7 +20,7 @@ from hobotrl.algorithms import DQN
 from hobotrl.network import LocalOptimizer
 from hobotrl.environments import FrameStack
 from hobotrl.sampling import TransitionSampler
-from hobotrl.playback import MapPlayback, BalancedMapPlayback, BigPlayback
+from hobotrl.playback import BalancedMapPlayback, MapPlayback, BigPlayback
 from hobotrl.async import AsynchronousAgent
 from hobotrl.utils import CappedLinear
 # initialD
@@ -42,7 +43,7 @@ if_random_phase = True
 ALL_ACTIONS = [(ord(mode),) for mode in ['s', 'd', 'a']] + [(0,)]
 AGENT_ACTIONS = ALL_ACTIONS[:3]
 num_actions = len(AGENT_ACTIONS)
-noop = None
+noop = 3
 gamma = 0.9
 ckpt_step = 0
 greedy_epsilon = CappedLinear(int(3e4)-ckpt_step, 0.2-(0.15/3e4*ckpt_step), 0.05)
@@ -52,7 +53,7 @@ replay_capacity = 300000
 replay_bucket_size = 100
 replay_ratio_active = 0.01
 replay_max_sample_epoch = 2
-# replay_upsample_bias = (1, 1, 1, 0.1)
+replay_upsample_bias = (1, 1, 1, 0.1)
 # --- NN architecture
 f_net = lambda inputs: f_dueling_q(inputs, num_actions)
 if_ddqn = True
@@ -131,8 +132,8 @@ class FuncReward(object):
         # update reward-related state vars
         ema_speed = 0.5 * self._ema_speed + 0.5 * speed
         ema_dist = 1.0 if dist > 2.0 else 0.9 * self._ema_dist
-        mom_opp = min((opp < 0.5) * (self._mom_opp + 1), 20)
-        mom_biking = min((biking > 0.5) * (self._mom_biking + 1), 12)
+        mom_opp = min((opp < 0.5) * (self._mom_opp + 1), 1)
+        mom_biking = min((biking > 0.5) * (self._mom_biking + 1), 1)
         steering = steer if action != 3 else self._steering
         self._ema_speed = ema_speed
         self._ema_dist = ema_dist
@@ -160,9 +161,9 @@ class FuncReward(object):
             # obs factor
             -100.0 * obs_risk,
             # opposite
-            -20 * (0.9 + 0.1 * mom_opp) * (mom_opp > 1.0),
+            -10 * (0.9 + 0.1 * mom_opp) * (mom_opp > 0.99),
             # ped
-            -40 * (0.9 + 0.1 * mom_biking) * (mom_biking > 1.0),
+            -10 * (0.9 + 0.1 * mom_biking) * (mom_biking > 0.99),
             # steer
             steering * -40.0,
         ]
@@ -200,7 +201,7 @@ class FuncReward(object):
             reward -= 1.0 * (n_skip - cnt_skip)
         if done:
             pass
-            #reward /= (1 - self.__gamma) / (n_skip - cnt_skip)
+            # reward /= (1 - self.__gamma) / (n_skip - cnt_skip)
         new_info['reward_fun/reward'] = reward
         return reward, new_info
 
@@ -219,6 +220,7 @@ class FuncReward(object):
             self.reset()
 
         return reward, done, info
+
 # ==========================================
 # ==========================================
 # ==========================================
@@ -252,12 +254,14 @@ try:
     env = FrameStack(DrSimDecisionK8S(), n_stack)
     # Agent
     replay_buffer = BigPlayback(
-        bucket_cls=MapPlayback,
+        bucket_cls=BalancedMapPlayback,
         cache_path=replay_cache_dir,
         capacity=replay_capacity,
         bucket_size=replay_bucket_size,
         ratio_active=replay_ratio_active,
         max_sample_epoch=replay_max_sample_epoch,
+        num_actions=num_actions,
+        upsample_bias=replay_upsample_bias
     )
     state_shape = env.observation_space.shape
     __agent = DQN(

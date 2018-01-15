@@ -161,9 +161,9 @@ class FuncReward(object):
             # obs factor
             -100.0 * obs_risk,
             # opposite
-            -1000 * (0.9 + 0.1 * mom_opp) * (mom_opp > 0.99),
+            -100 * (0.9 + 0.1 * mom_opp) * (mom_opp > 0.99),
             # ped
-            -1000 * (0.9 + 0.1 * mom_biking) * (mom_biking > 0.99),
+            -100 * (0.9 + 0.1 * mom_biking) * (mom_biking > 0.99),
             # steer
             steering * -40.0,
         ]
