@@ -26,7 +26,7 @@ if __name__ == '__main__':
             last_launch_fail = False
     except IOError:
         print "Last.time not found."
-        last_launch_fail = True
+        last_launch_fail = False
     finally:
         with open(os.sep.join([args.ckpt_folder, 'last.time']), 'wb') as f:
             pickle.dump(time.time(), f)
