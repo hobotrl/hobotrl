@@ -1327,8 +1327,8 @@ class OTDQNModelCar(OTDQNModelExperiment):
             f_create_q = f.create_q()
             f_se = f.create_se()
             f_transition = f.create_transition_momentum()
-            f_decoder = f.decoder_multiflow()
-            # f_decoder = f.create_decoder()
+            # f_decoder = f.decoder_multiflow()
+            f_decoder = f.create_decoder()
         if sampler_creator is None:
             max_traj_length = 200
 
