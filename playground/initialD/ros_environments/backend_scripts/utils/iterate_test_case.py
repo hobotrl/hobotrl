@@ -23,14 +23,24 @@ if __name__ == '__main__':
         print "finished list not found."
         finished = []
 
+    print "===="
+    print tests
+    print "===="
+    print finished
+
     for test in tests:
         if test not in finished:
             break
+    print "===="
+    print test
 
     shutil.copy(
         os.sep.join([args.test_folder, test[:-1]]),
         os.sep.join([args.ckpt_folder, 'next.launch'])
     )
+    print "===="
+    with open(os.sep.join([args.ckpt_folder, 'next.launch']), 'rb') as f:
+        print f.readlines()
 
     with open(os.sep.join([args.ckpt_folder, 'finished.list']), 'wb') as f:
         finished.append(test)
