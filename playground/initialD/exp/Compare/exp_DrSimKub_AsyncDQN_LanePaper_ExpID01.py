@@ -14,7 +14,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.python.training.summary_io import SummaryWriterCache
 # Hobotrl
-sys.path.append('../../..')  # hobotrl home
+sys.path.append('../../../..')  # hobotrl home
 from hobotrl.algorithms import DQN
 from hobotrl.network import LocalOptimizer
 from hobotrl.environments import FrameStack
@@ -23,7 +23,7 @@ from hobotrl.playback import MapPlayback, BalancedMapPlayback, BigPlayback
 from hobotrl.async import AsynchronousAgent
 from hobotrl.utils import CappedLinear
 # initialD
-sys.path.append('..')  # initialD home
+sys.path.append('../..')  # initialD home
 from ros_environments.clients import DrSimDecisionK8S
 from exp.utils.func_networks import f_dueling_q
 # from exp.utils.skipping_masking import NonUniformSkip as SkippingAgent
@@ -71,7 +71,7 @@ tf.app.flags.DEFINE_bool(
     "test", True,
     "Test or not.")
 tf.app.flags.DEFINE_string(
-    "dir_prefix", "./exp01/1",
+    "dir_prefix", "../../../../../../work/agents/Compare/AgentStepAsCkpt/exp01_oth/1",
     "Prefix for model ckpt and event file.")
 tf.app.flags.DEFINE_string(
     "tf_log_dir", "ckpt",
