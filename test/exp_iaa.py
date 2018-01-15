@@ -399,7 +399,7 @@ Experiment.register(MsPacmanI2A, "A3C with I2A for MsPacman")
 
 
 class OTDQN(OTDQNModelExperiment):
-    def __init__(self, env=None, episode_n=6000,
+    def __init__(self, env=None, episode_n=100000,
                  f_create_q=None, f_se=None, f_transition=None, f_decoder=None, lower_weight=1.0, upper_weight=1.0,
                  rollout_depth=5, discount_factor=0.99, ddqn=False, target_sync_interval=100, target_sync_rate=1.0,
                  greedy_epsilon=0.1, network_optimizer=None, max_gradient=10.0, update_interval=4, replay_size=100000,

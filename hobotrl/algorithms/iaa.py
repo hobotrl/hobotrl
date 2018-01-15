@@ -347,7 +347,7 @@ class EnvModelUpdater(network.NetworkUpdater):
         self._update_operation = network.MinimizeLoss(self._op_loss,
                                                       var_list=net_transition.variables + net_se.variables +
                                                       net_decoder.variables)
-        self.imshow_count = 528000
+        self.imshow_count = 0
         self.num = 1
 
     def declare_update(self):
