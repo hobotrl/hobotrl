@@ -296,7 +296,11 @@ class TrainingThread(threading.Thread):
             # update the item in info_queue with the latest info
             old_info = {}
             if self._info_queue.qsize() > 0:
-                old_info = self._info_queue.get(block=True)
+                try:
+                    # non-blocking invocation
+                    old_info = self._info_queue.get(block=False)
+                except:
+                    pass
             info['TrainingThread/n_step'] = self.__n_step
             old_info.update(info)
             self._info_queue.put(old_info)

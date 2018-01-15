@@ -1,46 +1,24 @@
 # -*- coding: utf-8 -*-
 
 from hobotrl.core import BaseAgent
-from hobotrl.mixin import EpsilonGreedyPolicyMixin, TabularQMixin
+from tabular_q import TabularQFunc, TabularQLearning
 
 class SARSA(
-    EpsilonGreedyPolicyMixin,
-    TabularQMixin,
-    BaseAgent):
+    TabularQLearning):
     """SARSA On-Policy Learning
 
-    Overriding Hierachy
-    -------------------
-    __init__:
-        self.__init__
-        |- [call super] EpsilonGreedyPolicyMixin.__init__
-            |- [call super] BasePolicyMixin.__init__
-                |- [call super] TabularQMixin.__init__
-                    |- [call super] BaseValueMixin.__init__
-                        |- [call super] BaseAgent.__init__
-    reinforce_:
-        BasePolicyMixin.reinforce_
-        |- [call super] BaseValueMixin.reinforce_
-            |- [call super] BaseAgent.reinforce_
-
-    act:
-        EpsilonGreedyPolicyMixin.act
-        |- [call member] EpsilonGreedyPolicy.act
-        |- [override] BasePolicyMixin.act
-            |- [override] BaseAgent.act
-    
     improve_value_:
         self.improve_value_
         |- [decorates] TabularQ.improve_value_
             |- [call member] TabularQFunc.improve_value
     """
-    def __init__(self, **kwargs):
+    def __init__(self, num_action, discount_factor=0.9, epsilon_greedy=0.2, **kwargs):
         """
         """
         # force evaluate behavioral policy
         kwargs['greedy_policy'] = False
         
-        super(SARSA, self).__init__(**kwargs)
+        super(SARSA, self).__init__(num_action, discount_factor, epsilon_greedy, **kwargs)
         
         # Ensure behavioral policy is available through `act()`
         try:
@@ -63,6 +41,7 @@ class SARSA(
         is 7th in position.
         """
         def f_improve_value_on(*args, **kwargs):
+            args = list(args)
             next_state = args[3] if len(args)>3 else kwargs['next_state']
             next_action = self.act(next_state)  # sample behavioral policy
             # enforcing next action
@@ -77,4 +56,4 @@ class SARSA(
                 kwargs['importance'] = 1.0
             return f_improve_value(*args, **kwargs)
         
-        return f_improve_value_on     
+        return f_improve_value_on
