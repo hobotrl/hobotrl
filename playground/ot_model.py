@@ -34,8 +34,8 @@ class OTModel(OTDQN):
         })
         self._state_shape, self._num_actions = state_shape, num_actions
         self._rollout_depth = rollout_depth
-        self.curriculum, self.skip_step = curriculum, skip_step
-        self.save_image_interval = save_image_interval
+        self._curriculum, self._skip_step = curriculum, skip_step
+        self._save_image_interval = save_image_interval
         if sampler is None:
             max_traj_length = 200
             sampler = sampling.TruncateTrajectorySampler2(None, replay_size / max_traj_length, max_traj_length,
@@ -86,11 +86,11 @@ class OTModel(OTDQN):
             # curriculum=[1, self._rollout_depth],
             # skip_step=[10000],
             # transition_weight=1.0, with_momentum=True
-            curriculum=self.curriculum,
-            skip_step=self.skip_step,
+            curriculum=self._curriculum,
+            skip_step=self._skip_step,
             transition_weight=1.0,
             with_momentum=True,
-            save_image_interval=self.save_image_interval
+            save_image_interval=self._save_image_interval
         ), name="env")
         self.network_optimizer.compile()
 

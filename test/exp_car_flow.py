@@ -1154,6 +1154,124 @@ class F(object):
             return {"re": re}
         return create_encoder
 
+    def create_env_upsample_fc(self):
+        def create_env_upsample_fc(inputs):
+            l2 = 1e-7
+            input_state = inputs[0]
+            input_state = tf.squeeze(tf.stack(input_state), axis=0)
+
+            input_action = inputs[1]
+            # input_action = tf.one_hot(indices=input_action, depth=self.dim_action, on_value=1.0, off_value=0.0, axis=-1)
+            # input_action_tiled = tf.image.resize_images(tf.reshape(input_action, [-1, 1, 1, dim_action]),
+            #                                       [((((dim_observation[0]+1)/2+1)/2+1)/2+1)/2,
+            #                                        ((((dim_observation[1]+1)/2+1)/2+1)/2+1)/2])
+
+            conv_1 = hrl.utils.Network.conv2ds(input_state,
+                                               shape=[(32, 8, 4)],
+                                               out_flatten=False,
+                                               activation=tf.nn.relu,
+                                               l2=l2,
+                                               var_scope="conv_1")
+
+            conv_2 = hrl.utils.Network.conv2ds(conv_1,
+                                               shape=[(64, 4, 2)],
+                                               out_flatten=False,
+                                               activation=tf.nn.relu,
+                                               l2=l2,
+                                               var_scope="conv_2")
+
+            conv_3 = hrl.utils.Network.conv2ds(conv_2,
+                                               shape=[(64, 3, 2)],
+                                               out_flatten=True,
+                                               activation=tf.nn.relu,
+                                               l2=l2,
+                                               var_scope="conv_3")
+
+            fc_1 = hrl.utils.Network.layer_fcs(conv_3, [], 64 * 5 * 5,
+                                               activation_hidden=tf.nn.relu,
+                                               activation_out=tf.nn.relu,
+                                               l2=l2,
+                                               var_scope="fc_1")
+
+            # concat_action = tf.concat([conv_4, input_action_tiled], axis=3)
+            fc_action = hrl.utils.Network.layer_fcs(tf.to_float(input_action), [], 64 * 5 * 5,
+                                                    activation_hidden=tf.nn.relu,
+                                                    activation_out=tf.nn.relu,
+                                                    l2=l2,
+                                                    var_scope="fc_action")
+
+            concat = tf.multiply(fc_1, fc_action)
+
+            fc_out = hrl.utils.Network.layer_fcs(concat, [64 * 5 * 5], 64 * 5 * 5,
+                                                 activation_hidden=tf.nn.relu,
+                                                 activation_out=tf.nn.relu,
+                                                 l2=l2,
+                                                 var_scope="fc_out")
+
+            # reward
+            reward = hrl.utils.Network.layer_fcs(fc_out, [256], 1,
+                                                 activation_hidden=tf.nn.relu,
+                                                 l2=l2,
+                                                 var_scope="reward")
+            reward = tf.squeeze(reward, axis=1)
+
+            # next_state
+            twoD_out = tf.reshape(fc_out, [-1, 64, 5, 5])
+
+            conv_5 = hrl.utils.Network.conv2ds(twoD_out,
+                                               shape=[(32, 3, 1)],
+                                               out_flatten=False,
+                                               activation=tf.nn.relu,
+                                               l2=l2,
+                                               var_scope="conv_5")
+
+            up_1 = tf.image.resize_images(conv_5,
+                                          [((self.dim_observation[0] + 3) / 4 + 1) / 2, ((self.dim_observation[1] + 3) / 4 + 1) / 2])
+
+            concat_1 = tf.concat([conv_2, up_1], axis=3)
+            concat_1 = hrl.utils.Network.conv2ds(concat_1,
+                                                 shape=[(32, 3, 1)],
+                                                 out_flatten=False,
+                                                 activation=tf.nn.relu,
+                                                 l2=l2,
+                                                 var_scope="concat_1")
+
+            up_2 = tf.image.resize_images(concat_1, [(self.dim_observation[0] + 3) / 4, (self.dim_observation[1] + 3) / 4])
+
+            concat_2 = tf.concat([conv_1, up_2], axis=3)
+            concat_2 = hrl.utils.Network.conv2ds(concat_2,
+                                                 shape=[(64, 4, 1)],
+                                                 out_flatten=False,
+                                                 activation=tf.nn.relu,
+                                                 l2=l2,
+                                                 var_scope="concat_2")
+
+            up_3 = tf.image.resize_images(concat_2, [self.dim_observation[0], self.dim_observation[1]])
+
+            concat_3 = tf.concat([input_state, up_3], axis=3)
+            concat_3 = hrl.utils.Network.conv2ds(concat_3,
+                                                 shape=[(64, 3, 1)],
+                                                 out_flatten=False,
+                                                 activation=tf.nn.relu,
+                                                 l2=l2,
+                                                 var_scope="concat_3")
+
+            next_state = hrl.utils.Network.conv2ds(concat_3,
+                                                   shape=[(3, 3, 1)],
+                                                   out_flatten=False,
+                                                   activation=tf.nn.relu,
+                                                   l2=l2,
+                                                   var_scope="next_state")
+
+            return {"next_state": next_state, "reward": reward}
+        return create_env_upsample_fc
+
+    def pass_decoder(self):
+        def pass_decoder(inputs):
+            input_frame = inputs[0]
+            return {"next_frame": input_frame}
+        return pass_decoder
+
 
 class I2AFlow(A3CExperimentWithI2A):
     def __init__(self, env=None, f_se = None, f_ac=None, f_tran=None, f_decoder=None, f_rollout=None, f_encoder = None,
@@ -1211,6 +1329,30 @@ class OTDQNModelCar(OTDQNModelExperiment):
             f_transition = f.create_transition_momentum()
             f_decoder = f.decoder_multiflow()
             # f_decoder = f.create_decoder()
+        if sampler_creator is None:
+            max_traj_length = 200
+
+            def create_sample(args):
+                bucket_size = 8
+                traj_count = replay_size / max_traj_length
+                bucket_count = traj_count / bucket_size
+                active_bucket = 4
+                ratio = 1.0 * active_bucket / bucket_count
+                transition_epoch = 8
+                trajectory_epoch = transition_epoch * max_traj_length
+                memory = BigPlayback(
+                    bucket_cls=Playback,
+                    bucket_size=bucket_size,
+                    max_sample_epoch=trajectory_epoch,
+                    capacity=traj_count,
+                    active_ratio=ratio,
+                    cache_path=os.sep.join([args.logdir, "cache", str(args.index)])
+                )
+                sampler = sampling.TruncateTrajectorySampler2(memory, replay_size / max_traj_length, max_traj_length,
+                                                              batch_size=1, trajectory_length=batch_size,
+                                                              interval=update_interval)
+                return sampler
+            sampler_creator = create_sample
         super(OTDQNModelCar, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder, lower_weight,
                                             upper_weight, rollout_depth, discount_factor, ddqn, target_sync_interval,
                                             target_sync_rate, greedy_epsilon, network_optimizer, max_gradient,
@@ -1269,6 +1411,31 @@ class OTDQNModelDriving(OTDQNModelCar):
                                                 network_optimizer, max_gradient, update_interval, replay_size,
                                                 batch_size, sampler_creator, asynchronous)
 Experiment.register(OTDQNModelDriving, "transition model with dqn, for k8s driving env")
+
+
+class OTDQN_ob(OTDQNModelExperiment):
+    def __init__(self, env=None, episode_n=10000,
+                 f_create_q=None, f_se=None, f_transition=None, f_decoder=None, lower_weight=1.0, upper_weight=1.0,
+                 rollout_depth=5, discount_factor=0.99, ddqn=False, target_sync_interval=100, target_sync_rate=1.0,
+                 greedy_epsilon=0.1, network_optimizer=None, max_gradient=10.0, update_interval=4, replay_size=100000,
+                 batch_size=16, curriculum=[1, 3, 5], skip_step=[500000, 1000000], sampler_creator=None,
+                 asynchronous=False, save_image_interval=10000):
+        if env is None:
+            env = gym.make('CarRacing-v0')
+            env = wrap_car(env, 3, 3)
+        if f_se is None:
+            f = F(env)
+            f_create_q = f.create_q()
+            f_se = f.create_se()
+            f_transition = f.create_env_upsample_fc()
+            # f_decoder = f.decoder_multiflow()
+            f_decoder = f.pass_decoder()
+        super(OTDQN_ob, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder, lower_weight,
+                                            upper_weight, rollout_depth, discount_factor, ddqn, target_sync_interval,
+                                            target_sync_rate, greedy_epsilon, network_optimizer, max_gradient,
+                                            update_interval, replay_size, batch_size, curriculum, skip_step,
+                                            sampler_creator, asynchronous, save_image_interval)
+Experiment.register(OTDQN_ob, "Old traditional env model with dqn, for CarRacing")
 
 
 if __name__ == '__main__':
