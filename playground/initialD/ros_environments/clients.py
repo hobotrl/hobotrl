@@ -90,7 +90,8 @@ class DrSimDecisionK8S(wrapt.ObjectProxy):
             ('/rl/last_on_opposite_path', 'std_msgs.msg.Int16'),
             ('/rl/on_biking_lane', 'std_msgs.msg.Bool'),
             ('/rl/on_innerest_lane', 'std_msgs.msg.Bool'),
-            ('/rl/on_outterest_lane', 'std_msgs.msg.Bool')
+            ('/rl/on_outterest_lane', 'std_msgs.msg.Bool'),
+            ('/rl/car_velocity_oth', 'std_msgs.msg.Float32')
         ]
         _defs_action = [('/autoDrive_KeyboardMode', 'std_msgs.msg.Char')]
 
