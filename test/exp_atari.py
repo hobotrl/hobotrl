@@ -96,7 +96,7 @@ class DQNPong(DQNAtari):
         env = gym.make("PongNoFrameskip-v4")
         env = full_wrap_dqn(env)
         f = f_dqn_atari(env.action_space.n)
-        network_optimizer_ctor = lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3),
+        network_optimizer_ctor = lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(learning_rate),
                                                                     grad_clip=10.0)
         super(DQNPong, self).__init__(env, f, greedy_epsilon=greedy_epsilon,
                                       network_optimizer_ctor=network_optimizer_ctor)
