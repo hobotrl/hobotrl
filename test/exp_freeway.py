@@ -174,7 +174,7 @@ Experiment.register(Freeway_mom_I2A_half, "I2A with Momentum exp for Freeway wit
 
 
 class OTDQNFreeway(OTDQNModelExperiment):
-    def __init__(self, env=None, episode_n=6000,
+    def __init__(self, env=None, episode_n=16000,
                  f_create_q=None, f_se=None, f_transition=None, f_decoder=None, lower_weight=1.0, upper_weight=1.0,
                  rollout_depth=5, discount_factor=0.99, ddqn=False, target_sync_interval=100, target_sync_rate=1.0,
                  greedy_epsilon=0.1, network_optimizer=None, max_gradient=10.0, update_interval=4, replay_size=1024,
@@ -188,7 +188,7 @@ class OTDQNFreeway(OTDQNModelExperiment):
             env = FrameStack(env, k=4)
 
         if f_se is None:
-            f = F(env)
+            f = F(env, 256)
             f_create_q = f.create_q()
             f_se = f.create_se()
             f_transition = f.create_transition_momentum()
@@ -229,7 +229,7 @@ Experiment.register(OTDQNFreeway, "OTDQN for Freeway with half input")
 
 
 class OTDQN_ob_freeway(OTDQNModelExperiment):
-    def __init__(self, env=None, episode_n=10000,
+    def __init__(self, env=None, episode_n=16000,
                  f_create_q=None, f_se=None, f_transition=None, f_decoder=None, lower_weight=1.0, upper_weight=1.0,
                  rollout_depth=5, discount_factor=0.99, ddqn=False, target_sync_interval=100, target_sync_rate=1.0,
                  greedy_epsilon=0.1, network_optimizer=None, max_gradient=10.0, update_interval=4, replay_size=1024,

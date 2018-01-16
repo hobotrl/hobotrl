@@ -18,13 +18,13 @@ from hobotrl.utils import CappedLinear
 
 
 class F(object):
-    def __init__(self, env):
+    def __init__(self, env, dim_se=256):
         super(F, self).__init__()
         self._env = env
         self.dim_action = self._env.action_space.n
         self.dim_observation = self._env.observation_space.shape
         self.chn_se_2d = 32
-        self.dim_se = 1600
+        self.dim_se = dim_se
         self.nonlinear = tf.nn.elu
         
     def create_se(self):
@@ -1315,7 +1315,7 @@ Experiment.register(I2AFlowDriving, "A3C with I2A for Driving Simulator")
 
 
 class OTDQNModelCar(OTDQNModelExperiment):
-    def __init__(self, env=None, episode_n=10000,
+    def __init__(self, env=None, episode_n=16000,
                  f_create_q=None, f_se=None, f_transition=None, f_decoder=None, lower_weight=1.0, upper_weight=1.0,
                  rollout_depth=5, discount_factor=0.99, ddqn=False, target_sync_interval=100, target_sync_rate=1.0,
                  greedy_epsilon=0.1, network_optimizer=None, max_gradient=10.0, update_interval=4, replay_size=1024,
@@ -1393,7 +1393,7 @@ Experiment.register(OTDQNModelDriving, "transition model with dqn, for k8s drivi
 
 
 class OTDQN_ob(OTDQNModelExperiment):
-    def __init__(self, env=None, episode_n=10000,
+    def __init__(self, env=None, episode_n=16000,
                  f_create_q=None, f_se=None, f_transition=None, f_decoder=None, lower_weight=1.0, upper_weight=1.0,
                  rollout_depth=5, discount_factor=0.99, ddqn=False, target_sync_interval=100, target_sync_rate=1.0,
                  greedy_epsilon=0.1, network_optimizer=None, max_gradient=10.0, update_interval=4, replay_size=1024,
