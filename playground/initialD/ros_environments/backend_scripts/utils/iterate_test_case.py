@@ -18,18 +18,15 @@ if __name__ == '__main__':
 
     try:
         with open(os.sep.join([args.ckpt_folder, 'last.time']), 'rb') as f:
-            t = pickle.load(f)
-        print "Time since last launch {}".format(time.time() - t)
-        if time.time() - t <= args.fail_duration:
+            t1, t2 = pickle.load(f)
+        print "[iterate_test_case]: duration of last episode {}".format(t2 - t1)
+        if t2 - t1 <= args.fail_duration:
             last_launch_fail = True
         else:
             last_launch_fail = False
     except IOError:
-        print "Last.time not found."
+        print "[iterate_test_case]: file 'last.time' not found."
         last_launch_fail = False
-    finally:
-        with open(os.sep.join([args.ckpt_folder, 'last.time']), 'wb') as f:
-            pickle.dump(time.time(), f)
 
     if not last_launch_fail:
         with open(os.sep.join([args.test_folder, 'test.list']), 'rb') as f:
@@ -56,4 +53,17 @@ if __name__ == '__main__':
             f.writelines(finished)
     else:
         print "Last launch fail, reusing launch file."
+
+    print "[iterate_test_case]: start loop."
+    try:
+        t1 = time.time()
+        while True:
+            time.sleep(1.0)
+    except:
+        pass
+    finally:
+        t2 = time.time()
+        with open(os.sep.join([args.ckpt_folder, 'last.time']), 'wb') as f:
+            pickle.dump((t1, t2), f)
+        print "[iterate_test_case]: out, episode duration {}".format(t2 - t1)
 
