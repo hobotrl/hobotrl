@@ -253,7 +253,7 @@ class OTDQNFreeway(OTDQNModelExperiment):
 Experiment.register(OTDQNFreeway, "OTDQN for Freeway with half input")
 
 
-class OTDQN_ob_freeway(OTDQNModelExperiment):
+class OTDQN_ob_Freeway(OTDQNModelExperiment):
     def __init__(self, env=None, episode_n=16000,
                  f_create_q=None, f_se=None, f_transition=None, f_decoder=None, lower_weight=1.0, upper_weight=1.0,
                  rollout_depth=5, discount_factor=0.99, ddqn=False, target_sync_interval=100, target_sync_rate=1.0,
@@ -273,12 +273,12 @@ class OTDQN_ob_freeway(OTDQNModelExperiment):
             f_transition = f.create_env_upsample_fc()
             # f_decoder = f.decoder_multiflow()
             f_decoder = f.pass_decoder()
-        super(OTDQN_ob_freeway, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder, lower_weight,
+        super(OTDQN_ob_Freeway, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder, lower_weight,
                                             upper_weight, rollout_depth, discount_factor, ddqn, target_sync_interval,
                                             target_sync_rate, greedy_epsilon, network_optimizer, max_gradient,
                                             update_interval, replay_size, batch_size, curriculum, skip_step,
                                             sampler_creator, asynchronous, save_image_interval, with_ob)
-Experiment.register(OTDQN_ob_freeway, "Old traditional env model with dqn, for Freeway")
+Experiment.register(OTDQN_ob_Freeway, "Old traditional env model with dqn, for Freeway")
 
 
 if __name__ == '__main__':

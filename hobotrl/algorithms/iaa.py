@@ -177,9 +177,9 @@ class EnvModelUpdater(network.NetworkUpdater):
 
                 f0 = s0[:, :, :, -3:]
                 logging.warning("s0:%s, f0:%s", s0.shape, f0.shape)
-                ob, sn, an, rn, fn =[], [], [], [], []
+                sn, an, rn, fn =[], [], [], []
+                cur_ob = self._input_state[0:-1]
                 for i in range(self._depth):
-                    ob.append(self._input_state[i:-1])
                     sn.append(self._input_state[i+1:])
                     an.append(self._input_action[i:])
                     rn.append(self._input_reward[i:])
@@ -226,7 +226,7 @@ class EnvModelUpdater(network.NetworkUpdater):
                     if not with_ob:
                         net_trans = net_transition([cur_se, input_action], name_scope="transition_%d" % i)
                     else:
-                        net_trans = net_transition([ob[i], input_action], name_scope="transition_%d" % i)
+                        net_trans = net_transition([cur_ob, input_action], name_scope="transition_%d" % i)
 
                     if with_momentum:
                         TM_goal = net_trans["momentum"].op
@@ -248,6 +248,7 @@ class EnvModelUpdater(network.NetworkUpdater):
                         # cur_se = socalled_state
                     else:
                         cur_se = goal
+                        cur_ob = tf.concat([cur_ob[:,:,:,3:], goal], axis=-1)
 
                     ses_predict.append(cur_se)
                     r_predict.append(net_trans["reward"].op)
@@ -300,7 +301,10 @@ class EnvModelUpdater(network.NetworkUpdater):
                     if not with_ob:
                         transition_loss.append(tf.reduce_mean(network.Utils.clipped_square(ses_predict[-1] - sen[i])))
                         cur_goal = cur_goal[:-1]
-                    cur_se = cur_se[:-1]
+                        cur_se = cur_se[:-1]
+                    else:
+                        cur_ob = cur_ob[:-1]
+
                     f0_truncate = f0_truncate[:-1]
                     se0_truncate = se0_truncate[:-1]
 
@@ -568,15 +572,16 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
             se = net_se["se"].op
 
             input_reward = tf.placeholder(dtype=tf.float32, shape=[None, 1], name="input_reward")
-            # encode_state = tf.placeholder(dtype=tf.float32, shape=[None, se.shape.as_list()[-1]],
-            #                               name="encode_states")
+            encode_state = tf.placeholder(dtype=tf.float32, shape=[None, se.shape.as_list()[-1]],
+                                          name="encode_states")
             input_frame = tf.placeholder(dtype=tf.float32, shape=[None, state_shape[0], state_shape[1], 3],
                                          name="input_frame")
             rollout = network.Network([se], f_rollout, var_scope="rollout_policy")
 
             if not with_ob:
                 net_model = network.Network([se, input_action], f_tran, var_scope="TranModel")
-                net_decoder = network.Network([tf.concat((se, se), axis=-1), input_frame], f_decoder, var_scope="Decoder")
+                net_decoder = network.Network([tf.concat((encode_state, encode_state), axis=-1), input_frame],
+                                              f_decoder, var_scope="Decoder")
 
             else:
                 net_model = network.Network([input_observation, input_action], f_tran, var_scope="TranModelOB")
