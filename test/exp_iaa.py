@@ -410,7 +410,7 @@ class OTDQN(OTDQNModelExperiment):
             env = CropMsPacman(env)
             env = Downsample(env, length_factor=2.0)
             env = ScaledFloatFrame(env)
-            env = ScaledRewards(env, 0.1)
+            env = ScaledRewards(env, 0.01)
             env = MaxAndSkipEnv(env, skip=4, max_len=1)
             env = FrameStack(env, k=4)
 

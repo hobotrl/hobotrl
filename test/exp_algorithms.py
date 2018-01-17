@@ -900,17 +900,18 @@ class A3CExperimentWithI2A(Experiment):
                  with_momentum=True,
                  dynamic_rollout=[1, 3, 5],
                  dynamic_skip_step=[5000, 15000],
-                 save_image_interval=1000
+                 save_image_interval=1000,
+                 with_ob=False
                  ):
         super(A3CExperimentWithI2A, self).__init__()
         self._env, self._f_se, self._f_ac, self._f_tran, self._f_decoder,\
             self._f_rollout, self._f_encoder, self._episode_n, self._learning_rate, \
             self._discount_factor, self._entropy, self._batch_size, \
             self.policy_with_iaa, self.compute_with_diff, self.with_momentum, \
-            self.dynamic_rollout, self.dynamic_skip_step, self._save_image_interval = \
+            self.dynamic_rollout, self.dynamic_skip_step, self._save_image_interval, self._with_ob = \
             env, f_se, f_ac, f_tran, f_decoder, f_rollout, f_encoder, episode_n, learning_rate, \
             discount_factor, entropy, batch_size, policy_with_iaa, compute_with_diff, with_momentum, dynamic_rollout,\
-            dynamic_skip_step, save_image_interval
+            dynamic_skip_step, save_image_interval, with_ob
 
     def run(self, args):
         state_shape = list(self._env.observation_space.shape)
@@ -948,6 +949,7 @@ class A3CExperimentWithI2A(Experiment):
                 batch_size=self._batch_size,
                 save_image_interval=self._save_image_interval,
                 log_dir=args.logdir,
+                with_ob=self._with_ob,
                 global_step=global_step,
             )
             return agent

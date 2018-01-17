@@ -112,7 +112,7 @@ class Freeway(A3CExperimentWithI2A):
                  episode_n=10000, learning_rate=5e-5, discount_factor=0.99,
                  entropy=hrl.utils.CappedLinear(1e6, 2e-2, 5e-3), batch_size=32, policy_with_iaa=False,
                  compute_with_diff=False, with_momentum=True, dynamic_rollout=[1, 3, 5],
-                 dynamic_skip_step=[10000, 20000]):
+                 dynamic_skip_step=[10000, 20000], with_ob=False):
         if env is None:
             env = gym.make('Freeway-v0')
             # env = Downsample(env, length_factor=2.0)
@@ -134,7 +134,8 @@ class Freeway(A3CExperimentWithI2A):
                                       compute_with_diff,
                                       with_momentum,
                                       dynamic_rollout,
-                                      dynamic_skip_step)
+                                      dynamic_skip_step,
+                                      with_ob=with_ob)
 
 
 class Freeway_mom(Freeway):
@@ -171,6 +172,30 @@ class Freeway_mom_I2A_half(Freeway):
             env = FrameStack(env, k=4)
         super(Freeway_mom_I2A_half, self).__init__(env=env, policy_with_iaa=policy_with_iaa, dynamic_skip_step=dynamic_skip_step)
 Experiment.register(Freeway_mom_I2A_half, "I2A with Momentum exp for Freeway with half input")
+
+
+class Freeway_ob_I2A(Freeway):
+    def __init__(self, env=None, f_se = None, f_ac=None, f_tran=None, f_decoder=None, f_rollout=None, f_encoder = None,
+                 with_ob=True):
+        if env is None:
+            env = gym.make('Freeway-v0')
+            env = Downsample(env, length_factor=2.0)
+            env = ScaledFloatFrame(env)
+            env = MaxAndSkipEnv(env, skip=4, max_len=1)
+            env = FrameStack(env, k=4)
+
+        if f_se is None:
+            f = F(env)
+            f_se = f.create_se()
+            f_ac = f.create_ac()
+            f_rollout = f.create_rollout()
+            f_encoder = f.create_encoder()
+            f_tran = f.create_env_upsample_fc()
+            f_decoder = f.pass_decoder()
+
+        super(Freeway_ob_I2A, self).__init__(env=env, f_se=f_se, f_ac=f_ac, f_rollout=f_rollout, f_encoder=f_encoder,
+                                             f_tran=f_tran, f_decoder=f_decoder, with_ob=with_ob)
+Experiment.register(Freeway_ob_I2A, "Original I2A for Freeway")
 
 
 class OTDQNFreeway(OTDQNModelExperiment):

@@ -519,6 +519,7 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                  batch_size=32,
                  save_image_interval=1000,
                  log_dir="./log/img",
+                 with_ob=False,
                  *args, **kwargs):
         """
         :param f_create_net: function: f_create_net(inputs) => {"pi": dist_pi, "q": q_values},
@@ -567,19 +568,25 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
             se = net_se["se"].op
 
             input_reward = tf.placeholder(dtype=tf.float32, shape=[None, 1], name="input_reward")
-            encode_state = tf.placeholder(dtype=tf.float32, shape=[None, se.shape.as_list()[-1]],
-                                          name="encode_states")
+            # encode_state = tf.placeholder(dtype=tf.float32, shape=[None, se.shape.as_list()[-1]],
+            #                               name="encode_states")
             input_frame = tf.placeholder(dtype=tf.float32, shape=[None, state_shape[0], state_shape[1], 3],
                                          name="input_frame")
             rollout = network.Network([se], f_rollout, var_scope="rollout_policy")
-            net_model = network.Network([se, input_action], f_tran, var_scope="TranModel")
 
-            net_decoder = network.Network([tf.concat((se, se), axis=-1), input_frame], f_decoder, var_scope="Decoder")
+            if not with_ob:
+                net_model = network.Network([se, input_action], f_tran, var_scope="TranModel")
+                net_decoder = network.Network([tf.concat((se, se), axis=-1), input_frame], f_decoder, var_scope="Decoder")
 
-            rollout_encoder = network.Network([tf.concat((encode_state, encode_state, input_reward), axis=-1)],
+            else:
+                net_model = network.Network([input_observation, input_action], f_tran, var_scope="TranModelOB")
+                net_decoder = network.Network([input_frame], f_decoder, var_scope="DecoderOB")
+
+            rollout_encoder = network.Network([tf.concat((se, se), axis=-1), input_reward],
                                               f_encoder, var_scope="rollout_encoder")
 
             current_state = se
+            current_ob = input_observation
 
             for i in range(rollout_lane):
                 for j in range(rollout_depth):
@@ -588,38 +595,47 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                     # rollout_action_dist = tf.contrib.distributions.Categorical(rollout_action_function.output().op)
                     # current_action = rollout_action_dist.sample()
 
-                    tran_model = net_model([current_state, current_rollout["rollout_action"].op],
-                                           name_scope="env_model_%d_%d" %(i,j))
+                    if not with_ob:
+                        tran_model = net_model([current_state, current_rollout["rollout_action"].op],
+                                               name_scope="env_model_%d_%d" %(i,j))
+                    else:
+                        tran_model = net_model([current_ob, current_rollout["rollout_action"].op],
+                                               name_scope="env_model_%d_%d" %(i,j))
 
                     next_goal = tran_model["next_state"].op
                     reward = tran_model["reward"].op
+
+                    if not with_ob:
+                        current_state += next_goal
+                    else:
+                        current_ob = tf.concat([current_ob[:,:,:,3:], next_goal], axis=-1)
+                        next_goal = tf.stop_gradient(net_se([current_ob])["se"].op)
 
                     if j == 0:
                         encode_states = next_goal
                         rollout_reward = reward
                     else:
-                        encode_states = tf.concat([next_goal, encode_states], axis=1)
+                        encode_states = tf.concat([next_goal, encode_states], axis=-1)
                         rollout_reward = tf.concat([rollout_reward, reward], axis=0)
 
-                    current_state += next_goal
-
                 current_state = se
+                current_ob = input_observation
 
-                encode_state = tf.split(encode_states, rollout_depth, axis=1)
                 input_reward = tf.reshape(rollout_reward, [-1, rollout_depth])
                 input_reward = tf.split(input_reward, rollout_depth, axis=1)
+                encode_state = tf.split(encode_states, rollout_depth, axis=1)
 
                 for m in range(rollout_depth):
                     if m == 0:
                         rollout_encoder = rollout_encoder([
-                            tf.concat([encode_state[-(m + 1)], encode_state[-(m + 1)], input_reward[-(m + 1)]],
-                                      axis=-1)], name_scope="rollout_encoder_%d_%d" %(i, m))
+                            tf.concat([encode_state[-(m + 1)], encode_state[-(m + 1)]], axis=-1),
+                            input_reward[-(m + 1)]], name_scope="rollout_encoder_%d_%d" % (i, m))
                         re = rollout_encoder["re"].op
 
                     else:
                         rollout_encoder = rollout_encoder([
-                            tf.concat([re, encode_state[-(m + 1)], input_reward[-(m + 1)]],
-                                      axis=-1)], name_scope="rollout_encoder_%d_%d" % (i, m))
+                            tf.concat([re, encode_state[-(m + 1)]], axis=-1),
+                            input_reward[-(m + 1)]], name_scope="rollout_encoder_%d_%d" % (i, m))
                         re = rollout_encoder["re"].op
 
                 if i == 0:
@@ -723,7 +739,8 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                 transition_weight=1.0,
                 with_momentum=with_momentum,
                 compute_with_diff=compute_with_diff,
-                save_image_interval=save_image_interval
+                save_image_interval=save_image_interval,
+                with_ob=with_ob
             ),
             name="env_model")
         # network_optimizer.freeze(self.network.sub_net("transition").variables)

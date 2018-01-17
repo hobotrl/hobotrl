@@ -1126,32 +1126,48 @@ class F(object):
     def create_encoder(self):
         def create_encoder(inputs):
             l2 = 1e-7
-            input_argu = inputs[0]
-            # input_reward = inputs[1]
-            #
-            # rse = hrl.utils.Network.conv2ds(input_state,
-            #                                 shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
-            #                                 out_flatten=True,
-            #                                 activation=self.nonlinear,
-            #                                 l2=l2,
-            #                                 var_scope="rse")
-            #
-            # re_conv = hrl.utils.Network.layer_fcs(rse, [], 200,
-            #                                       activation_hidden=self.nonlinear,
-            #                                       activation_out=self.nonlinear,
-            #                                       l2=l2,
-            #                                       var_scope="re_conv")
-            #
-            # # re_conv = tf.concat([re_conv, tf.reshape(input_reward, [-1, 1])], axis=1)
-            # re_conv = tf.concat([re_conv, input_reward], axis=1)
+            input_rollout_states = inputs[0]
+            input_reward = inputs[1]
+
+            input_concat = tf.concat([input_rollout_states, input_reward], axis=-1)
         
-            re = hrl.utils.Network.layer_fcs(input_argu, [self.dim_se], self.dim_se,
+            re = hrl.utils.Network.layer_fcs(input_concat, [self.dim_se], self.dim_se,
                                              activation_hidden=self.nonlinear,
                                              activation_out=self.nonlinear,
                                              l2=l2,
                                              var_scope="re")
-        
             return {"re": re}
+        return create_encoder
+
+    def create_encoder_OB(self):
+        def create_encoder(inputs):
+            l2 = 1e-7
+            input_rollout_states = inputs[0]
+            input_reward = inputs[1]
+
+            rse = hrl.utils.Network.conv2ds(input_rollout_states,
+                                            shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
+                                            out_flatten=True,
+                                            activation=self.nonlinear,
+                                            l2=l2,
+                                            var_scope="rse")
+
+            re_conv = hrl.utils.Network.layer_fcs(rse, [], 200,
+                                                  activation_hidden=self.nonlinear,
+                                                  activation_out=self.nonlinear,
+                                                  l2=l2,
+                                                  var_scope="re_conv")
+
+            rewardNstates = tf.concat([re_conv, input_reward], axis=-1)
+
+            re = hrl.utils.Network.layer_fcs(rewardNstates, [], self.dim_se,
+                                             activation_hidden=self.nonlinear,
+                                             activation_out=self.nonlinear,
+                                             l2=l2,
+                                             var_scope="re")
+
+            return {"re": re}
+
         return create_encoder
 
     def create_env_upsample_fc(self):
@@ -1165,8 +1181,6 @@ class F(object):
             # input_action_tiled = tf.image.resize_images(tf.reshape(input_action, [-1, 1, 1, dim_action]),
             #                                       [((((dim_observation[0]+1)/2+1)/2+1)/2+1)/2,
             #                                        ((((dim_observation[1]+1)/2+1)/2+1)/2+1)/2])
-            logging.warning("---------------------------------")
-            logging.warning(input_state)
 
             conv_1 = hrl.utils.Network.conv2ds(input_state,
                                                shape=[(32, 8, 4)],
