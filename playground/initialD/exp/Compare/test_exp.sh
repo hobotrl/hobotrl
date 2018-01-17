@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 gpu_n=$1
 script=$2
-log_fdir=$3
+log_fdir=../../../../../../work/agents/Compare/AgentStepAsCkpt/$3/
 # ../../../../../../work/agents/exp01/
 start=$4
 end=$5
