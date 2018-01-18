@@ -977,12 +977,22 @@ class BigPlayback(Playback):
         self._close_flag = False
         self._monitor_stop_event = Event()
         self._monitor_stop_event.clear()
+
+        # helper counters
+        self.last_t_getbatch = time.time()
+        self.last_t_maintain = time.time()
+        self.last_t_bktio = time.time()
+        self.cnt_qi_empty = 0
+        self.cnt_qo_empty = 0
+        
         self._thread_io_monitor = Thread(
             target=self.__monitor_loop, args=(self._monitor_stop_event,)
         )
         self._thread_io_monitor.start()
         # Read back state from disk
         self.__init_from_cache()
+
+
 
     def push_sample(self, sample, sample_score=0):
         """Push new sample into buffer.
@@ -1012,7 +1022,6 @@ class BigPlayback(Playback):
             logging.warning(
                 traceback.format_exc()
             )
-
 
         # adjust push_bucket
         if swap_flag:
@@ -1053,9 +1062,9 @@ class BigPlayback(Playback):
                 continue
             else:
                 # Modify sample quota for this bucket
-                self._buckets_sample_quota[bkt_id] -= len(rel_index)
+                self._buckets_sample_quota[bkt_id] -= len(rel_index) if self._buckets_sample_quota[bkt_id] > 0 else 0
                 # check activation state
-                if self._buckets_sample_quota[bkt_id] < 0:
+                if self._buckets_sample_quota[bkt_id] <= 0:
                     logging.warning(
                         "[BigPlayback.get_batch()]: "
                         "bucket {} has run out of quota.".format(bkt_id)
@@ -1066,7 +1075,17 @@ class BigPlayback(Playback):
                     # release mem and signal IO thread to load a new bucket.
                     self._buckets[bkt_id].release_mem()
                     self.__maintain_active_buckets()
-        return self._merge_batches(ret)
+
+        ret = self._merge_batches(ret)
+
+        if time.time() - self.last_t_getbatch > 60:
+            logging.warning(
+                "[BigPlayback.get_batch()]: "
+                "get batch function alive. Last len (batches) {}".format(len(ret))
+            )
+            self.last_t_getbatch = time.time()
+
+        return ret
 
     def _merge_batches(self, batches):
         """
@@ -1296,6 +1315,13 @@ class BigPlayback(Playback):
                 self._buckets_loading[bkt] = True
                 self._buckets_to_load.put(bkt)
 
+        if time.time() - self.last_t_maintain > 60:
+            logging.warning(
+                "[BigPlayback.__maintain_active_buckets()]: "
+                "maintain function alive. Last Num to load {}".format(num_to_load)
+            )
+            self.last_t_maintain = time.time()
+
     def __save_meta(self):
         if not os.path.isdir(self._cache_path):
             logging.warning(
@@ -1391,6 +1417,7 @@ class BigPlayback(Playback):
                         self._buckets_to_save.task_done()
                 except Queue.Empty:
                     pass
+                    self.cnt_qo_empty += 1
 
                 # Load buckets
                 try:
@@ -1412,6 +1439,7 @@ class BigPlayback(Playback):
                         self._buckets_to_load.task_done()
                 except Queue.Empty:
                     pass
+                    self.cnt_qi_empty += 1
             except:
                 logging.warning(
                     "[BigPlayback.bucket_io()]: "
@@ -1422,6 +1450,16 @@ class BigPlayback(Playback):
                 )
             finally:
                 time.sleep(0.1)
+
+                if time.time() - self.last_t_bktio > 60:
+                    logging.warning(
+                        "[BigPlayback.bucket_io()]: "
+                        "bucket_io function alive. Qi {} Qo {}".format(
+                            self.cnt_qi_empty, self.cnt_qo_empty)
+                    )
+                    self.last_t_bktio = time.time()
+                    self.cnt_qi_empty = 0
+                    self.cnt_qo_empty = 0
 
         logging.warning(
             "[BigPlayback.bucket_io()]: returning from IO thread."

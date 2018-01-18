@@ -102,18 +102,18 @@ class ExpStat(object):
         self._disc = 0.9
         self._eps_n = 100
 
-    def __call__(self, exp_dir, k=10):
-        obj_names = sorted(os.listdir(exp_dir))[:k]
+    def __call__(self, exp_dir, st=1, ed=10):
+        obj_names = sorted(os.listdir(exp_dir))[st-1:ed]
         objStat = ObjStat(self._eps_n, self._disc)
         exp_info = []
         for obj_name in obj_names:
-            obj_dir = exp_dir+"/"+obj_name + "/logging"
+            obj_dir = exp_dir+"/"+obj_name + "/logging_0"
             obj_info = objStat(obj_dir)
             exp_info.append(obj_info)
         return np.mean(exp_info, axis=0), np.var(exp_info, axis=0)
 
 
 if __name__ == "__main__":
-    exp_dir = "/home/pirate03/work/agents/Compare/AgentStepAsCkpt/exp09"
+    exp_dir = "/home/pirate03/work/agents/Compare/AgentStepAsCkpt/exp01"
     expStat = ExpStat()
-    print expStat(exp_dir, k=10)
+    print expStat(exp_dir, st=1, ed=1)
