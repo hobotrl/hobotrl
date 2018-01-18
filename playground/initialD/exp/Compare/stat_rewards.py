@@ -114,6 +114,6 @@ class ExpStat(object):
 
 
 if __name__ == "__main__":
-    exp_dir = "/home/pirate03/work/agents/Compare/AgentStepAsCkpt/exp01"
+    exp_dir = "/home/pirate03/work/agents/Compare/AgentStepAsCkpt/rule"
     expStat = ExpStat()
-    print expStat(exp_dir, st=1, ed=1)
+    print expStat(exp_dir, st=1, ed=3)
