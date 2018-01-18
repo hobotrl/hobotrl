@@ -6,7 +6,7 @@ import logging
 import traceback
 import json
 import operator
-import Queue
+from collections import deque
 from threading import Thread, Event
 import wrapt
 import numpy as np
@@ -971,8 +971,8 @@ class BigPlayback(Playback):
         self._buckets_loading = {i: False for i in range(len(self._buckets))}
         self._buckets_saving = {i: False for i in range(len(self._buckets))}
         self._buckets_sample_quota = {}  # remaining sample quota for active buckets
-        self._buckets_to_save = Queue.Queue()
-        self._buckets_to_load = Queue.Queue()
+        self._buckets_to_save = deque()
+        self._buckets_to_load = deque()
         self._close_flag = False
         self._monitor_stop_event = Event()
         self._monitor_stop_event.clear()
@@ -1025,7 +1025,7 @@ class BigPlayback(Playback):
         # adjust push_bucket
         if swap_flag:
             self._buckets_saving[self._push_bucket] = True
-            self._buckets_to_save.put(self._push_bucket)
+            self._buckets_to_save.appendleft(self._push_bucket)
             nxt_push_bucket = (self._push_bucket + 1) % self._bucket_count
             self._push_bucket = nxt_push_bucket
             logging.info(
@@ -1035,7 +1035,7 @@ class BigPlayback(Playback):
 
             nxt_push_bucket = (self._push_bucket + 1) % self._bucket_count
             self._buckets_loading[nxt_push_bucket] = True
-            self._buckets_to_load.put(nxt_push_bucket)
+            self._buckets_to_load.appendleft(nxt_push_bucket)
 
     def add_sample(self, sample, index, sample_score=0):
         raise NotImplementedError(
@@ -1254,7 +1254,7 @@ class BigPlayback(Playback):
         load_buckets.append(next_push_bucket)
         for bkt in load_buckets:
             self._buckets_loading[bkt] = True
-            self._buckets_to_load.put(bkt)
+            self._buckets_to_load.append(bkt)
         while True:
             if all([bid in self._buckets_active for bid in load_buckets]):
                 break
@@ -1312,7 +1312,7 @@ class BigPlayback(Playback):
             # put into load queue and let IO thread to load bucket.
             for bkt in load_buckets:
                 self._buckets_loading[bkt] = True
-                self._buckets_to_load.put(bkt)
+                self._buckets_to_load.append(bkt)
 
         if time.time() - self.last_t_maintain > 60:
             logging.warning(
@@ -1396,47 +1396,47 @@ class BigPlayback(Playback):
             try:
                 # Save buckets
                 try:
-                    bkt = self._buckets_to_save.get_nowait()
-                    logging.warning(
-                        "[BigPlayback.bucket_io()]: "
-                        "notified to save bucket {}.".format(bkt)
-                    )
-                    try:
-                        self.__save_one(bkt)
-                    except:
-                        logging.warning(traceback.format_exc())
+                    if len(self._buckets_to_save) > 0:
+                        bkt = self._buckets_to_save.popleft()
                         logging.warning(
                             "[BigPlayback.bucket_io()]: "
-                            "exception saving bucket {}.".format(bkt)
+                            "notified to save bucket {}.".format(bkt)
                         )
-                    finally:
-                        # deactivate this bucket no matter what
-                        # if the transaction is not finished leave as is.
-                        self._buckets_saving[bkt] = False
-                        self._buckets_to_save.task_done()
-                except Queue.Empty:
+                        try:
+                            self.__save_one(bkt)
+                        except:
+                            logging.warning(traceback.format_exc())
+                            logging.warning(
+                                "[BigPlayback.bucket_io()]: "
+                                "exception saving bucket {}.".format(bkt)
+                            )
+                        finally:
+                            # deactivate this bucket no matter what
+                            # if the transaction is not finished leave as is.
+                            self._buckets_saving[bkt] = False
+                except IndexError:
                     pass
                     self.cnt_qo_empty += 1
 
                 # Load buckets
                 try:
-                    bkt = self._buckets_to_load.get_nowait()
-                    logging.warning(
-                        "[BigPlayback.bucket_io()]: "
-                        "notified to load bucket {}.".format(bkt)
-                    )
-                    try:
-                        self.__load_one(bkt)
-                    except:
-                        logging.warning(traceback.format_exc())
+                    if len(self._buckets_to_load) > 0:
+                        bkt = self._buckets_to_load.popleft()
                         logging.warning(
                             "[BigPlayback.bucket_io()]: "
-                            "exception loading bucket {}.".format(bkt)
+                            "notified to load bucket {}.".format(bkt)
                         )
-                    finally:
-                        self._buckets_loading[bkt] = False
-                        self._buckets_to_load.task_done()
-                except Queue.Empty:
+                        try:
+                            self.__load_one(bkt)
+                        except:
+                            logging.warning(traceback.format_exc())
+                            logging.warning(
+                                "[BigPlayback.bucket_io()]: "
+                                "exception loading bucket {}.".format(bkt)
+                            )
+                        finally:
+                            self._buckets_loading[bkt] = False
+                except IndexError:
                     pass
                     self.cnt_qi_empty += 1
             except:
