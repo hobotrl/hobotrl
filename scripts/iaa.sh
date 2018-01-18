@@ -7,7 +7,7 @@
 
 log_dir="./log/MsPacman/OTDQN_mom_decoder"
 mkdir -p ${log_dir}
-CUDA_VISIBLE_DEVICES=2 python test/exp_iaa.py run --name MsPacmanOTDQN_mom_decoder --logdir ${log_dir} > ${log_dir}/log.txt 2>&1 &
+CUDA_VISIBLE_DEVICES=0 python test/exp_iaa.py run --name MsPacmanOTDQN_mom_decoder --logdir ${log_dir} > ${log_dir}/log.txt 2>&1 &
 
 log_dir1="./log/MsPacman/OTDQN_ob"
 mkdir -p ${log_dir1}
@@ -19,4 +19,4 @@ CUDA_VISIBLE_DEVICES=3 python test/exp_iaa.py run --name MsPacmanOTDQN_mom_1600 
 
 log_dir3="./log/MsPacman/OTDQN_mom"
 mkdir -p ${log_dir3}
-CUDA_VISIBLE_DEVICES=0 python test/exp_iaa.py run --name MsPacmanOTDQN --logdir ${log_dir3} > ${log_dir3}/log.txt 2>&1 &
+CUDA_VISIBLE_DEVICES=2 python test/exp_iaa.py run --name MsPacmanOTDQN --logdir ${log_dir3} > ${log_dir3}/log.txt 2>&1 &
