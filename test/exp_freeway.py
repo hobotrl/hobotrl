@@ -253,9 +253,8 @@ class OTDQNFreeway(OTDQNModelExperiment):
 Experiment.register(OTDQNFreeway, "OTDQN for Freeway with half input")
 
 
-class OTDQN_mom_1600(OTDQNModelExperiment):
-    def __init__(self, env=None, episode_n=16000,
-                 f_create_q=None, f_se=None, f_transition=None, f_decoder=None):
+class OTDQN_mom_1600(OTDQNFreeway):
+    def __init__(self, env=None, episode_n=16000, f_create_q=None, f_se=None, f_transition=None, f_decoder=None):
         if env is None:
             env = gym.make('Freeway-v0')
             env = Downsample(env, length_factor=2.0)

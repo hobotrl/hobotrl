@@ -1354,6 +1354,23 @@ class OTDQNModelCar(OTDQNModelExperiment):
 Experiment.register(OTDQNModelCar, "transition model with dqn, for CarRacing")
 
 
+class OTDQNModelCar_mom_1600(OTDQNModelCar):
+    def __init__(self, env=None, episode_n=16000, f_create_q=None, f_se=None, f_transition=None, f_decoder=None):
+        if env is None:
+            env = gym.make('CarRacing-v0')
+            env = wrap_car(env, 3, 3)
+        if f_se is None:
+            f = F(env)
+            f_create_q = f.create_q()
+            f_se = f.create_se()
+            f_transition = f.create_transition_momentum()
+            # f_decoder = f.decoder_multiflow()
+            f_decoder = f.create_decoder()
+
+        super(OTDQNModelCar_mom_1600, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder)
+Experiment.register(OTDQNModelCar_mom_1600, "Hidden state with 1600 size in transition model with dqn, for CarRacing")
+
+
 class OTDQNModelDriving(OTDQNModelCar):
     def __init__(self, env=None, episode_n=10000, f_create_q=None, f_se=None, f_transition=None, f_decoder=None,
                  lower_weight=1.0, upper_weight=1.0, rollout_depth=5, discount_factor=0.99, ddqn=False,
