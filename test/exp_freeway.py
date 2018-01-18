@@ -253,6 +253,28 @@ class OTDQNFreeway(OTDQNModelExperiment):
 Experiment.register(OTDQNFreeway, "OTDQN for Freeway with half input")
 
 
+class OTDQN_mom_1600(OTDQNModelExperiment):
+    def __init__(self, env=None, episode_n=16000,
+                 f_create_q=None, f_se=None, f_transition=None, f_decoder=None):
+        if env is None:
+            env = gym.make('Freeway-v0')
+            env = Downsample(env, length_factor=2.0)
+            env = ScaledFloatFrame(env)
+            env = MaxAndSkipEnv(env, skip=4, max_len=1)
+            env = FrameStack(env, k=4)
+
+        if f_se is None:
+            f = F(env, 256)
+            f_create_q = f.create_q()
+            f_se = f.create_se()
+            f_transition = f.create_transition_momentum()
+            # f_decoder = f.decoder_multiflow()
+            f_decoder = f.create_decoder()
+
+        super(OTDQN_mom_1600, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder)
+Experiment.register(OTDQN_mom_1600, "Hidden state size of 1600 on OTDQN for Freeway with half input")
+
+
 class OTDQN_ob_Freeway(OTDQNModelExperiment):
     def __init__(self, env=None, episode_n=16000,
                  f_create_q=None, f_se=None, f_transition=None, f_decoder=None, lower_weight=1.0, upper_weight=1.0,
