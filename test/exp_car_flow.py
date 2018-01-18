@@ -1360,7 +1360,7 @@ class OTDQNModelCar_mom_1600(OTDQNModelCar):
             env = gym.make('CarRacing-v0')
             env = wrap_car(env, 3, 3)
         if f_se is None:
-            f = F(env)
+            f = F(env, 1600)
             f_create_q = f.create_q()
             f_se = f.create_se()
             f_transition = f.create_transition_momentum()

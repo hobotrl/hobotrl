@@ -198,7 +198,7 @@ class Freeway_ob_I2A(Freeway):
 Experiment.register(Freeway_ob_I2A, "Original I2A for Freeway")
 
 
-class OTDQNFreeway(OTDQNModelExperiment):
+class FreewayOTDQN_mom(OTDQNModelExperiment):
     def __init__(self, env=None, episode_n=16000,
                  f_create_q=None, f_se=None, f_transition=None, f_decoder=None, lower_weight=1.0, upper_weight=1.0,
                  rollout_depth=5, discount_factor=0.99, ddqn=False, target_sync_interval=100, target_sync_rate=1.0,
@@ -245,15 +245,15 @@ class OTDQNFreeway(OTDQNModelExperiment):
         #         return sampler
         #     sampler_creator = create_sample
 
-        super(OTDQNFreeway, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder, lower_weight,
+        super(FreewayOTDQN_mom, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder, lower_weight,
                                            upper_weight, rollout_depth, discount_factor, ddqn, target_sync_interval,
                                            target_sync_rate, greedy_epsilon, network_optimizer, max_gradient,
                                            update_interval, replay_size, batch_size, curriculum, skip_step,
                                            sampler_creator, asynchronous, save_image_interval)
-Experiment.register(OTDQNFreeway, "OTDQN for Freeway with half input")
+Experiment.register(FreewayOTDQN_mom, "OTDQN for Freeway with half input")
 
 
-class OTDQN_mom_1600(OTDQNFreeway):
+class FreewayOTDQN_mom_1600(FreewayOTDQN_mom):
     def __init__(self, env=None, episode_n=16000, f_create_q=None, f_se=None, f_transition=None, f_decoder=None):
         if env is None:
             env = gym.make('Freeway-v0')
@@ -263,15 +263,15 @@ class OTDQN_mom_1600(OTDQNFreeway):
             env = FrameStack(env, k=4)
 
         if f_se is None:
-            f = F(env, 256)
+            f = F(env, 1600)
             f_create_q = f.create_q()
             f_se = f.create_se()
             f_transition = f.create_transition_momentum()
             # f_decoder = f.decoder_multiflow()
             f_decoder = f.create_decoder()
 
-        super(OTDQN_mom_1600, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder)
-Experiment.register(OTDQN_mom_1600, "Hidden state size of 1600 on OTDQN for Freeway with half input")
+        super(FreewayOTDQN_mom_1600, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder)
+Experiment.register(FreewayOTDQN_mom_1600, "Hidden state size of 1600 on OTDQN for Freeway with half input")
 
 
 class OTDQN_ob_Freeway(OTDQNModelExperiment):
