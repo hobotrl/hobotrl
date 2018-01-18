@@ -229,6 +229,30 @@ class Network(object):
         return out
 
     @staticmethod
+    def conv2d_transpose(input_var, h, w, out_channel, strides=[1, 1], padding="SAME", activation=tf.nn.relu, l2=1e-4,
+                         var_scope=""):
+        with tf.variable_scope(var_scope):
+            out = tf.layers.conv2d_transpose(inputs=input_var, filters=out_channel, kernel_size=[w, h],
+                                             strides=strides, padding=padding, activation=activation,
+                                             use_bias=True, kernel_initializer=layers.xavier_initializer(),
+                                             # bias_initializer=layers.xavier_initializer(),
+                                             kernel_regularizer=layers.l2_regularizer(l2),
+                                             bias_regularizer=layers.l2_regularizer(l2))
+        return out
+
+    @staticmethod
+    def conv2ds_transpose(input_var, shape=[(64, 4, 1)], padding="SAME", activation=tf.nn.relu, l2=1e-4, var_scope=""):
+        out = input_var
+        with tf.variable_scope(var_scope):
+            for i in range(len(shape)):
+                s = shape[i]
+                filter_n, kernel_n, strides_n = s
+                out = Network.conv2d_transpose(out, h=kernel_n, w=kernel_n, out_channel=filter_n,
+                                               strides=[strides_n, strides_n], padding=padding,
+                                               activation=activation, l2=l2, var_scope="conv%d" % i)
+        return out
+
+    @staticmethod
     def clipped_square(value, clip=1.0):
         abs_value = tf.abs(value)
         quadratic = tf.minimum(abs_value, clip)

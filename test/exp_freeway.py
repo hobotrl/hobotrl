@@ -25,7 +25,6 @@ class Freeway_A3C(A3CExperiment):
                  batch_size=32):
         if env is None:
             env = gym.make('Freeway-v0')
-            # env = Downsample(env, length_factor=2.0)
             env = ScaledFloatFrame(env)
             env = MaxAndSkipEnv(env, skip=4, max_len=1)
             env = FrameStack(env, k=4)
@@ -66,7 +65,7 @@ class Freeway_A3C_half(A3CExperiment):
                  batch_size=32):
         if env is None:
             env = gym.make('Freeway-v0')
-            env = Downsample(env, length_factor=2.0)
+            env = Downsample(env, dst_size=[96, 96])
             env = ScaledFloatFrame(env)
             env = MaxAndSkipEnv(env, skip=4, max_len=1)
             env = FrameStack(env, k=4)
@@ -115,7 +114,6 @@ class Freeway(A3CExperimentWithI2A):
                  dynamic_skip_step=[10000, 20000], with_ob=False):
         if env is None:
             env = gym.make('Freeway-v0')
-            # env = Downsample(env, length_factor=2.0)
             env = ScaledFloatFrame(env)
             env = MaxAndSkipEnv(env, skip=4, max_len=1)
             env = FrameStack(env, k=4)
@@ -148,7 +146,7 @@ class Freeway_mom_half(Freeway):
     def __init__(self, env=None, dynamic_skip_step=[30000, 60000]):
         if env is None:
             env = gym.make('Freeway-v0')
-            env = Downsample(env, length_factor=2.0)
+            env = Downsample(env, dst_size=[96, 96])
             env = ScaledFloatFrame(env)
             env = MaxAndSkipEnv(env, skip=4, max_len=1)
             env = FrameStack(env, k=4)
@@ -166,7 +164,7 @@ class Freeway_mom_I2A_half(Freeway):
     def __init__(self, env=None, policy_with_iaa=True, dynamic_skip_step=[30000, 60000]):
         if env is None:
             env = gym.make('Freeway-v0')
-            env = Downsample(env, length_factor=2.0)
+            env = Downsample(env, dst_size=[96, 96])
             env = ScaledFloatFrame(env)
             env = MaxAndSkipEnv(env, skip=4, max_len=1)
             env = FrameStack(env, k=4)
@@ -179,7 +177,7 @@ class Freeway_ob_I2A(Freeway):
                  with_ob=True):
         if env is None:
             env = gym.make('Freeway-v0')
-            env = Downsample(env, length_factor=2.0)
+            env = Downsample(env, dst_size=[96, 96])
             env = ScaledFloatFrame(env)
             env = MaxAndSkipEnv(env, skip=4, max_len=1)
             env = FrameStack(env, k=4)
@@ -207,7 +205,7 @@ class FreewayOTDQN_mom(OTDQNModelExperiment):
                  asynchronous=False, save_image_interval=10000):
         if env is None:
             env = gym.make('Freeway-v0')
-            env = Downsample(env, length_factor=2.0)
+            env = Downsample(env, dst_size=[96, 96])
             env = ScaledFloatFrame(env)
             env = MaxAndSkipEnv(env, skip=4, max_len=1)
             env = FrameStack(env, k=4)
@@ -257,7 +255,7 @@ class FreewayOTDQN_mom_1600(FreewayOTDQN_mom):
     def __init__(self, env=None, episode_n=16000, f_create_q=None, f_se=None, f_transition=None, f_decoder=None):
         if env is None:
             env = gym.make('Freeway-v0')
-            env = Downsample(env, length_factor=2.0)
+            env = Downsample(env, dst_size=[96, 96])
             env = ScaledFloatFrame(env)
             env = MaxAndSkipEnv(env, skip=4, max_len=1)
             env = FrameStack(env, k=4)
@@ -274,6 +272,27 @@ class FreewayOTDQN_mom_1600(FreewayOTDQN_mom):
 Experiment.register(FreewayOTDQN_mom_1600, "Hidden state size of 1600 on OTDQN for Freeway with half input")
 
 
+class FreewayOTDQN_mom_decoder(FreewayOTDQN_mom):
+    def __init__(self, env=None, episode_n=16000, f_create_q=None, f_se=None, f_transition=None, f_decoder=None):
+        if env is None:
+            env = gym.make('Freeway-v0')
+            env = Downsample(env, dst_size=[96, 96])
+            env = ScaledFloatFrame(env)
+            env = MaxAndSkipEnv(env, skip=4, max_len=1)
+            env = FrameStack(env, k=4)
+
+        if f_se is None:
+            f = F(env, 256)
+            f_create_q = f.create_q()
+            f_se = f.create_se()
+            f_transition = f.create_transition_momentum()
+            # f_decoder = f.decoder_multiflow()
+            f_decoder = f.create_decoder_deconv()
+
+        super(FreewayOTDQN_mom_decoder, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder)
+Experiment.register(FreewayOTDQN_mom_decoder, "Deconv decoder and hidden state size of 256 on OTDQN for Freeway with half input")
+
+
 class OTDQN_ob_Freeway(OTDQNModelExperiment):
     def __init__(self, env=None, episode_n=16000,
                  f_create_q=None, f_se=None, f_transition=None, f_decoder=None, lower_weight=1.0, upper_weight=1.0,
@@ -283,7 +302,7 @@ class OTDQN_ob_Freeway(OTDQNModelExperiment):
                  asynchronous=False, save_image_interval=10000, with_ob=True):
         if env is None:
             env = gym.make('Freeway-v0')
-            env = Downsample(env, length_factor=2.0)
+            env = Downsample(env, dst_size=[96, 96])
             env = ScaledFloatFrame(env)
             env = MaxAndSkipEnv(env, skip=4, max_len=1)
             env = FrameStack(env, k=4)

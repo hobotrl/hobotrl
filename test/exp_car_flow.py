@@ -270,6 +270,40 @@ class F(object):
             return {"next_frame": next_frame}
         return create_decoder
 
+    def create_decoder_deconv(self):
+        def create_decoder_deconv(inputs):
+            l2 = 1e-7
+            input_goal = inputs[0]
+            input_frame = inputs[1]
+
+            height = ((((self.dim_observation[0] + 3) / 4 + 1) / 2) + 1) / 2
+            width = ((((self.dim_observation[1] + 3) / 4 + 1) / 2) + 1) / 2
+
+            resized_goal = hrl.utils.Network.layer_fcs(input_goal, [], height * width,
+                                                       activation_hidden=self.nonlinear,
+                                                       activation_out=self.nonlinear,
+                                                       l2=l2,
+                                                       var_scope="resized_goal")
+
+            twoDgoal = tf.reshape(resized_goal, [-1, height, width, 1])
+
+            next_frame_before = hrl.utils.Network.conv2ds_transpose(twoDgoal,
+                                                                    shape=[(self.chn_se_2d, 3, 2), (16, 4, 2), (8, 8, 4)],
+                                                                    activation=self.nonlinear,
+                                                                    l2=l2,
+                                                                    var_scope="next_frame_before")
+
+            next_frame = hrl.utils.Network.conv2ds(next_frame_before,
+                                                   shape=[(3, 3, 1)],
+                                                   out_flatten=False,
+                                                   activation=self.nonlinear,
+                                                   l2=l2,
+                                                   var_scope="next_frame")
+
+            return {"next_frame": next_frame}
+
+        return create_decoder_deconv
+
     def create_decoder_deform(self):
         def create_decoder_deform(inputs):
             l2 = 1e-7
@@ -1371,6 +1405,48 @@ class OTDQNModelCar_mom_1600(OTDQNModelCar):
 Experiment.register(OTDQNModelCar_mom_1600, "Hidden state with 1600 size in transition model with dqn, for CarRacing")
 
 
+class OTDQNModelCar_mom_decoder(OTDQNModelCar):
+    def __init__(self, env=None, episode_n=16000, f_create_q=None, f_se=None, f_transition=None, f_decoder=None):
+        if env is None:
+            env = gym.make('CarRacing-v0')
+            env = wrap_car(env, 3, 3)
+        if f_se is None:
+            f = F(env, 256)
+            f_create_q = f.create_q()
+            f_se = f.create_se()
+            f_transition = f.create_transition_momentum()
+            # f_decoder = f.decoder_multiflow()
+            f_decoder = f.create_decoder_deconv()
+
+        super(OTDQNModelCar_mom_decoder, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder)
+Experiment.register(OTDQNModelCar_mom_decoder, "Hidden state with 1600 size in transition model with dqn, for CarRacing")
+
+
+class OTDQN_ob(OTDQNModelExperiment):
+    def __init__(self, env=None, episode_n=16000,
+                 f_create_q=None, f_se=None, f_transition=None, f_decoder=None, lower_weight=1.0, upper_weight=1.0,
+                 rollout_depth=5, discount_factor=0.99, ddqn=False, target_sync_interval=100, target_sync_rate=1.0,
+                 greedy_epsilon=0.1, network_optimizer=None, max_gradient=10.0, update_interval=4, replay_size=1024,
+                 batch_size=16, curriculum=[1, 3, 5], skip_step=[500000, 1000000], sampler_creator=None,
+                 asynchronous=False, save_image_interval=10000, with_ob=True):
+        if env is None:
+            env = gym.make('CarRacing-v0')
+            env = wrap_car(env, 3, 3)
+        if f_se is None:
+            f = F(env)
+            f_create_q = f.create_q()
+            f_se = f.create_se()
+            f_transition = f.create_env_upsample_fc()
+            # f_decoder = f.decoder_multiflow()
+            f_decoder = f.pass_decoder()
+        super(OTDQN_ob, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder, lower_weight,
+                                            upper_weight, rollout_depth, discount_factor, ddqn, target_sync_interval,
+                                            target_sync_rate, greedy_epsilon, network_optimizer, max_gradient,
+                                            update_interval, replay_size, batch_size, curriculum, skip_step,
+                                            sampler_creator, asynchronous, save_image_interval, with_ob)
+Experiment.register(OTDQN_ob, "Old traditional env model with dqn, for CarRacing")
+
+
 class OTDQNModelDriving(OTDQNModelCar):
     def __init__(self, env=None, episode_n=10000, f_create_q=None, f_se=None, f_transition=None, f_decoder=None,
                  lower_weight=1.0, upper_weight=1.0, rollout_depth=5, discount_factor=0.99, ddqn=False,
@@ -1421,31 +1497,6 @@ class OTDQNModelDriving(OTDQNModelCar):
                                                 network_optimizer, max_gradient, update_interval, replay_size,
                                                 batch_size, sampler_creator, asynchronous)
 Experiment.register(OTDQNModelDriving, "transition model with dqn, for k8s driving env")
-
-
-class OTDQN_ob(OTDQNModelExperiment):
-    def __init__(self, env=None, episode_n=16000,
-                 f_create_q=None, f_se=None, f_transition=None, f_decoder=None, lower_weight=1.0, upper_weight=1.0,
-                 rollout_depth=5, discount_factor=0.99, ddqn=False, target_sync_interval=100, target_sync_rate=1.0,
-                 greedy_epsilon=0.1, network_optimizer=None, max_gradient=10.0, update_interval=4, replay_size=1024,
-                 batch_size=16, curriculum=[1, 3, 5], skip_step=[500000, 1000000], sampler_creator=None,
-                 asynchronous=False, save_image_interval=10000, with_ob=True):
-        if env is None:
-            env = gym.make('CarRacing-v0')
-            env = wrap_car(env, 3, 3)
-        if f_se is None:
-            f = F(env)
-            f_create_q = f.create_q()
-            f_se = f.create_se()
-            f_transition = f.create_env_upsample_fc()
-            # f_decoder = f.decoder_multiflow()
-            f_decoder = f.pass_decoder()
-        super(OTDQN_ob, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder, lower_weight,
-                                            upper_weight, rollout_depth, discount_factor, ddqn, target_sync_interval,
-                                            target_sync_rate, greedy_epsilon, network_optimizer, max_gradient,
-                                            update_interval, replay_size, batch_size, curriculum, skip_step,
-                                            sampler_creator, asynchronous, save_image_interval, with_ob)
-Experiment.register(OTDQN_ob, "Old traditional env model with dqn, for CarRacing")
 
 
 if __name__ == '__main__':

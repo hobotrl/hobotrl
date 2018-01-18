@@ -20,8 +20,7 @@ class MsPacmanI2A(A3CExperimentWithI2A):
                  entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4), batch_size=32):
         if env is None:
             env = gym.make('MsPacman-v0')
-            env = CropMsPacman(env)
-            env = Downsample(env, length_factor=2.0)
+            env = Downsample(env, dst_size=[96, 96])
             env = ScaledFloatFrame(env)
             env = ScaledRewards(env, 0.1)
             env = MaxAndSkipEnv(env, skip=4, max_len=1)
@@ -407,8 +406,7 @@ class MsPacmanOTDQN(OTDQNModelExperiment):
                  asynchronous=False, save_image_interval=10000):
         if env is None:
             env = gym.make('MsPacman-v0')
-            env = CropMsPacman(env)
-            env = Downsample(env, length_factor=2.0)
+            env = Downsample(env, dst_size=[96, 96])
             env = ScaledFloatFrame(env)
             env = ScaledRewards(env, 0.01)
             env = MaxAndSkipEnv(env, skip=4, max_len=1)
@@ -434,8 +432,7 @@ class MsPacmanOTDQN_mom_1600(MsPacmanOTDQN):
     def __init__(self, env=None, episode_n=16000, f_create_q=None, f_se=None, f_transition=None, f_decoder=None):
         if env is None:
             env = gym.make('MsPacman-v0')
-            env = CropMsPacman(env)
-            env = Downsample(env, length_factor=2.0)
+            env = Downsample(env, dst_size=[96, 96])
             env = ScaledFloatFrame(env)
             env = ScaledRewards(env, 0.01)
             env = MaxAndSkipEnv(env, skip=4, max_len=1)
@@ -453,6 +450,28 @@ class MsPacmanOTDQN_mom_1600(MsPacmanOTDQN):
 Experiment.register(MsPacmanOTDQN_mom_1600, "Hidden state size of 1600 on OTDQN for MsPacman with half input")
 
 
+class MsPacmanOTDQN_mom_decoder(MsPacmanOTDQN):
+    def __init__(self, env=None, episode_n=16000, f_create_q=None, f_se=None, f_transition=None, f_decoder=None):
+        if env is None:
+            env = gym.make('MsPacman-v0')
+            env = Downsample(env, dst_size=[96, 96])
+            env = ScaledFloatFrame(env)
+            env = ScaledRewards(env, 0.01)
+            env = MaxAndSkipEnv(env, skip=4, max_len=1)
+            env = FrameStack(env, k=4)
+
+        if f_se is None:
+            f = F(env, 256)
+            f_create_q = f.create_q()
+            f_se = f.create_se()
+            f_transition = f.create_transition_momentum()
+            # f_decoder = f.decoder_multiflow()
+            f_decoder = f.create_decoder_deconv()
+
+        super(MsPacmanOTDQN_mom_decoder, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder)
+Experiment.register(MsPacmanOTDQN_mom_decoder, "Deconv decoder and hidden state size of 1600 on OTDQN for MsPacman with half input")
+
+
 class OTDQN_ob_MsPacman(OTDQNModelExperiment):
     def __init__(self, env=None, episode_n=16000,
                  f_create_q=None, f_se=None, f_transition=None, f_decoder=None, lower_weight=1.0, upper_weight=1.0,
@@ -462,8 +481,7 @@ class OTDQN_ob_MsPacman(OTDQNModelExperiment):
                  asynchronous=False, save_image_interval=10000, with_ob=True):
         if env is None:
             env = gym.make('MsPacman-v0')
-            env = CropMsPacman(env)
-            env = Downsample(env, length_factor=2.0)
+            env = Downsample(env, dst_size=[96, 96])
             env = ScaledFloatFrame(env)
             env = ScaledRewards(env, 0.01)
             env = MaxAndSkipEnv(env, skip=4, max_len=1)
