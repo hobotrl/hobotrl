@@ -7,6 +7,7 @@ from exp_DrSimKub_AsyncDQN_LanePaper_ExpID01 import exp as exp01
 from exp_DrSimKub_AsyncDQN_LanePaper_ExpID09 import exp as exp09
 from exp_DrSimKub_AsyncDQN_LanePaper_ExpID10 import exp as exp10
 from exp_DrSimKub_AsyncDQN_LanePaper_ExpID19 import exp as exp19
+from exp_DrSimKub_AsyncDQN_LanePaper_ExpID21 import exp as exp21
 
 
 def concat_names(prefix, exp_info):
@@ -33,7 +34,7 @@ def lunzhun(infos):
 if __name__ == "__main__":
     # exp_list = [exp01, exp01]
     test_prefix_dir = "../../../../../../work/agents/Compare/AgentStepAsCkpt"
-    exp_infos = {'exp01': range(1, 10), 'exp09': range(1, 10), 'exp10': range(1, 10), 'exp19': range(1, 10)}
+    exp_infos = {'exp01': range(1, 11), 'exp09': range(0, 10), 'exp10': range(0, 10), 'exp19': range(1, 11)}
     exp_infos = concat_names(test_prefix_dir, exp_infos)
     exp_list = []
     # para_list = [['../../../../../../work/agents/Comapre/AgentStepAsCkpt/exp01/1'],['../../../../../../work/agents/Comapre/AgentStepAsCkpt/exp01/2']]
@@ -61,8 +62,8 @@ if __name__ == "__main__":
             exp_list.append(exp10)
         elif 'exp19' in para:
             exp_list.append(exp19)
-        # elif 'exp21' in para:
-        #     exp_list.append(exp21)
+        elif 'exp21' in para:
+            exp_list.append(exp21)
         # elif 'exp22' in para:
         #     exp_list.append(exp22)
         # elif 'exp23' in para:
