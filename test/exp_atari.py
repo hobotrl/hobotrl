@@ -16,6 +16,7 @@ from tensorflow.contrib.layers import l2_regularizer
 
 from hobotrl.environments import *
 import hobotrl.utils as utils
+import hobotrl.playback as playback
 from exp_algorithms import *
 
 
@@ -125,6 +126,35 @@ class PERPong(PERDQNExperiment):
         super(PERPong, self).__init__(env, f)
 
 Experiment.register(PERPong, "PERDQN for Pong")
+
+
+class APEROTDQNBreakout(AOTDQNExperiment):
+
+    def __init__(self, env=None, f_create_q=None, episode_n=10000, discount_factor=0.99,
+                 ddqn=False,
+                 target_sync_interval=100,
+                 target_sync_rate=1.0, update_interval=4, replay_size=1000, batch_size=8, lower_weight=1.0,
+                 upper_weight=1.0, neighbour_size=8,
+                 greedy_epsilon=utils.CappedLinear(2e5, 0.1, 0.01),
+                 learning_rate=1e-4, sampler_creator=None,
+                 **kwargs):
+        if env is None:
+            env = gym.make("BreakoutNoFrameskip-v4")
+            env = full_wrap_dqn(env)
+            env = RewardLongerEnv(env)
+        f_create_q = f_dqn_atari(env.action_space.n)
+
+        def f(args):
+            sampler = sampling.TruncateTrajectorySampler(replay_memory=playback.NearPrioritizedPlayback(5000),
+                                                         batch_size=batch_size, trajectory_length=8,
+                                                         interval=update_interval)
+            return sampler
+        sampler_creator = f
+        super(APEROTDQNBreakout, self).__init__(env, f_create_q, episode_n, discount_factor, ddqn, target_sync_interval,
+                                                target_sync_rate, update_interval, replay_size, batch_size,
+                                                lower_weight, upper_weight, neighbour_size, greedy_epsilon,
+                                                learning_rate, sampler_creator, **kwargs)
+Experiment.register(APEROTDQNBreakout, "APEROTDQNBreakout")
 
 
 def f_a3c(num_action):

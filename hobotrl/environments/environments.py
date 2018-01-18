@@ -907,6 +907,24 @@ class EpisodicLifeEnv(gym.Wrapper):
         return obs
 
 
+class RewardLongerEnv(gym.Wrapper):
+
+    def __init__(self, env, end_reward=-1.0):
+        """
+        penalty at episode end, encouraging longer episodes
+        :param env:
+        :param end_reward:
+        """
+        super(RewardLongerEnv, self).__init__(env)
+        self._end_reward = end_reward
+
+    def _step(self, action):
+        obs, reward, done, info = self.env.step(action)
+        if done:
+            reward += self._end_reward
+        return obs, reward, done, info
+
+
 class CropMsPacman(gym.ObservationWrapper):
     def __init__(self, env=None):
         super(CropMsPacman, self).__init__(env)

@@ -245,6 +245,12 @@ class TruncateTrajectorySampler(Sampler):
         return self._replay.get_batch((np.arange(start, end + 1) + self._replay.get_capacity())
                                       % self._replay.get_capacity())
 
+    def post_step(self, batch, info):
+        if "score" in info:
+            index = np.concatenate([t["_index"] for t in batch], axis=0)
+            score = info["score"]
+            self._replay.update_score(index, score)
+
 
 class TruncateTrajectorySampler2(Sampler):
     """Sample {batch_size} trajectories of length {trajectory_length} in every

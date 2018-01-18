@@ -583,10 +583,11 @@ class NearPrioritizedPlayback(MapPlayback):
         if sample_score is None:
             if self.data is not None and self.data["_score"].data is not None:
                 sample_score = np.max(self.data["_score"].data)
+                logging.warning("maxed score:%s", sample_score)
             else:
                 sample_score = 0.0
-        print "pushed sample score:", sample_score
-        sample["_score"] = np.asarray([float(sample_score)], dtype=float)
+        logging.warning("pushed sample score:%s", sample_score)
+        sample["_score"] = float(sample_score)
         if self.evict_policy == "sequence":
             super(NearPrioritizedPlayback, self).push_sample(sample, sample_score)
         else:
@@ -605,7 +606,7 @@ class NearPrioritizedPlayback(MapPlayback):
         s_min = np.min(score)
         if s_min < 0:
             score = score - s_min
-        exponent = self.priority_bias() if callable(self.priority_bias) else self.priority_bias
+        exponent = self.priority_bias
         score = np.power(score + self.epsilon, exponent)
         p = score / np.sum(score)
         return p
@@ -628,13 +629,12 @@ class NearPrioritizedPlayback(MapPlayback):
             p = self.data["_score"].data[:self.get_count()]
         else:
             p = self.data["_score"].data
-        p = self.compute_distribution(p.reshape(-1))
+        p = self.compute_distribution(np.array(p).reshape(-1))
         index = np.random.choice(np.arange(len(p)), size=batch_size, replace=False, p=p)
         priority = p[index]
         batch = super(NearPrioritizedPlayback, self).get_batch(index)
         sample_count = self.get_count()
-        is_exponent = self.importance_weight() if callable(self.importance_weight) \
-            else self.importance_weight
+        is_exponent = self.importance_weight
         w = np.power(sample_count * priority, -is_exponent)
         # global max instead of batch max.
         # todo mathematically, global max is the correct one to use.
@@ -650,7 +650,8 @@ class NearPrioritizedPlayback(MapPlayback):
 
     def update_score(self, index, score):
         # logging.warning("update score[%s]: %s -> %s", index, self.data["_score"].data[index], score)
-        self.data["_score"].data[index] = score
+        for i, s in zip(index, score):
+            self.data["_score"].data[i] = s
 
 
 class NPPlayback(MapPlayback):
