@@ -1368,12 +1368,12 @@ class OTDQNModelCar(OTDQNModelExperiment):
                  rollout_depth=5, discount_factor=0.99, ddqn=False, target_sync_interval=100, target_sync_rate=1.0,
                  greedy_epsilon=0.1, network_optimizer=None, max_gradient=10.0, update_interval=4, replay_size=1024,
                  batch_size=16, curriculum=[1, 3, 5], skip_step=[500000, 1000000], sampler_creator=None,
-                 asynchronous=False, save_image_interval=10000):
+                 asynchronous=False, save_image_interval=10000, state_size=256):
         if env is None:
             env = gym.make('CarRacing-v0')
             env = wrap_car(env, 3, 3)
         if f_se is None:
-            f = F(env)
+            f = F(env, state_size)
             f_create_q = f.create_q()
             f_se = f.create_se()
             f_transition = f.create_transition_momentum()
@@ -1389,19 +1389,8 @@ Experiment.register(OTDQNModelCar, "transition model with dqn, for CarRacing")
 
 
 class OTDQNModelCar_mom_1600(OTDQNModelCar):
-    def __init__(self, env=None, episode_n=16000, f_create_q=None, f_se=None, f_transition=None, f_decoder=None):
-        if env is None:
-            env = gym.make('CarRacing-v0')
-            env = wrap_car(env, 3, 3)
-        if f_se is None:
-            f = F(env, 1600)
-            f_create_q = f.create_q()
-            f_se = f.create_se()
-            f_transition = f.create_transition_momentum()
-            # f_decoder = f.decoder_multiflow()
-            f_decoder = f.create_decoder()
-
-        super(OTDQNModelCar_mom_1600, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder)
+    def __init__(self, state_size=1600):
+        super(OTDQNModelCar_mom_1600, self).__init__(state_size=state_size)
 Experiment.register(OTDQNModelCar_mom_1600, "Hidden state with 1600 size in transition model with dqn, for CarRacing")
 
 
@@ -1448,11 +1437,11 @@ Experiment.register(OTDQN_ob, "Old traditional env model with dqn, for CarRacing
 
 
 class OTDQNModelDriving(OTDQNModelCar):
-    def __init__(self, env=None, episode_n=10000, f_create_q=None, f_se=None, f_transition=None, f_decoder=None,
+    def __init__(self, env=None, episode_n=16000, f_create_q=None, f_se=None, f_transition=None, f_decoder=None,
                  lower_weight=1.0, upper_weight=1.0, rollout_depth=5, discount_factor=0.99, ddqn=False,
                  target_sync_interval=100, target_sync_rate=1.0, greedy_epsilon=0.1, network_optimizer=None,
-                     max_gradient=10.0, update_interval=4, replay_size=100000, batch_size=10, sampler_creator=None,
-                 asynchronous=True):
+                 max_gradient=10.0, update_interval=4, replay_size=10000, batch_size=10, sampler_creator=None,
+                 state_size=1600, asynchronous=True):
         if env is None:
             env = ScaledFloatFrame(EnvNoOpSkipping(
                         env=EnvRewardVec2Scalar(
@@ -1467,35 +1456,35 @@ class OTDQNModelDriving(OTDQNModelCar):
                         n_skip=6, gamma=0.99, if_random_phase=True
                     )
             )
-        if sampler_creator is None:
-            max_traj_length = 200
-
-            def create_sample(args):
-                bucket_size = 8
-                traj_count = replay_size / max_traj_length
-                bucket_count = traj_count / bucket_size
-                active_bucket = 4
-                ratio = 1.0 * active_bucket / bucket_count
-                transition_epoch = 8
-                trajectory_epoch = transition_epoch * max_traj_length
-                memory = BigPlayback(
-                    bucket_cls=Playback,
-                    bucket_size=bucket_size,
-                    max_sample_epoch=trajectory_epoch,
-                    capacity=traj_count,
-                    active_ratio=ratio,
-                    cache_path=os.sep.join([args.logdir, "cache", str(args.index)])
-                )
-                sampler = sampling.TruncateTrajectorySampler2(memory, replay_size / max_traj_length, max_traj_length,
-                                                              batch_size=1, trajectory_length=batch_size,
-                                                              interval=update_interval)
-                return sampler
-            sampler_creator = create_sample
+        # if sampler_creator is None:
+        #     max_traj_length = 200
+        #
+        #     def create_sample(args):
+        #         bucket_size = 8
+        #         traj_count = replay_size / max_traj_length
+        #         bucket_count = traj_count / bucket_size
+        #         active_bucket = 4
+        #         ratio = 1.0 * active_bucket / bucket_count
+        #         transition_epoch = 8
+        #         trajectory_epoch = transition_epoch * max_traj_length
+        #         memory = BigPlayback(
+        #             bucket_cls=Playback,
+        #             bucket_size=bucket_size,
+        #             max_sample_epoch=trajectory_epoch,
+        #             capacity=traj_count,
+        #             active_ratio=ratio,
+        #             cache_path=os.sep.join([args.logdir, "cache", str(args.index)])
+        #         )
+        #         sampler = sampling.TruncateTrajectorySampler2(memory, replay_size / max_traj_length, max_traj_length,
+        #                                                       batch_size=1, trajectory_length=batch_size,
+        #                                                       interval=update_interval)
+        #         return sampler
+        #     sampler_creator = create_sample
         super(OTDQNModelDriving, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder, lower_weight,
                                                 upper_weight, rollout_depth, discount_factor, ddqn,
                                                 target_sync_interval, target_sync_rate, greedy_epsilon,
                                                 network_optimizer, max_gradient, update_interval, replay_size,
-                                                batch_size, sampler_creator, asynchronous)
+                                                batch_size, sampler_creator, asynchronous, state_size=state_size)
 Experiment.register(OTDQNModelDriving, "transition model with dqn, for k8s driving env")
 
 

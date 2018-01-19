@@ -13,10 +13,10 @@ log_dir1="./log/MsPacman/OTDQN_ob"
 mkdir -p ${log_dir1}
 CUDA_VISIBLE_DEVICES=1 python test/exp_iaa.py run --name OTDQN_ob_MsPacman --render_once true --logdir ${log_dir1} > ${log_dir1}/log.txt 2>&1 &
 
-log_dir2="./log/MsPacman/OTDQN_mom_1600"
-mkdir -p ${log_dir2}
-CUDA_VISIBLE_DEVICES=3 python test/exp_iaa.py run --name MsPacmanOTDQN_mom_1600 --logdir ${log_dir2} > ${log_dir2}/log.txt 2>&1 &
-
-log_dir3="./log/MsPacman/OTDQN_mom"
-mkdir -p ${log_dir3}
-CUDA_VISIBLE_DEVICES=2 python test/exp_iaa.py run --name MsPacmanOTDQN --logdir ${log_dir3} > ${log_dir3}/log.txt 2>&1 &
+#log_dir2="./log/MsPacman/OTDQN_mom_1600"
+#mkdir -p ${log_dir2}
+#CUDA_VISIBLE_DEVICES=3 python test/exp_iaa.py run --name MsPacmanOTDQN_mom_1600 --logdir ${log_dir2} > ${log_dir2}/log.txt 2>&1 &
+#
+#log_dir3="./log/MsPacman/OTDQN_mom"
+#mkdir -p ${log_dir3}
+#CUDA_VISIBLE_DEVICES=2 python test/exp_iaa.py run --name MsPacmanOTDQN --logdir ${log_dir3} > ${log_dir3}/log.txt 2>&1 &
