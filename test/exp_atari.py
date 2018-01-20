@@ -258,9 +258,16 @@ Experiment.register(DQNBattleZone, "DQN for BattleZone")
 class DQNBreakout(DQNExperiment):
     def __init__(self):
         env = gym.make("BreakoutNoFrameskip-v4")
-        env = ScaledFloatFrame(wrap_dqn(env))
+        env = full_wrap_dqn(env)
+        env = RewardLongerEnv(env)
         f = f_dqn_atari(env.action_space.n)
-        super(DQNBreakout, self).__init__(env, f)
+        super(DQNBreakout, self).__init__(env, f,
+                                          episode_n=10000,
+                                          greedy_epsilon=utils.CappedLinear(2e5, 0.1, 0.01),
+                                          batch_size=64,
+                                          network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(
+                                              tf.train.AdamOptimizer(1e-4), grad_clip=10.0)
+                                          )
 
 Experiment.register(DQNBreakout, "DQN for Breakout")
 

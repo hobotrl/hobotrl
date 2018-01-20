@@ -519,6 +519,7 @@ class ScheduledParamCollector(object):
     def __init__(self, *args, **kwargs):
         super(ScheduledParamCollector, self).__init__()
         self._params = {}
+        self._number_params = {}
         self.max_depth = 10
         self.max_param_num = 128  # no algorithm should expose more than 128 hyperparameters!
 
@@ -530,21 +531,27 @@ class ScheduledParamCollector(object):
         for i in range(len(args)):
             p = args[i]
             sub_prefix = "%s/%d" % (prefix, i)
+            type_p = type(p)
             if isinstance(p, ScheduledParam):
                 self.schedule_param(sub_prefix, p)
-            elif type(p) == list or type(p) == tuple:
+            elif type_p == list or type_p == tuple:
                 self.schedule_params(sub_prefix, _spc_depth+1, *p)
-            elif type(p) == dict:
+            elif type_p == dict:
                 self.schedule_params(sub_prefix, _spc_depth+1, **p)
+            elif type_p == int or type_p == float:
+                self.schedule_param_number(sub_prefix, p)
         for key in kwargs:
             p = kwargs[key]
             sub_prefix = "%s/%s" % (prefix, key)
+            type_p = type(p)
             if isinstance(p, ScheduledParam):
                 self.schedule_param(sub_prefix, p)
-            elif type(p) == list or type(p) == tuple:
+            elif type_p == list or type_p == tuple:
                 self.schedule_params(sub_prefix, _spc_depth+1, *p)
-            elif type(p) == dict:
+            elif type_p == dict:
                 self.schedule_params(sub_prefix, _spc_depth+1, **p)
+            elif type_p == int or type_p == float:
+                self.schedule_param_number(sub_prefix, p)
 
     def schedule_param(self, prefix, param):
         """
@@ -554,6 +561,10 @@ class ScheduledParamCollector(object):
         """
         self._params[prefix] = param
 
+    def schedule_param_number(self, prefix, param):
+        self._number_params[prefix] = param
+        pass
+
     def set_int_handle(self, int_handle):
         for k in self._params:
             param = self._params[k]
@@ -561,6 +572,9 @@ class ScheduledParamCollector(object):
 
     def get_params(self):
         return self._params
+
+    def get_number_params(self):
+        return self._number_params
 
 
 class CappedLinear(ScheduledParam):

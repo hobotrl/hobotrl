@@ -1196,5 +1196,51 @@ Experiment.register(
     "DQN car racing with random early termination and tail compensation."
 )
 
+
+class PPOCarRacing(PPOExperiment):
+
+    def __init__(self, env=None, f_create_net=None, episode_n=1000, discount_factor=0.9, entropy=1e-2, clip_epsilon=0.2,
+                 epoch_per_step=4,
+                 network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-4),
+                                                                           grad_clip=10.0),
+                 batch_size=32,
+                 horizon=256):
+        env = gym.make("CarRacing-v0")
+        env = wrap_car(env, 3, 3)
+        if f_create_net is None:
+            dim_action = env.action_space.n
+            activation = tf.nn.elu
+
+            def f(inputs):
+                l2 = 1e-7
+                input_state = inputs[0]
+                se = hrl.utils.Network.conv2ds(input_state,
+                                               shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
+                                               out_flatten=True,
+                                               activation=activation,
+                                               l2=l2,
+                                               var_scope="se")
+
+                v = hrl.network.Utils.layer_fcs(se, [200, 100], 1, l2=l2, var_scope="v")
+                v = tf.squeeze(v, axis=1)
+                pi = hrl.network.Utils.layer_fcs(se, [200, 128], dim_action,
+                                                 activation_out=tf.nn.softmax, l2=l2, var_scope="pi")
+                return {"v": v, "pi": pi}
+
+                # mean = hrl.network.Utils.layer_fcs(se, [200, 100], dim_action,
+                #                                    # activation_out=None,
+                #                                    activation_out=lambda x: tf.tanh(x / 4.0),
+                #                                    l2=l2, var_scope="mean")
+                # stddev = hrl.network.Utils.layer_fcs(se, [200, 100], dim_action,
+                #                                      # activation_out=None,
+                #                                      activation_out=lambda x: 4.0 * tf.sigmoid(x / 4.0),
+                #                                      l2=l2, var_scope="stddev")
+                # return {"v": v, "mean": mean, "stddev": stddev}
+            f_create_net = f
+
+        super(PPOCarRacing, self).__init__(env, f_create_net, episode_n, discount_factor, entropy, clip_epsilon,
+                                           epoch_per_step, network_optimizer_ctor, batch_size, horizon)
+
+
 if __name__ == '__main__':
     Experiment.main()

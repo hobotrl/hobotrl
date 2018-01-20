@@ -131,7 +131,7 @@ Experiment.register(ACConPendulumSearch, "continuous actor critic for Pendulum")
 class DQNPendulum(DQNExperiment):
 
     def __init__(self, env=None, f_create_q=None, episode_n=1000, discount_factor=0.99, ddqn=False, target_sync_interval=100,
-                 target_sync_rate=1.0, update_interval=4, replay_size=1000, batch_size=32, greedy_epsilon=0.3,
+                 target_sync_rate=1.0, update_interval=4, replay_size=1000, batch_size=32, greedy_epsilon=0.1,
                  network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3),
                                                                            grad_clip=10.0)):
         if env is None:

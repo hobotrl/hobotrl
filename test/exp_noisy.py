@@ -337,11 +337,14 @@ class NoisyDPGExperiment(Experiment):
                  dim_noise=2,
                  noise_stddev=1.0,
                  noise_weight=1.0,
+                 noise_stddev_weight=1e-4,
+                 noise_mean_weight=1e-2,
                  ou_params=(0.0, 0.2, 0.2),
                  network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3), grad_clip=10.0),
                  target_sync_interval=10,
                  target_sync_rate=0.01,
                  replay_size=1000,
+                 **kwargs
                  ):
         super(NoisyDPGExperiment, self).__init__()
         self._env, \
@@ -355,6 +358,8 @@ class NoisyDPGExperiment(Experiment):
             self._dim_noise, \
             self._noise_stddev, \
             self._noise_weight, \
+            self._noise_stddev_weight, \
+            self._noise_mean_weight, \
             self._ou_params, \
             self._network_optimizer_ctor, \
             self._target_sync_interval, \
@@ -371,11 +376,14 @@ class NoisyDPGExperiment(Experiment):
             dim_noise, \
             noise_stddev, \
             noise_weight, \
+            noise_stddev_weight, \
+            noise_mean_weight, \
             ou_params, \
             network_optimizer_ctor, \
             target_sync_interval, \
             target_sync_rate, \
             replay_size
+        self._kwargs = kwargs
 
     def run(self, args):
 
@@ -385,6 +393,7 @@ class NoisyDPGExperiment(Experiment):
             'global_step', [], dtype=tf.int32,
             initializer=tf.constant_initializer(0), trainable=False
         )
+        logging.warning("ctor:%s", self._network_optimizer_ctor)
         agent = NoisyDPG(
             self._f_se,
             self._f_actor,
@@ -400,6 +409,8 @@ class NoisyDPGExperiment(Experiment):
             ou_params=self._ou_params,
             noise_stddev=self._noise_stddev,
             noise_weight=self._noise_weight,
+            noise_stddev_weight=self._noise_stddev_weight,
+            noise_mean_weight=self._noise_mean_weight,
             # target network sync arguments
             target_sync_interval=self._target_sync_interval,
             target_sync_rate=self._target_sync_rate,
@@ -407,6 +418,7 @@ class NoisyDPGExperiment(Experiment):
             replay_size=self._replay_size,
             batch_size=self._batch_size,
             global_step=global_step,
+            **self._kwargs
         )
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
@@ -419,16 +431,74 @@ class NoisyDPGExperiment(Experiment):
             return runner.episode(self._episode_n)
 
 
+class FDPG(object):
+
+    def __init__(self, dim_action, dim_se=None, activation=tf.nn.elu, l2=1e-5):
+        super(FDPG, self).__init__()
+        self._dim_action, self._dim_se, self._activation, self._l2 = \
+            dim_action, dim_se, activation, l2
+        self._dim_hidden = 128
+
+    def se(self):
+        def f(inputs):
+            input_state = inputs[0]
+            out = hrl.network.Utils.layer_fcs(input_state, [], self._dim_se,
+                                              None, None, l2=self._l2)
+            return {"se": out}
+
+        def i(inputs):
+            return {"se": inputs[0]}
+
+        return f if self._dim_se is not None else i
+
+    def actor(self):
+        def f(inputs):
+            input_state = inputs[0]
+            out = hrl.network.Utils.layer_fcs(input_state, [self._dim_hidden], self._dim_action,
+                                              self._activation,
+                                              # hrl.tf_dependent.ops.atanh,
+                                              tf.nn.tanh,
+                                              l2=self._l2)
+            out = hrl.network.Utils.scale_gradient(out, 1e-3)
+            return {"action": out}
+        return f
+
+    def noise(self):
+        def f(inputs):
+            input_se, input_noise = inputs[0], inputs[1]
+            input_var = tf.concat([input_se, input_noise], axis=-1)
+            out = hrl.network.Utils.layer_fcs(input_var, [self._dim_hidden, self._dim_hidden], self._dim_action,
+                                              self._activation,
+                                              tf.nn.tanh,
+                                              l2=self._l2)
+            return {"noise": out}
+        return f
+
+    def critic(self):
+        def f(inputs):
+            input_se, input_action = inputs[0], inputs[1]
+            input_var = tf.concat([input_se, input_action], axis=-1)
+            out = hrl.network.Utils.layer_fcs(input_var, [self._dim_hidden, self._dim_hidden], 1,
+                                              self._activation, None, l2=self._l2)
+            out = tf.squeeze(out, axis=-1)
+            return {"q": out}
+        return f
+
+
 class NoisyDPGPendulum(NoisyDPGExperiment):
     def __init__(self, env=None, f_se=None, f_actor=None, f_critic=None, f_noise=None,
                  episode_n=1000, discount_factor=0.9, batch_size=32,
                  dim_se=16, dim_hidden=32, dim_noise=2,
-                 noise_stddev=hrl.utils.CappedLinear(1e5, 0.1, 0.02),
-                 noise_weight=1e-1,
+                 # noise_stddev=hrl.utils.CappedLinear(1e5, 0.1, 0.02),
+                 noise_stddev=1.0,
+                 noise_weight=1e-2,
+                 noise_stddev_weight=1e-4,
+                 noise_mean_weight=1e-2,
                  ou_params=(0.0, 0.2, 0.2),
                  network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3),
                                                                            grad_clip=10.0), target_sync_interval=10,
-                 target_sync_rate=0.01, replay_size=1000):
+                 target_sync_rate=0.01, replay_size=1000,
+                 **kwargs):
 
         if env is None:
             env = gym.make("Pendulum-v0")
@@ -438,101 +508,104 @@ class NoisyDPGPendulum(NoisyDPGExperiment):
         dim_action = env.action_space.shape[0]
         l2 = 1e-5
         activation = tf.nn.elu
-        if f_se is None:
-            def f(inputs):
-                input_state = inputs[0]
-                out = hrl.network.Utils.layer_fcs(input_state, [], dim_se,
-                                                  None, None, l2=l2)
-                return {"se": out}
-
-            f_se = f
-
-        if f_actor is None:
-            def f(inputs):
-                input_state = inputs[0]
-                out = hrl.network.Utils.layer_fcs(input_state, [dim_hidden], dim_action,
-                                                  activation,
-                                                  # hrl.tf_dependent.ops.atanh,
-                                                  tf.nn.tanh,
-                                                  l2=l2)
-                return {"action": out}
-
-            f_actor = f
-
-        if f_noise is None:
-            def f(inputs):
-                input_se, input_noise = inputs[0], inputs[1]
-                input_var = tf.concat([input_se, input_noise], axis=-1)
-                out = hrl.network.Utils.layer_fcs(input_var, [dim_hidden, dim_hidden], dim_action,
-                                                  activation,
-                                                  # hrl.tf_dependent.ops.atanh,
-                                                  tf.nn.tanh,
-                                                  l2=l2)
-                return {"noise": out}
-
-            f_noise = f
-
-        if f_critic is None:
-            def f(inputs):
-                input_se, input_action = inputs[0], inputs[1]
-                input_var = tf.concat([input_se, input_action], axis=-1)
-                out = hrl.network.Utils.layer_fcs(input_var, [dim_hidden, dim_hidden], 1,
-                                                  activation, None, l2=l2)
-                out = tf.squeeze(out, axis=-1)
-                return {"q": out}
-
-            f_critic = f
-
+        f = FDPG(dim_action, activation=activation, l2=l2)
+        f_se = f.se() if f_se is None else f_se
+        f_actor = f.actor() if f_actor is None else f_actor
+        f_noise = f.noise() if f_noise is None else f_noise
+        f_critic = f.critic() if f_critic is None else f_critic
         super(NoisyDPGPendulum, self).__init__(env, f_se, f_actor, f_critic, f_noise, episode_n, discount_factor,
                                                batch_size, dim_noise, noise_stddev, noise_weight,
+                                               noise_stddev_weight, noise_mean_weight,
                                                ou_params, network_optimizer_ctor,
-                                               target_sync_interval, target_sync_rate, replay_size)
+                                               target_sync_interval, target_sync_rate, replay_size, **kwargs)
 Experiment.register(NoisyDPGPendulum, "Noisy DPG explore for pendulum")
 
 
 class NoisyDPGBipedal(NoisyDPGPendulum):
     def __init__(self, env=None, f_se=None, f_actor=None, f_critic=None, f_noise=None,
-                 episode_n=5000,
+                 episode_n=4000,
                  discount_factor=0.99, batch_size=32, dim_se=16, dim_hidden=64, dim_noise=2,
                  noise_stddev=hrl.utils.CappedLinear(5e5, 0.2, 0.05),
                  noise_weight=1e-1,
+                 noise_stddev_weight=1e-4,
+                 noise_mean_weight=1e-2,
                  ou_params=(0.0, 0.2, 0.2),
                  network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3),
                                                                            grad_clip=10.0), target_sync_interval=10,
-                 target_sync_rate=0.01, replay_size=10000):
+                 target_sync_rate=0.01, replay_size=10000, **kwargs):
         if env is None:
             env = gym.make("BipedalWalker-v2")
             env = hrl.envs.AugmentEnvWrapper(env, reward_decay=discount_factor, reward_scale=0.1)
-        dim_action = env.action_space.shape[0]
-        l2 = 1e-5
-        activation = tf.nn.elu
-        if f_actor is None:
-            def f(inputs):
-                input_state = inputs[0]
-                out = hrl.network.Utils.layer_fcs(input_state, [dim_hidden], dim_action,
-                                                  activation,
-                                                  tf.nn.tanh,
-                                                  # hrl.tf_dependent.ops.atanh,
-                                                  l2=l2)
-                return {"action": out}
-
-            f_actor = f
+        # dim_action = env.action_space.shape[0]
+        # l2 = 1e-5
+        # activation = tf.nn.elu
+        # if f_actor is None:
+        #     def f(inputs):
+        #         input_state = inputs[0]
+        #         out = hrl.network.Utils.layer_fcs(input_state, [dim_hidden], dim_action,
+        #                                           activation,
+        #                                           tf.nn.tanh,
+        #                                           # hrl.tf_dependent.ops.atanh,
+        #                                           l2=l2)
+        #         return {"action": out}
+        #
+        #     f_actor = f
 
         super(NoisyDPGBipedal, self).__init__(env, f_se, f_actor, f_critic, f_noise, episode_n, discount_factor,
                                               batch_size, dim_se, dim_hidden, dim_noise,
-                                              noise_stddev, noise_weight, ou_params,
+                                              noise_stddev, noise_weight,
+                                              noise_stddev_weight, noise_mean_weight,
+                                              ou_params,
                                               network_optimizer_ctor, target_sync_interval, target_sync_rate,
-                                              replay_size)
+                                              replay_size, **kwargs)
 Experiment.register(NoisyDPGBipedal, "Noisy DPG explore for bipedal")
 
 
-class NoisyDPGBipedalSearch(GridSearch):
+class NoisyDPGBipedalSearch(ParallelGridSearch):
+    """
+    round 1
+    [
+            {
+                "noise_stddev": [hrl.utils.CappedLinear(5e5, 0.2, 0.05), hrl.utils.CappedLinear(1e6, 0.5, 0.02)],
+                "noise_weight": [1e-1, 1e-3],
+            },
+            {
+                "noise_stddev": [hrl.utils.CappedLinear(5e5, 1.0, 0.5)],
+                "noise_weight": [1e-3, 1e-4, 1e-5, 1e-6, 1e-7],
+            }
+        ]
+    round 2
+            {
+                "noise_stddev": [hrl.utils.CappedLinear(5e5, 0.2, 0.05), hrl.utils.CappedLinear(2e6, 0.2, 0.05)],
+                "noise_weight": [1e-1, 1e-2, 1e-3, 1e-4],
+            }
+    round 3
+            {
+                "noise_stddev": [hrl.utils.CappedLinear(5e5, 0.2, 0.02),
+                                 hrl.utils.CappedLinear(5e5, 0.1, 0.02),
+                                 hrl.utils.CappedLinear(5e5, 0.2, 0.05)],
+                "noise_weight": [1e-1],
+            }
+    round 4
+            {
+                "noise_stddev_weight": [1e-2, 1e-3, 1e-4, 1e-5],
+                "noise_mean_weight": [1e-1, 1e-3, 1e-5],
+            }
+
+    """
     def __init__(self):
-        super(NoisyDPGBipedalSearch, self).__init__(NoisyDPGBipedal, {
-            "noise_stddev": [hrl.utils.CappedLinear(5e5, 0.2, 0.05), hrl.utils.CappedLinear(1e6, 0.5, 0.02)],
-            "noise_weight": [1e-1, 1e-3],
-            "ou_params": [(0.0, 0.2, 0.2), (0.0, 0.2, hrl.utils.CappedLinear(5e5, 0.2, 0.02))],
-        })
+        super(NoisyDPGBipedalSearch, self).__init__(NoisyDPGBipedal,
+        [
+            {
+                "noise_stddev": [hrl.utils.CappedLinear(5e5, 0.2, 0.02),
+                                 hrl.utils.CappedLinear(5e5, 0.1, 0.02),
+                                 hrl.utils.CappedLinear(5e5, 0.2, 0.05)],
+                "noise_weight": [1e-1, 1e-3],
+                "episode_n": [5000],
+                "disentangle_with_dpg": [False]
+            }
+        ], parallel=4)
+
 Experiment.register(NoisyDPGBipedalSearch, "Noisy DPG explore for bipedal")
 
 

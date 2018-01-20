@@ -46,6 +46,12 @@ class EpsilonGreedyPolicy(Policy):
 
 class OUNoise(object):
     def __init__(self, shape, mu, theta, sigma):
+        """
+        :param shape:
+        :param mu: mean of noise
+        :param theta: 1 - momentum of noise
+        :param sigma: scale of noise
+        """
         self._shape, self._mu, self._theta, self._sigma = shape, mu, theta, sigma
         self._x = np.ones(self._shape) * self._mu
 
