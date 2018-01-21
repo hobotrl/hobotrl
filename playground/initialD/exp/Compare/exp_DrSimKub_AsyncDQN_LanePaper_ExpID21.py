@@ -382,7 +382,7 @@ def exp(dir_prefix, tf_log_dir="ckpt", our_log_dir="logging", replay_cache_dir="
             replay_buffer.close()
         if _agent is not None:
             _agent.stop()
-        os.killpg(os.getpgid(os.getpid()), signal.SIGKILL)
+        # os.killpg(os.getpgid(os.getpid()), signal.SIGKILL)
         import time
         logging.warning("waiting for k8s end")
         time.sleep(180)
