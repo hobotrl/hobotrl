@@ -7,9 +7,9 @@ from hobotrl import DQN, network, playback, DPG, target_estimate
 from hobotrl.algorithms.dpg import DPGUpdater
 from hobotrl.algorithms.ot import TrajectoryFitQ
 from hobotrl.algorithms.value_based import DoubleQValueFunction, GreedyStateValueFunction
-from hobotrl.playback import MapPlayback
+from hobotrl.playback import MapPlayback, NearPrioritizedPlayback
 from hobotrl.sampling import TruncateTrajectorySampler, default_make_sample
-from hobotrl.target_estimate import TargetEstimator
+from hobotrl.target_estimate import TargetEstimator, GAENStep, OptimalityTighteningEstimator
 
 
 class DynamicGAENStep(TargetEstimator):
@@ -52,6 +52,30 @@ class DynamicGAENStep(TargetEstimator):
         return target_value
 
 
+class AdaptiveGAE(TargetEstimator):
+
+    def __init__(self, v_function, discount_factor=0.99,
+                 # for gae
+                 lambda_decay=0.95, generation_decay=0.95,
+                 # for ot
+                 weight_upper=1.0, weight_lower=4.0,
+                 generation_threshold=0.2):
+        super(AdaptiveGAE, self).__init__(discount_factor)
+        self._dgae = DynamicGAENStep(v_function, discount_factor, lambda_decay, generation_decay)
+        self._ot = OptimalityTighteningEstimator(v_function, weight_upper=weight_upper,
+                                                 weight_lower=weight_lower,
+                                                 discount_factor=discount_factor)
+        self._generation_threshold = generation_threshold
+        self._generation_decay = generation_decay
+
+    def estimate(self, state, action, reward, next_state, episode_done, generation, current_gen, **kwargs):
+        generation_decay = self._generation_decay ** (current_gen - np.min(generation))
+        if generation_decay >= self._generation_threshold:
+            return self._dgae.estimate(state, action, reward, next_state, episode_done, generation, current_gen, **kwargs)
+        else:
+            return self._ot.estimate(state, action, reward, next_state, episode_done, **kwargs)
+
+
 class TruncateTrajectorySamplerWithLatest(TruncateTrajectorySampler):
     """Sample {batch_size} trajectories of length {trajectory_length} in every
     {interval} steps.
@@ -71,6 +95,7 @@ class TruncateTrajectorySamplerWithLatest(TruncateTrajectorySampler):
         :param kwargs:
         :return: list of dict, each dict is a column-wise batch of transitions in a trajectory
         """
+        force_sample = force_sample or episode_done
         trajectories = super(TruncateTrajectorySamplerWithLatest, self).step(state, action, reward, next_state, episode_done, force_sample, **kwargs)
         if trajectories is None:
             return None
@@ -93,6 +118,8 @@ class OnDQN(DQN):
                  update_interval=4,
                  replay_size=1000, batch_size=32, sampler=None,
                  generation_decay=0.95,
+                 per=False,
+                 adaptive_estimate=False,
                  *args, **kwargs):
 
         if sampler is None:
@@ -100,9 +127,14 @@ class OnDQN(DQN):
                 sample = default_make_sample(state, action, reward, next_state, episode_done)
                 sample.update({"generation": self._update_count})
                 return sample
-            sampler = TruncateTrajectorySamplerWithLatest(MapPlayback(replay_size), batch_size, neighbour_size, update_interval,
+            if per:
+                playback = NearPrioritizedPlayback(replay_size, priority_bias=0.5, importance_weight=0.5)
+            else:
+                playback = MapPlayback(replay_size)
+            sampler = TruncateTrajectorySamplerWithLatest(playback, batch_size, neighbour_size, update_interval,
                                                 sample_maker=make)
         self._generation_decay = generation_decay
+        self._adaptive_estimate = adaptive_estimate
         super(OnDQN, self).__init__(f_create_q, state_shape, num_actions, discount_factor, ddqn,
                                     target_sync_interval, target_sync_rate, greedy_epsilon,
                                     network_optimizer, max_gradient, update_interval, replay_size,
@@ -113,10 +145,13 @@ class OnDQN(DQN):
             self.target_v = DoubleQValueFunction(self.learn_q, self.target_q)
         else:
             self.target_v = GreedyStateValueFunction(self.target_q)
-        target_esitmator = DynamicGAENStep(self.target_v, discount_factor=self._discount_factor,
-                                           generation_decay=self._generation_decay)
-
-        self.network_optimizer.add_updater(TrajectoryFitQ(self.learn_q, target_esitmator), name="ot")
+        if self._adaptive_estimate:
+            target_estimator = AdaptiveGAE(self.target_v,
+                                           self._discount_factor, generation_decay=self._generation_decay)
+        else:
+            target_estimator = DynamicGAENStep(self.target_v,
+                                               self._discount_factor, generation_decay=self._generation_decay)
+        self.network_optimizer.add_updater(TrajectoryFitQ(self.learn_q, target_estimator), name="ot")
         self.network_optimizer.add_updater(network.L2(self.network), name="l2")
         self.network_optimizer.compile()
 
@@ -137,6 +172,7 @@ class OnDPG(DPG):
                  network_optimizer=None, max_gradient=10.0, ou_params=(0.0, 0.2, 0.2), target_sync_interval=10,
                  target_sync_rate=0.01, sampler=None, batch_size=8, update_interval=4, replay_size=1000,
                  generation_decay=0.95, neighbour_size=8,
+                 adaptive_estimate=False,
                  *args,
                  **kwargs):
 
@@ -149,13 +185,18 @@ class OnDPG(DPG):
                                                 sample_maker=make)
         self._generation_decay = generation_decay
         self._neighbour_size = neighbour_size
+        self._adaptive_estimate = adaptive_estimate
         super(OnDPG, self).__init__(f_se, f_actor, f_critic, state_shape, dim_action, discount_factor, target_estimator,
                                     network_optimizer, max_gradient, ou_params, target_sync_interval, target_sync_rate,
                                     sampler, batch_size, update_interval, replay_size, *args, **kwargs)
 
     def init_updaters_(self):
-        target_estimator = DynamicGAENStep(
-            self._target_v_function, self._discount_factor, generation_decay=self._generation_decay)
+        if self._adaptive_estimate:
+            target_estimator = AdaptiveGAE(self._target_v_function,
+                                           self._discount_factor, generation_decay=self._generation_decay)
+        else:
+            target_estimator = DynamicGAENStep(self._target_v_function,
+                                               self._discount_factor, generation_decay=self._generation_decay)
         self.network_optimizer.add_updater(
             dpg_ot.TrajectoryFitQ(actor=self._actor_function,
                        critic=self._q_function,

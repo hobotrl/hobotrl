@@ -72,7 +72,9 @@ class EpsilonGreedyPolicy(object):
 
 
 class Network(object):
-
+    """
+    :deprecated by hobotrl.network.network.Utils
+    """
     @staticmethod
     def layer_fcs(input_var, shape, out_count, activation_hidden=tf.nn.relu, activation_out=None, l2=0.0001,
                   var_scope=""):
@@ -519,7 +521,7 @@ class ScheduledParamCollector(object):
     def __init__(self, *args, **kwargs):
         super(ScheduledParamCollector, self).__init__()
         self._params = {}
-        self._number_params = {}
+        self._numeric_params = {}
         self.max_depth = 10
         self.max_param_num = 128  # no algorithm should expose more than 128 hyperparameters!
 
@@ -538,8 +540,8 @@ class ScheduledParamCollector(object):
                 self.schedule_params(sub_prefix, _spc_depth+1, *p)
             elif type_p == dict:
                 self.schedule_params(sub_prefix, _spc_depth+1, **p)
-            elif type_p == int or type_p == float:
-                self.schedule_param_number(sub_prefix, p)
+            elif type_p == int or type_p == float or isinstance(p, FloatParam):
+                self.collect_numeric_param(sub_prefix, p)
         for key in kwargs:
             p = kwargs[key]
             sub_prefix = "%s/%s" % (prefix, key)
@@ -550,8 +552,8 @@ class ScheduledParamCollector(object):
                 self.schedule_params(sub_prefix, _spc_depth+1, *p)
             elif type_p == dict:
                 self.schedule_params(sub_prefix, _spc_depth+1, **p)
-            elif type_p == int or type_p == float:
-                self.schedule_param_number(sub_prefix, p)
+            elif type_p == int or type_p == float or isinstance(p, FloatParam):
+                self.collect_numeric_param(sub_prefix, p)
 
     def schedule_param(self, prefix, param):
         """
@@ -561,9 +563,8 @@ class ScheduledParamCollector(object):
         """
         self._params[prefix] = param
 
-    def schedule_param_number(self, prefix, param):
-        self._number_params[prefix] = param
-        pass
+    def collect_numeric_param(self, prefix, param):
+        self._numeric_params[prefix] = param
 
     def set_int_handle(self, int_handle):
         for k in self._params:
@@ -573,8 +574,8 @@ class ScheduledParamCollector(object):
     def get_params(self):
         return self._params
 
-    def get_number_params(self):
-        return self._number_params
+    def get_numeric_params(self):
+        return self._numeric_params
 
 
 class CappedLinear(ScheduledParam):

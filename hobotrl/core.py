@@ -96,7 +96,7 @@ class BaseAgent(Agent):
             info = {}
         params = self._params.get_params()
         info.update(params)
-        info.update(self._params.get_number_params())
+        info.update(self._params.get_numeric_params())
         return info
 
     def new_episode(self, state):

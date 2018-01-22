@@ -6,6 +6,7 @@ import numpy as np
 
 from hobotrl.environments import RewardLongerEnv
 from hobotrl.experiment import Experiment
+from hobotrl.sampling import default_make_sample
 from playground.dynamic_gae import OnDQN, OnDPG
 import hobotrl as hrl
 from exp_atari import full_wrap_dqn, f_dqn_atari
@@ -103,6 +104,7 @@ class OnDQNExperiment(Experiment):
                  greedy_epsilon=0.3,
                  generation_decay=0.95,
                  network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3), grad_clip=10.0),
+                 sampler=None,
                  **kwargs
                  ):
         self._env, self._f_create_q, self._episode_n, \
@@ -116,7 +118,8 @@ class OnDQNExperiment(Experiment):
             self._generation_decay, \
             self._greedy_epsilon, \
             self._network_optimizer_ctor, \
-            self._neighbour_size = \
+            self._neighbour_size, \
+            self._sampler = \
             env, f_create_q, episode_n, \
             discount_factor, \
             ddqn, \
@@ -128,7 +131,8 @@ class OnDQNExperiment(Experiment):
             generation_decay, \
             greedy_epsilon, \
             network_optimizer_ctor, \
-            neighbour_size
+            neighbour_size, \
+            sampler
         self._kwargs = kwargs
 
         super(OnDQNExperiment, self).__init__()
@@ -159,6 +163,7 @@ class OnDQNExperiment(Experiment):
             # epsilon greedy arguments
             greedy_epsilon=self._greedy_epsilon,
             network_optmizer=self._network_optimizer_ctor(),
+            sampler=self._sampler,
             global_step=global_step,
             **self._kwargs
         )
@@ -238,8 +243,33 @@ class OnDQNCarRacing(OnDQNBreakout):
             env = wrap_car(env, 3, 3)
         super(OnDQNCarRacing, self).__init__(env, f_create_q, episode_n, discount_factor, ddqn, target_sync_interval,
                                              target_sync_rate, update_interval, replay_size, batch_size, neighbour_size,
-                                             greedy_epsilon, generation_decay, network_optimizer_ctor, **kwargs)
+                                             greedy_epsilon, generation_decay, network_optimizer_ctor,
+                                             adaptive_estimate=True,
+                                             **kwargs)
 Experiment.register(OnDQNCarRacing, "OnDQNCarRacing")
+
+
+class OnDQNRevenge(OnDQNBreakout):
+
+    def __init__(self, env=None, f_create_q=None, episode_n=10000, discount_factor=0.99, ddqn=False,
+                 target_sync_interval=100, target_sync_rate=1.0, update_interval=4, replay_size=4000, batch_size=8,
+                 neighbour_size=8,
+                 greedy_epsilon=hrl.utils.CappedLinear(1e6, 0.1, 0.01),
+                 generation_decay=0.95,
+                 network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-4),
+                                                                           grad_clip=10.0),
+                 **kwargs):
+        if env is None:
+            env = gym.make('MontezumaRevengeNoFrameskip-v4')
+            env = full_wrap_dqn(env)
+            env = RewardLongerEnv(env)
+        super(OnDQNRevenge, self).__init__(env, f_create_q, episode_n, discount_factor, ddqn, target_sync_interval,
+                                           target_sync_rate, update_interval, replay_size, batch_size, neighbour_size,
+                                           greedy_epsilon, generation_decay, network_optimizer_ctor,
+                                           adaptive_estimator=True,
+                                           per=True,
+                                           **kwargs)
+Experiment.register(OnDQNRevenge, "OnDQNRevenge")
 
 
 class OnDPGPendulum(OnDPGExperiment):
@@ -247,7 +277,7 @@ class OnDPGPendulum(OnDPGExperiment):
     def __init__(self, env=None, f_se=None, f_actor=None, f_critic=None, episode_n=1000, discount_factor=0.9,
                  network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3),
                                                                            grad_clip=10.0),
-                 ou_params=(0, 0.2, hrl.utils.CappedLinear(1e5, 0.1, 0.01)),
+                 ou_params=(0, 0.2, hrl.utils.CappedLinear(1e5, 0.2, 0.01)),
                  target_sync_interval=10, target_sync_rate=0.01, batch_size=8, replay_capacity=1000,
                  generation_decay=0.95, neighbour_size=8, **kwargs):
         if env is None:
@@ -282,6 +312,25 @@ class OnDPGPendulum(OnDPGExperiment):
                                             batch_size, replay_capacity, generation_decay, neighbour_size, **kwargs)
 
 Experiment.register(OnDPGPendulum, "DPG for Pendulum")
+
+
+class OnDPGBipedal(OnDPGPendulum):
+
+    def __init__(self, env=None, f_se=None, f_actor=None, f_critic=None, episode_n=1000,
+                 discount_factor=0.95,
+                 network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-4),
+                                                                           grad_clip=10.0),
+                 ou_params=(0, 0.2, hrl.utils.CappedLinear(1e6, 0.2, 0.01)),
+                 target_sync_interval=10,
+                 target_sync_rate=0.01, batch_size=8, replay_capacity=1000, generation_decay=0.95, neighbour_size=8,
+                 **kwargs):
+        if env is None:
+            env = gym.make("BipedalWalker-v2")
+            env = hrl.envs.AugmentEnvWrapper(env, reward_decay=discount_factor, reward_scale=0.1)
+        super(OnDPGBipedal, self).__init__(env, f_se, f_actor, f_critic, episode_n, discount_factor,
+                                           network_optimizer_ctor, ou_params, target_sync_interval, target_sync_rate,
+                                           batch_size, replay_capacity, generation_decay, neighbour_size, **kwargs)
+Experiment.register(OnDPGBipedal, "DPG for Pendulum")
 
 
 if __name__ == '__main__':
