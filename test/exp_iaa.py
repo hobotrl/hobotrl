@@ -473,7 +473,7 @@ Experiment.register(MsPacmanOTDQN_mom_decoder, "Deconv decoder and hidden state 
 
 
 class OTDQN_ob_MsPacman(OTDQNModelExperiment):
-    def __init__(self, env=None, episode_n=16000,
+    def __init__(self, env=None, episode_n=160000,
                  f_create_q=None, f_se=None, f_transition=None, f_decoder=None, lower_weight=1.0, upper_weight=1.0,
                  rollout_depth=5, discount_factor=0.99, ddqn=False, target_sync_interval=100, target_sync_rate=1.0,
                  greedy_epsilon=0.1, network_optimizer=None, max_gradient=10.0, update_interval=4, replay_size=1024,
@@ -499,6 +499,35 @@ class OTDQN_ob_MsPacman(OTDQNModelExperiment):
                                             update_interval, replay_size, batch_size, curriculum, skip_step,
                                             sampler_creator, asynchronous, save_image_interval, with_ob)
 Experiment.register(OTDQN_ob_MsPacman, "Old traditional env model with dqn, for MsPacman")
+
+
+class OTDQN_ob_decoder_MsPacman(OTDQNModelExperiment):
+    def __init__(self, env=None, episode_n=160000,
+                 f_create_q=None, f_se=None, f_transition=None, f_decoder=None, lower_weight=1.0, upper_weight=1.0,
+                 rollout_depth=5, discount_factor=0.99, ddqn=False, target_sync_interval=100, target_sync_rate=1.0,
+                 greedy_epsilon=0.1, network_optimizer=None, max_gradient=10.0, update_interval=4, replay_size=1024,
+                 batch_size=16, curriculum=[1, 3, 5], skip_step=[500000, 1000000], sampler_creator=None,
+                 asynchronous=False, save_image_interval=10000, with_ob=True):
+        if env is None:
+            env = gym.make('MsPacman-v0')
+            env = Downsample(env, dst_size=[96, 96])
+            env = ScaledFloatFrame(env)
+            env = ScaledRewards(env, 0.01)
+            env = MaxAndSkipEnv(env, skip=4, max_len=1)
+            env = FrameStack(env, k=4)
+        if f_se is None:
+            f = F(env)
+            f_create_q = f.create_q()
+            f_se = f.create_se()
+            f_transition = f.create_env_deconv_fc()
+            # f_decoder = f.decoder_multiflow()
+            f_decoder = f.pass_decoder()
+        super(OTDQN_ob_decoder_MsPacman, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder, lower_weight,
+                                            upper_weight, rollout_depth, discount_factor, ddqn, target_sync_interval,
+                                            target_sync_rate, greedy_epsilon, network_optimizer, max_gradient,
+                                            update_interval, replay_size, batch_size, curriculum, skip_step,
+                                            sampler_creator, asynchronous, save_image_interval, with_ob)
+Experiment.register(OTDQN_ob_decoder_MsPacman, "Old traditional env model with dqn, for MsPacman")
 
 
 if __name__ == '__main__':

@@ -1266,7 +1266,7 @@ class F(object):
             reward = tf.squeeze(reward, axis=1)
 
             # next_state
-            twoD_out = tf.reshape(fc_out, [-1, 64, 5, 5])
+            twoD_out = tf.reshape(fc_out, [-1, 5, 5, 64])
 
             conv_5 = hrl.utils.Network.conv2ds(twoD_out,
                                                shape=[(32, 3, 1)],
@@ -1315,6 +1315,90 @@ class F(object):
 
             return {"next_state": next_state, "reward": reward}
         return create_env_upsample_fc
+
+    def create_env_deconv_fc(self):
+        def create_env_deconv_fc(inputs):
+            l2 = 1e-7
+            input_state = inputs[0]
+            # input_state = tf.squeeze(tf.stack(input_state), axis=0)
+
+            input_action = inputs[1]
+            # input_action = tf.one_hot(indices=input_action, depth=self.dim_action, on_value=1.0, off_value=0.0, axis=-1)
+            # input_action_tiled = tf.image.resize_images(tf.reshape(input_action, [-1, 1, 1, dim_action]),
+            #                                       [((((dim_observation[0]+1)/2+1)/2+1)/2+1)/2,
+            #                                        ((((dim_observation[1]+1)/2+1)/2+1)/2+1)/2])
+
+            conv_1 = hrl.utils.Network.conv2ds(input_state,
+                                               shape=[(32, 8, 4), (64, 4, 2), (self.chn_se_2d, 3, 2)],
+                                               out_flatten=False,
+                                               activation=tf.nn.relu,
+                                               l2=l2,
+                                               var_scope="conv_1")
+            linear_1 = tf.contrib.layers.flatten(conv_1)
+
+            # conv_2 = hrl.utils.Network.conv2ds(conv_1,
+            #                                    shape=[(64, 4, 2)],
+            #                                    out_flatten=False,
+            #                                    activation=tf.nn.relu,
+            #                                    l2=l2,
+            #                                    var_scope="conv_2")
+            #
+            # conv_3 = hrl.utils.Network.conv2ds(conv_2,
+            #                                    shape=[(64, 3, 2)],
+            #                                    out_flatten=True,
+            #                                    activation=tf.nn.relu,
+            #                                    l2=l2,
+            #                                    var_scope="conv_3")
+
+            fc_1 = hrl.utils.Network.layer_fcs(linear_1, [], 64 * 5 * 5,
+                                               activation_hidden=tf.nn.relu,
+                                               activation_out=tf.nn.relu,
+                                               l2=l2,
+                                               var_scope="fc_1")
+
+            # concat_action = tf.concat([conv_4, input_action_tiled], axis=3)
+            fc_action = hrl.utils.Network.layer_fcs(input_action, [], 64 * 5 * 5,
+                                                    activation_hidden=tf.nn.relu,
+                                                    activation_out=tf.nn.relu,
+                                                    l2=l2,
+                                                    var_scope="fc_action")
+
+            concat = tf.multiply(fc_1, fc_action)
+
+            conv_1_shape = conv_1.shape.as_list()
+
+            fc_out = hrl.utils.Network.layer_fcs(concat, [64 * 5 * 5], conv_1_shape[1] * conv_1_shape[2] * conv_1_shape[3],
+                                                 activation_hidden=tf.nn.relu,
+                                                 activation_out=tf.nn.relu,
+                                                 l2=l2,
+                                                 var_scope="fc_out")
+
+            # reward
+            reward = hrl.utils.Network.layer_fcs(fc_out, [256], 1,
+                                                 activation_hidden=tf.nn.relu,
+                                                 l2=l2,
+                                                 var_scope="reward")
+            reward = tf.squeeze(reward, axis=1)
+
+            # next_state
+            twoD_out = tf.reshape(fc_out, [-1, conv_1_shape[1], conv_1_shape[2], conv_1_shape[3]])
+
+            next_frame_before = hrl.utils.Network.conv2ds_transpose(twoD_out,
+                                                                    shape=[(self.chn_se_2d, 3, 2), (64, 4, 2),
+                                                                           (32, 8, 4)],
+                                                                    activation=self.nonlinear,
+                                                                    l2=l2,
+                                                                    var_scope="next_frame_before")
+
+            next_frame = hrl.utils.Network.conv2ds(next_frame_before,
+                                                   shape=[(3, 3, 1)],
+                                                   out_flatten=False,
+                                                   activation=self.nonlinear,
+                                                   l2=l2,
+                                                   var_scope="next_frame")
+
+            return {"next_state": next_frame, "reward": reward}
+        return create_env_deconv_fc
 
     def pass_decoder(self):
         def pass_decoder(inputs):
@@ -1412,7 +1496,7 @@ Experiment.register(OTDQNModelCar_mom_decoder, "Hidden state with 1600 size in t
 
 
 class OTDQN_ob(OTDQNModelExperiment):
-    def __init__(self, env=None, episode_n=16000,
+    def __init__(self, env=None, episode_n=160000,
                  f_create_q=None, f_se=None, f_transition=None, f_decoder=None, lower_weight=1.0, upper_weight=1.0,
                  rollout_depth=5, discount_factor=0.99, ddqn=False, target_sync_interval=100, target_sync_rate=1.0,
                  greedy_epsilon=0.1, network_optimizer=None, max_gradient=10.0, update_interval=4, replay_size=1024,
@@ -1434,6 +1518,31 @@ class OTDQN_ob(OTDQNModelExperiment):
                                             update_interval, replay_size, batch_size, curriculum, skip_step,
                                             sampler_creator, asynchronous, save_image_interval, with_ob)
 Experiment.register(OTDQN_ob, "Old traditional env model with dqn, for CarRacing")
+
+
+class OTDQN_ob_decoder(OTDQNModelExperiment):
+    def __init__(self, env=None, episode_n=160000,
+                 f_create_q=None, f_se=None, f_transition=None, f_decoder=None, lower_weight=1.0, upper_weight=1.0,
+                 rollout_depth=5, discount_factor=0.99, ddqn=False, target_sync_interval=100, target_sync_rate=1.0,
+                 greedy_epsilon=0.1, network_optimizer=None, max_gradient=10.0, update_interval=4, replay_size=1024,
+                 batch_size=16, curriculum=[1, 3, 5], skip_step=[500000, 1000000], sampler_creator=None,
+                 asynchronous=False, save_image_interval=10000, with_ob=True):
+        if env is None:
+            env = gym.make('CarRacing-v0')
+            env = wrap_car(env, 3, 3)
+        if f_se is None:
+            f = F(env)
+            f_create_q = f.create_q()
+            f_se = f.create_se()
+            f_transition = f.create_env_deconv_fc()
+            # f_decoder = f.decoder_multiflow()
+            f_decoder = f.pass_decoder()
+        super(OTDQN_ob_decoder, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder, lower_weight,
+                                            upper_weight, rollout_depth, discount_factor, ddqn, target_sync_interval,
+                                            target_sync_rate, greedy_epsilon, network_optimizer, max_gradient,
+                                            update_interval, replay_size, batch_size, curriculum, skip_step,
+                                            sampler_creator, asynchronous, save_image_interval, with_ob)
+Experiment.register(OTDQN_ob_decoder, "Old traditional env model with dqn, for CarRacing")
 
 
 class OTDQNModelDriving(OTDQNModelCar):
