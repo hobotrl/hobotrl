@@ -429,8 +429,15 @@ class MsPacmanOTDQN(OTDQNModelExperiment):
 Experiment.register(MsPacmanOTDQN, "OTDQN for MsPacman with half input")
 
 
+class MsPacmanOTDQN_goal_256(MsPacmanOTDQN):
+    def __init__(self, with_momentum=False):
+        super(MsPacmanOTDQN_goal_256, self).__init__(with_momentum=with_momentum)
+Experiment.register(MsPacmanOTDQN_goal_256, "goal OTDQN for MsPacman with half input")
+
+
 class MsPacmanOTDQN_mom_1600(MsPacmanOTDQN):
-    def __init__(self, env=None, episode_n=16000, f_create_q=None, f_se=None, f_transition=None, f_decoder=None):
+    def __init__(self, env=None, episode_n=16000, f_create_q=None, f_se=None, f_transition=None, f_decoder=None,
+                 with_momentum=True):
         if env is None:
             env = gym.make('MsPacman-v0')
             env = Downsample(env, dst_size=[96, 96])
@@ -447,8 +454,15 @@ class MsPacmanOTDQN_mom_1600(MsPacmanOTDQN):
             # f_decoder = f.decoder_multiflow()
             f_decoder = f.create_decoder()
 
-        super(MsPacmanOTDQN_mom_1600, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder)
+        super(MsPacmanOTDQN_mom_1600, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder,
+                                                     with_momentum=with_momentum)
 Experiment.register(MsPacmanOTDQN_mom_1600, "Hidden state size of 1600 on OTDQN for MsPacman with half input")
+
+
+class MsPacmanOTDQN_goal(MsPacmanOTDQN_mom_1600):
+    def __init__(self, with_momentum=False):
+        super(MsPacmanOTDQN_goal, self).__init__(with_momentum=with_momentum)
+Experiment.register(MsPacmanOTDQN_goal, "goal(1600) OTDQN for MsPacman with half input")
 
 
 class MsPacmanOTDQN_mom_decoder(MsPacmanOTDQN):
