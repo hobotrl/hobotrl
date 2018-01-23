@@ -230,7 +230,7 @@ class DQNCarRacing(DQNExperiment):
 
     def __init__(self, env=None, f_create_q=None, episode_n=10000, discount_factor=0.99, ddqn=False, target_sync_interval=100,
                  target_sync_rate=1.0,
-                 update_interval=400,
+                 update_interval=4,
                  replay_size=2000,
                  batch_size=32,
                  greedy_epsilon=hrl.utils.CappedLinear(1e6, 1.0, 0.05),

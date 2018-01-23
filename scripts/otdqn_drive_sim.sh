@@ -2,9 +2,9 @@
 #
 #	usage: . ./scripts/otdqn_drive_sim.sh
 #
-log_dir="./log/CarRacing/OTDQN_ob_new"
+log_dir="./log/CarRacing/OTDQNModelCar_goal"
 mkdir -p ${log_dir}
-CUDA_VISIBLE_DEVICES=1 python test/exp_car_flow.py run --name OTDQN_ob --render_once true --logdir ${log_dir} > ${log_dir}/log.txt 2>&1 &
+CUDA_VISIBLE_DEVICES=1 python test/exp_car_flow.py run --name OTDQNModelCar_goal --render_once true --logdir ${log_dir} > ${log_dir}/log.txt 2>&1 &
 
 #log_dir1="./log/Simul/OTDQN"
 #mkdir -p ${log_dir1}

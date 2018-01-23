@@ -1099,13 +1099,13 @@ class OTDQNModelExperiment(Experiment):
                  update_interval=4,
                  replay_size=1024,
                  batch_size=12,
-                 with_momentum = True,
                  curriculum=[1, 3, 5],
                  skip_step=[10000, 20000],
                  sampler_creator=None,
                  asynchronous=False,
                  save_image_interval=10000,
-                 with_ob=False
+                 with_ob=False,
+                 with_momentum=True
                  ):
         super(OTDQNModelExperiment, self).__init__()
 

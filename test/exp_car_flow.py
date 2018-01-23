@@ -1452,7 +1452,7 @@ class OTDQNModelCar(OTDQNModelExperiment):
                  rollout_depth=5, discount_factor=0.99, ddqn=False, target_sync_interval=100, target_sync_rate=1.0,
                  greedy_epsilon=0.1, network_optimizer=None, max_gradient=10.0, update_interval=4, replay_size=1024,
                  batch_size=16, curriculum=[1, 3, 5], skip_step=[500000, 1000000], sampler_creator=None,
-                 asynchronous=False, save_image_interval=10000, state_size=256):
+                 asynchronous=False, save_image_interval=10000, state_size=256, with_momentum=True):
         if env is None:
             env = gym.make('CarRacing-v0')
             env = wrap_car(env, 3, 3)
@@ -1467,16 +1467,28 @@ class OTDQNModelCar(OTDQNModelExperiment):
         super(OTDQNModelCar, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder, lower_weight,
                                             upper_weight, rollout_depth, discount_factor, ddqn, target_sync_interval,
                                             target_sync_rate, greedy_epsilon, network_optimizer, max_gradient,
-                                            update_interval, replay_size, batch_size, curriculum, skip_step,
-                                            sampler_creator, asynchronous, save_image_interval)
+                                            update_interval, replay_size, batch_size, curriculum,
+                                            skip_step, sampler_creator, asynchronous, save_image_interval,
+                                            with_momentum=with_momentum)
 Experiment.register(OTDQNModelCar, "transition model with dqn, for CarRacing")
 
 
 class OTDQNModelCar_mom_1600(OTDQNModelCar):
-    def __init__(self, state_size=1600):
-        super(OTDQNModelCar_mom_1600, self).__init__(state_size=state_size)
+    def __init__(self, state_size=1600, with_momentum=True):
+        super(OTDQNModelCar_mom_1600, self).__init__(state_size=state_size, with_momentum=with_momentum)
 Experiment.register(OTDQNModelCar_mom_1600, "Hidden state with 1600 size in transition model with dqn, for CarRacing")
 
+
+class OTDQNModelCar_goal_256(OTDQNModelCar):
+    def __init__(self, with_momentum=False):
+        super(OTDQNModelCar_goal_256, self).__init__(with_momentum=with_momentum)
+Experiment.register(OTDQNModelCar_goal_256, "goal 256 in transition model with dqn, for CarRacing")
+
+
+class OTDQNModelCar_goal(OTDQNModelCar_mom_1600):
+    def __init__(self, with_momentum=False):
+        super(OTDQNModelCar_goal, self).__init__(with_momentum=with_momentum)
+Experiment.register(OTDQNModelCar_goal, "goal in transition model with dqn, for CarRacing")
 
 class OTDQNModelCar_mom_decoder(OTDQNModelCar):
     def __init__(self, env=None, episode_n=16000, f_create_q=None, f_se=None, f_transition=None, f_decoder=None):
