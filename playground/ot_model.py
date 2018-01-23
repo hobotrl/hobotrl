@@ -21,6 +21,7 @@ class OTModel(OTDQN):
                  discount_factor,
                  ddqn, target_sync_interval, target_sync_rate, greedy_epsilon, network_optimizer=None,
                  max_gradient=10.0, update_interval=4, replay_size=1000, batch_size=32, sampler=None,
+                 with_momentum = True,
                  curriculum=[1, 3, 5],
                  skip_step=[10000, 20000],
                  save_image_interval=10000,
@@ -36,6 +37,7 @@ class OTModel(OTDQN):
         })
         self._state_shape, self._num_actions = state_shape, num_actions
         self._rollout_depth = rollout_depth
+        self._with_momentum = with_momentum
         self._curriculum, self._skip_step = curriculum, skip_step
         self._save_image_interval = save_image_interval
         self._with_ob = with_ob
@@ -97,7 +99,7 @@ class OTModel(OTDQN):
             curriculum=self._curriculum,
             skip_step=self._skip_step,
             transition_weight=1.0,
-            with_momentum=True,
+            with_momentum=self._with_momentum,
             save_image_interval=self._save_image_interval,
             with_ob=self._with_ob
         ), name="env")

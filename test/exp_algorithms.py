@@ -1099,6 +1099,7 @@ class OTDQNModelExperiment(Experiment):
                  update_interval=4,
                  replay_size=1024,
                  batch_size=12,
+                 with_momentum = True,
                  curriculum=[1, 3, 5],
                  skip_step=[10000, 20000],
                  sampler_creator=None,
@@ -1123,7 +1124,8 @@ class OTDQNModelExperiment(Experiment):
             self._skip_step, \
             self._sampler_creator,\
             self._save_image_interval,\
-            self._with_ob = \
+            self._with_ob,\
+            self._with_momentum = \
             env, episode_n, \
             f_create_q, f_se, f_transition, \
             f_decoder, \
@@ -1139,7 +1141,8 @@ class OTDQNModelExperiment(Experiment):
             skip_step, \
             sampler_creator, \
             save_image_interval, \
-            with_ob
+            with_ob, \
+            with_momentum
         self._asynchronous = asynchronous
 
     def run(self, args):
@@ -1163,6 +1166,7 @@ class OTDQNModelExperiment(Experiment):
                         replay_size=self._replay_size,
                         batch_size=self._batch_size,
                         sampler=sampler,
+                        with_momentum=self._with_momentum,
                         curriculum=self._curriculum,
                         skip_step=self._skip_step,
                         save_image_interval=self._save_image_interval,
