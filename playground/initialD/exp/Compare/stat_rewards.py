@@ -47,10 +47,10 @@ class ObjStat(object):
         return ret
 
     def stat_eps_rewards(self, eps_rewards):
-        ret = self.disc_rewards(eps_rewards[:, -1])
+        # ret = self.disc_rewards(eps_rewards[:, -1])
         ave_reward = np.mean(eps_rewards, axis=0)
         ave_reward = list(ave_reward)
-        ave_reward.append(ret)
+        # ave_reward.append(ret)
         return np.array(ave_reward)
 
     def read_obj_rewards(self):
@@ -103,17 +103,52 @@ class ExpStat(object):
         self._eps_n = 100
 
     def __call__(self, exp_dir, st=1, ed=10):
-        obj_names = sorted(os.listdir(exp_dir))[st-1:ed]
+        obj_names = sorted(os.listdir(exp_dir), key=lambda x: int(x))[st-1:ed]
         objStat = ObjStat(self._eps_n, self._disc)
         exp_info = []
         for obj_name in obj_names:
             obj_dir = exp_dir+"/"+obj_name + "/logging_0"
+            print obj_name
             obj_info = objStat(obj_dir)
             exp_info.append(obj_info)
-        return np.mean(exp_info, axis=0), np.var(exp_info, axis=0)
-
+        # return list(np.mean(exp_info, axis=0)), list(np.var(exp_info, axis=0)), list(np.percentile(exp_info, 50, axis=0))
+        return list(np.percentile(exp_info, 10, axis=0)), list(np.percentile(exp_info, 90, axis=0))
 
 if __name__ == "__main__":
-    exp_dir = "/home/pirate03/work/agents/Compare/AgentStepAsCkpt/rule"
+    # exp_dir = "/home/pirate03/work/agents/Compare/AgentStepAsCkpt/exp26"
     expStat = ExpStat()
-    print expStat(exp_dir, st=1, ed=3)
+    # ret = expStat(exp_dir, st=1, ed=10)
+    # for ret_i in ret:
+    #     print repr(ret_i).replace(',', ' ')
+
+    exp_names = ['exp00', 'exp01', 'exp05', 'exp09', 'exp10', 'exp12', 'exp13', 'exp14',
+                 'exp19', 'exp21', 'exp23', 'exp24', 'exp25', 'exp26']
+    # exp_names = ['exp12']
+    exp_dirs = []
+    prefix = '/home/pirate03/work/agents/Compare/AgentStepAsCkpt/'
+    for exp_name in exp_names:
+        exp_dirs.append(prefix+exp_name)
+
+    import csv
+    fs = [open("stat_perc_10.csv", 'w'), open("stat_perc_90.csv", "w")]
+    f_csvs = [csv.writer(f) for f in fs]
+    headers = ['exp_id', 'vel_front', 'dist_to_lp', 'obs_factor', 'cur_road_valid', 'entering_intersection',
+               'last_on_opposite_path', 'on_biking_lane', 'on_innerest_lane', 'on_outterest_lane', 'car_velocity_oth',
+               'ave_reward', 'success_rate']
+    for f_csv in f_csvs:
+        f_csv.writerow(headers)
+    for exp_dir in exp_dirs:
+        ret = expStat(exp_dir, st=1, ed=10)
+        for i in range(2):
+            ret[i].insert(0, exp_dir[-5:])
+            f_csvs[i].writerow(ret[i])
+    for f in fs:
+        f.close()
+
+
+
+    # for i in range(1, 11):
+    #     ret = expStat(exp_dir, st=i, ed=i)
+    #     print "==========="
+    #     print i
+    #     print ret[0]
