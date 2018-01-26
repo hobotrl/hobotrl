@@ -29,7 +29,7 @@ class TrajectoryFitQ(DPGUpdater):
                                                               trajectory["episode_done"]
             all_state.append(state)
             all_action.append(action)
-            target = self._target_estimator.estimate(state, action, reward, next_state, episode_done)
+            target = self._target_estimator.estimate(**trajectory)
             all_target.append(target)
             current_action = self._actor(state)
             action_gradient = self._gradient_func(state, current_action)

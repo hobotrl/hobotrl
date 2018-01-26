@@ -35,7 +35,7 @@ class TrajectoryFitQ(network.FitTargetQ):
                                                               trajectory["episode_done"]
             all_state.append(state)
             all_action.append(action)
-            target = self._target_estimator.estimate(state, action, reward, next_state, episode_done)
+            target = self._target_estimator.estimate(**trajectory)
             all_target.append(target)
         all_state = np.concatenate(all_state)
         all_action = np.concatenate(all_action)

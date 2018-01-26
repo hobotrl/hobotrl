@@ -46,6 +46,12 @@ class EpsilonGreedyPolicy(Policy):
 
 class OUNoise(object):
     def __init__(self, shape, mu, theta, sigma):
+        """
+        :param shape:
+        :param mu: mean of noise
+        :param theta: 1 - momentum of noise
+        :param sigma: scale of noise
+        """
         self._shape, self._mu, self._theta, self._sigma = shape, mu, theta, sigma
         self._x = np.ones(self._shape) * self._mu
 
@@ -71,6 +77,12 @@ class OUExplorationPolicy(Policy):
 
     @staticmethod
     def action_add(action, noise):
+        """
+        regularize action + noise into (-1, 1)
+        :param action:
+        :param noise:
+        :return:
+        """
         return action + np.abs(np.sign(noise) - action) * np.tanh(noise)
 
     def act(self, state, **kwargs):

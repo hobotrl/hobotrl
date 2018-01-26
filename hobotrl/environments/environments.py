@@ -14,6 +14,8 @@ import cv2
 from collections import deque
 import copy
 
+from hobotrl.tf_dependent.base import BaseDeepAgent
+
 
 class EnvRunner(object):
     """
@@ -78,12 +80,16 @@ class EnvRunner(object):
         return done
 
     def record(self, info):
+        if isinstance(self.agent, BaseDeepAgent):
+            n = self.agent._stepper.get()
+        else:
+            n = self.step_n
         if self.summary_writer is not None:
             for name in info:
                 value = info[name]
                 summary = tf.Summary()
                 summary.value.add(tag=name, simple_value=np.mean(value))
-                self.summary_writer.add_summary(summary, self.step_n)
+                self.summary_writer.add_summary(summary, n)
 
     def episode(self, n):
         """
