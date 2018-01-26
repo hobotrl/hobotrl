@@ -11,6 +11,8 @@ setup(name='hobotrl',
           # 'tensorflow >= 1.0.0',
           'httplib2',
           'wrapt',
+          'dill',
+          'opencv-python',
           'pathos'
       ],
       description="Reinforcement Learning Algorithm libraries and experiment collections from Hobot RLer",

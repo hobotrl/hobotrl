@@ -29,11 +29,20 @@ Common RL framework and utilities.
 ## Getting started
 
 
-### Playing with hobotrl without installation
+### Installing
 
-All single process experiments resides in `test` folder.
+
+```
+pip install -e .
+```
+
+So you can use algorithms elsewhere.
+
 
 #### Running Experiments
+
+Running different experiments may require different libraries, such as `opencv-python`, `gym[box2d]`, or `roboschool`.
+
 
 ```
 python test/exp_tabular.py run --name TabularGrid
@@ -57,14 +66,6 @@ to start processes to run a3c algorithm.
 python -m unittest discover -s hobotrl -p "test*.py" -v
 ```
 to run all unit test cases.
-
-### Installing
-
-```
-pip install -e .
-```
-
-So you can use algorithms elsewhere.
 
 ### Usage
 

@@ -461,6 +461,12 @@ class Stepper(IntHandle):
     def step(self):
         self._n += 1
 
+    def set(self, n):
+        self._n = n
+
+    def get(self):
+        return self._n
+
 
 def clone_param(param):
     if isinstance(param, ScheduledParam):
@@ -512,6 +518,9 @@ class ScheduledParam(FloatParam):
         value_str = "" if self._n is None else "-[][%d]%f" % (self._n.value(), self._value)
         param_str = "-".join(["{}{:.2e}".format(k, self._schedule_params[k]) for k in self._schedule_params])
         return param_str + value_str
+
+    def __repr__(self):
+        return self.__str__()
 
     def set_int_handle(self, int_handle):
         self._n = int_handle

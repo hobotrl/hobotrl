@@ -77,6 +77,12 @@ class OUExplorationPolicy(Policy):
 
     @staticmethod
     def action_add(action, noise):
+        """
+        regularize action + noise into (-1, 1)
+        :param action:
+        :param noise:
+        :return:
+        """
         return action + np.abs(np.sign(noise) - action) * np.tanh(noise)
 
     def act(self, state, **kwargs):

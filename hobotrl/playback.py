@@ -706,7 +706,7 @@ class NPPlayback(MapPlayback):
 
 
 class BatchIterator(object):
-    def __init__(self, batch, mini_size=1):
+    def __init__(self, batch, mini_size=1, check_episode_done=False):
         """
         Iterate over a batch of data.
         :param batch: column-wise batch sample.
@@ -717,6 +717,7 @@ class BatchIterator(object):
         self._size = len(self._data)
         self._batch_size = min(self._batch_size, self._size)
         self._next_index = 0
+        self._check_episode_done = check_episode_done
 
     def __iter__(self):
         return self
@@ -726,8 +727,19 @@ class BatchIterator(object):
             raise StopIteration
 
         next_index = min(self._next_index, self._size - self._batch_size)
-        self._next_index += self._batch_size
-        return to_columnwise(self._data[next_index:next_index+self._batch_size])
+        if self._check_episode_done:
+            batch_size = self._batch_size
+            for i in range(batch_size):
+                if self._data[next_index + i]["episode_done"]:
+                    batch_size = i + 1
+                    break
+            next_end = next_index + batch_size
+            pass
+        else:
+            batch_size = self._batch_size
+            next_end = next_index + batch_size
+        self._next_index = next_end
+        return to_columnwise(self._data[next_index:next_end])
 
 
 class BalancedMapPlayback(MapPlayback):
