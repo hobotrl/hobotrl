@@ -9,6 +9,6 @@
 #mkdir -p ${log_dir}
 #CUDA_VISIBLE_DEVICES=3 python test/exp_freeway.py run --name FreewayOTDQN_goal --logdir ${log_dir} > ${log_dir}/log.txt 2>&1 &
 
-log_dir1="./log/Freeway/FreewayOTDQN_mom"
+log_dir1="./log/Freeway/FreewayOTDQN_state"
 mkdir -p ${log_dir1}
-CUDA_VISIBLE_DEVICES=2 python test/exp_freeway.py run --name FreewayOTDQN_mom --logdir ${log_dir1} > ${log_dir1}/log.txt 2>&1 &
+CUDA_VISIBLE_DEVICES=2 python test/exp_freeway.py run --name FreewayOTDQN_state --logdir ${log_dir1} > ${log_dir1}/log.txt 2>&1 &

@@ -252,6 +252,34 @@ class FreewayOTDQN_mom(OTDQNModelExperiment):
 Experiment.register(FreewayOTDQN_mom, "OTDQN for Freeway with half input")
 
 
+class FreewayOTDQN_state(FreewayOTDQN_mom):
+    def __init__(self, env=None, f_create_q=None, f_se=None, f_transition=None, f_decoder=None, with_momentum=False,
+                 state_size=1600):
+        if env is None:
+            env = gym.make('Freeway-v0')
+            env = Downsample(env, dst_size=[96, 96])
+            env = ScaledFloatFrame(env)
+            env = MaxAndSkipEnv(env, skip=4, max_len=1)
+            env = FrameStack(env, k=4)
+
+        if f_se is None:
+            f = F(env, state_size)
+            f_create_q = f.create_q()
+            f_se = f.create_se()
+            f_transition = f.create_transition_momentum()
+            f_decoder = f.create_decoder()
+            
+        super(FreewayOTDQN_state, self).__init__(env=env, f_create_q=f_create_q, f_se=f_se, f_transition=f_transition,
+                                                 f_decoder=f_decoder, with_momentum=with_momentum)
+Experiment.register(FreewayOTDQN_state, "state OTDQN for Freeway with half input")
+
+
+class FreewayOTDQN_state_256(FreewayOTDQN_state):
+    def __init__(self, state_size=256):
+        super(FreewayOTDQN_state_256, self).__init__(state_size=state_size)
+Experiment.register(FreewayOTDQN_state_256, "256 state OTDQN for Freeway with half input")
+
+
 class FreewayOTDQN_goal_256(FreewayOTDQN_mom):
     def __init__(self, with_momentum=False):
         super(FreewayOTDQN_goal_256, self).__init__(with_momentum=with_momentum)

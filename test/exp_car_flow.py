@@ -1473,6 +1473,30 @@ class OTDQNModelCar(OTDQNModelExperiment):
 Experiment.register(OTDQNModelCar, "transition model with dqn, for CarRacing")
 
 
+class OTDQNModelCar_state(OTDQNModelCar):
+    def __init__(self, env=None, f_create_q=None, f_se=None, f_transition=None, f_decoder=None, with_momentum=False,
+                 state_size=1600):
+        if env is None:
+            env = gym.make('CarRacing-v0')
+            env = wrap_car(env, 3, 3)
+        if f_se is None:
+            f = F(env, state_size)
+            f_create_q = f.create_q()
+            f_se = f.create_se()
+            f_transition = f.create_transition()
+            f_decoder = f.create_decoder()
+
+        super(OTDQNModelCar_state, self).__init__(env=env, f_create_q=f_create_q, f_se=f_se, f_transition=f_transition,
+                                                  f_decoder=f_decoder, with_momentum=with_momentum)
+Experiment.register(OTDQNModelCar_state, "state transition model with dqn, for CarRacing")
+
+
+class OTDQNModelCar_state_256(OTDQNModelCar_state):
+    def __init__(self, state_size=256):
+        super(OTDQNModelCar_state_256, self).__init__(state_size=state_size)
+Experiment.register(OTDQNModelCar_state_256, "256 state transition model with dqn, for CarRacing")
+
+
 class OTDQNModelCar_mom_1600(OTDQNModelCar):
     def __init__(self, state_size=1600, with_momentum=True):
         super(OTDQNModelCar_mom_1600, self).__init__(state_size=state_size, with_momentum=with_momentum)

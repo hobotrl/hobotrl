@@ -429,6 +429,29 @@ class MsPacmanOTDQN(OTDQNModelExperiment):
 Experiment.register(MsPacmanOTDQN, "OTDQN for MsPacman with half input")
 
 
+class MsPacmanOTDQN_state(MsPacmanOTDQN):
+    def __init__(self, env=None, f_create_q=None, f_se=None, f_transition=None, f_decoder=None, with_momentum=False,
+                 state_size=1600):
+        if env is None:
+            env = gym.make('MsPacman-v0')
+            env = Downsample(env, dst_size=[96, 96])
+            env = ScaledFloatFrame(env)
+            env = ScaledRewards(env, 0.01)
+            env = MaxAndSkipEnv(env, skip=4, max_len=1)
+            env = FrameStack(env, k=4)
+
+        if f_se is None:
+            f = F(env, state_size)
+            f_create_q = f.create_q()
+            f_se = f.create_se()
+            f_transition = f.create_transition()
+            f_decoder = f.create_decoder()
+
+        super(MsPacmanOTDQN_state, self).__init__(env=env, f_create_q=f_create_q, f_se=f_se, f_transition=f_transition,
+                                                  f_decoder=f_decoder, with_momentum=with_momentum)
+Experiment.register(MsPacmanOTDQN_state, "state OTDQN for Freeway with half input")
+
+
 class MsPacmanOTDQN_goal_256(MsPacmanOTDQN):
     def __init__(self, with_momentum=False):
         super(MsPacmanOTDQN_goal_256, self).__init__(with_momentum=with_momentum)
