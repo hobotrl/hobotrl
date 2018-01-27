@@ -7,8 +7,8 @@
 
 log_dir="./log/MsPacman/OTDQN_state"
 mkdir -p ${log_dir}
-CUDA_VISIBLE_DEVICES=0 python test/exp_iaa.py run --name MsPacmanOTDQN_state --logdir ${log_dir} > ${log_dir}/log.txt 2>&1 &
+CUDA_VISIBLE_DEVICES=1 python test/exp_iaa.py run --name MsPacmanOTDQN_state --logdir ${log_dir} > ${log_dir}/log.txt 2>&1 &
 
-#log_dir="./log/MsPacman/MsPacmanOTDQN_goal_256"
-#mkdir -p ${log_dir}
-#CUDA_VISIBLE_DEVICES=3 python test/exp_iaa.py run --name MsPacmanOTDQN_goal_256 --logdir ${log_dir} > ${log_dir}/log.txt 2>&1 &
+log_dir="./log/MsPacman/OTDQN_state_256"
+mkdir -p ${log_dir}
+CUDA_VISIBLE_DEVICES=2 python test/exp_iaa.py run --name MsPacmanOTDQN_state_256 --logdir ${log_dir} > ${log_dir}/log.txt 2>&1 &

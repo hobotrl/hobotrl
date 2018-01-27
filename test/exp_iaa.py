@@ -452,6 +452,12 @@ class MsPacmanOTDQN_state(MsPacmanOTDQN):
 Experiment.register(MsPacmanOTDQN_state, "state OTDQN for Freeway with half input")
 
 
+class MsPacmanOTDQN_state_256(MsPacmanOTDQN_state):
+    def __init__(self, state_size=256):
+        super(MsPacmanOTDQN_state_256, self).__init__(state_size=state_size)
+Experiment.register(MsPacmanOTDQN_state_256, "256 state OTDQN for Freeway with half input")
+
+
 class MsPacmanOTDQN_goal_256(MsPacmanOTDQN):
     def __init__(self, with_momentum=False):
         super(MsPacmanOTDQN_goal_256, self).__init__(with_momentum=with_momentum)
