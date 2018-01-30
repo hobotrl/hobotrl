@@ -18,107 +18,7 @@ import tensorflow.contrib.layers as layers
 import tensorflow as tf
 
 
-class TabularQFunc(object):
-    """Table-based Action-Value Function.
-    This class implements the classical table-based action value function
-    (i.e. Q function). The Q values are stored in a dictionary for each
-    (state, action) pair and can be updated with the temporal-difference (TD)
-    learning algorithm.
-    """
-    def __init__(self, actions, gamma, greedy_policy=True, alpha=1.0,
-                 default_q_val=0.0, **kwargs):
-        """Initialization
 
-        Parameters
-        ----------
-        actions : the action space. (Tuple)
-        gamma   : discount factor for value functions. (Float)
-        greedy_policy : whether or not to evaluate the greedy policy. (Bool)
-        alpha   : (optional) 1-alpha is the exponential decay factor for old
-                  Q values. (Float)
-        default_q_val : (optional) default value for uninitialized action-value
-                        entries. (Float)
-        """
-        self.__ACTIONS = actions
-        self.__GAMMA = gamma  # discount factor
-        self.__GREEDY_POLICY = greedy_policy
-        self.__ALPHA = alpha  # Moving average exponent for T-D updates
-        self.__DEFAULT_QVAL = default_q_val
-
-        self.__q = {}
-
-    def get_value(self, state, action=None, **kwargs):
-        """Retrieve action-value entries
-        Return action-value entry for specified (state, action) pair or for all
-        actions of a particular state if the "action" is None.
-
-        Parameters
-        ----------
-        state  :
-        action :
-        """
-        if action is None:  # return Q values for all actions
-            return [
-                self.__q[(state, a)] if (state, a) in self.__q else \
-                self.__DEFAULT_QVAL
-                for a in self.__ACTIONS
-            ]
-        else:
-            exp = (state, action)
-            return self.__q[exp] if exp in self.__q else self.__DEFAULT_QVAL
-
-    def improve_value_(self, state, action, reward,
-                       next_state, next_action=None,
-                       episode_done=False, importance=1.0,
-                       **kwargs):
-        """Evaluate policy with one-step temporal difference.
-        This method evaluate a policy by means of the temporal difference
-        algorithm and forms a tabular action-value function.
-
-        Depending on the class attr. "GREEDY_POLICY", this method either
-        evaluate the greedy policy (True) or evaluate other policies (False).
-        In the latter case, the "importance" arg. can also be provided for
-        off-policy evaluation. It will be used to correct the bias on action
-        selection.
-
-        Note the "importance" arg. will be ignored in the greedy policy case
-        as well as in the on-policy case with default next action.
-
-        Parameters
-        ----------
-        state  :
-        action :
-        reward :
-        next_state   :
-        next_action  :
-        episode_done :
-        importance   : importance sampling ratio for off-policy evaluation.
-                       Use default (1.0) for greedy of on-policy evaluation.
-        """
-        # Getting the Q value for next step:
-        # If evaluate the greedy policy use the maximum Q value across all
-        # actions.
-        if self.__GREEDY_POLICY:
-            # greedy policy suggests an unit importance
-            importance = 1.0
-            next_q = max(self.get_value(next_state))
-        # If evaluate other policies, either use the "next_action" passed in
-        # or sample next action with "act_()" if "next_action" is None.
-        else:
-            next_q = self.get_value(next_state, next_action)
-
-        # Target Q value from Bellman iteration
-        target_q = reward + self.__GAMMA * importance * next_q * (1 - episode_done)
-
-        # Standard Temporal Difference update with exponention moving
-        # averaging, i.e update is the average of old value and new target.
-        exp = (state, action)
-        if exp not in self.__q:
-            self.__q[exp] = self.__DEFAULT_QVAL
-        td = target_q - self.__q[exp]
-        self.__q[exp] += self.__ALPHA * td
-
-        return {'td': td}
 
 
 class EpsilonGreedyPolicy(object):
@@ -172,7 +72,9 @@ class EpsilonGreedyPolicy(object):
 
 
 class Network(object):
-
+    """
+    :deprecated by hobotrl.network.network.Utils
+    """
     @staticmethod
     def layer_fcs(input_var, shape, out_count, activation_hidden=tf.nn.relu, activation_out=None, l2=0.0001,
                   var_scope=""):
@@ -583,6 +485,12 @@ class Stepper(IntHandle):
     def step(self):
         self._n += 1
 
+    def set(self, n):
+        self._n = n
+
+    def get(self):
+        return self._n
+
 
 def clone_param(param):
     if isinstance(param, ScheduledParam):
@@ -635,6 +543,9 @@ class ScheduledParam(FloatParam):
         param_str = "-".join(["{}{:.2e}".format(k, self._schedule_params[k]) for k in self._schedule_params])
         return param_str + value_str
 
+    def __repr__(self):
+        return self.__str__()
+
     def set_int_handle(self, int_handle):
         self._n = int_handle
 
@@ -643,6 +554,7 @@ class ScheduledParamCollector(object):
     def __init__(self, *args, **kwargs):
         super(ScheduledParamCollector, self).__init__()
         self._params = {}
+        self._numeric_params = {}
         self.max_depth = 10
         self.max_param_num = 128  # no algorithm should expose more than 128 hyperparameters!
 
@@ -654,21 +566,27 @@ class ScheduledParamCollector(object):
         for i in range(len(args)):
             p = args[i]
             sub_prefix = "%s/%d" % (prefix, i)
+            type_p = type(p)
             if isinstance(p, ScheduledParam):
                 self.schedule_param(sub_prefix, p)
-            elif type(p) == list or type(p) == tuple:
+            elif type_p == list or type_p == tuple:
                 self.schedule_params(sub_prefix, _spc_depth+1, *p)
-            elif type(p) == dict:
+            elif type_p == dict:
                 self.schedule_params(sub_prefix, _spc_depth+1, **p)
+            elif type_p == int or type_p == float or isinstance(p, FloatParam):
+                self.collect_numeric_param(sub_prefix, p)
         for key in kwargs:
             p = kwargs[key]
             sub_prefix = "%s/%s" % (prefix, key)
+            type_p = type(p)
             if isinstance(p, ScheduledParam):
                 self.schedule_param(sub_prefix, p)
-            elif type(p) == list or type(p) == tuple:
+            elif type_p == list or type_p == tuple:
                 self.schedule_params(sub_prefix, _spc_depth+1, *p)
-            elif type(p) == dict:
+            elif type_p == dict:
                 self.schedule_params(sub_prefix, _spc_depth+1, **p)
+            elif type_p == int or type_p == float or isinstance(p, FloatParam):
+                self.collect_numeric_param(sub_prefix, p)
 
     def schedule_param(self, prefix, param):
         """
@@ -678,6 +596,9 @@ class ScheduledParamCollector(object):
         """
         self._params[prefix] = param
 
+    def collect_numeric_param(self, prefix, param):
+        self._numeric_params[prefix] = param
+
     def set_int_handle(self, int_handle):
         for k in self._params:
             param = self._params[k]
@@ -685,6 +606,9 @@ class ScheduledParamCollector(object):
 
     def get_params(self):
         return self._params
+
+    def get_numeric_params(self):
+        return self._numeric_params
 
 
 class CappedLinear(ScheduledParam):

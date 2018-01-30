@@ -6,12 +6,15 @@ import os
 import time
 import logging
 import gym
+import gym.spaces
 import numpy as np
 import tensorflow as tf
 from tensorflow.python.training.summary_io import SummaryWriterCache
 import cv2
 from collections import deque
 import copy
+
+from hobotrl.tf_dependent.base import BaseDeepAgent
 
 
 class EnvRunner(object):
@@ -55,8 +58,12 @@ class EnvRunner(object):
         # TODO: directly calling agent.act will by-pass BaseDeepAgent, which
         # checks and assigns 'sess' arugment. So we manually set sess here. But
         # is there a better way to do this?
+        if hasattr(self.agent, "sess"):
+            sess = self.agent.sess
+        else:
+            sess = None
         self.action = self.agent.act(
-            state=self.state, evaluate=evaluate, sess=self.agent.sess
+            state=self.state, evaluate=evaluate, sess=sess
         )
         next_state, reward, done, env_info = self.env.step(self.action)
         self.total_reward = reward + self.reward_decay * self.total_reward
@@ -73,12 +80,16 @@ class EnvRunner(object):
         return done
 
     def record(self, info):
+        if isinstance(self.agent, BaseDeepAgent):
+            n = self.agent._stepper.get()
+        else:
+            n = self.step_n
         if self.summary_writer is not None:
             for name in info:
                 value = info[name]
                 summary = tf.Summary()
                 summary.value.add(tag=name, simple_value=np.mean(value))
-                self.summary_writer.add_summary(summary, self.step_n)
+                self.summary_writer.add_summary(summary, n)
 
     def episode(self, n):
         """
@@ -695,11 +706,11 @@ class C2DEnvWrapper(gym.Wrapper):
             action /= q
         return [self.action_table[i][x] for i, x in enumerate(action_index)]
 
-    def reset(self):
+    def _reset(self):
         return self.env.reset()
 
 
-class GridworldSink:
+class GridworldSink(gym.Env):
     """A simple maze game with a single goal state
     This is a simple maze game environment. The game is played on a 2-D
     grid world and one of the grids is the goal grid. The agent can move up,
@@ -722,6 +733,7 @@ class GridworldSink:
         wall_reward :
         null_reward :
         """
+        super(GridworldSink, self).__init__()
         self.ACTIONS = ['left', 'right', 'up', 'down']  # legitimate ACTIONS
 
         if dims is None:
@@ -740,10 +752,11 @@ class GridworldSink:
 
         self.state = None
         self.done = False
-
+        self.action_space = gym.spaces.Discrete(len(self.ACTIONS))
+        self.observation_space = gym.spaces.Box(0, np.max(self.DIMS), shape=(2,))
         self.reset()
 
-    def step(self, action):
+    def _step(self, action):
         """
 
         Parameters
@@ -755,9 +768,9 @@ class GridworldSink:
         if self.done:
             raise ValueError("Episode done, please restart.")
 
-        next_state, reward, self.done = self.transition_(self.state, action)
+        next_state, reward, self.done = self.transition_(self.state, self.ACTIONS[action])
         self.state = next_state
-        return next_state, reward, self.done, None
+        return next_state, reward, self.done, {}
 
     def transition_(self, current_state, action):
         """State transition and rewarding logic
@@ -796,7 +809,7 @@ class GridworldSink:
         else:
             return 'left'
 
-    def reset(self):
+    def _reset(self):
         """Randomly throw the agent to a non-goal state
 
         """
@@ -811,7 +824,7 @@ class GridworldSink:
     def isDone(self):
         return self.state == self.GOAL_STATE
 
-    def render(self):
+    def render(self, mode="human", close=False):
         # I can't render
         pass
 
@@ -898,6 +911,24 @@ class EpisodicLifeEnv(gym.Wrapper):
             self.was_real_reset = False
         self.lives = self.env.unwrapped.ale.lives()
         return obs
+
+
+class RewardLongerEnv(gym.Wrapper):
+
+    def __init__(self, env, end_reward=-1.0):
+        """
+        penalty at episode end, encouraging longer episodes
+        :param env:
+        :param end_reward:
+        """
+        super(RewardLongerEnv, self).__init__(env)
+        self._end_reward = end_reward
+
+    def _step(self, action):
+        obs, reward, done, info = self.env.step(action)
+        if done:
+            reward += self._end_reward
+        return obs, reward, done, info
 
 
 class CropMsPacman(gym.ObservationWrapper):

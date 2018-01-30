@@ -15,6 +15,50 @@ from hobotrl.algorithms import dpg
 from noisy import DisentangleUpdater
 
 
+class CenterDisentangleUpdater(network.NetworkUpdater):
+    def __init__(self, net_se, func, stddev=1.0, stddev_weight=1e-3):
+        super(CenterDisentangleUpdater, self).__init__()
+        self._stddev = stddev
+        state_shape = net_se.inputs[0].shape.as_list()
+        se_dimension = net_se["se"].op.shape.as_list()[-1]
+        noise_shape = func.inputs[1].shape.as_list()
+        with tf.name_scope("input"):
+            self._input_state = tf.placeholder(dtype=tf.float32, shape=state_shape, name="St")
+            self._input_noise = tf.placeholder(dtype=tf.float32, shape=noise_shape, name="Nt")
+            self._input_stddev = tf.placeholder(dtype=tf.float32, name="stddev")
+        with tf.name_scope("disentangle"):
+            net_se_off = net_se([self._input_state], "off_se")
+            net_noise_off = func([tf.stop_gradient(net_se_off["se"].op), self._input_noise], "off_noise")
+            self._noise_op = net_noise_off["noise"].op
+
+            mean = tf.reduce_mean(self._noise_op, axis=0, keep_dims=True)
+            mean_loss = tf.reduce_sum(Utils.clipped_square(mean))
+            stddev = tf.reduce_mean(tf.sqrt(tf.reduce_sum(tf.square(self._noise_op - mean), axis=-1)))
+            stddev_loss = Utils.clipped_square(stddev - self._input_stddev * np.sqrt(se_dimension))
+            self._op_loss = mean_loss + stddev_loss * stddev_weight
+            self._mean_op, self._stddev_op, self._mean_loss, self._stddev_loss = \
+                mean, stddev, mean_loss, stddev_loss
+        self._update_operation = network.MinimizeLoss(self._op_loss,
+                                                      var_list=func.variables)
+
+    def declare_update(self):
+        return self._update_operation
+
+    def update(self, sess, batch, *args, **kwargs):
+        if isinstance(batch, list):
+            batch = to_transitions(batch)
+        state, noise = batch["state"], batch["noise"]
+        feed_dict = {
+            self._input_state: state,
+            self._input_noise: noise,
+            self._input_stddev: self._stddev
+        }
+        return network.UpdateRun(feed_dict=feed_dict, fetch_dict={"mean": self._mean_op,
+                                                                  "stddev": self._stddev_op,
+                                                                  "mean_loss": self._mean_loss,
+                                                                  "stddev_loss": self._stddev_loss})
+
+
 class NoisyDPGUpdater(dpg.DPGUpdater):
     def __init__(self, actor, critic, target_estimator, discount_factor, actor_weight, actor_mean):
         """
@@ -79,6 +123,57 @@ class NoisyDPGUpdater(dpg.DPGUpdater):
         })
 
 
+class DisentangleNoisyDPGUpdater(NoisyDPGUpdater):
+
+    def __init__(self, actor, critic, f_noise, target_estimator, discount_factor, actor_weight, actor_mean,
+                 zero_mean_weight=1e-2, stddev_weight=1e-4):
+        super(DisentangleNoisyDPGUpdater, self).__init__(actor, critic, target_estimator, discount_factor, actor_weight,
+                                                         actor_mean)
+        self._f_noise = f_noise
+        self._zero_mean_weight, self._stddev_weight = zero_mean_weight, stddev_weight
+        with tf.name_scope("disentangle"):
+            self._input_weight_mean = tf.placeholder(dtype=tf.float32, name="weight_mean")
+            self._input_weight_stddev = tf.placeholder(dtype=tf.float32, name="weight_stddev")
+            op_a, op_a_mean = self._actor.output().op, self._actor_mean.output().op
+            # pull action mean close to noisy action
+            self._zero_mean_loss = network.Utils.clipped_square(tf.stop_gradient(op_a) - op_a_mean)
+            # push noisy action away from action mean
+            self._stddev_loss = - network.Utils.clipped_square(f_noise.output().op)
+            self._disentangle_loss = tf.reduce_mean(self._zero_mean_loss) * self._input_weight_mean \
+                                     + tf.reduce_mean(self._stddev_loss) * self._input_weight_stddev
+        self._op_loss = (self._actor_loss + self._actor_mean_loss) * actor_weight + self._critic_loss \
+                        + self._disentangle_loss
+        self._update_operation = network.MinimizeLoss(self._op_loss,
+                                                      var_list=self._actor.variables +
+                                                               self._critic.variables + self._actor_mean.variables)
+
+    def update(self, sess, batch, *args, **kwargs):
+        run = super(DisentangleNoisyDPGUpdater, self).update(sess, batch, *args, **kwargs)
+        run._feed_dict.update({
+            self._input_weight_mean: self._zero_mean_weight,
+            self._input_weight_stddev: self._stddev_weight
+        })
+        run._fetch_dict.update({
+            "disentangle_mean": self._zero_mean_loss,
+            "disentangle_stddev": self._stddev_loss,
+            "weight_mean": self._zero_mean_weight,
+            "weight_stddev": self._stddev_weight
+        })
+        return run
+
+
+class NoisyContinuousActionEstimator(target_estimate.TargetEstimator):
+    def __init__(self, actor, critic, discount_factor):
+        super(NoisyContinuousActionEstimator, self).__init__(discount_factor)
+        self._actor, self._critic, = actor, critic
+
+    def estimate(self, state, action, reward, next_state, episode_done, noise, **kwargs):
+        target_action = self._actor(next_state, noise)
+        target_q = self._critic(next_state, target_action)
+        target_q = reward + self._discount_factor * (1.0 - episode_done) * target_q
+        return target_q
+
+
 class NoisyContinuousActionEstimator(target_estimate.TargetEstimator):
     def __init__(self, actor, critic, discount_factor):
         super(NoisyContinuousActionEstimator, self).__init__(discount_factor)
@@ -106,12 +201,15 @@ class NoisyDPG(BaseDeepAgent):
                  ou_params=(0.0, 0.2, 0.2),
                  noise_stddev=0.5,
                  noise_weight=1.0,
+                 noise_mean_weight=1e-2,
+                 noise_stddev_weight=1e-4,
                  # target network sync arguments
                  target_sync_interval=10,
                  target_sync_rate=0.01,
                  # sampler arguments
                  replay_size=1000,
                  batch_size=32,
+                 disentangle_with_dpg=True,
                  *args, **kwargs):
         """
 
@@ -153,6 +251,8 @@ class NoisyDPG(BaseDeepAgent):
             network_optimizer = network.LocalOptimizer(grad_clip=max_gradient)
         super(NoisyDPG, self).__init__(*args, **kwargs)
 
+        self._disentangle_with_dpg = disentangle_with_dpg
+
         def make_sample(state, action, reward, next_state, episode_done, noise, **kwargs):
             sample = sampling.default_make_sample(state, action, reward, next_state, episode_done)
             sample.update({"noise": noise})
@@ -166,6 +266,8 @@ class NoisyDPG(BaseDeepAgent):
                                                        inputs=[self._input_state, self._input_noise])
         self._actor_mean_function = network.NetworkFunction(self.network["action_mean"],
                                                             inputs=[self._input_state])
+        self._noise_function = network.NetworkFunction(self.network["action_noise"],
+                                                       inputs=[self._input_state, self._input_noise])
         self._target_q_function = network.NetworkFunction(self.network.target["q"],
                                                           inputs=[self._input_state, self._input_action])
         self._target_actor_function = network.NetworkFunction(self.network.target["action"],
@@ -173,18 +275,29 @@ class NoisyDPG(BaseDeepAgent):
         target_estimator = NoisyContinuousActionEstimator(
             self._target_actor_function, self._target_q_function, discount_factor)
         self.network_optimizer = network_optimizer
-        network_optimizer.add_updater(
-            NoisyDPGUpdater(actor=self._actor_function,
-                            critic=self._q_function,
-                            target_estimator=target_estimator,
-                            discount_factor=discount_factor, actor_weight=0.02,
-                            actor_mean=self._actor_mean_function), name="ac")
-        network_optimizer.add_updater(
-            DisentangleUpdater(
-                self.network.sub_net("se"),
-                self.network.sub_net("noise"),
-                stddev=noise_stddev), weight=noise_weight,
-            name="disentangle")
+        if disentangle_with_dpg:
+            network_optimizer.add_updater(
+                DisentangleNoisyDPGUpdater(actor=self._actor_function,
+                                           critic=self._q_function,
+                                           f_noise=self._noise_function,
+                                           target_estimator=target_estimator,
+                                           discount_factor=discount_factor, actor_weight=0.02,
+                                           actor_mean=self._actor_mean_function,
+                                           zero_mean_weight=noise_mean_weight,
+                                           stddev_weight=noise_stddev_weight), name="ac")
+        else:
+            network_optimizer.add_updater(
+                NoisyDPGUpdater(actor=self._actor_function,
+                                critic=self._q_function,
+                                target_estimator=target_estimator,
+                                discount_factor=discount_factor, actor_weight=0.02,
+                                actor_mean=self._actor_mean_function), name="ac")
+            network_optimizer.add_updater(
+                DisentangleUpdater(
+                    self.network.sub_net("se"),
+                    self.network.sub_net("noise"),
+                    stddev=noise_stddev), weight=noise_weight,
+                name="disentangle")
         network_optimizer.add_updater(network.L2(self.network), name="l2")
         network_optimizer.compile()
 
@@ -240,7 +353,8 @@ class NoisyDPG(BaseDeepAgent):
         if batch is not None:
             self._update_count += 1
             self.network_optimizer.update("ac", self.sess, batch)
-            self.network_optimizer.update("disentangle", self.sess, batch)
+            if not self._disentangle_with_dpg:
+                self.network_optimizer.update("disentangle", self.sess, batch)
             self.network_optimizer.update("l2", self.sess)
             info = self.network_optimizer.optimize_step(self.sess)
             if self._update_count % self._target_sync_interval == 0:

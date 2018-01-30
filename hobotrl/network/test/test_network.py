@@ -27,7 +27,9 @@ class TestNetwork(unittest.TestCase):
         self.assertListEqual(net1.variables, net2.variables, "net1/net2 variable equals check")
         with tf.name_scope("assigns"):
             reset_net1 = [tf.assign(v, tf.zeros_like(v)) for v in net1.variables]
-        with tf.Session() as sess:
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        with tf.Session(config=config) as sess:
             sess.run(tf.global_variables_initializer())
             net1.set_session(sess)
             net2.set_session(sess)

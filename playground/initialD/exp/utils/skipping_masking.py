@@ -79,6 +79,9 @@ class NonUniformSkip(SkippingAgent):
     def __init__(self, n_skip_vec, *args, **kwargs):
         super(NonUniformSkip, self).__init__(*args, **kwargs)
         self.__n_skip_vec = n_skip_vec
+        self.__base_n_skip = self.n_skip
+        self._rand_start()
+
 
     def step(self, state, action, reward, next_state, episode_done,
              *args, **kwargs):
@@ -90,6 +93,15 @@ class NonUniformSkip(SkippingAgent):
             *args, **kwargs
         )
         return info
+
+    def _rand_start(self):
+        self.n_skip = int(self.__base_n_skip * (1 + np.random.rand()))
+        self.cnt_skip = self.n_skip - 1
+        logging.warning(
+            "[RandFirstSkip]: random skip for first step {}/{}".format(
+                self.n_skip, self.__base_n_skip
+            )
+        )
 
 
 class DynamicSkipping(SkippingAgent):
