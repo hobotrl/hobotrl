@@ -73,7 +73,7 @@ class DrivingSimulatorEnv(object):
                  step_delay_target=None,
                  is_dummy_action=False,
                  backend_cmds=None,
-                 node_timeout=20):
+                 node_timeout=20, *args, **kwargs):
         """Initialization."""
         # params
         self.defs_obs = self.__import_defs(defs_obs)
