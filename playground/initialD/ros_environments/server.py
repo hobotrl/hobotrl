@@ -26,7 +26,7 @@ sys.path.append(os.path.dirname(os.path.realpath(__file__)))
 
 
 class DrivingSimulatorEnvServer(multiprocessing.Process):
-    def __init__(self, port):
+    def __init__(self, port, *args, **args):
         self.port = port
         self.context = None
         self.socket = None
