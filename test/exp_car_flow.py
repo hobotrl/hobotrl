@@ -1451,8 +1451,8 @@ class OTDQNModelCar(OTDQNModelExperiment):
                  f_create_q=None, f_se=None, f_transition=None, f_decoder=None, lower_weight=1.0, upper_weight=1.0,
                  rollout_depth=5, discount_factor=0.99, ddqn=False, target_sync_interval=100, target_sync_rate=1.0,
                  greedy_epsilon=0.1, network_optimizer=None, max_gradient=10.0, update_interval=4, replay_size=1024,
-                 batch_size=16, curriculum=[1, 3, 5], skip_step=[500000, 1000000], sampler_creator=None,
-                 asynchronous=False, save_image_interval=10000, state_size=256, with_momentum=True):
+                 batch_size=16, sampler_creator=None, asynchronous=False, save_image_interval=10000, state_size=256,
+                 with_momentum=True, curriculum=[1, 3, 5], skip_step=[500000, 1000000]):
         if env is None:
             env = gym.make('CarRacing-v0')
             env = wrap_car(env, 3, 3)
@@ -1536,8 +1536,8 @@ class OTDQN_ob(OTDQNModelExperiment):
                  f_create_q=None, f_se=None, f_transition=None, f_decoder=None, lower_weight=1.0, upper_weight=1.0,
                  rollout_depth=5, discount_factor=0.99, ddqn=False, target_sync_interval=100, target_sync_rate=1.0,
                  greedy_epsilon=0.1, network_optimizer=None, max_gradient=10.0, update_interval=4, replay_size=1024,
-                 batch_size=16, curriculum=[1, 3, 5], skip_step=[500000, 1000000], sampler_creator=None,
-                 asynchronous=False, save_image_interval=10000, with_ob=True):
+                 batch_size=16, sampler_creator=None, asynchronous=False, save_image_interval=10000, with_ob=True,
+                 curriculum=[1, 3, 5], skip_step=[500000, 1000000]):
         if env is None:
             env = gym.make('CarRacing-v0')
             env = wrap_car(env, 3, 3)
@@ -1582,7 +1582,7 @@ Experiment.register(OTDQN_ob_decoder, "Old traditional env model with dqn, for C
 
 
 class OTDQNModelDriving(OTDQNModelCar):
-    def __init__(self, env=None, episode_n=16000, f_create_q=None, f_se=None, f_transition=None, f_decoder=None,
+    def __init__(self, env=None, episode_n=20000, f_create_q=None, f_se=None, f_transition=None, f_decoder=None,
                  lower_weight=1.0, upper_weight=1.0, rollout_depth=5, discount_factor=0.99, ddqn=False,
                  target_sync_interval=100, target_sync_rate=1.0, greedy_epsilon=0.1, network_optimizer=None,
                  max_gradient=10.0, update_interval=4, replay_size=10000, batch_size=10, sampler_creator=None,
@@ -1591,10 +1591,10 @@ class OTDQNModelDriving(OTDQNModelCar):
             env = ScaledFloatFrame(EnvNoOpSkipping(
                         env=EnvRewardVec2Scalar(
                             FrameStack(
-                                # Downsample(
+                                Downsample(
                                     DrSimDecisionK8STopView()
-                                #    , dst_size=(128, 128)
-                                #)
+                                   , dst_size=(128, 128)
+                                )
                                 , 4
                             )
                         ),
