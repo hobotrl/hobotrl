@@ -2,6 +2,7 @@
 
 import sys
 sys.path.append(".")
+import gym.spaces
 
 import hobotrl as hrl
 from hobotrl.utils import CappedLinear
@@ -131,7 +132,7 @@ Experiment.register(ACConPendulumSearch, "continuous actor critic for Pendulum")
 class DQNPendulum(DQNExperiment):
 
     def __init__(self, env=None, f_create_q=None, episode_n=1000, discount_factor=0.99, ddqn=False, target_sync_interval=100,
-                 target_sync_rate=1.0, update_interval=4, replay_size=1000, batch_size=32, greedy_epsilon=0.3,
+                 target_sync_rate=1.0, update_interval=4, replay_size=1000, batch_size=32, greedy_epsilon=0.1,
                  network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3),
                                                                            grad_clip=10.0)):
         if env is None:
@@ -195,10 +196,10 @@ Experiment.register(DuelDQNPendulum, "Duel DQN for Pendulum")
 
 
 class DPGPendulum(DPGExperiment):
-    def __init__(self, env=None, f_se=None, f_actor=None, f_critic=None, episode_n=1000, discount_factor=0.9,
+    def __init__(self, env=None, f_se=None, f_actor=None, f_critic=None, episode_n=100, discount_factor=0.9,
                  network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3),
                                                                            grad_clip=10.0),
-                 ou_params=(0, 0.2, 0.1),
+                 ou_params=(0, 0.2, hrl.utils.CappedLinear(1e5, 0.5, 0.1)),
                  target_sync_interval=10, target_sync_rate=0.01, batch_size=32, replay_capacity=1000):
         if env is None:
             env = gym.make("Pendulum-v0")
@@ -213,7 +214,7 @@ class DPGPendulum(DPGExperiment):
         if f_actor is None:
             def f(inputs):
                 se = inputs[0]
-                actor = hrl.network.Utils.layer_fcs(se, [200, 100], dim_action, activation_out=tf.nn.tanh, l2=l2,
+                actor = hrl.network.Utils.layer_fcs(se, [256, 256], dim_action, activation_out=tf.nn.tanh, l2=l2,
                                                     var_scope="action")
                 return {"action": actor}
             f_actor = f
@@ -221,7 +222,7 @@ class DPGPendulum(DPGExperiment):
             def f(inputs):
                 se, action = inputs[0], inputs[1]
                 se = tf.concat([se, action], axis=-1)
-                q = hrl.network.Utils.layer_fcs(se, [100], 1, activation_out=None, l2=l2, var_scope="q")
+                q = hrl.network.Utils.layer_fcs(se, [256, 256], 1, activation_out=None, l2=l2, var_scope="q")
                 q = tf.squeeze(q, axis=1)
                 return {"q": q}
             f_critic = f

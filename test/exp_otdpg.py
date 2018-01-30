@@ -83,11 +83,11 @@ class OTDPGExperiment(Experiment):
 
 class OTDPGPendulum(OTDPGExperiment):
     def __init__(self, env=None, f_se=None, f_actor=None, f_critic=None,
-                 lower_weight=4, upper_weight=4, neighbour_size=8, episode_n=1000,
+                 lower_weight=4, upper_weight=1.0, neighbour_size=8, episode_n=1000,
                  discount_factor=0.9,
                  network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3),
                                                                            grad_clip=10.0),
-                 ou_params=(0, 0.2, 0.1),
+                 ou_params=(0, 0.2, hrl.utils.CappedLinear(1e5, 0.1, 0.01)),
                  target_sync_interval=10, target_sync_rate=0.01, batch_size=8, replay_capacity=1000):
         if env is None:
             env = gym.make("Pendulum-v0")

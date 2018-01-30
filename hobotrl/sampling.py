@@ -92,7 +92,7 @@ class TransitionSampler(Sampler):
 
 class TrajectoryOnSampler(Sampler):
 
-    def __init__(self, replay_memory=None, interval=8, sample_maker=None):
+    def __init__(self, replay_memory=None, interval=8, sample_maker=None, check_episode_done=True):
         """
         sample nearest trajectory or segment of trajectory for on-policy updates
         :param replay_memory:
@@ -108,6 +108,7 @@ class TrajectoryOnSampler(Sampler):
         self._replay, self._sample_maker = replay_memory, sample_maker
         self._interval = interval
         self._step_n = 0
+        self._check_episode_done = check_episode_done
 
     def step(self, state, action, reward, next_state, episode_done, **kwargs):
         """
@@ -122,7 +123,7 @@ class TrajectoryOnSampler(Sampler):
         """
         self._step_n += 1
         self._replay.push_sample(self._sample_maker(state, action, reward, next_state, episode_done, **kwargs))
-        if self._step_n % self._interval == 0 or episode_done:
+        if self._step_n % self._interval == 0 or (self._check_episode_done and episode_done):
             self._step_n = 0
             batch = self._replay.sample_batch(self._replay.get_count())
             self._replay.reset()
@@ -244,6 +245,12 @@ class TruncateTrajectorySampler(Sampler):
     def _get_batch(self, start, end):
         return self._replay.get_batch((np.arange(start, end + 1) + self._replay.get_capacity())
                                       % self._replay.get_capacity())
+
+    def post_step(self, batch, info):
+        if "score" in info:
+            index = np.concatenate([t["_index"] for t in batch], axis=0)
+            score = info["score"]
+            self._replay.update_score(index, score)
 
 
 class TruncateTrajectorySampler2(Sampler):

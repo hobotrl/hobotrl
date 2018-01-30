@@ -51,12 +51,13 @@ class FitTargetQ(network.NetworkUpdater):
             dtype=tf.float32, shape=[None], name="input_target_q")
         self._input_action = tf.placeholder(
             dtype=tf.uint8, shape=[None], name="input_action")
+        self._input_sample_weight = tf.placeholder_with_default([1.0], shape=[None], name="input_weight")
         op_q = learn_q.output().op
         num_actions = learn_q.output().op.shape.as_list()[-1]
         self.selected_q = tf.reduce_sum(
             tf.one_hot(self._input_action, num_actions) * op_q, axis=1)
         self._op_losses = td_loss_fcn(
-            self._input_target_q - self.selected_q)
+            self._input_target_q - self.selected_q) * self._input_sample_weight
         self._sym_loss = tf.reduce_mean(self._op_losses)
         self._update_operation = network.MinimizeLoss(
             self._sym_loss, var_list=self._q.variables)
@@ -85,6 +86,8 @@ class FitTargetQ(network.NetworkUpdater):
         # Prepare data and fit Q network
         feed_dict = {self._input_target_q: target_q_val,
                      self._input_action: batch["action"]}
+        if "_weight" in batch:
+            feed_dict[self._input_sample_weight] = batch["_weight"]
         feed_dict.update(self._q.input_dict(batch["state"]))
         fetch_dict = {
             "action": batch["action"], "reward": batch["reward"],

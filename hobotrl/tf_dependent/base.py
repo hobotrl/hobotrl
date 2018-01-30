@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import logging
 
 import tensorflow as tf
 from hobotrl.core import BaseAgent
@@ -52,6 +53,8 @@ class BaseDeepAgent(BaseAgent):
             config=config
         )
         self.set_session(sess)
+        # init BaseAgent.stepper as long as session is available
+        self.init_step()
         return sess
 
     def get_global_step(self):
@@ -82,5 +85,10 @@ class BaseDeepAgent(BaseAgent):
         if 'sess' not in kwargs:
             kwargs['sess'] = self.sess
         return super(BaseDeepAgent, self).step(state, action, reward, next_state, episode_done, **kwargs)
+
+    def init_step(self):
+        global_step = self.sess.run(self.__global_step)
+        logging.warning("global step loaded:%s", global_step)
+        self._stepper.set(global_step)
 
 

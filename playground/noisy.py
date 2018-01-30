@@ -157,7 +157,7 @@ class AchievableUpdater(NetworkUpdater):
 
 
 class DisentangleUpdater(NetworkUpdater):
-    def __init__(self, net_se, func, stddev=1.0):
+    def __init__(self, net_se, func, stddev=1.0, stddev_weight=1e-3):
         super(DisentangleUpdater, self).__init__()
         self._stddev = stddev
         state_shape = net_se.inputs[0].shape.as_list()
@@ -175,7 +175,7 @@ class DisentangleUpdater(NetworkUpdater):
             mean_loss = tf.reduce_sum(Utils.clipped_square(mean))
             stddev = tf.reduce_mean(tf.sqrt(tf.reduce_sum(tf.square(self._noise_op - mean), axis=-1)))
             stddev_loss = Utils.clipped_square(stddev - self._input_stddev * np.sqrt(se_dimension))
-            self._op_loss = mean_loss + stddev_loss
+            self._op_loss = mean_loss + stddev_loss * stddev_weight
             self._mean_op, self._stddev_op, self._mean_loss, self._stddev_loss = \
                 mean, stddev, mean_loss, stddev_loss
         self._update_operation = network.MinimizeLoss(self._op_loss,

@@ -72,6 +72,8 @@ class RewardFunction:
             '/rl/car_velocity', Float32, queue_size=100)
         self.pub_car_velocity_f = rospy.Publisher(
             '/rl/car_velocity_front', Float32, queue_size=100)
+        self.pub_car_velocity_o = rospy.Publisher(
+            '/rl/car_velocity_oth', Float32, queue_size=100)
         self.pub_on_opp = rospy.Publisher(
             "/rl/last_on_opposite_path", Int16, queue_size=100)
         self.pub_on_pedestrian = rospy.Publisher(
@@ -100,8 +102,13 @@ class RewardFunction:
             (np.cos(self.car_euler[2]), np.sin(self.car_euler[2])),
             (np.cos(self.last_yaw_longestpath), np.sin(self.last_yaw_longestpath))
         ))
+        speed_o = np.abs(speed * np.dot(
+            (np.cos(self.car_euler[2]), np.sin(self.car_euler[2])),
+            (np.sin(self.last_yaw_longestpath), -1.0*np.cos(self.last_yaw_longestpath))
+        ))
         self.pub_car_velocity.publish(speed)
         self.pub_car_velocity_f.publish(speed_f)
+        self.pub_car_velocity_o.publish(speed_o)
 
     def longest_path_callback(self, data):
         """Callback for '/path/longest'

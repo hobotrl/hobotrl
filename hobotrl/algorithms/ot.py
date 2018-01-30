@@ -11,7 +11,7 @@ from dqn import DQN
 from hobotrl.sampling import TruncateTrajectorySampler
 from hobotrl.playback import MapPlayback
 from hobotrl.target_estimate import OptimalityTighteningEstimator
-from value_based import GreedyStateValueFunction
+from value_based import GreedyStateValueFunction, DoubleQValueFunction
 import hobotrl.network as network
 
 
@@ -35,13 +35,15 @@ class TrajectoryFitQ(network.FitTargetQ):
                                                               trajectory["episode_done"]
             all_state.append(state)
             all_action.append(action)
-            target = self._target_estimator.estimate(state, action, reward, next_state, episode_done)
+            target = self._target_estimator.estimate(**trajectory)
             all_target.append(target)
         all_state = np.concatenate(all_state)
         all_action = np.concatenate(all_action)
         all_target = np.concatenate(all_target)
         feed_dict = {self._input_target_q: all_target, self._input_action: all_action}
         feed_dict.update(self._q.input_dict(all_state))
+        if "_weight" in batch:
+            feed_dict[self._input_sample_weight] = batch["_weight"]
         return network.UpdateRun(feed_dict=feed_dict, fetch_dict={"target_q": all_target,
                                                                   "td_loss": self._sym_loss,
                                                                   "td_losses": self._op_losses})
@@ -66,7 +68,10 @@ class OTDQN(DQN):
                                     batch_size, sampler, *args, **kwargs)
 
     def init_updaters_(self):
-        self.target_v = GreedyStateValueFunction(self.target_q)
+        if self._ddqn:
+            self.target_v = DoubleQValueFunction(self.learn_q, self.target_q)
+        else:
+            self.target_v = GreedyStateValueFunction(self.target_q)
         target_esitmator = OptimalityTighteningEstimator(self.target_v, self._upper_weight, self._lower_weight,
                                                          discount_factor=self._discount_factor)
 
@@ -81,4 +86,4 @@ class OTDQN(DQN):
         info = self.network_optimizer.optimize_step(self.sess)
         if self._update_count % self._target_sync_interval == 0:
             self.network.sync_target(self.sess, self._target_sync_rate)
-        return info, {}
+        return info, {"score": info["TrajectoryFitQ/ot/td_losses"]}

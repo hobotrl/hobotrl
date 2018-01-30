@@ -6,8 +6,8 @@ import logging
 import traceback
 import json
 import operator
-import Queue
-from threading import Thread
+from collections import deque
+from threading import Thread, Event
 import wrapt
 import numpy as np
 from externals.joblib import joblib
@@ -583,10 +583,11 @@ class NearPrioritizedPlayback(MapPlayback):
         if sample_score is None:
             if self.data is not None and self.data["_score"].data is not None:
                 sample_score = np.max(self.data["_score"].data)
+                logging.warning("maxed score:%s", sample_score)
             else:
                 sample_score = 0.0
-        print "pushed sample score:", sample_score
-        sample["_score"] = np.asarray([float(sample_score)], dtype=float)
+        logging.warning("pushed sample score:%s", sample_score)
+        sample["_score"] = float(sample_score)
         if self.evict_policy == "sequence":
             super(NearPrioritizedPlayback, self).push_sample(sample, sample_score)
         else:
@@ -605,7 +606,7 @@ class NearPrioritizedPlayback(MapPlayback):
         s_min = np.min(score)
         if s_min < 0:
             score = score - s_min
-        exponent = self.priority_bias() if callable(self.priority_bias) else self.priority_bias
+        exponent = self.priority_bias
         score = np.power(score + self.epsilon, exponent)
         p = score / np.sum(score)
         return p
@@ -628,13 +629,12 @@ class NearPrioritizedPlayback(MapPlayback):
             p = self.data["_score"].data[:self.get_count()]
         else:
             p = self.data["_score"].data
-        p = self.compute_distribution(p.reshape(-1))
+        p = self.compute_distribution(np.array(p).reshape(-1))
         index = np.random.choice(np.arange(len(p)), size=batch_size, replace=False, p=p)
         priority = p[index]
         batch = super(NearPrioritizedPlayback, self).get_batch(index)
         sample_count = self.get_count()
-        is_exponent = self.importance_weight() if callable(self.importance_weight) \
-            else self.importance_weight
+        is_exponent = self.importance_weight
         w = np.power(sample_count * priority, -is_exponent)
         # global max instead of batch max.
         # todo mathematically, global max is the correct one to use.
@@ -650,7 +650,8 @@ class NearPrioritizedPlayback(MapPlayback):
 
     def update_score(self, index, score):
         # logging.warning("update score[%s]: %s -> %s", index, self.data["_score"].data[index], score)
-        self.data["_score"].data[index] = score
+        for i, s in zip(index, score):
+            self.data["_score"].data[i] = s
 
 
 class NPPlayback(MapPlayback):
@@ -705,7 +706,7 @@ class NPPlayback(MapPlayback):
 
 
 class BatchIterator(object):
-    def __init__(self, batch, mini_size=1):
+    def __init__(self, batch, mini_size=1, check_episode_done=False):
         """
         Iterate over a batch of data.
         :param batch: column-wise batch sample.
@@ -716,6 +717,7 @@ class BatchIterator(object):
         self._size = len(self._data)
         self._batch_size = min(self._batch_size, self._size)
         self._next_index = 0
+        self._check_episode_done = check_episode_done
 
     def __iter__(self):
         return self
@@ -725,8 +727,19 @@ class BatchIterator(object):
             raise StopIteration
 
         next_index = min(self._next_index, self._size - self._batch_size)
-        self._next_index += self._batch_size
-        return to_columnwise(self._data[next_index:next_index+self._batch_size])
+        if self._check_episode_done:
+            batch_size = self._batch_size
+            for i in range(batch_size):
+                if self._data[next_index + i]["episode_done"]:
+                    batch_size = i + 1
+                    break
+            next_end = next_index + batch_size
+            pass
+        else:
+            batch_size = self._batch_size
+            next_end = next_index + batch_size
+        self._next_index = next_end
+        return to_columnwise(self._data[next_index:next_end])
 
 
 class BalancedMapPlayback(MapPlayback):
@@ -971,16 +984,27 @@ class BigPlayback(Playback):
         self._buckets_loading = {i: False for i in range(len(self._buckets))}
         self._buckets_saving = {i: False for i in range(len(self._buckets))}
         self._buckets_sample_quota = {}  # remaining sample quota for active buckets
-        self._buckets_to_save = Queue.Queue()
-        self._buckets_to_load = Queue.Queue()
+        self._buckets_to_save = deque()
+        self._buckets_to_load = deque()
         self._close_flag = False
-        self.thread_io = Thread(
-            group=None, target=self.bucket_io, name='thread_io'
-        )
-        self.thread_io.start()
+        self._monitor_stop_event = Event()
+        self._monitor_stop_event.clear()
 
+        # helper counters
+        self.last_t_getbatch = time.time()
+        self.last_t_maintain = time.time()
+        self.last_t_bktio = time.time()
+        self.cnt_qi_empty = 0
+        self.cnt_qo_empty = 0
+        
+        self._thread_io_monitor = Thread(
+            target=self.__monitor_loop, args=(self._monitor_stop_event,)
+        )
+        self._thread_io_monitor.start()
         # Read back state from disk
         self.__init_from_cache()
+
+
 
     def push_sample(self, sample, sample_score=0):
         """Push new sample into buffer.
@@ -1011,11 +1035,10 @@ class BigPlayback(Playback):
                 traceback.format_exc()
             )
 
-
         # adjust push_bucket
         if swap_flag:
             self._buckets_saving[self._push_bucket] = True
-            self._buckets_to_save.put(self._push_bucket)
+            self._buckets_to_save.appendleft(self._push_bucket)
             nxt_push_bucket = (self._push_bucket + 1) % self._bucket_count
             self._push_bucket = nxt_push_bucket
             logging.info(
@@ -1025,7 +1048,7 @@ class BigPlayback(Playback):
 
             nxt_push_bucket = (self._push_bucket + 1) % self._bucket_count
             self._buckets_loading[nxt_push_bucket] = True
-            self._buckets_to_load.put(nxt_push_bucket)
+            self._buckets_to_load.appendleft(nxt_push_bucket)
 
     def add_sample(self, sample, index, sample_score=0):
         raise NotImplementedError(
@@ -1051,9 +1074,9 @@ class BigPlayback(Playback):
                 continue
             else:
                 # Modify sample quota for this bucket
-                self._buckets_sample_quota[bkt_id] -= len(rel_index)
+                self._buckets_sample_quota[bkt_id] -= len(rel_index) if self._buckets_sample_quota[bkt_id] > 0 else 0
                 # check activation state
-                if self._buckets_sample_quota[bkt_id] < 0:
+                if self._buckets_sample_quota[bkt_id] <= 0:
                     logging.warning(
                         "[BigPlayback.get_batch()]: "
                         "bucket {} has run out of quota.".format(bkt_id)
@@ -1064,7 +1087,17 @@ class BigPlayback(Playback):
                     # release mem and signal IO thread to load a new bucket.
                     self._buckets[bkt_id].release_mem()
                     self.__maintain_active_buckets()
-        return self._merge_batches(ret)
+
+        ret = self._merge_batches(ret)
+
+        if time.time() - self.last_t_getbatch > 60:
+            logging.warning(
+                "[BigPlayback.get_batch()]: "
+                "get batch function alive. Last len (batches) {}".format(len(ret))
+            )
+            self.last_t_getbatch = time.time()
+
+        return ret
 
     def _merge_batches(self, batches):
         """
@@ -1101,6 +1134,37 @@ class BigPlayback(Playback):
                 "number of samples < batch size."
             )
             return []
+
+    def __monitor_loop(self, stop_event, *args, **kwargs):
+        _thread_io = None
+        while not stop_event.is_set():
+            if _thread_io is None or not _thread_io.is_alive():
+                logging.warning(
+                    "[BigPlayback.monitor_loop()]: "
+                    "io thread not running, respawning..."
+                )
+                _stop_event = Event()
+                _stop_event.clear()
+                _thread_io = Thread(
+                    target=self.bucket_io, args=(_stop_event,),
+                    name='thread_io', group=None,
+                )
+                _thread_io.start()
+            else:
+                logging.warning(
+                    "[BigPlayback.monitor_loop()]: "
+                    "io thread running okay!"
+                )
+            time.sleep(60.0)
+        logging.warning(
+            "[BigPlayback.monitor_loop()]: stopping io thread."
+        )
+        _stop_event.set()
+        _thread_io.join()
+        logging.warning(
+            "[BigPlayback.monitor_loop()]: quiting monitoring thread."
+        )
+        return
 
     def __next_batch_index(self, batch_size):
         # get an ordered list of active bucket ids.
@@ -1203,7 +1267,7 @@ class BigPlayback(Playback):
         load_buckets.append(next_push_bucket)
         for bkt in load_buckets:
             self._buckets_loading[bkt] = True
-            self._buckets_to_load.put(bkt)
+            self._buckets_to_load.append(bkt)
         while True:
             if all([bid in self._buckets_active for bid in load_buckets]):
                 break
@@ -1261,7 +1325,14 @@ class BigPlayback(Playback):
             # put into load queue and let IO thread to load bucket.
             for bkt in load_buckets:
                 self._buckets_loading[bkt] = True
-                self._buckets_to_load.put(bkt)
+                self._buckets_to_load.append(bkt)
+
+        if time.time() - self.last_t_maintain > 60:
+            logging.warning(
+                "[BigPlayback.__maintain_active_buckets()]: "
+                "maintain function alive. Last Num to load {}".format(num_to_load)
+            )
+            self.last_t_maintain = time.time()
 
     def __save_meta(self):
         if not os.path.isdir(self._cache_path):
@@ -1322,7 +1393,7 @@ class BigPlayback(Playback):
         )
         pass
 
-    def bucket_io(self):
+    def bucket_io(self, stop_event):
         """Thread function for bucket IO.
         Monitors two queues: `self._buckets_to_save` and `self._buckets_to_load`.
         Save/load bucket to/from disk from/to memory if there is bucket id data
@@ -1334,51 +1405,53 @@ class BigPlayback(Playback):
 
         return from this thread if `self._close_flag` is set to True.
         """
-        while True:
+        while not stop_event.is_set():
             try:
                 # Save buckets
                 try:
-                    bkt = self._buckets_to_save.get_nowait()
-                    logging.warning(
-                        "[BigPlayback.bucket_io()]: "
-                        "notified to save bucket {}.".format(bkt)
-                    )
-                    try:
-                        self.__save_one(bkt)
-                    except:
-                        logging.warning(traceback.format_exc())
+                    if len(self._buckets_to_save) > 0:
+                        bkt = self._buckets_to_save.popleft()
                         logging.warning(
                             "[BigPlayback.bucket_io()]: "
-                            "exception saving bucket {}.".format(bkt)
+                            "notified to save bucket {}.".format(bkt)
                         )
-                    finally:
-                        # deactivate this bucket no matter what
-                        # if the transaction is not finished leave as is.
-                        self._buckets_saving[bkt] = False
-                        self._buckets_to_save.task_done()
-                except Queue.Empty:
+                        try:
+                            self.__save_one(bkt)
+                        except:
+                            logging.warning(traceback.format_exc())
+                            logging.warning(
+                                "[BigPlayback.bucket_io()]: "
+                                "exception saving bucket {}.".format(bkt)
+                            )
+                        finally:
+                            # deactivate this bucket no matter what
+                            # if the transaction is not finished leave as is.
+                            self._buckets_saving[bkt] = False
+                except IndexError:
                     pass
+                    self.cnt_qo_empty += 1
 
                 # Load buckets
                 try:
-                    bkt = self._buckets_to_load.get_nowait()
-                    logging.warning(
-                        "[BigPlayback.bucket_io()]: "
-                        "notified to load bucket {}.".format(bkt)
-                    )
-                    try:
-                        self.__load_one(bkt)
-                    except:
-                        logging.warning(traceback.format_exc())
+                    if len(self._buckets_to_load) > 0:
+                        bkt = self._buckets_to_load.popleft()
                         logging.warning(
                             "[BigPlayback.bucket_io()]: "
-                            "exception loading bucket {}.".format(bkt)
+                            "notified to load bucket {}.".format(bkt)
                         )
-                    finally:
-                        self._buckets_loading[bkt] = False
-                        self._buckets_to_load.task_done()
-                except Queue.Empty:
+                        try:
+                            self.__load_one(bkt)
+                        except:
+                            logging.warning(traceback.format_exc())
+                            logging.warning(
+                                "[BigPlayback.bucket_io()]: "
+                                "exception loading bucket {}.".format(bkt)
+                            )
+                        finally:
+                            self._buckets_loading[bkt] = False
+                except IndexError:
                     pass
+                    self.cnt_qi_empty += 1
             except:
                 logging.warning(
                     "[BigPlayback.bucket_io()]: "
@@ -1388,13 +1461,20 @@ class BigPlayback(Playback):
                     traceback.format_exc()
                 )
             finally:
-                if self._close_flag:
-                    break
-                else:
-                    time.sleep(0.1)
+                time.sleep(0.1)
+
+                if time.time() - self.last_t_bktio > 60:
+                    logging.warning(
+                        "[BigPlayback.bucket_io()]: "
+                        "bucket_io function alive. Qi {} Qo {}".format(
+                            self.cnt_qi_empty, self.cnt_qo_empty)
+                    )
+                    self.last_t_bktio = time.time()
+                    self.cnt_qi_empty = 0
+                    self.cnt_qo_empty = 0
 
         logging.warning(
-            "[BigPlayback]: returning from IO thread."
+            "[BigPlayback.bucket_io()]: returning from IO thread."
         )
 
     def __load_one(self, bucket_id):
@@ -1408,11 +1488,15 @@ class BigPlayback(Playback):
         self._buckets_sample_quota[bucket_id] = \
             self._max_sample_epoch * self._buckets[bucket_id].count
         self._buckets_active[bucket_id] = True
+        logging.warning(
+            "[BigPlayback.__load_one()]: "
+            "loaded bucket {} into mem.".format(bucket_id)
+        )
 
     def __save_one(self, bucket_id):
         logging.warning(
             "[BigPlayback.__save_one()]: "
-            "going to save bucket {}".format(bucket_id)
+            "going to save bucket {}.".format(bucket_id)
         )
         self._buckets[bucket_id].save()
         # Sync meta to truly persist the saved meta.
@@ -1422,12 +1506,17 @@ class BigPlayback(Playback):
         #  meta of BigPlayback and its buckets. Should double
         #  check at initialization to prevent this.
         self.__save_meta()
+        logging.warning(
+            "[BigPlayback.__save_one()]: "
+            "saved meta of bucket {}.".format(bucket_id)
+        )
 
     def close(self):
         """Release memory and close IO thread."""
         self.reset()             # release bucket memory
         self._close_flag = True  # signal IO thread to return
-        self.thread_io.join()
+        self._monitor_stop_event.set()
+        self._thread_io_monitor.join()
 
     def reset(self):
         """Release bucket memory and reset super class."""

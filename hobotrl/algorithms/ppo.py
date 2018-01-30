@@ -44,7 +44,7 @@ class PPOUpdater(network.NetworkUpdater):
                 self._input_action = policy_dist.input_sample()
                 self._input_entropy = tf.placeholder(dtype=tf.float32, shape=[], name="input_entropy")
             op_v = v_function.output().op
-            old_op_v = old_v_function.output().op
+            old_op_v = tf.stop_gradient(old_v_function.output().op)
             with tf.name_scope("value"):
                 td = self._input_target_v - op_v
                 org_v_loss = network.Utils.clipped_square(td)
@@ -57,7 +57,7 @@ class PPOUpdater(network.NetworkUpdater):
                 self._advantage = advantage
                 _mean, _var = tf.nn.moments(advantage, axes=[0])
                 self._std_advantage = tf.stop_gradient(advantage / (tf.sqrt(_var) + 1.0))
-                ratio = tf.exp(policy_dist.log_prob() - old_dist.log_prob())
+                ratio = tf.exp(policy_dist.log_prob() - tf.stop_gradient(old_dist.log_prob()))
                 clipped_ratio = tf.clip_by_value(ratio, 1.0 - clip_epsilon, 1.0 + clip_epsilon)
                 pi_loss = tf.reduce_mean(tf.minimum(ratio * self._std_advantage, clipped_ratio * self._std_advantage))
                 entropy_loss = tf.reduce_mean(self._policy_dist.entropy())
@@ -162,11 +162,10 @@ class PPO(sampling.TrajectoryBatchUpdate,
             "clip_epsilon": clip_epsilon,
             "epoch_per_step": epoch_per_step,
         })
-        print "network_optimizer:", network_optimizer
         if network_optimizer is None:
             network_optimizer = network.LocalOptimizer(grad_clip=max_gradient)
         if sampler is None:
-            sampler = sampling.TrajectoryOnSampler(interval=horizon)
+            sampler = sampling.TrajectoryOnSampler(interval=horizon, check_episode_done=False)
             kwargs.update({"sampler": sampler})
 
         super(PPO, self).__init__(*args, **kwargs)
@@ -237,12 +236,14 @@ class PPO(sampling.TrajectoryBatchUpdate,
         infos = []
         info = {}
         for i in range(self._epoch_py_step):
-            for mini_batch in BatchIterator(batch, self._batch_size):
+            for mini_batch in BatchIterator(batch, self._batch_size, check_episode_done=True):
                 self.network_optimizer.update("ppo", self.sess, mini_batch)
                 self.network_optimizer.update("l2", self.sess)
                 info = self.network_optimizer.optimize_step(self.sess)
+                info = dict([(k, np.mean(info[k])) for k in info])
                 infos.append(info)
         self._old_network_syncer.sync(self.sess, 1.0)
+
         return to_columnwise(infos), {}
 
     def set_session(self, sess):

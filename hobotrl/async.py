@@ -146,6 +146,7 @@ class AsynchronousAgent(wrapt.ObjectProxy):
 
     def monitor_loop(self, class_trn_thread, args_trn_thread, kwargs_trn_thread,
                      stop_event, *args, **kwargs):
+
         _thread_train = class_trn_thread(*args_trn_thread, **kwargs_trn_thread)
         _thread_train.start()
         while not stop_event.is_set():
@@ -157,7 +158,12 @@ class AsynchronousAgent(wrapt.ObjectProxy):
                 _thread_train = class_trn_thread(
                     *args_trn_thread, **kwargs_trn_thread)
                 _thread_train.start()
-            time.sleep(10.0)
+            else:
+                logging.warning(
+                    "[AsynchronousAgent.monitor_loop()]: "
+                    "training thread running okay!"
+                )
+            time.sleep(60.0)  # check trn thread status periodically
         logging.warning(
             "[AsynchronousAgent.monitor_loop()]: stopping training thread."
         )
@@ -296,7 +302,11 @@ class TrainingThread(threading.Thread):
             # update the item in info_queue with the latest info
             old_info = {}
             if self._info_queue.qsize() > 0:
-                old_info = self._info_queue.get(block=True)
+                try:
+                    # non-blocking invocation
+                    old_info = self._info_queue.get(block=False)
+                except:
+                    pass
             info['TrainingThread/n_step'] = self.__n_step
             old_info.update(info)
             self._info_queue.put(old_info)
