@@ -484,7 +484,7 @@ class DPGExperiment(Experiment):
                  target_sync_rate=0.01,
                  # sampler arguments
                  batch_size=32,
-                 replay_capacity=1000):
+                 replay_capacity=1000, **kwargs):
         self._env, self._f_se, self._f_actor, self._f_critic, self._episode_n,\
             self._discount_factor, self._network_optimizer_ctor, \
             self._ou_params, self._target_sync_interval, self._target_sync_rate, \
@@ -493,6 +493,7 @@ class DPGExperiment(Experiment):
             discount_factor, network_optimizer_ctor, \
             ou_params, target_sync_interval, target_sync_rate, \
             batch_size, replay_capacity
+        self._kwargs = kwargs
         super(DPGExperiment, self).__init__()
 
     def run(self, args):
@@ -522,6 +523,7 @@ class DPGExperiment(Experiment):
             sampler=hrl.sampling.TransitionSampler(hrl.playback.MapPlayback(self._replay_capacity), self._batch_size),
             batch_size=self._batch_size,
             global_step=global_step,
+            **self._kwargs
         )
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True

@@ -83,7 +83,9 @@ class OUExplorationPolicy(Policy):
         :param noise:
         :return:
         """
-        return action + np.abs(np.sign(noise) - action) * np.tanh(noise)
+        epsilon = 1e-8
+        margin = np.abs(np.sign(noise) - action)
+        return action + margin * np.tanh(noise / (margin + epsilon))
 
     def act(self, state, **kwargs):
         action = self._action_function(np.asarray(state)[np.newaxis, :])[0]
