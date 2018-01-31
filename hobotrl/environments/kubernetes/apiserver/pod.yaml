@@ -24,6 +24,7 @@ spec:
       readOnly: false
     - name: workdir
       mountPath: /Projects/hobotrl/playground/initialD/test/experiment
+      subPath: lisen.mu
   volumes:
   - name: xsocket
     hostPath:
