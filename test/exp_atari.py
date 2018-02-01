@@ -3,11 +3,9 @@
 
 import sys
 
-from hobotrl.experiment import GridSearch, ParallelGridSearch
-
 sys.path.append(".")
 import logging
-
+from hobotrl.experiment import GridSearch, ParallelGridSearch
 import gym
 import numpy as np
 import tensorflow as tf
