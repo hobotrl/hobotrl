@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# usage: ./build.sh 0.1.21
+# usage: ./build.sh 0.1.22
 
 version=$1
 image=$(docker build -f Dockerfile.server . | tail -n 2 | grep "Successfully built" | awk '{print $3;}')

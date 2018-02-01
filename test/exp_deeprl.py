@@ -233,6 +233,28 @@ class DPGPendulum(DPGExperiment):
 Experiment.register(DPGPendulum, "DPG for Pendulum")
 
 
+class DPGBipedal(DPGPendulum):
+
+    def __init__(self, env=None, f_se=None, f_actor=None, f_critic=None,
+                 episode_n=10000, discount_factor=0.9,
+                 network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-4),
+                                                                           grad_clip=10.0),
+                 ou_params=(0, 0.2, hrl.utils.CappedExp(2e5, 0.5, 0.02)),
+                 target_sync_interval=1,
+                 target_sync_rate=0.001,
+                 batch_size=128,
+                 replay_capacity=100000):
+        if env is None:
+            env = gym.make("BipedalWalker-v2")
+            env = MaxAndSkipEnv(env, max_len=1, skip=4)
+            env = hrl.envs.AugmentEnvWrapper(env, reward_decay=discount_factor, reward_scale=0.5)
+
+        super(DPGBipedal, self).__init__(env, f_se, f_actor, f_critic, episode_n, discount_factor,
+                                         network_optimizer_ctor, ou_params, target_sync_interval, target_sync_rate,
+                                         batch_size, replay_capacity)
+Experiment.register(DPGBipedal, "DPG for Bipedal")
+
+
 class CarEnvWrapper(object):
     """
     Wraps car env into discrete action control problem

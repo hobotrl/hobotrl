@@ -50,6 +50,17 @@ class StateStack(gym.Wrapper):
         return np.concatenate(list(self.states), axis=0)
 
 
+class ScalePenalty(gym.RewardWrapper):
+
+    def __init__(self, env, scale=1.0):
+        super(ScalePenalty, self).__init__(env)
+        self._scale = scale
+
+    def _reward(self, reward):
+        reward = reward * self._scale if reward < 0 else reward
+        return reward
+
+
 class A3CHumanoidContinuous(A3CExperiment):
     def __init__(self, env=None, f_create_net=None, episode_n=1000000, learning_rate=5e-5, discount_factor=0.95,
                  entropy=hrl.utils.CappedLinear(1e6, 1e-3, 1e-4),
@@ -154,7 +165,7 @@ class PPOAntSearch(ParallelGridSearch):
     def __init__(self):
         super(PPOAntSearch, self).__init__(PPOAnt, parameters={
             "episode_n": [1000],
-            "entropy": [1e-2, 1e-3, 1e-4, 1e-5, 1e-6],
+            "entropy": [1e-3, 1e-4, 1e-5, 1e-6],
             "clip_epsilon": [0.1, 0.2]
         }, parallel=4)
 Experiment.register(PPOAntSearch, "grid search for PPO for ant")
@@ -167,7 +178,7 @@ class DPGAnt(DPGExperiment):
                  network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-4),
                                                                            grad_clip=10.0),
                  ou_params=(0, 0.2, hrl.utils.CappedLinear(1e5, 0.2, 0.05)),
-                 target_sync_interval=10, target_sync_rate=0.01, batch_size=32, replay_capacity=10000):
+                 target_sync_interval=10, target_sync_rate=0.01, batch_size=32, replay_capacity=10000, **kwargs):
         if env is None:
             env = gym.make("RoboschoolAnt-v1")
             env = envs.ScaledRewards(env, 0.1)
@@ -194,7 +205,7 @@ class DPGAnt(DPGExperiment):
                 return {"q": q}
             f_critic = f
         super(DPGAnt, self).__init__(env, f_se, f_actor, f_critic, episode_n, discount_factor, network_optimizer_ctor,
-                                     ou_params, target_sync_interval, target_sync_rate, batch_size, replay_capacity)
+                                     ou_params, target_sync_interval, target_sync_rate, batch_size, replay_capacity, **kwargs)
 Experiment.register(DPGAnt, "DPG for Ant")
 
 
@@ -222,14 +233,15 @@ class DPGReacher(DPGAnt):
                  network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-4),
                                                                            grad_clip=10.0),
                  ou_params=(0, 0.2, hrl.utils.CappedLinear(2e5, 0.5, 0.1)), target_sync_interval=10,
-                 target_sync_rate=0.01, batch_size=32, replay_capacity=1000):
+                 target_sync_rate=0.01, batch_size=32, replay_capacity=1000, **kwargs):
         if env is None:
             env = gym.make("RoboschoolReacher-v1")
             env = StateStack(env, k=2)
-            env = envs.ScaledRewards(env, 0.2)
+            env = ScalePenalty(env, scale=2.0)
+            env = envs.ScaledRewards(env, 0.1)
         super(DPGReacher, self).__init__(env, f_se, f_actor, f_critic, episode_n, discount_factor,
                                          network_optimizer_ctor, ou_params, target_sync_interval, target_sync_rate,
-                                         batch_size, replay_capacity)
+                                         batch_size, replay_capacity, **kwargs)
 Experiment.register(DPGReacher, "DPG for reacher")
 
 
@@ -237,13 +249,14 @@ class DPGReacherSearch(ParallelGridSearch):
 
     def __init__(self):
         super(DPGReacherSearch, self).__init__(DPGReacher, {
-            "episode_n": [2000],
-            "ou_params": [(0, 0.2, hrl.utils.CappedLinear(1e5, 0.5, 0.05)),
-                          (0, 0.2, hrl.utils.CappedLinear(2e5, 0.5, 0.05)),
-                          (0, 0.2, hrl.utils.CappedLinear(2e5, 0.5, 0.1)),
-                          (0, 0.2, hrl.utils.CappedLinear(2e5, 0.2, 0.05))
-                          ]
-        }, parallel=2)
+            "episode_n": [10],
+            "ou_params": [(0, 0.2, hrl.utils.CappedLinear(2e5, 0.5, 0.05)),
+                          (0, 0.2, hrl.utils.CappedLinear(4e5, 0.5, 0.05)),
+                          (0, 0.2, hrl.utils.CappedLinear(4e5, 0.5, 0.1)),
+                          (0, 0.2, hrl.utils.CappedLinear(4e5, 0.2, 0.05))
+                          ],
+            "_r": [0, 1, 2]
+        }, parallel=4)
 Experiment.register(DPGReacherSearch, "grid search for dpg for reacher")
 
 

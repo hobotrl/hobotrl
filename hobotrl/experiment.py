@@ -174,8 +174,25 @@ class GridSearch(Experiment):
 
 
 def subprocess_run(exp_key, log_root, parameter, label, args):
+    sub_stdout, sub_stderr = None, None
+    org_std = None
+
+    def reset_log_handler():
+        n_h = len(logging.root.handlers)
+        for i in range(n_h):
+            logging.root.removeHandler(logging.root.handlers[n_h - i - 1])
+        logging.basicConfig(format="[%(asctime)s] %(message)s")
     try:
         args.logdir = GridSearch.find_new(os.sep.join([log_root, label]))
+        os.makedirs(args.logdir)
+        org_std = sys.stdout, sys.stderr
+        sub_stdout = open(os.sep.join([args.logdir, "stdout.txt"]), "w")
+        sub_stderr = open(os.sep.join([args.logdir, "stderr.txt"]), "w")
+        logging.warning("starting task with logdir:%s", args.logdir)
+        sys.stdout, sys.stderr = sub_stdout, sub_stderr
+        reset_log_handler()
+        # logging again to start in log file
+        logging.warning("starting task with logdir:%s", args.logdir)
         with tf.Graph().as_default():
             exp_class = ParallelGridSearch.class_cache[exp_key]
             experiment = exp_class(**parameter)
@@ -185,6 +202,24 @@ def subprocess_run(exp_key, log_root, parameter, label, args):
         traceback_ = traceback.format_tb(traceback_)
         traceback_ = "\n".join(traceback_)
         logging.warning("experiment[%s] failed:%s, %s, %s", label, type_, value_, traceback_)
+    finally:
+        if org_std is not None:
+            sys.stdout, sys.stderr = org_std
+        try:
+            if sub_stdout is not None:
+                sub_stdout.flush()
+                sub_stdout.close()
+                sub_stdout = None
+        except:
+            pass
+        try:
+            if sub_stderr is not None:
+                sub_stderr.flush()
+                sub_stderr.close()
+                sub_stderr = None
+        except:
+            pass
+        reset_log_handler()
 
 
 class ParallelGridSearch(Experiment):
