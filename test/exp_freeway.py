@@ -202,7 +202,7 @@ class FreewayOTDQN_mom(OTDQNModelExperiment):
                  rollout_depth=5, discount_factor=0.99, ddqn=False, target_sync_interval=100, target_sync_rate=1.0,
                  greedy_epsilon=0.1, network_optimizer=None, max_gradient=10.0, update_interval=4, replay_size=1024,
                  batch_size=16, curriculum=[1, 3, 5], skip_step=[500000, 1000000], sampler_creator=None,
-                 asynchronous=False, save_image_interval=10000, with_momentum=True, state_size=256):
+                 asynchronous=False, save_image_interval=10000, with_momentum=True, with_goal=True, state_size=256):
         if env is None:
             env = gym.make('Freeway-v0')
             env = Downsample(env, dst_size=[96, 96])
@@ -248,7 +248,7 @@ class FreewayOTDQN_mom(OTDQNModelExperiment):
                                                target_sync_rate, greedy_epsilon, network_optimizer, max_gradient,
                                                update_interval, replay_size, batch_size, curriculum,
                                                skip_step, sampler_creator, asynchronous, save_image_interval,
-                                               with_momentum=with_momentum)
+                                               with_momentum=with_momentum, with_goal=with_goal)
 Experiment.register(FreewayOTDQN_mom, "OTDQN for Freeway with half input")
 
 
@@ -260,7 +260,7 @@ Experiment.register(FreewayOTDQN_mom_1600, "Hidden state size of 1600 on OTDQN f
 
 class FreewayOTDQN_state(FreewayOTDQN_mom):
     def __init__(self, env=None, f_create_q=None, f_se=None, f_transition=None, f_decoder=None, with_momentum=False,
-                 state_size=1600):
+                 with_goal=False, state_size=1600):
         if env is None:
             env = gym.make('Freeway-v0')
             env = Downsample(env, dst_size=[96, 96])
@@ -276,7 +276,7 @@ class FreewayOTDQN_state(FreewayOTDQN_mom):
             f_decoder = f.create_decoder()
             
         super(FreewayOTDQN_state, self).__init__(env=env, f_create_q=f_create_q, f_se=f_se, f_transition=f_transition,
-                                                 f_decoder=f_decoder, with_momentum=with_momentum)
+                                                 f_decoder=f_decoder, with_momentum=with_momentum, with_goal=with_goal)
 Experiment.register(FreewayOTDQN_state, "state OTDQN for Freeway with half input")
 
 
@@ -286,15 +286,15 @@ class FreewayOTDQN_state_256(FreewayOTDQN_state):
 Experiment.register(FreewayOTDQN_state_256, "256 state OTDQN for Freeway with half input")
 
 
-class FreewayOTDQN_goal_256(FreewayOTDQN_mom):
-    def __init__(self, with_momentum=False):
-        super(FreewayOTDQN_goal_256, self).__init__(with_momentum=with_momentum)
+class FreewayOTDQN_goal_256(FreewayOTDQN_state):
+    def __init__(self, with_goal=True, state_size=256):
+        super(FreewayOTDQN_goal_256, self).__init__(with_goal=with_goal, state_size=state_size)
 Experiment.register(FreewayOTDQN_goal_256, "goal rollout OTDQN for Freeway with half input")
 
 
-class FreewayOTDQN_goal(FreewayOTDQN_mom_1600):
-    def __init__(self, with_momentum=False):
-        super(FreewayOTDQN_goal, self).__init__(with_momentum=with_momentum)
+class FreewayOTDQN_goal(FreewayOTDQN_state):
+    def __init__(self, with_goal=True, state_size=1600):
+        super(FreewayOTDQN_goal, self).__init__(with_goal=with_goal, state_size=state_size)
 Experiment.register(FreewayOTDQN_goal, "goal rollout OTDQN for Freeway with half input")
 
 

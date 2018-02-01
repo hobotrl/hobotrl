@@ -901,17 +901,18 @@ class A3CExperimentWithI2A(Experiment):
                  dynamic_rollout=[1, 3, 5],
                  dynamic_skip_step=[5000, 15000],
                  save_image_interval=1000,
-                 with_ob=False
+                 with_ob=False,
+                 with_goal=True,
                  ):
         super(A3CExperimentWithI2A, self).__init__()
         self._env, self._f_se, self._f_ac, self._f_tran, self._f_decoder,\
             self._f_rollout, self._f_encoder, self._episode_n, self._learning_rate, \
             self._discount_factor, self._entropy, self._batch_size, \
             self.policy_with_iaa, self.compute_with_diff, self.with_momentum, \
-            self.dynamic_rollout, self.dynamic_skip_step, self._save_image_interval, self._with_ob = \
+            self.dynamic_rollout, self.dynamic_skip_step, self._save_image_interval, self._with_ob, self._with_goal = \
             env, f_se, f_ac, f_tran, f_decoder, f_rollout, f_encoder, episode_n, learning_rate, \
             discount_factor, entropy, batch_size, policy_with_iaa, compute_with_diff, with_momentum, dynamic_rollout,\
-            dynamic_skip_step, save_image_interval, with_ob
+            dynamic_skip_step, save_image_interval, with_ob, with_goal
 
     def run(self, args):
         state_shape = list(self._env.observation_space.shape)
@@ -950,6 +951,7 @@ class A3CExperimentWithI2A(Experiment):
                 save_image_interval=self._save_image_interval,
                 log_dir=args.logdir,
                 with_ob=self._with_ob,
+                with_goal=self._with_goal,
                 global_step=global_step,
             )
             return agent
@@ -1105,7 +1107,8 @@ class OTDQNModelExperiment(Experiment):
                  asynchronous=False,
                  save_image_interval=10000,
                  with_ob=False,
-                 with_momentum=True
+                 with_momentum=True,
+                 with_goal=True
                  ):
         super(OTDQNModelExperiment, self).__init__()
 
@@ -1125,7 +1128,8 @@ class OTDQNModelExperiment(Experiment):
             self._sampler_creator,\
             self._save_image_interval,\
             self._with_ob,\
-            self._with_momentum = \
+            self._with_momentum,\
+            self._with_goal = \
             env, episode_n, \
             f_create_q, f_se, f_transition, \
             f_decoder, \
@@ -1142,7 +1146,8 @@ class OTDQNModelExperiment(Experiment):
             sampler_creator, \
             save_image_interval, \
             with_ob, \
-            with_momentum
+            with_momentum,\
+            with_goal
         self._asynchronous = asynchronous
 
     def run(self, args):
@@ -1172,6 +1177,7 @@ class OTDQNModelExperiment(Experiment):
                         save_image_interval=self._save_image_interval,
                         log_dir=args.logdir,
                         with_ob=self._with_ob,
+                        with_goal=self._with_goal,
                         global_step=global_step)
         if self._asynchronous:
             agent = AsynchronousAgent(agent=agent, method='ratio', rate=6.0)
