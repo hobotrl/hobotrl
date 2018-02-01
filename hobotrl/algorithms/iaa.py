@@ -146,7 +146,7 @@ class PolicyNetUpdater(network.NetworkUpdater):
 class EnvModelUpdater(network.NetworkUpdater):
     def __init__(self, net_se, net_transition, net_decoder, state_shape, dim_action,
                  curriculum=None, skip_step=None, transition_weight=0.0, with_momentum=True, compute_with_diff=False,
-                 save_image_interval=1000, detailed_decoder=False, with_ob=False):
+                 save_image_interval=1000, detailed_decoder=False, with_ob=False, with_goal=True):
         super(EnvModelUpdater, self).__init__()
         if curriculum is None:
             self._curriculum = [1, 3, 5]
@@ -240,12 +240,15 @@ class EnvModelUpdater(network.NetworkUpdater):
                         momentum_loss.append(tf.reduce_mean(network.Utils.clipped_square(cur_se_mom - sen[i])))
 
                     goal = net_trans["next_state"].op
-                    if not with_ob:
+                    if not with_ob and with_goal:
                         # socalled_state = net_trans["action_related"].op
                         cur_goal = goal if cur_goal is None else tf.stop_gradient(cur_goal) + goal
                         goalfrom0_predict.append(cur_goal)
                         cur_se = se0_truncate + cur_goal
                         # cur_se = socalled_state
+                    elif not with_ob and not with_goal:
+                        cur_goal = goal
+                        cur_se = cur_goal
                     else:
                         cur_se = goal
                         cur_ob = tf.concat([cur_ob[:,:,:,3:], goal], axis=-1)
@@ -524,6 +527,7 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                  save_image_interval=1000,
                  log_dir="./log/img",
                  with_ob=False,
+                 with_goal=True,
                  *args, **kwargs):
         """
         :param f_create_net: function: f_create_net(inputs) => {"pi": dist_pi, "q": q_values},
@@ -745,7 +749,8 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                 with_momentum=with_momentum,
                 compute_with_diff=compute_with_diff,
                 save_image_interval=save_image_interval,
-                with_ob=with_ob
+                with_ob=with_ob,
+                with_goal=with_goal
             ),
             name="env_model")
         # network_optimizer.freeze(self.network.sub_net("transition").variables)

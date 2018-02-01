@@ -27,6 +27,7 @@ class OTModel(OTDQN):
                  save_image_interval=10000,
                  log_dir=None,
                  with_ob=False,
+                 with_goal=True,
                  *args, **kwargs):
         kwargs.update({
             "f_se": f_se,
@@ -41,6 +42,7 @@ class OTModel(OTDQN):
         self._curriculum, self._skip_step = curriculum, skip_step
         self._save_image_interval = save_image_interval
         self._with_ob = with_ob
+        self._with_goal = with_goal
         if sampler is None:
             max_traj_length = 200
             sampler = sampling.TruncateTrajectorySampler2(None, replay_size / max_traj_length, max_traj_length,
@@ -101,7 +103,8 @@ class OTModel(OTDQN):
             transition_weight=1.0,
             with_momentum=self._with_momentum,
             save_image_interval=self._save_image_interval,
-            with_ob=self._with_ob
+            with_ob=self._with_ob,
+            with_goal=self._with_goal
         ), name="env")
         self.network_optimizer.compile()
 

@@ -197,12 +197,12 @@ Experiment.register(Freeway_ob_I2A, "Original I2A for Freeway")
 
 
 class FreewayOTDQN_mom(OTDQNModelExperiment):
-    def __init__(self, env=None, episode_n=16000,
+    def __init__(self, env=None, episode_n=160000,
                  f_create_q=None, f_se=None, f_transition=None, f_decoder=None, lower_weight=1.0, upper_weight=1.0,
                  rollout_depth=5, discount_factor=0.99, ddqn=False, target_sync_interval=100, target_sync_rate=1.0,
                  greedy_epsilon=0.1, network_optimizer=None, max_gradient=10.0, update_interval=4, replay_size=1024,
-                 batch_size=16, curriculum=[1, 3, 5], skip_step=[500000, 1000000],
-                 sampler_creator=None, asynchronous=False, save_image_interval=10000, with_momentum=True):
+                 batch_size=16, curriculum=[1, 3, 5], skip_step=[500000, 1000000], sampler_creator=None,
+                 asynchronous=False, save_image_interval=10000, with_momentum=True, state_size=256):
         if env is None:
             env = gym.make('Freeway-v0')
             env = Downsample(env, dst_size=[96, 96])
@@ -211,9 +211,9 @@ class FreewayOTDQN_mom(OTDQNModelExperiment):
             env = FrameStack(env, k=4)
 
         if f_se is None:
-            f = F(env, 256)
+            f = F(env, state_size)
             f_create_q = f.create_q()
-            f_se = f.create_se()
+            f_se = f.create_se_channels()
             f_transition = f.create_transition_momentum()
             # f_decoder = f.decoder_multiflow()
             f_decoder = f.create_decoder()
@@ -252,6 +252,12 @@ class FreewayOTDQN_mom(OTDQNModelExperiment):
 Experiment.register(FreewayOTDQN_mom, "OTDQN for Freeway with half input")
 
 
+class FreewayOTDQN_mom_1600(FreewayOTDQN_mom):
+    def __init__(self, state_size=1600):
+        super(FreewayOTDQN_mom_1600, self).__init__(state_size=state_size)
+Experiment.register(FreewayOTDQN_mom_1600, "Hidden state size of 1600 on OTDQN for Freeway with half input")
+
+
 class FreewayOTDQN_state(FreewayOTDQN_mom):
     def __init__(self, env=None, f_create_q=None, f_se=None, f_transition=None, f_decoder=None, with_momentum=False,
                  state_size=1600):
@@ -265,8 +271,8 @@ class FreewayOTDQN_state(FreewayOTDQN_mom):
         if f_se is None:
             f = F(env, state_size)
             f_create_q = f.create_q()
-            f_se = f.create_se()
-            f_transition = f.create_transition_momentum()
+            f_se = f.create_se_channels()
+            f_transition = f.create_transition()
             f_decoder = f.create_decoder()
             
         super(FreewayOTDQN_state, self).__init__(env=env, f_create_q=f_create_q, f_se=f_se, f_transition=f_transition,
@@ -284,29 +290,6 @@ class FreewayOTDQN_goal_256(FreewayOTDQN_mom):
     def __init__(self, with_momentum=False):
         super(FreewayOTDQN_goal_256, self).__init__(with_momentum=with_momentum)
 Experiment.register(FreewayOTDQN_goal_256, "goal rollout OTDQN for Freeway with half input")
-
-
-class FreewayOTDQN_mom_1600(FreewayOTDQN_mom):
-    def __init__(self, env=None, episode_n=16000, f_create_q=None, f_se=None, f_transition=None, f_decoder=None,
-                 with_momentum=True):
-        if env is None:
-            env = gym.make('Freeway-v0')
-            env = Downsample(env, dst_size=[96, 96])
-            env = ScaledFloatFrame(env)
-            env = MaxAndSkipEnv(env, skip=4, max_len=1)
-            env = FrameStack(env, k=4)
-
-        if f_se is None:
-            f = F(env, 1600)
-            f_create_q = f.create_q()
-            f_se = f.create_se()
-            f_transition = f.create_transition_momentum()
-            # f_decoder = f.decoder_multiflow()
-            f_decoder = f.create_decoder()
-
-        super(FreewayOTDQN_mom_1600, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder,
-                                                    with_momentum=with_momentum)
-Experiment.register(FreewayOTDQN_mom_1600, "Hidden state size of 1600 on OTDQN for Freeway with half input")
 
 
 class FreewayOTDQN_goal(FreewayOTDQN_mom_1600):

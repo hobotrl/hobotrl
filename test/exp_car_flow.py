@@ -47,6 +47,27 @@ class F(object):
             return {"se": se_linear}
         return create_se
 
+    def create_se_channels(self):
+        def create_se(inputs):
+            l2 = 1e-7
+            input_observation = inputs[0]
+            se_conv = hrl.utils.Network.conv2ds(input_observation,
+
+                                                shape=[(32, 8, 4), (64, 4, 2), (self.chn_se_2d, 3, 2)],
+                                                out_flatten=True,
+                                                activation=self.nonlinear,
+                                                l2=l2,
+                                                var_scope="se_conv")
+
+            se_linear = hrl.utils.Network.layer_fcs(se_conv, [self.dim_se], self.dim_se,
+                                                    activation_hidden=self.nonlinear,
+                                                    activation_out=None,
+                                                    l2=l2,
+                                                    var_scope="se_linear")
+            return {"se": se_linear}
+
+        return create_se
+
     def create_ac(self):
         def create_ac(inputs):
             l2 = 1e-7
