@@ -316,20 +316,26 @@ Experiment.register(OnDPGPendulum, "DPG for Pendulum")
 
 class OnDPGBipedal(OnDPGPendulum):
 
-    def __init__(self, env=None, f_se=None, f_actor=None, f_critic=None, episode_n=1000,
+    def __init__(self, env=None, f_se=None, f_actor=None, f_critic=None,
+                 episode_n=10000,
                  discount_factor=0.95,
                  network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-4),
                                                                            grad_clip=10.0),
-                 ou_params=(0, 0.2, hrl.utils.CappedLinear(1e6, 0.2, 0.01)),
+                 ou_params=(0, 0.2, hrl.utils.CappedLinear(2e5, 0.5, 0.02)),
                  target_sync_interval=10,
-                 target_sync_rate=0.01, batch_size=8, replay_capacity=1000, generation_decay=0.95, neighbour_size=8,
+                 target_sync_rate=0.01, batch_size=8, replay_capacity=100000,
+                 generation_decay=hrl.utils.CappedExp(1e6, 0.95, 0.5),
+                 adaptive_estimate=True,
+                 neighbour_size=8,
                  **kwargs):
         if env is None:
             env = gym.make("BipedalWalker-v2")
-            env = hrl.envs.AugmentEnvWrapper(env, reward_decay=discount_factor, reward_scale=0.1)
+            env = hrl.envs.AugmentEnvWrapper(env, reward_decay=discount_factor, reward_scale=0.5)
         super(OnDPGBipedal, self).__init__(env, f_se, f_actor, f_critic, episode_n, discount_factor,
                                            network_optimizer_ctor, ou_params, target_sync_interval, target_sync_rate,
-                                           batch_size, replay_capacity, generation_decay, neighbour_size, **kwargs)
+                                           batch_size, replay_capacity, generation_decay, neighbour_size,
+                                           adaptive_estimate=adaptive_estimate,
+                                           **kwargs)
 Experiment.register(OnDPGBipedal, "DPG for Pendulum")
 
 

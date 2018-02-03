@@ -50,6 +50,44 @@ class StateStack(gym.Wrapper):
         return np.concatenate(list(self.states), axis=0)
 
 
+class ReacherEndTorch(gym.Wrapper):
+
+    def __init__(self, env, end_torch_penalty=1.0, speed_penalty=1.0):
+        super(ReacherEndTorch, self).__init__(env)
+        self._end_torch_penalty = end_torch_penalty
+        self._speed_penalty = speed_penalty
+
+    def _step(self, action):
+        observation, reward, done, info = self.env.step(action)
+        torch_penalty = self.torch_penalty(observation, action)
+        speed_penalty = self.speed_penalty(observation, action)
+        return observation, reward + torch_penalty + speed_penalty, done, info
+
+    def torch_penalty(self, observation, action):
+        p = 0
+        if observation[7] < -1.0 and action[1] < 0:
+            p = self._end_torch_penalty * action[1]
+        elif observation[7] > 1.0 and action[1] > 0:
+            p = -self._end_torch_penalty * action[1]
+        torch_threshold = 0.5
+        torch = np.abs(action)
+        p_torch = -np.sum((torch > torch_threshold) * (torch - torch_threshold))
+        if p != 0 or p_torch != 0:
+            logging.warning("end torch penalty:%s, torch penalty:%s", p, p_torch)
+        return p + p_torch
+
+    def speed_penalty(self, observation, action):
+        p = 0
+        speed_threshold = 1.0
+        if observation[6] > speed_threshold and action[0] > 0:
+            p = -self._speed_penalty * (action[0] + observation[6] - speed_threshold)
+        elif observation[6] < -speed_threshold and action[0] < 0:
+            p = self._speed_penalty * (action[0] + observation[6] + speed_threshold)
+        if p != 0:
+            logging.warning("speed penalty:%s", p)
+        return p
+
+
 class ScalePenalty(gym.RewardWrapper):
 
     def __init__(self, env, scale=1.0):
@@ -173,14 +211,19 @@ Experiment.register(PPOAntSearch, "grid search for PPO for ant")
 
 class DPGAnt(DPGExperiment):
 
-    def __init__(self, env=None, f_se=None, f_actor=None, f_critic=None, episode_n=1000,
+    def __init__(self, env=None, f_se=None, f_actor=None, f_critic=None,
+                 episode_n=10000,
                  discount_factor=0.9,
                  network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-4),
                                                                            grad_clip=10.0),
-                 ou_params=(0, 0.2, hrl.utils.CappedLinear(1e5, 0.2, 0.05)),
-                 target_sync_interval=10, target_sync_rate=0.01, batch_size=32, replay_capacity=10000, **kwargs):
+                 ou_params=(0, 0.2, hrl.utils.CappedExp(2e5, 0.5, 0.01)),
+                 target_sync_interval=10,
+                 target_sync_rate=0.01,
+                 batch_size=128,
+                 replay_capacity=100000, **kwargs):
         if env is None:
             env = gym.make("RoboschoolAnt-v1")
+            env = MaxAndSkipEnv(env, max_len=1, skip=2)
             env = envs.ScaledRewards(env, 0.1)
         state_shape = list(env.observation_space.shape)
         dim_action = env.action_space.shape[-1]
@@ -229,16 +272,24 @@ Experiment.register(PPOReacher, "PPO for reacher")
 
 class DPGReacher(DPGAnt):
 
-    def __init__(self, env=None, f_se=None, f_actor=None, f_critic=None, episode_n=2000, discount_factor=0.9,
+    def __init__(self, env=None, f_se=None, f_actor=None, f_critic=None, episode_n=2000,
+                 discount_factor=0.9,
                  network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-4),
                                                                            grad_clip=10.0),
-                 ou_params=(0, 0.2, hrl.utils.CappedLinear(2e5, 0.5, 0.1)), target_sync_interval=10,
-                 target_sync_rate=0.01, batch_size=32, replay_capacity=1000, **kwargs):
+                 # ou_params=(0, 0.2, [hrl.utils.CappedExp(1e5, 0.5, 0.02),
+                 #                     hrl.utils.CappedExp(1e6, 2.0, 0.02)]),
+                 ou_params=(0, 0.2, hrl.utils.CappedExp(1e5, 0.5, 0.02)),
+                 target_sync_interval=10,
+                 target_sync_rate=0.01,
+                 batch_size=128,
+                 replay_capacity=100000, **kwargs):
         if env is None:
             env = gym.make("RoboschoolReacher-v1")
-            env = StateStack(env, k=2)
-            env = ScalePenalty(env, scale=2.0)
-            env = envs.ScaledRewards(env, 0.1)
+            # env = StateStack(env, k=2)
+            # env = MaxAndSkipEnv(env, max_len=1, skip=2)
+            env = ReacherEndTorch(env)
+            # env = ScalePenalty(env, scale=2.0)
+            env = envs.ScaledRewards(env, 0.2)
         super(DPGReacher, self).__init__(env, f_se, f_actor, f_critic, episode_n, discount_factor,
                                          network_optimizer_ctor, ou_params, target_sync_interval, target_sync_rate,
                                          batch_size, replay_capacity, **kwargs)
