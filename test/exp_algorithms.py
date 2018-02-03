@@ -100,7 +100,7 @@ class DQNExperiment(Experiment):
             runner = hrl.envs.EnvRunner(
                 self._env, agent, evaluate_interval=sys.maxint,
                 render_interval=args.render_interval, logdir=args.logdir,
-                render_once=True,
+                render_once=args.render_once,
             )
             runner.episode(self._episode_n)
 
@@ -357,7 +357,7 @@ class OTDQNExperiment(Experiment):
             runner = hrl.envs.EnvRunner(
                 self._env, agent, evaluate_interval=sys.maxint,
                 render_interval=sys.maxint, logdir=args.logdir,
-                render_once=True,
+                render_once=args.render_once,
             )
             return runner.episode(self._episode_n)
 
@@ -622,7 +622,7 @@ class ACOOExperiment(Experiment):
             with agent.create_session(master=server.target, worker_index=args.index, save_dir=args.logdir) as sess:
                 runner = hrl.envs.EnvRunner(env, agent, reward_decay=self.reward_decay,
                                             evaluate_interval=sys.maxint, render_interval=args.render_interval,
-                                            render_once=True,
+                                            render_once=args.render_once,
                                             logdir=args.logdir if args.index == 0 else None)
                 runner.episode(self.episode_n)
 
@@ -717,7 +717,7 @@ class ACOOExperimentCon(Experiment):
                 agent.set_session(sess)
                 runner = hrl.envs.EnvRunner(env, agent, reward_decay=self.reward_decay,
                                             evaluate_interval=sys.maxint, render_interval=sys.maxint,
-                                            render_once=True,
+                                            render_once=args.render_once,
                                             logdir=args.logdir if args.index == 0 else None)
                 runner.episode(self.episode_n)
 
@@ -1027,7 +1027,7 @@ class A3CExperimentWithI2AOB(Experiment):
             agent.set_session(sess)
             runner = hrl.envs.EnvRunner(self._env, agent, reward_decay=self._discount_factor, max_episode_len=10000,
                                         evaluate_interval=sys.maxint, render_interval=args.render_interval,
-                                        render_once=True,
+                                        render_once=args.render_once,
                                         logdir=args.logdir if args.index == 0 else None)
             runner.episode(self._episode_n)
 
@@ -1079,7 +1079,8 @@ class PPOExperiment(Experiment):
         with agent.create_session(config=config, save_dir=args.logdir) as sess:
             runner = hrl.envs.EnvRunner(
                 self._env, agent, evaluate_interval=sys.maxint,
-                render_interval=args.render_interval, logdir=args.logdir
+                render_interval=args.render_interval, logdir=args.logdir,
+                render_once=args.render_once,
             )
             runner.episode(self._episode_n)
 

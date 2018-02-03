@@ -186,6 +186,11 @@ class OnDPG(DPG):
         self._generation_decay = generation_decay
         self._neighbour_size = neighbour_size
         self._adaptive_estimate = adaptive_estimate
+        kwargs.update({
+            "generation_decay": generation_decay,
+            "neighbour_size": neighbour_size,
+            "adaptive_estimate": adaptive_estimate
+        })
         super(OnDPG, self).__init__(f_se, f_actor, f_critic, state_shape, dim_action, discount_factor, target_estimator,
                                     network_optimizer, max_gradient, ou_params, target_sync_interval, target_sync_rate,
                                     sampler, batch_size, update_interval, replay_size, *args, **kwargs)
