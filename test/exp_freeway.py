@@ -161,7 +161,7 @@ Experiment.register(Freeway_mom_I2A, "I2A with Momentum exp for Freeway")
 
 
 class Freeway_mom_I2A_half(Freeway):
-    def __init__(self, env=None, policy_with_iaa=True, dynamic_skip_step=[30000, 60000]):
+    def __init__(self, env=None, policy_with_iaa=True, dynamic_skip_step=[125000, 250000]):
         if env is None:
             env = gym.make('Freeway-v0')
             env = Downsample(env, dst_size=[96, 96])
@@ -173,7 +173,7 @@ Experiment.register(Freeway_mom_I2A_half, "I2A with Momentum exp for Freeway wit
 
 
 class Freeway_ob_I2A(Freeway):
-    def __init__(self, env=None, f_se = None, f_ac=None, f_tran=None, f_decoder=None, f_rollout=None, f_encoder = None,
+    def __init__(self, env=None, f_se=None, f_ac=None, f_tran=None, f_decoder=None, f_rollout=None, f_encoder=None,
                  with_ob=True, dynamic_skip_step=[125000, 250000]):
         if env is None:
             env = gym.make('Freeway-v0')
@@ -198,7 +198,7 @@ Experiment.register(Freeway_ob_I2A, "Original I2A for Freeway with upsample")
 
 
 class Freeway_ob_I2A_decoder(Freeway_ob_I2A):
-    def __init__(self, env=None, f_se = None, f_ac=None, f_tran=None, f_decoder=None, f_rollout=None, f_encoder = None):
+    def __init__(self, env=None, f_se=None, f_ac=None, f_tran=None, f_decoder=None, f_rollout=None, f_encoder=None):
         if env is None:
             env = gym.make('Freeway-v0')
             env = Downsample(env, dst_size=[96, 96])
