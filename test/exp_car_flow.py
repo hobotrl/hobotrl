@@ -291,6 +291,94 @@ class F(object):
             return {"next_frame": next_frame}
         return create_decoder
 
+    def create_decoder_channel(self):
+        def create_decoder(inputs):
+            l2 = 1e-7
+            input_goal = inputs[0]
+
+            input_frame = inputs[1]
+
+            conv_1 = hrl.utils.Network.conv2ds(input_frame,
+                                               shape=[(8, 8, 4)],
+                                               out_flatten=False,
+                                               activation=self.nonlinear,
+                                               l2=l2,
+                                               var_scope="conv_1")
+            conv_2 = hrl.utils.Network.conv2ds(conv_1,
+                                               shape=[(16, 4, 2)],
+                                               out_flatten=False,
+                                               activation=self.nonlinear,
+                                               l2=l2,
+                                               var_scope="conv_2")
+
+            conv_3 = hrl.utils.Network.conv2ds(conv_2,
+                                               shape=[(self.chn_se_2d, 3, 2)],
+                                               out_flatten=False,
+                                               activation=self.nonlinear,
+                                               l2=l2,
+                                               var_scope="conv_3")
+
+            conv_3_shape = conv_3.shape.as_list()
+            fc_1 = hrl.utils.Network.layer_fcs(input_goal, [], conv_3_shape[1] * conv_3_shape[2] *
+                                               (2 * self.dim_se / conv_3_shape[1] / conv_3_shape[2]),
+                                               activation_hidden=self.nonlinear,
+                                               activation_out=self.nonlinear,
+                                               l2=l2,
+                                               var_scope="fc_goal")
+
+            twoD_out = tf.reshape(fc_1, [-1, conv_3_shape[1], conv_3_shape[2],
+                                         2 * self.dim_se / conv_3_shape[1] / conv_3_shape[2]])
+
+            concat_0 = tf.concat([conv_3, twoD_out], axis=3)
+
+            conv_4 = hrl.utils.Network.conv2ds(concat_0,
+                                               shape=[(self.chn_se_2d, 3, 1)],
+                                               out_flatten=False,
+                                               activation=self.nonlinear,
+                                               l2=l2,
+                                               var_scope="conv_5")
+
+            up_1 = tf.image.resize_images(conv_4, conv_2.shape.as_list()[1:3])
+
+            concat_1 = tf.concat([conv_2, up_1], axis=3)
+            concat_1 = hrl.utils.Network.conv2ds(concat_1,
+                                                 shape=[(self.chn_se_2d, 3, 1)],
+                                                 out_flatten=False,
+                                                 activation=self.nonlinear,
+                                                 l2=l2,
+                                                 var_scope="concat_1")
+
+            up_2 = tf.image.resize_images(concat_1, conv_1.shape.as_list()[1:3])
+
+            concat_2 = tf.concat([conv_1, up_2], axis=3)
+            concat_2 = hrl.utils.Network.conv2ds(concat_2,
+                                                 shape=[(16, 4, 1)],
+                                                 out_flatten=False,
+                                                 activation=self.nonlinear,
+                                                 l2=l2,
+                                                 var_scope="concat_2")
+
+            up_3 = tf.image.resize_images(concat_2, input_frame.shape.as_list()[1:3])
+
+            concat_3 = tf.concat([input_frame, up_3], axis=3)
+            concat_3 = hrl.utils.Network.conv2ds(concat_3,
+                                                 shape=[(8, 3, 1)],
+                                                 out_flatten=False,
+                                                 activation=self.nonlinear,
+                                                 l2=l2,
+                                                 var_scope="concat_3")
+
+            next_frame = hrl.utils.Network.conv2ds(concat_3,
+                                                   shape=[(3, 3, 1)],
+                                                   out_flatten=False,
+                                                   activation=self.nonlinear,
+                                                   l2=l2,
+                                                   var_scope="next_frame")
+
+            return {"next_frame": next_frame}
+
+        return create_decoder
+
     def create_decoder_deconv(self):
         def create_decoder_deconv(inputs):
             l2 = 1e-7
