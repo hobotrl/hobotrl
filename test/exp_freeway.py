@@ -236,10 +236,10 @@ class FreewayOTDQN_mom(OTDQNModelExperiment):
         if f_se is None:
             f = F(env, state_size)
             f_create_q = f.create_q()
-            f_se = f.create_se_channels()
+            f_se = f.create_se()
             f_transition = f.create_transition_momentum()
             # f_decoder = f.decoder_multiflow()
-            f_decoder = f.create_decoder_channel()
+            f_decoder = f.create_decoder()
 
         # if sampler_creator is None:
         #     max_traj_length = 200
@@ -296,7 +296,7 @@ class FreewayOTDQN_state(FreewayOTDQN_mom):
             f_create_q = f.create_q()
             f_se = f.create_se_channels()
             f_transition = f.create_transition()
-            f_decoder = f.create_decoder_channel()
+            f_decoder = f.create_decoder()
             
         super(FreewayOTDQN_state, self).__init__(env=env, f_create_q=f_create_q, f_se=f_se, f_transition=f_transition,
                                                  f_decoder=f_decoder, with_momentum=with_momentum, with_goal=with_goal)

@@ -196,6 +196,7 @@ class EnvModelUpdater(network.NetworkUpdater):
                 image_channel = None
                 f_predict_loss = []
                 transition_loss = []
+                relative_transition_loss = []
                 momentum_loss = []
                 mom_decoder_predict = []
                 action_related_decoder_predict = []
@@ -302,7 +303,13 @@ class EnvModelUpdater(network.NetworkUpdater):
                     frame_losses.append(tf.reduce_mean(network.Utils.clipped_square(f_predict[-1] - fn[i])))
                     f_predict_loss.append(frame_losses)
                     if not with_ob:
+                        mean_se = tf.reduce_mean(sen[i], axis=0)
+                        self._se_norm = tf.sqrt(tf.reduce_sum(tf.square(mean_se)))
                         transition_loss.append(tf.reduce_mean(network.Utils.clipped_square(ses_predict[-1] - sen[i])))
+                        relative_transition_loss.append(
+                            tf.reduce_mean(tf.sqrt(tf.reduce_sum(tf.square(ses_predict[-1] - sen[i]), axis=-1)) /
+                                           # tf.sqrt(tf.reduce_sum(tf.square(sen[i] - mean_se), axis=-1))))
+                                           tf.sqrt(tf.reduce_sum(tf.square(sen[i]), axis=-1))))
                         cur_goal = cur_goal[:-1]
                         cur_se = cur_se[:-1]
                     else:
@@ -314,6 +321,7 @@ class EnvModelUpdater(network.NetworkUpdater):
                 self._reward_loss = []
                 self._env_loss = []
                 self._transition_loss = []
+                self._relative_transition_loss = []
                 self._momentum_loss = []
                 self._flow_regulation_loss = []
                 for i in range(len(curriculum)):
@@ -329,8 +337,12 @@ class EnvModelUpdater(network.NetworkUpdater):
                         self._transition_loss.append(tf.reduce_mean(tf.add_n(
                             transition_loss[0:curriculum[i]]) / float(curriculum[i]),
                                                                     name="transition_loss%d" % curriculum[i]))
+                        self._relative_transition_loss.append(tf.reduce_mean(tf.add_n(
+                            relative_transition_loss[0:curriculum[i]]) / float(curriculum[i]),
+                                                                    name="transition_loss%d" % curriculum[i]))
                     else:
                         self._transition_loss.append(0.0)
+                        self._relative_transition_loss.append(0.0)
 
                     if with_momentum:
                         self._momentum_loss.append(tf.reduce_mean(tf.add_n(
@@ -350,12 +362,14 @@ class EnvModelUpdater(network.NetworkUpdater):
                     return tf.gather(self._env_loss, index), \
                            tf.gather(self._reward_loss, index), \
                            tf.gather(self._transition_loss, index), \
+                           tf.gather(self._relative_transition_loss, index), \
                            tf.gather(self._momentum_loss, index), \
                            tf.gather(self._flow_regulation_loss, index), \
                            self._count
 
-                self._env_loss, self._reward_loss, self._transition_loss, self._momentum_loss, \
-                self._flow_regulation_loss, self._num = loss_assign(tf.where(tf.equal(self._curriculum, self._count)))
+                self._env_loss, self._reward_loss, self._transition_loss, self._relative_transition_loss, \
+                self._momentum_loss, self._flow_regulation_loss, self._num = \
+                    loss_assign(tf.where(tf.equal(self._curriculum, self._count)))
 
                 self._op_loss = self._env_loss \
                                 + self._reward_loss \
@@ -404,9 +418,11 @@ class EnvModelUpdater(network.NetworkUpdater):
                       "reward_loss": self._reward_loss,
                       "observation_loss": self._env_loss,
                       "transition_loss": self._transition_loss,
+                      "relative_transition_loss": self._relative_transition_loss,
                       "momentum_loss": self._momentum_loss,
                       "num": self._num,
-                      "flow_regulation_loss": self._flow_regulation_loss
+                      "flow_regulation_loss": self._flow_regulation_loss,
+                      "se_norm": self._se_norm
                       }
                       #,
                       # "goal_reg_loss": self._goal_reg_loss}
