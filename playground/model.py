@@ -58,6 +58,7 @@ class Model(sampling.TransitionBatchUpdate, BaseDeepAgent):
         super(Model, self).__init__(*args, **kwargs)
 
         self._log_dir = log_dir
+        self._update_count = 0
 
     def init_updaters_(self):
         self.network_optimizer.add_updater(network.L2(self.network), name="l2")
