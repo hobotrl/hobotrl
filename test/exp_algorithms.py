@@ -25,7 +25,8 @@ import hobotrl.algorithms.ot as ot
 import playground.a3c_onoff as a3coo
 import playground.a3c_continuous_onoff as a3ccoo
 import playground.ot_model as ot_model
-
+import playground.model as model
+import playground.model2 as model2
 
 class DQNExperiment(Experiment):
 
@@ -1158,27 +1159,27 @@ class OTDQNModelExperiment(Experiment):
         sampler = None if self._sampler_creator is None else self._sampler_creator(args)
 
         agent = ot_model.OTModel(f_create_q=self._f_create_q, f_se=self._f_se, f_transition=self._f_transition,
-                        f_decoder=self._f_decoder,
-                        lower_weight=self._lower_weight, upper_weight=self._upper_weight,
-                        state_shape=self._env.observation_space.shape, num_actions=self._env.action_space.n,
-                        rollout_depth=self._rollout_depth, discount_factor=self._discount_factor,
-                        ddqn=self._ddqn,
-                        target_sync_interval=self._target_sync_interval, target_sync_rate=self._target_sync_rate,
-                        greedy_epsilon=self._greedy_epsilon,
-                        network_optimizer=self._network_optimizer,
-                        max_gradient=self._max_gradient,
-                        update_interval=self._update_interval,
-                        replay_size=self._replay_size,
-                        batch_size=self._batch_size,
-                        sampler=sampler,
-                        with_momentum=self._with_momentum,
-                        curriculum=self._curriculum,
-                        skip_step=self._skip_step,
-                        save_image_interval=self._save_image_interval,
-                        log_dir=args.logdir,
-                        with_ob=self._with_ob,
-                        with_goal=self._with_goal,
-                        global_step=global_step)
+                                 f_decoder=self._f_decoder,
+                                 lower_weight=self._lower_weight, upper_weight=self._upper_weight,
+                                 state_shape=self._env.observation_space.shape, num_actions=self._env.action_space.n,
+                                 rollout_depth=self._rollout_depth, discount_factor=self._discount_factor,
+                                 ddqn=self._ddqn,
+                                 target_sync_interval=self._target_sync_interval, target_sync_rate=self._target_sync_rate,
+                                 greedy_epsilon=self._greedy_epsilon,
+                                 network_optimizer=self._network_optimizer,
+                                 max_gradient=self._max_gradient,
+                                 update_interval=self._update_interval,
+                                 replay_size=self._replay_size,
+                                 batch_size=self._batch_size,
+                                 sampler=sampler,
+                                 with_momentum=self._with_momentum,
+                                 curriculum=self._curriculum,
+                                 skip_step=self._skip_step,
+                                 save_image_interval=self._save_image_interval,
+                                 log_dir=args.logdir,
+                                 with_ob=self._with_ob,
+                                 with_goal=self._with_goal,
+                                 global_step=global_step)
         if self._asynchronous:
             agent = AsynchronousAgent(agent=agent, method='ratio', rate=6.0)
         config = tf.ConfigProto()
@@ -1191,3 +1192,64 @@ class OTDQNModelExperiment(Experiment):
             )
             runner.episode(self._episode_n)
         super(OTDQNModelExperiment, self).run(args)
+
+
+class TransitionModel(Experiment):
+    def __init__(self, env, f_se, f_transition,
+                 f_decoder,
+                 rollout_depth=5,
+                 network_optimizer=None,
+                 max_gradient=10.0,
+                 update_interval=4,
+                 replay_size=1024,
+                 batch_size=12,
+                 curriculum=[1, 3, 5],
+                 skip_step=[10000, 20000],
+                 sampler_creator=None,
+                 save_image_interval=10000,
+                 with_ob=False,
+                 with_momentum=True,
+                 with_goal=True):
+        super(TransitionModel, self).__init__()
+
+        self._f_se, self._f_transition, self._f_decoder, self._rollout_depth, self._network_optimizer, \
+        self._max_gradient, self._update_interval, self._replay_size, self._batch_size, self._curriculum, \
+        self._skip_step, self._sampler_creator, self._save_image_interval, self._with_ob, self._with_momentum, \
+        self._with_goal, self._env = \
+            f_se, f_transition, f_decoder, rollout_depth, network_optimizer, max_gradient, update_interval, replay_size, \
+            batch_size, curriculum, skip_step, sampler_creator, save_image_interval, with_ob, with_momentum, with_goal, \
+            env
+
+    def run(self, args):
+        global_step = tf.get_variable(
+            'global_step', [], dtype=tf.int32,
+            initializer=tf.constant_initializer(0), trainable=False
+        )
+        sampler = None if self._sampler_creator is None else self._sampler_creator(args)
+        agent = model2.Model(f_se=self._f_se, f_transition=self._f_transition, f_decoder=self._f_decoder,
+                             # optimality tightening parameters
+                             state_shape=self._env.observation_space.shape, num_actions=self._env.action_space.n,
+                             # env model parameters
+                             rollout_depth=self._rollout_depth,
+                             network_optimizer=self._network_optimizer,
+                             max_gradient=self._max_gradient, update_interval=self._update_interval,
+                             replay_size=self._replay_size, batch_size=self._batch_size, sampler=sampler,
+                             with_momentum=self._with_momentum,
+                             curriculum=self._curriculum,
+                             skip_step=self._skip_step,
+                             save_image_interval=self._save_image_interval,
+                             log_dir=args.logdir,
+                             with_ob=self._with_ob,
+                             with_goal=self._with_goal,
+                             global_step=global_step
+                             )
+
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        with agent.create_session(config=config, save_dir=args.logdir) as sess:
+            runner = hrl.envs.EnvRunner(
+                self._env, agent, evaluate_interval=sys.maxint,
+                render_interval=args.render_interval, logdir=args.logdir,
+                render_once=args.render_once, fake=True
+            )
+            runner.episode(1500000)
