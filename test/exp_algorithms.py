@@ -26,7 +26,6 @@ import playground.a3c_onoff as a3coo
 import playground.a3c_continuous_onoff as a3ccoo
 import playground.ot_model as ot_model
 import playground.model as model
-import playground.model2 as model2
 
 class DQNExperiment(Experiment):
 
@@ -1226,7 +1225,7 @@ class TransitionModel(Experiment):
             initializer=tf.constant_initializer(0), trainable=False
         )
         sampler = None if self._sampler_creator is None else self._sampler_creator(args)
-        agent = model2.Model(f_se=self._f_se, f_transition=self._f_transition, f_decoder=self._f_decoder,
+        agent = model.Model(f_se=self._f_se, f_transition=self._f_transition, f_decoder=self._f_decoder,
                              # optimality tightening parameters
                              state_shape=self._env.observation_space.shape, num_actions=self._env.action_space.n,
                              # env model parameters
