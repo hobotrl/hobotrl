@@ -56,6 +56,7 @@ class Model(sampling.TransitionBatchUpdate, BaseDeepAgent):
         kwargs.update({"sampler": sampler})
         # sampling.TruncateTrajectorySampler2.__init__(self, *args, **kwargs)
         super(Model, self).__init__(*args, **kwargs)
+        self.init_updaters_()
 
         self._log_dir = log_dir
         self._update_count = 0

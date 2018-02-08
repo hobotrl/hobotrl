@@ -247,9 +247,6 @@ class Model(TransitionModel):
                 return sampler
             sampler_creator = create_sample
 
-            if network_optimizer is None:
-                network_optimizer = network.LocalOptimizer(grad_clip=max_gradient)
-
         super(Model, self).__init__(env, f_se, f_transition, f_decoder, rollout_depth, network_optimizer, max_gradient,
                                     update_interval, replay_size, batch_size, curriculum, skip_step, sampler_creator,
                                     save_image_interval, with_ob, with_momentum, with_goal)
