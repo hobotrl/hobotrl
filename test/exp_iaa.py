@@ -441,7 +441,7 @@ class MsPacmanOTDQN(OTDQNModelExperiment):
                 )
                 sampler = sampling.TruncateTrajectorySampler2(memory, replay_size / max_traj_length, max_traj_length,
                                                               batch_size=1, trajectory_length=batch_size,
-                                                              interval=update_interval, update_on=False)
+                                                              interval=update_interval)
                 return sampler
             sampler_creator = create_sample
 
