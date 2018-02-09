@@ -7,8 +7,7 @@ from hobotrl.network import Utils
 from exp_algorithms import *
 from hobotrl.playback import Playback
 from hobotrl.playback import BigPlayback
-import hobotrl.network as network
-
+from car import *
 
 class Model(TransitionModel):
     def __init__(self, env=None, f_se=None, f_transition=None, f_decoder=None,
@@ -25,12 +24,16 @@ class Model(TransitionModel):
                  with_ob=False,
                  with_momentum=True,
                  with_goal=True):
+        # if env is None:
+        #     env = gym.make('Freeway-v0')
+        #     env = Downsample(env, dst_size=[96, 96])
+        #     env = ScaledFloatFrame(env)
+        #     env = MaxAndSkipEnv(env, skip=4, max_len=1)
+        #     env = FrameStack(env, k=4)
+
         if env is None:
-            env = gym.make('Freeway-v0')
-            env = Downsample(env, dst_size=[96, 96])
-            env = ScaledFloatFrame(env)
-            env = MaxAndSkipEnv(env, skip=4, max_len=1)
-            env = FrameStack(env, k=4)
+            env = gym.make('CarRacing-v0')
+            env = wrap_car(env, 3, 3)
 
         if f_se is None:
             l2 = 1e-7

@@ -420,6 +420,31 @@ class MsPacmanOTDQN(OTDQNModelExperiment):
             # f_decoder = f.decoder_multiflow()
             f_decoder = f.create_decoder()
 
+        if sampler_creator is None:
+            max_traj_length = 200
+
+            def create_sample(args):
+                bucket_size = 8
+                traj_count = replay_size / max_traj_length
+                bucket_count = traj_count / bucket_size
+                active_bucket = 4
+                ratio = 1.0 * active_bucket / bucket_count
+                transition_epoch = 8
+                trajectory_epoch = transition_epoch * max_traj_length
+                memory = BigPlayback(
+                    bucket_cls=Playback,
+                    bucket_size=bucket_size,
+                    max_sample_epoch=trajectory_epoch,
+                    capacity=traj_count,
+                    active_ratio=ratio,
+                    cache_path=os.sep.join([args.logdir, "cache", str(args.index)])
+                )
+                sampler = sampling.TruncateTrajectorySampler2(memory, replay_size / max_traj_length, max_traj_length,
+                                                              batch_size=1, trajectory_length=batch_size,
+                                                              interval=update_interval, update_on=False)
+                return sampler
+            sampler_creator = create_sample
+
         super(MsPacmanOTDQN, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder, lower_weight,
                                             upper_weight, rollout_depth, discount_factor, ddqn, target_sync_interval,
                                             target_sync_rate, greedy_epsilon, network_optimizer, max_gradient,
