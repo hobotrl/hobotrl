@@ -31,9 +31,17 @@ class Model(TransitionModel):
         #     env = MaxAndSkipEnv(env, skip=4, max_len=1)
         #     env = FrameStack(env, k=4)
 
+        # if env is None:
+        #     env = gym.make('CarRacing-v0')
+        #     env = wrap_car(env, 3, 3)
+
         if env is None:
-            env = gym.make('CarRacing-v0')
-            env = wrap_car(env, 3, 3)
+            env = gym.make('MsPacman-v0')
+            env = Downsample(env, dst_size=[96, 96])
+            env = ScaledFloatFrame(env)
+            env = ScaledRewards(env, 0.1)
+            env = MaxAndSkipEnv(env, skip=4, max_len=1)
+            env = FrameStack(env, k=4)
 
         if f_se is None:
             l2 = 1e-7
