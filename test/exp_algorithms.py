@@ -100,7 +100,7 @@ class DQNExperiment(Experiment):
             runner = hrl.envs.EnvRunner(
                 self._env, agent, evaluate_interval=sys.maxint,
                 render_interval=args.render_interval, logdir=args.logdir,
-                render_once=True,
+                render_once=args.render_once,
             )
             runner.episode(self._episode_n)
 
@@ -357,7 +357,7 @@ class OTDQNExperiment(Experiment):
             runner = hrl.envs.EnvRunner(
                 self._env, agent, evaluate_interval=sys.maxint,
                 render_interval=sys.maxint, logdir=args.logdir,
-                render_once=True,
+                render_once=args.render_once,
             )
             return runner.episode(self._episode_n)
 
@@ -484,7 +484,7 @@ class DPGExperiment(Experiment):
                  target_sync_rate=0.01,
                  # sampler arguments
                  batch_size=32,
-                 replay_capacity=1000):
+                 replay_capacity=1000, **kwargs):
         self._env, self._f_se, self._f_actor, self._f_critic, self._episode_n,\
             self._discount_factor, self._network_optimizer_ctor, \
             self._ou_params, self._target_sync_interval, self._target_sync_rate, \
@@ -493,6 +493,7 @@ class DPGExperiment(Experiment):
             discount_factor, network_optimizer_ctor, \
             ou_params, target_sync_interval, target_sync_rate, \
             batch_size, replay_capacity
+        self._kwargs = kwargs
         super(DPGExperiment, self).__init__()
 
     def run(self, args):
@@ -522,6 +523,7 @@ class DPGExperiment(Experiment):
             sampler=hrl.sampling.TransitionSampler(hrl.playback.MapPlayback(self._replay_capacity), self._batch_size),
             batch_size=self._batch_size,
             global_step=global_step,
+            **self._kwargs
         )
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
@@ -620,7 +622,7 @@ class ACOOExperiment(Experiment):
             with agent.create_session(master=server.target, worker_index=args.index, save_dir=args.logdir) as sess:
                 runner = hrl.envs.EnvRunner(env, agent, reward_decay=self.reward_decay,
                                             evaluate_interval=sys.maxint, render_interval=args.render_interval,
-                                            render_once=True,
+                                            render_once=args.render_once,
                                             logdir=args.logdir if args.index == 0 else None)
                 runner.episode(self.episode_n)
 
@@ -715,7 +717,7 @@ class ACOOExperimentCon(Experiment):
                 agent.set_session(sess)
                 runner = hrl.envs.EnvRunner(env, agent, reward_decay=self.reward_decay,
                                             evaluate_interval=sys.maxint, render_interval=sys.maxint,
-                                            render_once=True,
+                                            render_once=args.render_once,
                                             logdir=args.logdir if args.index == 0 else None)
                 runner.episode(self.episode_n)
 
@@ -1031,7 +1033,7 @@ class A3CExperimentWithI2AOB(Experiment):
             agent.set_session(sess)
             runner = hrl.envs.EnvRunner(self._env, agent, reward_decay=self._discount_factor, max_episode_len=10000,
                                         evaluate_interval=sys.maxint, render_interval=args.render_interval,
-                                        render_once=True,
+                                        render_once=args.render_once,
                                         logdir=args.logdir if args.index == 0 else None)
             runner.episode(self._episode_n)
 
@@ -1083,7 +1085,8 @@ class PPOExperiment(Experiment):
         with agent.create_session(config=config, save_dir=args.logdir) as sess:
             runner = hrl.envs.EnvRunner(
                 self._env, agent, evaluate_interval=sys.maxint,
-                render_interval=args.render_interval, logdir=args.logdir
+                render_interval=args.render_interval, logdir=args.logdir,
+                render_once=args.render_once,
             )
             runner.episode(self._episode_n)
 

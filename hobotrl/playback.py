@@ -1004,8 +1004,6 @@ class BigPlayback(Playback):
         # Read back state from disk
         self.__init_from_cache()
 
-
-
     def push_sample(self, sample, sample_score=0):
         """Push new sample into buffer.
         This should be the only way new samples can be inserted into BigMap.
@@ -1091,7 +1089,7 @@ class BigPlayback(Playback):
         ret = self._merge_batches(ret)
 
         if time.time() - self.last_t_getbatch > 60:
-            logging.warning(
+            logging.info(
                 "[BigPlayback.get_batch()]: "
                 "get batch function alive. Last len (batches) {}".format(len(ret))
             )
@@ -1464,7 +1462,7 @@ class BigPlayback(Playback):
                 time.sleep(0.1)
 
                 if time.time() - self.last_t_bktio > 60:
-                    logging.warning(
+                    logging.info(
                         "[BigPlayback.bucket_io()]: "
                         "bucket_io function alive. Qi {} Qo {}".format(
                             self.cnt_qi_empty, self.cnt_qo_empty)

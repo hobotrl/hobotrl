@@ -159,7 +159,7 @@ class AsynchronousAgent(wrapt.ObjectProxy):
                     *args_trn_thread, **kwargs_trn_thread)
                 _thread_train.start()
             else:
-                logging.warning(
+                logging.info(
                     "[AsynchronousAgent.monitor_loop()]: "
                     "training thread running okay!"
                 )

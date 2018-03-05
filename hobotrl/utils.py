@@ -511,6 +511,10 @@ def clone_params(*params, **paramsk):
 
 
 class ScheduledParam(FloatParam):
+    """
+    float parameter that changes according to a schedule.
+    useful in hyperparameter annealing.
+    """
 
     @staticmethod
     def __new__(S, *args, **kwargs):
@@ -615,6 +619,13 @@ class CappedLinear(ScheduledParam):
     def __init__(self, step, start, end, stepper=None):
         super(CappedLinear, self).__init__(lambda n: end if n > step else start + (end - start) * n / step, stepper,
                                            step=step, start=start, end=end)
+
+
+class CappedExp(ScheduledParam):
+    def __init__(self, step, start, end, stepper=None):
+        self._base = np.exp(np.log(1.0*start/end) / step)
+        super(CappedExp, self).__init__(lambda n: end if n >= step else end * (self._base ** (step - n)),
+                                        stepper, step=step, start=start, end=end)
 
 
 class Cosine(ScheduledParam):

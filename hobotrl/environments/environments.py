@@ -397,6 +397,27 @@ class EnvRunner2(object):
                     raw_input("Press Enter to start demonstration")
 
 
+class ActionNormalized(gym.Wrapper):
+
+    def __init__(self, env, action_limit=None):
+        super(ActionNormalized, self).__init__(env)
+        # Continues action
+        if not env.action_space.__class__.__name__ == "Box":
+            raise ValueError("only support continuous action!")
+        if action_limit is None:
+            action_limit = [env.action_space.low, env.action_space.high]
+        self.action_limit = action_limit
+        self.action_scale = (action_limit[1] - action_limit[0])/2.0
+        self.action_offset = (action_limit[1] + action_limit[0])/2.0
+        logging.warning("limit:%s, scale:%s, offset:%s", action_limit, self.action_scale, self.action_offset)
+
+    def _step(self, action):
+        return self.env.step(self.augment_action(action))
+
+    def augment_action(self, action):
+        return (action + self.action_offset) * self.action_scale
+
+
 class AugmentEnvWrapper(gym.Wrapper):
     """
     wraps an environment, adding augmentation for reward/state/action.

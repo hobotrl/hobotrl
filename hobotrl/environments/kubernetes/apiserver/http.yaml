@@ -37,11 +37,11 @@ spec:
         - name: workdir
           mountPath: /mnt
           subPath: lisen.mu
-        command:
+        c>ommand:
         - "/bin/bash"
         args:
         - "-c"
-        - "cd /mnt; python -m SimpleHTTPServer 8080"
+        - "echo -e \"nameserver 10.9.1.3\n$(cat /etc/resolv.conf)\" >> /etc/resolv.conf; cd /mnt; python -m SimpleHTTPServer 8080"
       volumes:
       - name: workdir
         persistentVolumeClaim:

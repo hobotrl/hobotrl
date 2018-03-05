@@ -12,7 +12,7 @@ import hobotrl.sampling as sampling
 import hobotrl.target_estimate as target_estimate
 import hobotrl.tf_dependent.distribution as distribution
 from hobotrl.tf_dependent.base import BaseDeepAgent
-from hobotrl.policy import OUExplorationPolicy
+from hobotrl.policy import OUExplorationPolicy, OUNoise
 import hobotrl.async as async
 
 
@@ -105,6 +105,7 @@ class DPG(sampling.TransitionBatchUpdate,
                  batch_size=32,
                  update_interval=4,
                  replay_size=1000,
+                 noise_type=OUNoise,
                  *args, **kwargs):
         """
 
@@ -154,7 +155,7 @@ class DPG(sampling.TransitionBatchUpdate,
         self._discount_factor = discount_factor
         self.init_updaters_()
 
-        self._policy = OUExplorationPolicy(self._actor_function, *ou_params)
+        self._policy = OUExplorationPolicy(self._actor_function, *ou_params, noise_type=noise_type)
         self._target_sync_interval = target_sync_interval
         self._target_sync_rate = target_sync_rate
         self._update_count = 0
