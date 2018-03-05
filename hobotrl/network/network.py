@@ -315,6 +315,10 @@ class Network(object):
         return self._inputs
 
     @property
+    def outputs(self):
+        return self._symbols
+
+    @property
     def session(self):
         return self._sess
 

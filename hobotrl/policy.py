@@ -44,6 +44,23 @@ class EpsilonGreedyPolicy(Policy):
         return action
 
 
+class WrapEpsilonGreedy(Policy):
+    def __init__(self, policy, epsilon, num_actions, is_continuous):
+        super(WrapEpsilonGreedy, self).__init__()
+        self._policy, self._epsilon, self._num_actions, self._is_continuous = \
+            policy, epsilon, num_actions, is_continuous
+
+    def act(self, state, exploration=True, **kwargs):
+        if exploration and np.random.rand() < self._epsilon:
+            if self._is_continuous:
+                action = (np.random.rand(self._num_actions) - 0.5) * 2
+            else:
+                action = np.random.randint(self._num_actions)
+        else:
+            action = self._policy.act(state, **kwargs)
+        return action
+
+
 class OUNoise(object):
     def __init__(self, shape, mu, theta, sigma):
         """
