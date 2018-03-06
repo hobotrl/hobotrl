@@ -1225,6 +1225,29 @@ class HalfFrame(gym.ObservationWrapper): #as compare to remapframe
         return dst
 
 
+class NoneSkipWrapper(gym.wrappers):
+    def __init__(self, env, skip=4):
+        """Return only every `skip`-th frame"""
+        super(NoneSkipWrapper, self).__init__(env)
+        self._skip = skip
+
+    def _step(self, action):
+        total_reward = 0.0
+        done = None
+        for i in range(self._skip):
+            action = action if i == 0 else None
+            obs, reward, done, info = self.env.step(action)
+            total_reward += reward
+            if done:
+                break
+
+        return obs, total_reward, done, info
+
+    def _reset(self):
+        obs = self.env.reset()
+        return obs
+
+
 def wrap_dqn(env):
     """Apply a common set of wrappers for Atari games."""
     assert 'NoFrameskip' in env.spec.id

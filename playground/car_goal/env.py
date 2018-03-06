@@ -9,10 +9,10 @@ from Box2D.b2 import fixtureDef, polygonShape, revoluteJointDef
 class Goal(object):
     """Struct to store local goal."""
     def __init__(self):
-        self.pos = None
-        self.desired_t = None
-        self.issue_t = None
-        self.car = None
+        self.pos = (0, 0)
+        self.desired_t = 0
+        self.issue_t = 0
+        self.car = (0, 0, 0)
 
     @property
     def position_abs(self):
@@ -34,13 +34,14 @@ class CarRacingGoalWrapper(gym.Wrapper):
         super(CarRacingGoalWrapper, self).__init__(env)
         self.env = env
         self.action_space = spaces.Box(
-            low=-np.array((WINDOW_W, WINDOW_H, 0)),
-            high=np.array((WINDOW_W, WINDOW_H, 1000))
+            low=-np.array((1.0, 1.0)),
+            high=np.array((1.0, 1.0))
         )
-        self.observation_space = spaces.Tuple((self.env.observation_space, self.action_space))
+        # self.observation_space = spaces.Tuple((self.env.observation_space, self.action_space))
+        self.observation_space = self.env.observation_space
         self._n_steps = None
-        self._goal = None
-        self._car = None
+        self._goal = Goal()
+        self._car = (0, 0, 0)
         if func_control is None:
             self._control_policy = self._default_control_policy
         else:
@@ -52,7 +53,8 @@ class CarRacingGoalWrapper(gym.Wrapper):
 
     def _reset(self, **kwargs):
         self._n_steps = 0
-        self._goal = None
+        self._goal = Goal()
+        self._car = (0, 0, 0)
         state = self.env.reset()
         self.init_marker()
         return state, self._goal
@@ -61,9 +63,8 @@ class CarRacingGoalWrapper(gym.Wrapper):
         self._n_steps += 1
         if action is not None:
             assert self.action_space.contains(action)
-            self._goal = Goal()
-            self._goal.pos = (action[0], action[1])
-            self._goal.desired_t = action[2]
+            self._goal.pos = (action[0]*20, action[1]*20)
+            self._goal.desired_t = 1000  # action[2]
             self._goal.issue_t = self._n_steps
             self._goal.car = (
                 self.env.env.car.hull.position.x,
@@ -76,7 +77,7 @@ class CarRacingGoalWrapper(gym.Wrapper):
             np.mod(3 * np.pi / 2 + self.env.env.car.hull.angle, 2 * np.pi) - np.pi
         )
         state, reward, done, info = self.env.step(self._control_policy())
-        return (state, self._goal, self._car), reward, done, info
+        return state, reward, done, info
 
     def _control_policy(self):
         raise NotImplementedError()
