@@ -6,7 +6,7 @@ import gym
 from hobotrl.utils import CappedExp
 from hobotrl.network import LocalOptimizer, Utils
 from hobotrl.environments.environments import ScaledFloatFrame, FrameStack, ScaledRewards, NoneSkipWrapper
-from test.exp_algorithms import DPGExperiment
+from test.exp_algorithms import Experiment, DPGExperiment
 from test.exp_car import CarGrassWrapper, CarContinuousWrapper
 from .env import CarRacingGoalWrapper
 
@@ -84,3 +84,5 @@ class DDPGCarRacingSoftGoal(DPGExperiment):
             ou_params, target_sync_interval, target_sync_rate, batch_size, replay_capacity,
             **kwargs
         )
+Experiment.register(DDPGCarRacingSoftGoal, "DDPG with soft goal.")
+
