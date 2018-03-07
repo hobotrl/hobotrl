@@ -145,10 +145,8 @@ class PolicyNetUpdater(network.NetworkUpdater):
 
 class EnvModelUpdater(network.NetworkUpdater):
     def __init__(self, net_se, net_transition, net_decoder, state_shape, dim_action,
-                 curriculum=None, skip_step=None, transition_weight=0.0, with_momentum=True,
-                 detailed_decoder=False,
-                 compute_with_diff=False,
-                 ):
+                 curriculum=None, skip_step=None, transition_weight=0.0, with_momentum=True, compute_with_diff=False,
+                 save_image_interval=1000, detailed_decoder=False, with_ob=False, with_goal=True):
         super(EnvModelUpdater, self).__init__()
         if curriculum is None:
             self._curriculum = [1, 3, 5]
@@ -158,7 +156,12 @@ class EnvModelUpdater(network.NetworkUpdater):
             self._skip_step = skip_step
 
         self._depth = self._curriculum[-1]
+        self.save_image_interval = save_image_interval
         self._detailed_decoder = detailed_decoder
+
+        if with_ob:
+            with_momentum = False
+
         with tf.name_scope("EnvModelUpdater"):
             with tf.name_scope("input"):
                 self._input_action = tf.placeholder(dtype=tf.uint8, shape=[None],
@@ -175,6 +178,7 @@ class EnvModelUpdater(network.NetworkUpdater):
                 f0 = s0[:, :, :, -3:]
                 logging.warning("s0:%s, f0:%s", s0.shape, f0.shape)
                 sn, an, rn, fn =[], [], [], []
+                cur_ob = self._input_state[0:-1]
                 for i in range(self._depth):
                     sn.append(self._input_state[i+1:])
                     an.append(self._input_action[i:])
@@ -192,6 +196,7 @@ class EnvModelUpdater(network.NetworkUpdater):
                 image_channel = None
                 f_predict_loss = []
                 transition_loss = []
+                relative_transition_loss = []
                 momentum_loss = []
                 mom_decoder_predict = []
                 action_related_decoder_predict = []
@@ -219,7 +224,10 @@ class EnvModelUpdater(network.NetworkUpdater):
                     logging.warning("[%s]: state:%s, action:%s", i, cur_se.shape, an[i].shape)
                     input_action = tf.one_hot(indices=an[i], depth=dim_action, on_value=1.0, off_value=0.0,
                                               axis=-1)
-                    net_trans = net_transition([cur_se, input_action], name_scope="transition_%d" % i)
+                    if not with_ob:
+                        net_trans = net_transition([cur_se, input_action], name_scope="transition_%d" % i)
+                    else:
+                        net_trans = net_transition([cur_ob, input_action], name_scope="transition_%d" % i)
 
                     if with_momentum:
                         TM_goal = net_trans["momentum"].op
@@ -233,11 +241,18 @@ class EnvModelUpdater(network.NetworkUpdater):
                         momentum_loss.append(tf.reduce_mean(network.Utils.clipped_square(cur_se_mom - sen[i])))
 
                     goal = net_trans["next_state"].op
-                    # socalled_state = net_trans["action_related"].op
-                    cur_goal = goal if cur_goal is None else tf.stop_gradient(cur_goal) + goal
-                    goalfrom0_predict.append(cur_goal)
-                    cur_se = se0_truncate + cur_goal
-                    # cur_se = socalled_state
+                    if not with_ob and with_goal:
+                        # socalled_state = net_trans["action_related"].op
+                        cur_goal = goal if cur_goal is None else tf.stop_gradient(cur_goal) + goal
+                        goalfrom0_predict.append(cur_goal)
+                        cur_se = se0_truncate + cur_goal
+                        # cur_se = socalled_state
+                    elif not with_ob and not with_goal:
+                        cur_goal = goal
+                        cur_se = cur_goal
+                    else:
+                        cur_se = goal
+                        cur_ob = tf.concat([cur_ob[:,:,:,3:], goal], axis=-1)
 
                     ses_predict.append(cur_se)
                     r_predict.append(net_trans["reward"].op)
@@ -250,8 +265,11 @@ class EnvModelUpdater(network.NetworkUpdater):
                         action_related_decoder_predict.append(net_decoder([tf.concat([se0_truncate, cur_se_action_related], axis=1), f0_truncate],
                                                               name_scope="action_related_decoder%d" % i)["next_frame"].op)
 
-                    net_decoded = net_decoder([tf.concat([se0_truncate, cur_goal], axis=1), f0_truncate],
-                                              name_scope="frame_decoder%d" % i)
+                    if not with_ob:
+                        net_decoded = net_decoder([tf.concat([se0_truncate, cur_goal], axis=1), f0_truncate],
+                                                  name_scope="frame_decoder%d" % i)
+                    else:
+                        net_decoded = net_decoder([cur_se], name_scope="frame_decoder%d" % i)
                     f_predict.append(net_decoded["next_frame"].op)
                     predicted_channel = net_decoded["image_channel"]
                     if predicted_channel is not None and image_channel is None:
@@ -284,15 +302,26 @@ class EnvModelUpdater(network.NetworkUpdater):
 
                     frame_losses.append(tf.reduce_mean(network.Utils.clipped_square(f_predict[-1] - fn[i])))
                     f_predict_loss.append(frame_losses)
-                    transition_loss.append(tf.reduce_mean(network.Utils.clipped_square(ses_predict[-1] - sen[i])))
-                    cur_goal = cur_goal[:-1]
-                    cur_se = cur_se[:-1]
+                    if not with_ob:
+                        mean_se = tf.reduce_mean(sen[i], axis=0)
+                        self._se_norm = tf.sqrt(tf.reduce_sum(tf.square(mean_se)))
+                        transition_loss.append(tf.reduce_mean(network.Utils.clipped_square(ses_predict[-1] - sen[i])))
+                        relative_transition_loss.append(
+                            tf.reduce_mean(tf.sqrt(tf.reduce_sum(tf.square(ses_predict[-1] - sen[i]), axis=-1)) /
+                                           # tf.sqrt(tf.reduce_sum(tf.square(sen[i] - mean_se), axis=-1))))
+                                           tf.sqrt(tf.reduce_sum(tf.square(sen[i]), axis=-1))))
+                        cur_goal = cur_goal[:-1]
+                        cur_se = cur_se[:-1]
+                    else:
+                        cur_ob = cur_ob[:-1]
+
                     f0_truncate = f0_truncate[:-1]
                     se0_truncate = se0_truncate[:-1]
 
                 self._reward_loss = []
                 self._env_loss = []
                 self._transition_loss = []
+                self._relative_transition_loss = []
                 self._momentum_loss = []
                 self._flow_regulation_loss = []
                 for i in range(len(curriculum)):
@@ -304,16 +333,23 @@ class EnvModelUpdater(network.NetworkUpdater):
                         reduce(operator.add, f_predict_loss[0:curriculum[i]], [])) / float(curriculum[i]),
                                                          name="env_loss%d" % curriculum[i]) / 2.0 * 255.0)
 
-                    self._transition_loss.append(tf.reduce_mean(tf.add_n(
-                        transition_loss[0:curriculum[i]]) / float(curriculum[i]),
-                                                                name="transition_loss%d" % curriculum[i]))
+                    if not with_ob:
+                        self._transition_loss.append(tf.reduce_mean(tf.add_n(
+                            transition_loss[0:curriculum[i]]) / float(curriculum[i]),
+                                                                    name="transition_loss%d" % curriculum[i]))
+                        self._relative_transition_loss.append(tf.reduce_mean(tf.add_n(
+                            relative_transition_loss[0:curriculum[i]]) / float(curriculum[i]),
+                                                                    name="transition_loss%d" % curriculum[i]))
+                    else:
+                        self._transition_loss.append(0.0)
+                        self._relative_transition_loss.append(0.0)
 
                     if with_momentum:
                         self._momentum_loss.append(tf.reduce_mean(tf.add_n(
                             momentum_loss[0:curriculum[i]]) / float(curriculum[i]),
                                                                   name="momentum_loss%d" % curriculum[i]))
                     else:
-                        self._momentum_loss.append(0)
+                        self._momentum_loss.append(0.0)
 
                     if len(flow_regulations) > 0:
                         self._flow_regulation_loss.append(tf.reduce_mean(tf.add_n(
@@ -326,12 +362,14 @@ class EnvModelUpdater(network.NetworkUpdater):
                     return tf.gather(self._env_loss, index), \
                            tf.gather(self._reward_loss, index), \
                            tf.gather(self._transition_loss, index), \
+                           tf.gather(self._relative_transition_loss, index), \
                            tf.gather(self._momentum_loss, index), \
                            tf.gather(self._flow_regulation_loss, index), \
                            self._count
 
-                self._env_loss, self._reward_loss, self._transition_loss, self._momentum_loss, \
-                self._flow_regulation_loss, self._num = loss_assign(tf.where(tf.equal(self._curriculum, self._count)))
+                self._env_loss, self._reward_loss, self._transition_loss, self._relative_transition_loss, \
+                self._momentum_loss, self._flow_regulation_loss, self._num = \
+                    loss_assign(tf.where(tf.equal(self._curriculum, self._count)))
 
                 self._op_loss = self._env_loss \
                                 + self._reward_loss \
@@ -380,13 +418,15 @@ class EnvModelUpdater(network.NetworkUpdater):
                       "reward_loss": self._reward_loss,
                       "observation_loss": self._env_loss,
                       "transition_loss": self._transition_loss,
+                      "relative_transition_loss": self._relative_transition_loss,
                       "momentum_loss": self._momentum_loss,
                       "num": self._num,
-                      "flow_regulation_loss": self._flow_regulation_loss
+                      "flow_regulation_loss": self._flow_regulation_loss,
+                      "se_norm": self._se_norm
                       }
                       #,
                       # "goal_reg_loss": self._goal_reg_loss}
-        if self.imshow_count % 1000 == 0:
+        if self.imshow_count % self.save_image_interval == 0:
             fetch_dict["s0"] = self._s0
             fetch_dict["update_step"] = self.imshow_count
             for i in range(self.num):
@@ -500,7 +540,10 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                  dynamic_skip_step=None,
                  model_train_depth=3,
                  batch_size=32,
+                 save_image_interval=1000,
                  log_dir="./log/img",
+                 with_ob=False,
+                 with_goal=True,
                  *args, **kwargs):
         """
         :param f_create_net: function: f_create_net(inputs) => {"pi": dist_pi, "q": q_values},
@@ -554,14 +597,21 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
             input_frame = tf.placeholder(dtype=tf.float32, shape=[None, state_shape[0], state_shape[1], 3],
                                          name="input_frame")
             rollout = network.Network([se], f_rollout, var_scope="rollout_policy")
-            net_model = network.Network([se, input_action], f_tran, var_scope="TranModel")
 
-            net_decoder = network.Network([tf.concat((se, se), axis=-1), input_frame], f_decoder, var_scope="Decoder")
+            if not with_ob:
+                net_model = network.Network([se, input_action], f_tran, var_scope="TranModel")
+                net_decoder = network.Network([tf.concat((encode_state, encode_state), axis=-1), input_frame],
+                                              f_decoder, var_scope="Decoder")
 
-            rollout_encoder = network.Network([tf.concat((encode_state, encode_state, input_reward), axis=-1)],
+            else:
+                net_model = network.Network([input_observation, input_action], f_tran, var_scope="TranModelOB")
+                net_decoder = network.Network([input_frame], f_decoder, var_scope="DecoderOB")
+
+            rollout_encoder = network.Network([tf.concat((se, se), axis=-1), input_reward],
                                               f_encoder, var_scope="rollout_encoder")
 
             current_state = se
+            current_ob = input_observation
 
             for i in range(rollout_lane):
                 for j in range(rollout_depth):
@@ -570,38 +620,47 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                     # rollout_action_dist = tf.contrib.distributions.Categorical(rollout_action_function.output().op)
                     # current_action = rollout_action_dist.sample()
 
-                    tran_model = net_model([current_state, current_rollout["rollout_action"].op],
-                                           name_scope="env_model_%d_%d" %(i,j))
+                    if not with_ob:
+                        tran_model = net_model([current_state, current_rollout["rollout_action"].op],
+                                               name_scope="env_model_%d_%d" %(i,j))
+                    else:
+                        tran_model = net_model([current_ob, current_rollout["rollout_action"].op],
+                                               name_scope="env_model_%d_%d" %(i,j))
 
                     next_goal = tran_model["next_state"].op
                     reward = tran_model["reward"].op
+
+                    if not with_ob:
+                        current_state += next_goal
+                    else:
+                        current_ob = tf.concat([current_ob[:,:,:,3:], next_goal], axis=-1)
+                        next_goal = tf.stop_gradient(net_se([current_ob])["se"].op)
 
                     if j == 0:
                         encode_states = next_goal
                         rollout_reward = reward
                     else:
-                        encode_states = tf.concat([next_goal, encode_states], axis=1)
+                        encode_states = tf.concat([next_goal, encode_states], axis=-1)
                         rollout_reward = tf.concat([rollout_reward, reward], axis=0)
 
-                    current_state += next_goal
-
                 current_state = se
+                current_ob = input_observation
 
-                encode_state = tf.split(encode_states, rollout_depth, axis=1)
                 input_reward = tf.reshape(rollout_reward, [-1, rollout_depth])
                 input_reward = tf.split(input_reward, rollout_depth, axis=1)
+                encode_state = tf.split(encode_states, rollout_depth, axis=1)
 
                 for m in range(rollout_depth):
                     if m == 0:
                         rollout_encoder = rollout_encoder([
-                            tf.concat([encode_state[-(m + 1)], encode_state[-(m + 1)], input_reward[-(m + 1)]],
-                                      axis=-1)], name_scope="rollout_encoder_%d_%d" %(i, m))
+                            tf.concat([encode_state[-(m + 1)], encode_state[-(m + 1)]], axis=-1),
+                            input_reward[-(m + 1)]], name_scope="rollout_encoder_%d_%d" % (i, m))
                         re = rollout_encoder["re"].op
 
                     else:
                         rollout_encoder = rollout_encoder([
-                            tf.concat([re, encode_state[-(m + 1)], input_reward[-(m + 1)]],
-                                      axis=-1)], name_scope="rollout_encoder_%d_%d" % (i, m))
+                            tf.concat([re, encode_state[-(m + 1)]], axis=-1),
+                            input_reward[-(m + 1)]], name_scope="rollout_encoder_%d_%d" % (i, m))
                         re = rollout_encoder["re"].op
 
                 if i == 0:
@@ -704,7 +763,10 @@ class ActorCriticWithI2A(sampling.TrajectoryBatchUpdate,
                 dim_action=num_action,
                 transition_weight=1.0,
                 with_momentum=with_momentum,
-                compute_with_diff=compute_with_diff
+                compute_with_diff=compute_with_diff,
+                save_image_interval=save_image_interval,
+                with_ob=with_ob,
+                with_goal=with_goal
             ),
             name="env_model")
         # network_optimizer.freeze(self.network.sub_net("transition").variables)

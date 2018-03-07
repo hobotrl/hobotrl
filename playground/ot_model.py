@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import tensorflow as tf
+import logging
 from hobotrl import sampling
 
 from hobotrl.algorithms.iaa import EnvModelUpdater
@@ -20,7 +21,13 @@ class OTModel(OTDQN):
                  discount_factor,
                  ddqn, target_sync_interval, target_sync_rate, greedy_epsilon, network_optimizer=None,
                  max_gradient=10.0, update_interval=4, replay_size=1000, batch_size=32, sampler=None,
+                 with_momentum = True,
+                 curriculum=[1, 3, 5],
+                 skip_step=[10000, 20000],
+                 save_image_interval=10000,
                  log_dir=None,
+                 with_ob=False,
+                 with_goal=True,
                  *args, **kwargs):
         kwargs.update({
             "f_se": f_se,
@@ -31,6 +38,11 @@ class OTModel(OTDQN):
         })
         self._state_shape, self._num_actions = state_shape, num_actions
         self._rollout_depth = rollout_depth
+        self._with_momentum = with_momentum
+        self._curriculum, self._skip_step = curriculum, skip_step
+        self._save_image_interval = save_image_interval
+        self._with_ob = with_ob
+        self._with_goal = with_goal
         if sampler is None:
             max_traj_length = 200
             sampler = sampling.TruncateTrajectorySampler2(None, replay_size / max_traj_length, max_traj_length,
@@ -48,8 +60,13 @@ class OTModel(OTDQN):
             action_onehot = tf.one_hot(indices=input_action, depth=num_actions, on_value=1.0, off_value=0.0, axis=-1)
             net_se = network.Network([input_state], f_se, var_scope="state_encoder")
             se = net_se["se"].op
-            net_transition = network.Network([se, action_onehot], f_transition, var_scope="TranModel")
-            net_decoder = network.Network([tf.concat((se, se), axis=-1), input_frame], f_decoder, var_scope="Decoder")
+
+            if not self._with_ob:
+                net_transition = network.Network([se, action_onehot], f_transition, var_scope="TranModel")
+                net_decoder = network.Network([tf.concat((se, se), axis=-1), input_frame], f_decoder, var_scope="Decoder")
+            else:
+                net_transition = network.Network([input_state, action_onehot], f_transition, var_scope="ObTranModel")
+                net_decoder = network.Network([input_frame], f_decoder, var_scope="ObDecoder")
             net_q = network.Network([se], f_create_q, var_scope="q")
             return {
                 "q": net_q["q"].op,
@@ -81,10 +98,13 @@ class OTModel(OTDQN):
             # curriculum=[1, self._rollout_depth],
             # skip_step=[10000],
             # transition_weight=1.0, with_momentum=True
-            curriculum=[1, 3, 5],
-            skip_step=[10000, 20000],
+            curriculum=self._curriculum,
+            skip_step=self._skip_step,
             transition_weight=1.0,
-            with_momentum=True
+            with_momentum=self._with_momentum,
+            save_image_interval=self._save_image_interval,
+            with_ob=self._with_ob,
+            with_goal=self._with_goal
         ), name="env")
         self.network_optimizer.compile()
 

@@ -24,7 +24,7 @@ class EnvRunner(object):
     def __init__(self, env, agent, reward_decay=0.99, max_episode_len=5000,
                  evaluate_interval=sys.maxint, render_interval=sys.maxint,
                  render_once=False,
-                 logdir=None):
+                 logdir=None, fake=False):
         """
 
         :param env: environment.
@@ -47,6 +47,7 @@ class EnvRunner(object):
         if logdir is not None:
             self.summary_writer = SummaryWriterCache.get(logdir)
         self.render_once = True if render_once else False
+        self._fake = fake
 
     def step(self, evaluate=False):
         """
@@ -65,19 +66,27 @@ class EnvRunner(object):
         self.action = self.agent.act(
             state=self.state, evaluate=evaluate, sess=sess
         )
-        next_state, reward, done, env_info = self.env.step(self.action)
-        self.total_reward = reward + self.reward_decay * self.total_reward
-        info = self.agent.step(
-            state=self.state, action=self.action, reward=reward,
-            next_state=next_state, episode_done=done
-        )
-        info.update(env_info)
-        self.record(info)
-        self.state = next_state
-        if self.render_once:
-            self.env.render()
-            self.render_once = False
-        return done
+        if not self._fake:
+            next_state, reward, done, env_info = self.env.step(self.action)
+            self.total_reward = reward + self.reward_decay * self.total_reward
+            info = self.agent.step(
+                state=self.state, action=self.action, reward=reward,
+                next_state=next_state, episode_done=done
+            )
+            info.update(env_info)
+            self.state = next_state
+            self.record(info)
+            if self.render_once:
+                self.env.render()
+                self.render_once = False
+            return done
+        else:
+            info = self.agent.step(None, None, 1.0, None, False)
+            self.record(info)
+            if self.render_once:
+                self.env.render()
+                self.render_once = False
+            return False
 
     def record(self, info):
         if isinstance(self.agent, BaseDeepAgent):
