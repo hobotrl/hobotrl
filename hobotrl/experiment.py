@@ -68,6 +68,7 @@ class Experiment(object):
         parser.add_argument("--index", default="0")
         parser.add_argument("--render_interval", default="-1")
         parser.add_argument("--render_once", default="true")
+        parser.add_argument("--evaluate_interval", type=int, default=sys.maxint)
         parser.add_argument("--episode_n", default="1000")
         parser.add_argument("--cluster",
                             default="{'ps':['localhost:2222'], " \
