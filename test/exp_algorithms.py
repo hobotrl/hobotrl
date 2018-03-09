@@ -529,7 +529,7 @@ class DPGExperiment(Experiment):
         config.gpu_options.allow_growth = True
         with agent.create_session(config=config, save_dir=args.logdir) as sess:
             runner = hrl.envs.EnvRunner(
-                self._env, agent, evaluate_interval=sys.maxint, render_interval=args.render_interval,
+                self._env, agent, evaluate_interval=args.evaluate_interval, render_interval=args.render_interval,
                 render_once=args.render_once,
                 logdir=args.logdir
             )

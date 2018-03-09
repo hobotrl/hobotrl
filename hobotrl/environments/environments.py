@@ -1226,7 +1226,7 @@ class HalfFrame(gym.ObservationWrapper): #as compare to remapframe
 
 
 class NoneSkipWrapper(gym.Wrapper):
-    def __init__(self, env, skip=4):
+    def __init__(self, env, skip=4, render_all_steps=False):
         """Return only every `skip`-th frame"""
         super(NoneSkipWrapper, self).__init__(env)
         self._skip = skip
@@ -1237,6 +1237,8 @@ class NoneSkipWrapper(gym.Wrapper):
         for i in range(self._skip):
             action = action if i == 0 else None
             obs, reward, done, info = self.env.step(action)
+            if i != 0:
+                self.env.render()
             total_reward += reward
             if done:
                 break
