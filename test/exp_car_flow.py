@@ -18,13 +18,13 @@ from hobotrl.utils import CappedLinear
 
 
 class F(object):
-    def __init__(self, env):
+    def __init__(self, env, dim_se=256):
         super(F, self).__init__()
         self._env = env
         self.dim_action = self._env.action_space.n
         self.dim_observation = self._env.observation_space.shape
         self.chn_se_2d = 32
-        self.dim_se = 256
+        self.dim_se = dim_se
         self.nonlinear = tf.nn.elu
         
     def create_se(self):
@@ -45,6 +45,27 @@ class F(object):
                                                     l2=l2,
                                                     var_scope="se_linear")
             return {"se": se_linear}
+        return create_se
+
+    def create_se_channels(self):
+        def create_se(inputs):
+            l2 = 1e-7
+            input_observation = inputs[0]
+            se_conv = hrl.utils.Network.conv2ds(input_observation,
+
+                                                shape=[(32, 8, 4), (64, 4, 2), (self.chn_se_2d, 3, 2)],
+                                                out_flatten=True,
+                                                activation=self.nonlinear,
+                                                l2=l2,
+                                                var_scope="se_conv")
+
+            se_linear = hrl.utils.Network.layer_fcs(se_conv, [self.dim_se], self.dim_se,
+                                                    activation_hidden=self.nonlinear,
+                                                    activation_out=None,
+                                                    l2=l2,
+                                                    var_scope="se_linear")
+            return {"se": se_linear}
+
         return create_se
 
     def create_ac(self):
@@ -269,6 +290,128 @@ class F(object):
         
             return {"next_frame": next_frame}
         return create_decoder
+
+    def create_decoder_channel(self):
+        def create_decoder(inputs):
+            l2 = 1e-7
+            input_goal = inputs[0]
+
+            input_frame = inputs[1]
+
+            conv_1 = hrl.utils.Network.conv2ds(input_frame,
+                                               shape=[(8, 8, 4)],
+                                               out_flatten=False,
+                                               activation=self.nonlinear,
+                                               l2=l2,
+                                               var_scope="conv_1")
+            conv_2 = hrl.utils.Network.conv2ds(conv_1,
+                                               shape=[(16, 4, 2)],
+                                               out_flatten=False,
+                                               activation=self.nonlinear,
+                                               l2=l2,
+                                               var_scope="conv_2")
+
+            conv_3 = hrl.utils.Network.conv2ds(conv_2,
+                                               shape=[(self.chn_se_2d, 3, 2)],
+                                               out_flatten=False,
+                                               activation=self.nonlinear,
+                                               l2=l2,
+                                               var_scope="conv_3")
+
+            conv_3_shape = conv_3.shape.as_list()
+            fc_1 = hrl.utils.Network.layer_fcs(input_goal, [], conv_3_shape[1] * conv_3_shape[2] *
+                                               (2 * self.dim_se / conv_3_shape[1] / conv_3_shape[2]),
+                                               activation_hidden=self.nonlinear,
+                                               activation_out=self.nonlinear,
+                                               l2=l2,
+                                               var_scope="fc_goal")
+
+            twoD_out = tf.reshape(fc_1, [-1, conv_3_shape[1], conv_3_shape[2],
+                                         2 * self.dim_se / conv_3_shape[1] / conv_3_shape[2]])
+
+            concat_0 = tf.concat([conv_3, twoD_out], axis=3)
+
+            conv_4 = hrl.utils.Network.conv2ds(concat_0,
+                                               shape=[(self.chn_se_2d, 3, 1)],
+                                               out_flatten=False,
+                                               activation=self.nonlinear,
+                                               l2=l2,
+                                               var_scope="conv_5")
+
+            up_1 = tf.image.resize_images(conv_4, conv_2.shape.as_list()[1:3])
+
+            concat_1 = tf.concat([conv_2, up_1], axis=3)
+            concat_1 = hrl.utils.Network.conv2ds(concat_1,
+                                                 shape=[(self.chn_se_2d, 3, 1)],
+                                                 out_flatten=False,
+                                                 activation=self.nonlinear,
+                                                 l2=l2,
+                                                 var_scope="concat_1")
+
+            up_2 = tf.image.resize_images(concat_1, conv_1.shape.as_list()[1:3])
+
+            concat_2 = tf.concat([conv_1, up_2], axis=3)
+            concat_2 = hrl.utils.Network.conv2ds(concat_2,
+                                                 shape=[(16, 4, 1)],
+                                                 out_flatten=False,
+                                                 activation=self.nonlinear,
+                                                 l2=l2,
+                                                 var_scope="concat_2")
+
+            up_3 = tf.image.resize_images(concat_2, input_frame.shape.as_list()[1:3])
+
+            concat_3 = tf.concat([input_frame, up_3], axis=3)
+            concat_3 = hrl.utils.Network.conv2ds(concat_3,
+                                                 shape=[(8, 3, 1)],
+                                                 out_flatten=False,
+                                                 activation=self.nonlinear,
+                                                 l2=l2,
+                                                 var_scope="concat_3")
+
+            next_frame = hrl.utils.Network.conv2ds(concat_3,
+                                                   shape=[(3, 3, 1)],
+                                                   out_flatten=False,
+                                                   activation=self.nonlinear,
+                                                   l2=l2,
+                                                   var_scope="next_frame")
+
+            return {"next_frame": next_frame}
+
+        return create_decoder
+
+    def create_decoder_deconv(self):
+        def create_decoder_deconv(inputs):
+            l2 = 1e-7
+            input_goal = inputs[0]
+            input_frame = inputs[1]
+
+            height = ((((self.dim_observation[0] + 3) / 4 + 1) / 2) + 1) / 2
+            width = ((((self.dim_observation[1] + 3) / 4 + 1) / 2) + 1) / 2
+
+            resized_goal = hrl.utils.Network.layer_fcs(input_goal, [], height * width,
+                                                       activation_hidden=self.nonlinear,
+                                                       activation_out=self.nonlinear,
+                                                       l2=l2,
+                                                       var_scope="resized_goal")
+
+            twoDgoal = tf.reshape(resized_goal, [-1, height, width, 1])
+
+            next_frame_before = hrl.utils.Network.conv2ds_transpose(twoDgoal,
+                                                                    shape=[(self.chn_se_2d, 3, 2), (16, 4, 2), (8, 8, 4)],
+                                                                    activation=self.nonlinear,
+                                                                    l2=l2,
+                                                                    var_scope="next_frame_before")
+
+            next_frame = hrl.utils.Network.conv2ds(next_frame_before,
+                                                   shape=[(3, 3, 1)],
+                                                   out_flatten=False,
+                                                   activation=self.nonlinear,
+                                                   l2=l2,
+                                                   var_scope="next_frame")
+
+            return {"next_frame": next_frame}
+
+        return create_decoder_deconv
 
     def create_decoder_deform(self):
         def create_decoder_deform(inputs):
@@ -1126,33 +1269,251 @@ class F(object):
     def create_encoder(self):
         def create_encoder(inputs):
             l2 = 1e-7
-            input_argu = inputs[0]
-            # input_reward = inputs[1]
-            #
-            # rse = hrl.utils.Network.conv2ds(input_state,
-            #                                 shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
-            #                                 out_flatten=True,
-            #                                 activation=self.nonlinear,
-            #                                 l2=l2,
-            #                                 var_scope="rse")
-            #
-            # re_conv = hrl.utils.Network.layer_fcs(rse, [], 200,
-            #                                       activation_hidden=self.nonlinear,
-            #                                       activation_out=self.nonlinear,
-            #                                       l2=l2,
-            #                                       var_scope="re_conv")
-            #
-            # # re_conv = tf.concat([re_conv, tf.reshape(input_reward, [-1, 1])], axis=1)
-            # re_conv = tf.concat([re_conv, input_reward], axis=1)
+            input_rollout_states = inputs[0]
+            input_reward = inputs[1]
+
+            input_concat = tf.concat([input_rollout_states, input_reward], axis=-1)
         
-            re = hrl.utils.Network.layer_fcs(input_argu, [self.dim_se], self.dim_se,
+            re = hrl.utils.Network.layer_fcs(input_concat, [self.dim_se], self.dim_se,
                                              activation_hidden=self.nonlinear,
                                              activation_out=self.nonlinear,
                                              l2=l2,
                                              var_scope="re")
-        
             return {"re": re}
         return create_encoder
+
+    def create_encoder_OB(self):
+        def create_encoder(inputs):
+            l2 = 1e-7
+            input_rollout_states = inputs[0]
+            input_reward = inputs[1]
+
+            rse = hrl.utils.Network.conv2ds(input_rollout_states,
+                                            shape=[(32, 8, 4), (64, 4, 2), (64, 3, 1)],
+                                            out_flatten=True,
+                                            activation=self.nonlinear,
+                                            l2=l2,
+                                            var_scope="rse")
+
+            re_conv = hrl.utils.Network.layer_fcs(rse, [], 200,
+                                                  activation_hidden=self.nonlinear,
+                                                  activation_out=self.nonlinear,
+                                                  l2=l2,
+                                                  var_scope="re_conv")
+
+            rewardNstates = tf.concat([re_conv, input_reward], axis=-1)
+
+            re = hrl.utils.Network.layer_fcs(rewardNstates, [], self.dim_se,
+                                             activation_hidden=self.nonlinear,
+                                             activation_out=self.nonlinear,
+                                             l2=l2,
+                                             var_scope="re")
+
+            return {"re": re}
+
+        return create_encoder
+
+    def create_env_upsample_fc(self):
+        def create_env_upsample_fc(inputs):
+            l2 = 1e-7
+            input_state = inputs[0]
+            # input_state = tf.squeeze(tf.stack(input_state), axis=0)
+
+            input_action = inputs[1]
+            # input_action = tf.one_hot(indices=input_action, depth=self.dim_action, on_value=1.0, off_value=0.0, axis=-1)
+            # input_action_tiled = tf.image.resize_images(tf.reshape(input_action, [-1, 1, 1, dim_action]),
+            #                                       [((((dim_observation[0]+1)/2+1)/2+1)/2+1)/2,
+            #                                        ((((dim_observation[1]+1)/2+1)/2+1)/2+1)/2])
+
+            conv_1 = hrl.utils.Network.conv2ds(input_state,
+                                               shape=[(32, 8, 4)],
+                                               out_flatten=False,
+                                               activation=tf.nn.relu,
+                                               l2=l2,
+                                               var_scope="conv_1")
+
+            conv_2 = hrl.utils.Network.conv2ds(conv_1,
+                                               shape=[(64, 4, 2)],
+                                               out_flatten=False,
+                                               activation=tf.nn.relu,
+                                               l2=l2,
+                                               var_scope="conv_2")
+
+            conv_3 = hrl.utils.Network.conv2ds(conv_2,
+                                               shape=[(64, 3, 2)],
+                                               out_flatten=True,
+                                               activation=tf.nn.relu,
+                                               l2=l2,
+                                               var_scope="conv_3")
+
+            fc_1 = hrl.utils.Network.layer_fcs(conv_3, [], 64 * 5 * 5,
+                                               activation_hidden=tf.nn.relu,
+                                               activation_out=tf.nn.relu,
+                                               l2=l2,
+                                               var_scope="fc_1")
+
+            # concat_action = tf.concat([conv_4, input_action_tiled], axis=3)
+            fc_action = hrl.utils.Network.layer_fcs(input_action, [], 64 * 5 * 5,
+                                                    activation_hidden=tf.nn.relu,
+                                                    activation_out=tf.nn.relu,
+                                                    l2=l2,
+                                                    var_scope="fc_action")
+
+            concat = tf.multiply(fc_1, fc_action)
+
+            fc_out = hrl.utils.Network.layer_fcs(concat, [64 * 5 * 5], 64 * 5 * 5,
+                                                 activation_hidden=tf.nn.relu,
+                                                 activation_out=tf.nn.relu,
+                                                 l2=l2,
+                                                 var_scope="fc_out")
+
+            # reward
+            reward = hrl.utils.Network.layer_fcs(fc_out, [256], 1,
+                                                 activation_hidden=tf.nn.relu,
+                                                 l2=l2,
+                                                 var_scope="reward")
+            reward = tf.squeeze(reward, axis=1)
+
+            # next_state
+            twoD_out = tf.reshape(fc_out, [-1, 5, 5, 64])
+
+            conv_5 = hrl.utils.Network.conv2ds(twoD_out,
+                                               shape=[(32, 3, 1)],
+                                               out_flatten=False,
+                                               activation=tf.nn.relu,
+                                               l2=l2,
+                                               var_scope="conv_5")
+
+            up_1 = tf.image.resize_images(conv_5,
+                                          [((self.dim_observation[0] + 3) / 4 + 1) / 2, ((self.dim_observation[1] + 3) / 4 + 1) / 2])
+
+            concat_1 = tf.concat([conv_2, up_1], axis=3)
+            concat_1 = hrl.utils.Network.conv2ds(concat_1,
+                                                 shape=[(32, 3, 1)],
+                                                 out_flatten=False,
+                                                 activation=tf.nn.relu,
+                                                 l2=l2,
+                                                 var_scope="concat_1")
+
+            up_2 = tf.image.resize_images(concat_1, [(self.dim_observation[0] + 3) / 4, (self.dim_observation[1] + 3) / 4])
+
+            concat_2 = tf.concat([conv_1, up_2], axis=3)
+            concat_2 = hrl.utils.Network.conv2ds(concat_2,
+                                                 shape=[(64, 4, 1)],
+                                                 out_flatten=False,
+                                                 activation=tf.nn.relu,
+                                                 l2=l2,
+                                                 var_scope="concat_2")
+
+            up_3 = tf.image.resize_images(concat_2, [self.dim_observation[0], self.dim_observation[1]])
+
+            concat_3 = tf.concat([input_state, up_3], axis=3)
+            concat_3 = hrl.utils.Network.conv2ds(concat_3,
+                                                 shape=[(64, 3, 1)],
+                                                 out_flatten=False,
+                                                 activation=tf.nn.relu,
+                                                 l2=l2,
+                                                 var_scope="concat_3")
+
+            next_state = hrl.utils.Network.conv2ds(concat_3,
+                                                   shape=[(3, 3, 1)],
+                                                   out_flatten=False,
+                                                   activation=tf.nn.relu,
+                                                   l2=l2,
+                                                   var_scope="next_state")
+
+            return {"next_state": next_state, "reward": reward}
+        return create_env_upsample_fc
+
+    def create_env_deconv_fc(self):
+        def create_env_deconv_fc(inputs):
+            l2 = 1e-7
+            input_state = inputs[0]
+            # input_state = tf.squeeze(tf.stack(input_state), axis=0)
+
+            input_action = inputs[1]
+            # input_action = tf.one_hot(indices=input_action, depth=self.dim_action, on_value=1.0, off_value=0.0, axis=-1)
+            # input_action_tiled = tf.image.resize_images(tf.reshape(input_action, [-1, 1, 1, dim_action]),
+            #                                       [((((dim_observation[0]+1)/2+1)/2+1)/2+1)/2,
+            #                                        ((((dim_observation[1]+1)/2+1)/2+1)/2+1)/2])
+
+            conv_1 = hrl.utils.Network.conv2ds(input_state,
+                                               shape=[(32, 8, 4), (64, 4, 2), (self.chn_se_2d, 3, 2)],
+                                               out_flatten=False,
+                                               activation=tf.nn.relu,
+                                               l2=l2,
+                                               var_scope="conv_1")
+            linear_1 = tf.contrib.layers.flatten(conv_1)
+
+            # conv_2 = hrl.utils.Network.conv2ds(conv_1,
+            #                                    shape=[(64, 4, 2)],
+            #                                    out_flatten=False,
+            #                                    activation=tf.nn.relu,
+            #                                    l2=l2,
+            #                                    var_scope="conv_2")
+            #
+            # conv_3 = hrl.utils.Network.conv2ds(conv_2,
+            #                                    shape=[(64, 3, 2)],
+            #                                    out_flatten=True,
+            #                                    activation=tf.nn.relu,
+            #                                    l2=l2,
+            #                                    var_scope="conv_3")
+
+            fc_1 = hrl.utils.Network.layer_fcs(linear_1, [], 64 * 5 * 5,
+                                               activation_hidden=tf.nn.relu,
+                                               activation_out=tf.nn.relu,
+                                               l2=l2,
+                                               var_scope="fc_1")
+
+            # concat_action = tf.concat([conv_4, input_action_tiled], axis=3)
+            fc_action = hrl.utils.Network.layer_fcs(input_action, [], 64 * 5 * 5,
+                                                    activation_hidden=tf.nn.relu,
+                                                    activation_out=tf.nn.relu,
+                                                    l2=l2,
+                                                    var_scope="fc_action")
+
+            concat = tf.multiply(fc_1, fc_action)
+
+            conv_1_shape = conv_1.shape.as_list()
+
+            fc_out = hrl.utils.Network.layer_fcs(concat, [64 * 5 * 5], conv_1_shape[1] * conv_1_shape[2] * conv_1_shape[3],
+                                                 activation_hidden=tf.nn.relu,
+                                                 activation_out=tf.nn.relu,
+                                                 l2=l2,
+                                                 var_scope="fc_out")
+
+            # reward
+            reward = hrl.utils.Network.layer_fcs(fc_out, [256], 1,
+                                                 activation_hidden=tf.nn.relu,
+                                                 l2=l2,
+                                                 var_scope="reward")
+            reward = tf.squeeze(reward, axis=1)
+
+            # next_state
+            twoD_out = tf.reshape(fc_out, [-1, conv_1_shape[1], conv_1_shape[2], conv_1_shape[3]])
+
+            next_frame_before = hrl.utils.Network.conv2ds_transpose(twoD_out,
+                                                                    shape=[(self.chn_se_2d, 3, 2), (64, 4, 2),
+                                                                           (32, 8, 4)],
+                                                                    activation=self.nonlinear,
+                                                                    l2=l2,
+                                                                    var_scope="next_frame_before")
+
+            next_frame = hrl.utils.Network.conv2ds(next_frame_before,
+                                                   shape=[(3, 3, 1)],
+                                                   out_flatten=False,
+                                                   activation=self.nonlinear,
+                                                   l2=l2,
+                                                   var_scope="next_frame")
+
+            return {"next_state": next_frame, "reward": reward}
+        return create_env_deconv_fc
+
+    def pass_decoder(self):
+        def pass_decoder(inputs):
+            input_frame = inputs[0]
+            return {"next_frame": input_frame}
+        return pass_decoder
 
 
 class I2AFlow(A3CExperimentWithI2A):
@@ -1195,11 +1556,97 @@ Experiment.register(I2AFlowDriving, "A3C with I2A for Driving Simulator")
 
 
 class OTDQNModelCar(OTDQNModelExperiment):
-    def __init__(self, env=None, episode_n=10000,
+    def __init__(self, env=None, episode_n=16000,
                  f_create_q=None, f_se=None, f_transition=None, f_decoder=None, lower_weight=1.0, upper_weight=1.0,
                  rollout_depth=5, discount_factor=0.99, ddqn=False, target_sync_interval=100, target_sync_rate=1.0,
                  greedy_epsilon=0.1, network_optimizer=None, max_gradient=10.0, update_interval=4, replay_size=1024,
-                 batch_size=16, sampler_creator=None, asynchronous=False):
+                 batch_size=16, sampler_creator=None, asynchronous=False, save_image_interval=10000, state_size=256,
+                 with_momentum=True, curriculum=[1, 3, 5], skip_step=[500000, 1000000]):
+        if env is None:
+            env = gym.make('CarRacing-v0')
+            env = wrap_car(env, 3, 3)
+        if f_se is None:
+            f = F(env, state_size)
+            f_create_q = f.create_q()
+            f_se = f.create_se()
+            f_transition = f.create_transition_momentum()
+            # f_decoder = f.decoder_multiflow()
+            f_decoder = f.create_decoder()
+
+        super(OTDQNModelCar, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder, lower_weight,
+                                            upper_weight, rollout_depth, discount_factor, ddqn, target_sync_interval,
+                                            target_sync_rate, greedy_epsilon, network_optimizer, max_gradient,
+                                            update_interval, replay_size, batch_size, curriculum,
+                                            skip_step, sampler_creator, asynchronous, save_image_interval,
+                                            with_momentum=with_momentum)
+Experiment.register(OTDQNModelCar, "transition model with dqn, for CarRacing")
+
+
+class OTDQNModelCar_state(OTDQNModelCar):
+    def __init__(self, env=None, f_create_q=None, f_se=None, f_transition=None, f_decoder=None, with_momentum=False,
+                 state_size=1600):
+        if env is None:
+            env = gym.make('CarRacing-v0')
+            env = wrap_car(env, 3, 3)
+        if f_se is None:
+            f = F(env, state_size)
+            f_create_q = f.create_q()
+            f_se = f.create_se()
+            f_transition = f.create_transition()
+            f_decoder = f.create_decoder()
+
+        super(OTDQNModelCar_state, self).__init__(env=env, f_create_q=f_create_q, f_se=f_se, f_transition=f_transition,
+                                                  f_decoder=f_decoder, with_momentum=with_momentum)
+Experiment.register(OTDQNModelCar_state, "state transition model with dqn, for CarRacing")
+
+
+class OTDQNModelCar_state_256(OTDQNModelCar_state):
+    def __init__(self, state_size=256):
+        super(OTDQNModelCar_state_256, self).__init__(state_size=state_size)
+Experiment.register(OTDQNModelCar_state_256, "256 state transition model with dqn, for CarRacing")
+
+
+class OTDQNModelCar_mom_1600(OTDQNModelCar):
+    def __init__(self, state_size=1600, with_momentum=True):
+        super(OTDQNModelCar_mom_1600, self).__init__(state_size=state_size, with_momentum=with_momentum)
+Experiment.register(OTDQNModelCar_mom_1600, "Hidden state with 1600 size in transition model with dqn, for CarRacing")
+
+
+class OTDQNModelCar_goal_256(OTDQNModelCar):
+    def __init__(self, with_momentum=False):
+        super(OTDQNModelCar_goal_256, self).__init__(with_momentum=with_momentum)
+Experiment.register(OTDQNModelCar_goal_256, "goal 256 in transition model with dqn, for CarRacing")
+
+
+class OTDQNModelCar_goal(OTDQNModelCar_mom_1600):
+    def __init__(self, with_momentum=False):
+        super(OTDQNModelCar_goal, self).__init__(with_momentum=with_momentum)
+Experiment.register(OTDQNModelCar_goal, "goal in transition model with dqn, for CarRacing")
+
+class OTDQNModelCar_mom_decoder(OTDQNModelCar):
+    def __init__(self, env=None, episode_n=16000, f_create_q=None, f_se=None, f_transition=None, f_decoder=None):
+        if env is None:
+            env = gym.make('CarRacing-v0')
+            env = wrap_car(env, 3, 3)
+        if f_se is None:
+            f = F(env, 256)
+            f_create_q = f.create_q()
+            f_se = f.create_se()
+            f_transition = f.create_transition_momentum()
+            # f_decoder = f.decoder_multiflow()
+            f_decoder = f.create_decoder_deconv()
+
+        super(OTDQNModelCar_mom_decoder, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder)
+Experiment.register(OTDQNModelCar_mom_decoder, "Hidden state with 1600 size in transition model with dqn, for CarRacing")
+
+
+class OTDQN_ob(OTDQNModelExperiment):
+    def __init__(self, env=None, episode_n=160000,
+                 f_create_q=None, f_se=None, f_transition=None, f_decoder=None, lower_weight=1.0, upper_weight=1.0,
+                 rollout_depth=5, discount_factor=0.99, ddqn=False, target_sync_interval=100, target_sync_rate=1.0,
+                 greedy_epsilon=0.1, network_optimizer=None, max_gradient=10.0, update_interval=4, replay_size=1024,
+                 batch_size=16, sampler_creator=None, asynchronous=False, save_image_interval=10000, with_ob=True,
+                 curriculum=[1, 3, 5], skip_step=[500000, 1000000]):
         if env is None:
             env = gym.make('CarRacing-v0')
             env = wrap_car(env, 3, 3)
@@ -1207,65 +1654,91 @@ class OTDQNModelCar(OTDQNModelExperiment):
             f = F(env)
             f_create_q = f.create_q()
             f_se = f.create_se()
-            f_transition = f.create_transition_momentum()
-            f_decoder = f.decoder_multiflow()
-            # f_decoder = f.create_decoder()
-        super(OTDQNModelCar, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder, lower_weight,
+            f_transition = f.create_env_upsample_fc()
+            # f_decoder = f.decoder_multiflow()
+            f_decoder = f.pass_decoder()
+        super(OTDQN_ob, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder, lower_weight,
                                             upper_weight, rollout_depth, discount_factor, ddqn, target_sync_interval,
                                             target_sync_rate, greedy_epsilon, network_optimizer, max_gradient,
-                                            update_interval, replay_size, batch_size, sampler_creator, asynchronous)
-Experiment.register(OTDQNModelCar, "transition model with dqn, for CarRacing")
+                                            update_interval, replay_size, batch_size, curriculum, skip_step,
+                                            sampler_creator, asynchronous, save_image_interval, with_ob)
+Experiment.register(OTDQN_ob, "Old traditional env model with dqn, for CarRacing")
+
+
+class OTDQN_ob_decoder(OTDQNModelExperiment):
+    def __init__(self, env=None, episode_n=160000,
+                 f_create_q=None, f_se=None, f_transition=None, f_decoder=None, lower_weight=1.0, upper_weight=1.0,
+                 rollout_depth=5, discount_factor=0.99, ddqn=False, target_sync_interval=100, target_sync_rate=1.0,
+                 greedy_epsilon=0.1, network_optimizer=None, max_gradient=10.0, update_interval=4, replay_size=1024,
+                 batch_size=16, curriculum=[1, 3, 5], skip_step=[500000, 1000000], sampler_creator=None,
+                 asynchronous=False, save_image_interval=10000, with_ob=True):
+        if env is None:
+            env = gym.make('CarRacing-v0')
+            env = wrap_car(env, 3, 3)
+        if f_se is None:
+            f = F(env)
+            f_create_q = f.create_q()
+            f_se = f.create_se()
+            f_transition = f.create_env_deconv_fc()
+            # f_decoder = f.decoder_multiflow()
+            f_decoder = f.pass_decoder()
+        super(OTDQN_ob_decoder, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder, lower_weight,
+                                            upper_weight, rollout_depth, discount_factor, ddqn, target_sync_interval,
+                                            target_sync_rate, greedy_epsilon, network_optimizer, max_gradient,
+                                            update_interval, replay_size, batch_size, curriculum, skip_step,
+                                            sampler_creator, asynchronous, save_image_interval, with_ob)
+Experiment.register(OTDQN_ob_decoder, "Old traditional env model with dqn, for CarRacing")
 
 
 class OTDQNModelDriving(OTDQNModelCar):
-    def __init__(self, env=None, episode_n=10000, f_create_q=None, f_se=None, f_transition=None, f_decoder=None,
+    def __init__(self, env=None, episode_n=20000, f_create_q=None, f_se=None, f_transition=None, f_decoder=None,
                  lower_weight=1.0, upper_weight=1.0, rollout_depth=5, discount_factor=0.99, ddqn=False,
                  target_sync_interval=100, target_sync_rate=1.0, greedy_epsilon=0.1, network_optimizer=None,
-                 max_gradient=10.0, update_interval=4, replay_size=100000, batch_size=10, sampler_creator=None,
-                 asynchronous=True):
+                 max_gradient=10.0, update_interval=4, replay_size=10000, batch_size=10, sampler_creator=None,
+                 state_size=1600, asynchronous=True):
         if env is None:
             env = ScaledFloatFrame(EnvNoOpSkipping(
                         env=EnvRewardVec2Scalar(
                             FrameStack(
-                                # Downsample(
+                                Downsample(
                                     DrSimDecisionK8STopView()
-                                #    , dst_size=(128, 128)
-                                #)
+                                   , dst_size=(128, 128)
+                                )
                                 , 4
                             )
                         ),
                         n_skip=6, gamma=0.99, if_random_phase=True
                     )
             )
-        if sampler_creator is None:
-            max_traj_length = 200
-
-            def create_sample(args):
-                bucket_size = 8
-                traj_count = replay_size / max_traj_length
-                bucket_count = traj_count / bucket_size
-                active_bucket = 4
-                ratio = 1.0 * active_bucket / bucket_count
-                transition_epoch = 8
-                trajectory_epoch = transition_epoch * max_traj_length
-                memory = BigPlayback(
-                    bucket_cls=Playback,
-                    bucket_size=bucket_size,
-                    max_sample_epoch=trajectory_epoch,
-                    capacity=traj_count,
-                    active_ratio=ratio,
-                    cache_path=os.sep.join([args.logdir, "cache", str(args.index)])
-                )
-                sampler = sampling.TruncateTrajectorySampler2(memory, replay_size / max_traj_length, max_traj_length,
-                                                              batch_size=1, trajectory_length=batch_size,
-                                                              interval=update_interval)
-                return sampler
-            sampler_creator = create_sample
+        # if sampler_creator is None:
+        #     max_traj_length = 200
+        #
+        #     def create_sample(args):
+        #         bucket_size = 8
+        #         traj_count = replay_size / max_traj_length
+        #         bucket_count = traj_count / bucket_size
+        #         active_bucket = 4
+        #         ratio = 1.0 * active_bucket / bucket_count
+        #         transition_epoch = 8
+        #         trajectory_epoch = transition_epoch * max_traj_length
+        #         memory = BigPlayback(
+        #             bucket_cls=Playback,
+        #             bucket_size=bucket_size,
+        #             max_sample_epoch=trajectory_epoch,
+        #             capacity=traj_count,
+        #             active_ratio=ratio,
+        #             cache_path=os.sep.join([args.logdir, "cache", str(args.index)])
+        #         )
+        #         sampler = sampling.TruncateTrajectorySampler2(memory, replay_size / max_traj_length, max_traj_length,
+        #                                                       batch_size=1, trajectory_length=batch_size,
+        #                                                       interval=update_interval)
+        #         return sampler
+        #     sampler_creator = create_sample
         super(OTDQNModelDriving, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder, lower_weight,
                                                 upper_weight, rollout_depth, discount_factor, ddqn,
                                                 target_sync_interval, target_sync_rate, greedy_epsilon,
                                                 network_optimizer, max_gradient, update_interval, replay_size,
-                                                batch_size, sampler_creator, asynchronous)
+                                                batch_size, sampler_creator, asynchronous, state_size=state_size)
 Experiment.register(OTDQNModelDriving, "transition model with dqn, for k8s driving env")
 
 

@@ -257,7 +257,7 @@ class TruncateTrajectorySampler2(Sampler):
     """Sample {batch_size} trajectories of length {trajectory_length} in every
     {interval} steps."""
     def __init__(self, replay_memory=None, trajectory_count=100, max_trajectory_length=1000,
-                 batch_size=8, trajectory_length=8, interval=4, sample_maker=None):
+                 batch_size=8, trajectory_length=8, interval=4, sample_maker=None, update_on=True):
         """
         sample  trajectories from replay memory
         :param replay_memory:
@@ -276,6 +276,7 @@ class TruncateTrajectorySampler2(Sampler):
             batch_size, trajectory_length, max_trajectory_length, interval
         self._step_n = 0
         self._current_trajectory = None
+        self._update_on = update_on
 
     def step(self, state, action, reward, next_state, episode_done, force_sample=False, **kwargs):
         """
@@ -294,7 +295,8 @@ class TruncateTrajectorySampler2(Sampler):
         self._current_trajectory.transition(
             **self._sample_maker(state, action, reward, next_state, episode_done, **kwargs))
         if self._current_trajectory.finalized:
-            self._replay.push_sample(self._current_trajectory)
+            if self._update_on:
+                self._replay.push_sample(self._current_trajectory)
             self._current_trajectory = playback.Trajectory(max_length=self._max_trajectory_length)
         if (self._step_n % self._interval == 0 or force_sample) \
                 and self._step_n > self._batch_size * self._trajectory_length * 4:

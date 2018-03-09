@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 
 import sys
+
+from hobotrl.experiment import ParallelGridSearch
+from hobotrl.policy import OUNoise, OUNoise2
+
 sys.path.append(".")
 import gym.spaces
 
@@ -202,7 +206,7 @@ class DPGPendulum(DPGExperiment):
                  network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3),
                                                                            grad_clip=10.0),
                  ou_params=(0, 0.2, hrl.utils.CappedLinear(1e5, 0.5, 0.1)),
-                 target_sync_interval=10, target_sync_rate=0.01, batch_size=32, replay_capacity=1000):
+                 target_sync_interval=10, target_sync_rate=0.01, batch_size=32, replay_capacity=1000, **kwargs):
         if env is None:
             env = gym.make("Pendulum-v0")
             env = hrl.envs.AugmentEnvWrapper(env, reward_decay=discount_factor, reward_scale=0.1)
@@ -231,8 +235,92 @@ class DPGPendulum(DPGExperiment):
 
         super(DPGPendulum, self).__init__(env, f_se, f_actor, f_critic, episode_n, discount_factor,
                                           network_optimizer_ctor, ou_params, target_sync_interval, target_sync_rate,
-                                          batch_size, replay_capacity)
+                                          batch_size, replay_capacity, **kwargs)
 Experiment.register(DPGPendulum, "DPG for Pendulum")
+
+
+class DPGBipedal(DPGPendulum):
+
+    def __init__(self, env=None, f_se=None, f_actor=None, f_critic=None,
+                 episode_n=2000, discount_factor=0.9,
+                 network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-4),
+                                                                           grad_clip=10.0),
+                 ou_params=(0, 0.2, hrl.utils.CappedExp(2e5, 0.5, 0.02)),
+                 target_sync_interval=1,
+                 target_sync_rate=0.001,
+                 batch_size=128,
+                 state_skip=4,
+                 reward_scale=0.5,
+                 replay_capacity=100000, **kwargs):
+        if env is None:
+            env = gym.make("BipedalWalker-v2")
+            env = MaxAndSkipEnv(env, max_len=1, skip=state_skip)
+            env = hrl.envs.AugmentEnvWrapper(env, reward_decay=discount_factor, reward_scale=reward_scale)
+
+        super(DPGBipedal, self).__init__(env, f_se, f_actor, f_critic, episode_n, discount_factor,
+                                         network_optimizer_ctor, ou_params, target_sync_interval, target_sync_rate,
+                                         batch_size, replay_capacity, **kwargs)
+Experiment.register(DPGBipedal, "DPG for Bipedal")
+
+
+class DPGBipedal2(DPGBipedal):
+
+    def __init__(self, env=None, f_se=None, f_actor=None, f_critic=None, episode_n=2000, discount_factor=0.9,
+                 network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-4),
+                                                                           grad_clip=10.0),
+                 noise_type=OUNoise2,
+                 ou_params=(0, hrl.utils.Cosine(1e4, 0.98, 0.8), hrl.utils.CappedExp(2e5, 2.0, 0.2)),
+                 target_sync_interval=1,
+                 target_sync_rate=0.001,
+                 batch_size=128,
+                 state_skip=1,
+                 reward_scale=0.5,
+                 replay_capacity=100000):
+        super(DPGBipedal2, self).__init__(env, f_se, f_actor, f_critic, episode_n, discount_factor,
+                                          network_optimizer_ctor, ou_params, target_sync_interval, target_sync_rate,
+                                          batch_size, state_skip, reward_scale, replay_capacity)
+Experiment.register(DPGBipedal2, "DPG for Bipedal, test for new noise")
+
+
+class DPGBipedalSearch(ParallelGridSearch):
+
+    def __init__(self):
+        super(DPGBipedalSearch, self).__init__(DPGBipedal, [
+            # {
+            #     "episode_n": [1200],
+            #     "replay_capacity": [100000, 10000, 1000],
+            #     "batch_size": [128],
+            #     "state_skip": [4],
+            #     "ou_params": [(0, 0.2, hrl.utils.CappedExp(2e5, 0.5, 0.02))]
+            # },
+            # {
+            #     "episode_n": [1200],
+            #     "replay_capacity": [100000],
+            #     "batch_size": [32],
+            #     "state_skip": [4],
+            #     "ou_params": [(0, 0.2, hrl.utils.CappedExp(2e5, 0.5, 0.02))]
+            # },
+            # {
+            #     "episode_n": [1200],
+            #     "replay_capacity": [100000],
+            #     "batch_size": [128],
+            #     "state_skip": [2, 1],
+            #     "ou_params": [(0, 0.2, hrl.utils.CappedExp(2e5, 0.5, 0.02))]
+            # },
+            {
+                "episode_n": [1200],
+                "replay_capacity": [100000],
+                "batch_size": [128],
+                "state_skip": [4],
+                "noise_type": [OUNoise2],
+                "ou_params": [(0, 0.8, hrl.utils.CappedExp(2e5, 2.0, 0.2)),
+                              (0, 0.8, hrl.utils.CappedExp(2e5, 1.5, 0.2)),
+                              (0, 0.8, hrl.utils.CappedExp(2e5, 1.5, 0.05)),
+                              (0, 0.8, hrl.utils.CappedExp(2e5, 2.0, 0.05)),
+                              ]
+            },
+        ], parallel=4)
+Experiment.register(DPGBipedalSearch, "Search for DPG for Bipedal")
 
 
 class CarEnvWrapper(object):

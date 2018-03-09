@@ -61,8 +61,25 @@ class OUNoise(object):
         return self._x
 
 
+class OUNoise2(object):
+    def __init__(self, shape, mu, momentum, scale):
+        """
+        :param shape:
+        :param mu: mean of noise
+        :param momentum: momentum of noise
+        :param scale: scale of noise
+        """
+        self._shape, self._mu, self._scale, self._momentum = shape, mu, scale, momentum
+        self._x = np.ones(self._shape) * self._mu + self._scale * np.random.randn(*self._shape)
+
+    def tick(self):
+        self._x = self._mu + self._momentum * (self._x - self._mu) + \
+                   self._scale * (1.0 - self._momentum) * np.random.randn(*self._shape)
+        return self._x
+
+
 class OUExplorationPolicy(Policy):
-    def __init__(self, action_function, mu, theta, sigma):
+    def __init__(self, action_function, mu, theta, sigma, noise_type=OUNoise):
         """
 
         :param action_function:
@@ -73,7 +90,7 @@ class OUExplorationPolicy(Policy):
         """
         self._action_function = action_function
         self._action_shape = [action_function.output().op.shape.as_list()[-1]]
-        self._ou_noise = OUNoise(self._action_shape, mu, theta, sigma)
+        self._ou_noise = noise_type(self._action_shape, mu, theta, sigma)
 
     @staticmethod
     def action_add(action, noise):
@@ -83,7 +100,9 @@ class OUExplorationPolicy(Policy):
         :param noise:
         :return:
         """
-        return action + np.abs(np.sign(noise) - action) * np.tanh(noise)
+        epsilon = 1e-8
+        margin = np.abs(np.sign(noise) - action)
+        return action + margin * np.tanh(noise / (margin + epsilon))
 
     def act(self, state, **kwargs):
         action = self._action_function(np.asarray(state)[np.newaxis, :])[0]

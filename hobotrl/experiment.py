@@ -68,6 +68,7 @@ class Experiment(object):
         parser.add_argument("--index", default="0")
         parser.add_argument("--render_interval", default="-1")
         parser.add_argument("--render_once", default="true")
+        parser.add_argument("--evaluate_interval", type=int, default=sys.maxint)
         parser.add_argument("--episode_n", default="1000")
         parser.add_argument("--cluster",
                             default="{'ps':['localhost:2222'], " \
@@ -173,11 +174,30 @@ class GridSearch(Experiment):
         return "_".join(["%s%s" % (f, escape_path(str(parameter[f]))) for f in names])
 
 
-def subprocess_run(exp_key, log_root, parameter, label, args):
+def subprocess_run(task_index):
+    queued = ParallelGridSearch.param_queue[task_index]
+    exp_class, log_root, parameter, label, args = queued
+    sub_stdout, sub_stderr = None, None
+    org_std = None
+
+    def reset_log_handler():
+        n_h = len(logging.root.handlers)
+        for i in range(n_h):
+            logging.root.removeHandler(logging.root.handlers[n_h - i - 1])
+        logging.basicConfig(format="[%(asctime)s] %(message)s")
     try:
         args.logdir = GridSearch.find_new(os.sep.join([log_root, label]))
+        os.makedirs(args.logdir)
+        org_std = sys.stdout, sys.stderr
+        sub_stdout = open(os.sep.join([args.logdir, "stdout.txt"]), "w")
+        sub_stderr = open(os.sep.join([args.logdir, "stderr.txt"]), "w")
+        logging.warning("starting task with logdir:%s", args.logdir)
+        sys.stdout, sys.stderr = sub_stdout, sub_stderr
+        reset_log_handler()
+        # logging again to start in log file
+        logging.warning("starting task with logdir:%s", args.logdir)
         with tf.Graph().as_default():
-            exp_class = ParallelGridSearch.class_cache[exp_key]
+            # exp_class = ParallelGridSearch.class_cache[exp_key]
             experiment = exp_class(**parameter)
             rewards = experiment.run(args)
     except Exception, e:
@@ -185,11 +205,29 @@ def subprocess_run(exp_key, log_root, parameter, label, args):
         traceback_ = traceback.format_tb(traceback_)
         traceback_ = "\n".join(traceback_)
         logging.warning("experiment[%s] failed:%s, %s, %s", label, type_, value_, traceback_)
+    finally:
+        if org_std is not None:
+            sys.stdout, sys.stderr = org_std
+        try:
+            if sub_stdout is not None:
+                sub_stdout.flush()
+                sub_stdout.close()
+                sub_stdout = None
+        except:
+            pass
+        try:
+            if sub_stderr is not None:
+                sub_stderr.flush()
+                sub_stderr.close()
+                sub_stderr = None
+        except:
+            pass
+        reset_log_handler()
 
 
 class ParallelGridSearch(Experiment):
 
-    class_cache = {}
+    param_queue = []
 
     def __init__(self, exp_class, parameters, parallel=4):
         """
@@ -217,19 +255,17 @@ class ParallelGridSearch(Experiment):
         """
         super(ParallelGridSearch, self).__init__()
         self._exp_class, self._parameters, self._parallel = exp_class, parameters, parallel
-        self._key = random.random()
-        ParallelGridSearch.class_cache[self._key] = exp_class
-        logging.warning("cache content:%s %s", id(ParallelGridSearch.class_cache), ParallelGridSearch.class_cache)
 
     def run(self, args):
-        self.pool = Pool(self._parallel)
         self.log_root = args.logdir
-        parameters = list(GridSearch.product(self._parameters))
-        labels = [GridSearch.labelize(p) for p in parameters]
-        n = len(labels)
+        for parameter in GridSearch.product(self._parameters):
+            label = GridSearch.labelize(parameter)
+            ParallelGridSearch.param_queue.append([self._exp_class, self.log_root, parameter, label, args])
+        n = len(ParallelGridSearch.param_queue)
+        task_index = list(range(n))
         logging.warning("total searched combination:%s", n)
-        ret = self.pool.amap(subprocess_run,
-                             [self._key] * n, [self.log_root] * n, parameters, labels, [args] * n)
+        self.pool = Pool(self._parallel)
+        ret = self.pool.amap(subprocess_run, task_index)
         ret.wait()
         self.pool.close()
         self.pool.join()
