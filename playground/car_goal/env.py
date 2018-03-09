@@ -14,6 +14,12 @@ class Goal(object):
         self.issue_t = 0
         self.car = (0, 0, 0)
 
+    def position_rel(self, car):
+        x, y, yaw = car
+        trans = np.array(((np.cos(yaw), np.sin(yaw)), (-np.sin(yaw), np.cos(yaw))))
+        return np.dot(trans, self.position_abs - np.array((x, y)))
+
+
     @property
     def position_abs(self):
         x, y, yaw = self.car
@@ -57,7 +63,7 @@ class CarRacingGoalWrapper(gym.Wrapper):
         self._car = (0, 0, 0)
         state = self.env.reset()
         self.init_marker()
-        return state, self._goal
+        return state
 
     def _step(self, action):
         self._n_steps += 1
@@ -110,7 +116,8 @@ class CarRacingGoalWrapper(gym.Wrapper):
         position = np.array(self.env.env.car.drawlist[-1].fixtures[0].shape.vertices)
         center = position.mean(axis=0)
         if self._goal is not None:
-            position = position - center + np.array((self._goal.pos[0], self._goal.pos[1]))
+            position = position - center + np.array((self._goal.pos[0],
+                                                    self._goal.pos[1]))
             self.env.env.car.drawlist[-1].fixtures[0].shape.vertices = position.tolist()
             self.env.env.car.drawlist[-1].fixtures[0].body.transform.position.x = self._goal.car[0]
             self.env.env.car.drawlist[-1].fixtures[0].body.transform.position.y = self._goal.car[1]

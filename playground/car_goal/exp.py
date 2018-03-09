@@ -1,31 +1,30 @@
 # -*- coding: utf-8 -*-
 import sys
-sys.append('../../')
 import tensorflow as tf
 import gym
 from hobotrl.utils import CappedExp
 from hobotrl.network import LocalOptimizer, Utils
 from hobotrl.environments.environments import ScaledFloatFrame, FrameStack, ScaledRewards, NoneSkipWrapper
-from test.exp_algorithms import Experiment, DPGExperiment
-from test.exp_car import CarGrassWrapper, CarContinuousWrapper
-from .env import CarRacingGoalWrapper
-
+sys.path.append('../../playground')
+from car_goal.env import CarRacingGoalWrapper
+sys.path.append('../../test')
+from exp_algorithms import Experiment, DPGExperiment
+from exp_car import CarGrassWrapper, CarContinuousWrapper
 
 class DDPGCarRacingSoftGoal(DPGExperiment):
-    def __int__(self, env=None, episode_n=1000, discount_factor=0.95,
+    def __init__(self, env=None, episode_n=1000, discount_factor=0.95,
                 f_se=None, f_actor=None, f_critic=None, network_optimizer_ctor=None,
                 target_sync_interval=10, target_sync_rate=0.01, batch_size=32,
                 ou_params=None, replay_capacity=10000, **kwargs):
         # environment
         if env is None:
             env = gym.make("CarRacing-v0")
+            env = CarRacingGoalWrapper(env)
+            env = NoneSkipWrapper(env, skip=5, render_all_steps=True)
             env = CarGrassWrapper(env, grass_penalty=0.5)
-            env = CarContinuousWrapper(env)
             env = ScaledFloatFrame(env)
-            env = NoneSkipWrapper(env, skip=5)
             env = FrameStack(env, 4)
             env = ScaledRewards(env, 0.2)
-            env = CarRacingGoalWrapper(env)
 
         # network
         l2 = 1e-7
@@ -74,10 +73,12 @@ class DDPGCarRacingSoftGoal(DPGExperiment):
 
             f_critic = f
         if network_optimizer_ctor is None:
+            # network_optimizer_ctor = lambda: LocalOptimizer(tf.train.AdamOptimizer(0.0), grad_clip=10.0)
             network_optimizer_ctor = lambda: LocalOptimizer(tf.train.AdamOptimizer(3e-5), grad_clip=10.0)
 
         if ou_params is None:
             ou_params = (0, 0.2, CappedExp(2e5, 0.5, 0.02))
+            # ou_params = (0, 1, 0)
 
         super(DDPGCarRacingSoftGoal, self).__init__(
             env, f_se, f_actor, f_critic, episode_n, discount_factor, network_optimizer_ctor,
@@ -85,4 +86,9 @@ class DDPGCarRacingSoftGoal(DPGExperiment):
             **kwargs
         )
 Experiment.register(DDPGCarRacingSoftGoal, "DDPG with soft goal.")
+
+
+if __name__ == '__main__':
+    Experiment.main()
+
 

@@ -1225,7 +1225,7 @@ class HalfFrame(gym.ObservationWrapper): #as compare to remapframe
         return dst
 
 
-class NoneSkipWrapper(gym.wrappers):
+class NoneSkipWrapper(gym.Wrapper):
     def __init__(self, env, skip=4):
         """Return only every `skip`-th frame"""
         super(NoneSkipWrapper, self).__init__(env)
