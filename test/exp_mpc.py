@@ -84,10 +84,10 @@ class MPCExperiment(Experiment):
 
 class MPCPendulum(MPCExperiment):
     def __init__(self, env=None, f_model=None,
-                 sample_n=16, horizon_n=2,
+                 sample_n=16, horizon_n=4,
                  episode_n=1000, discount_factor=0.99, update_interval=4,
-                 replay_size=10000, batch_size=32,
-                 greedy_epsilon=utils.CappedExp(1e5, 0.5, 0.05),
+                 replay_size=100000, batch_size=32,
+                 greedy_epsilon=utils.CappedExp(1e5, 2.5, 0.05),
                  network_optimizer_ctor=lambda: network.LocalOptimizer(tf.train.AdamOptimizer(1e-4), grad_clip=10.0)):
         if env is None:
             env = gym.make("Pendulum-v0")
@@ -112,6 +112,17 @@ class MPCPendulum(MPCExperiment):
                                           update_interval, replay_size, batch_size, greedy_epsilon,
                                           network_optimizer_ctor)
 Experiment.register(MPCPendulum, "MPC for Pendulum")
+
+
+class MPCPendulumSearch(ParallelGridSearch):
+
+    def __init__(self, parallel=4):
+        parameters = {
+            "sample_n": [4, 8, 16],
+            "horizon_n": [2, 4, 8],
+        }
+        super(MPCPendulumSearch, self).__init__(MPCPendulum, parameters, parallel)
+Experiment.register(MPCPendulumSearch, "search for MPC for Pendulum")
 
 
 if __name__ == '__main__':

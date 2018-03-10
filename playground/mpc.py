@@ -40,6 +40,7 @@ class MPCPolicy(Policy):
 
     def __init__(self, model_func, actor_func=None, value_func=None, sample_n=4, horizon_n=4, dim_action=None):
         """
+        Monte Carlo Rollouts
         :param model_func: transition model function. signature:
             model_func(state, action) => {'goal': goal, 'reward': reward}
         :type model_func: NetworkFunction
@@ -166,6 +167,7 @@ class MPCAgent(sampling.TransitionBatchUpdate,
         self._policy = WrapEpsilonGreedy(
             MPCPolicy(
                 NetworkFunction({"goal": self.network["goal"], "reward": self.network["reward"]})
+                , sample_n=self._sample_n, horizon_n=self._horizon_n,
             )
         , epsilon=greedy_epsilon, num_actions=dim_action, is_continuous=True)
 
