@@ -25,6 +25,7 @@ Common RL framework and utilities.
 * [v] Bootstrap DQN
 * [v] <a href="https://arxiv.org/abs/1705.05363" target="_blank">ICM</a>
 * [v] <a href="https://arxiv.org/abs/1707.06203" target="_blank">I2A</a>
+* [v] <a href="https://arxiv.org/abs/1702.08165" target="_blank">Soft Q Learning</a>
 
 ## Getting started
 
