@@ -38,7 +38,8 @@ class RandomContinuous(Function):
 
 class MPCPolicy(Policy):
 
-    def __init__(self, model_func, actor_func=None, value_func=None, sample_n=4, horizon_n=4, dim_action=None):
+    def __init__(self, model_func, actor_func=None, value_func=None, sample_n=4, horizon_n=4, dim_action=None,
+                 alpha_exploration=False):
         """
         Monte Carlo Rollouts
         :param model_func: transition model function. signature:
@@ -55,8 +56,11 @@ class MPCPolicy(Policy):
         :param sample_n: number of actions to sample
         :param horizon_n: rollout steps
         :param dim_action: total candidate count for discrete action
+        :param alpha_exploration: 0 if choose action greedy w.r.t. reward,
+            or proportional to exp(1/alpha * reward)
         """
         super(MPCPolicy, self).__init__()
+        self._alpha_exploration = alpha_exploration
         self._actor_func, self._model_func, self._sample_n, self._horizon_n = actor_func, model_func, sample_n, horizon_n
         self._value_func = value_func
         action_shape = model_func.inputs[1].shape.as_list()
@@ -82,24 +86,28 @@ class MPCPolicy(Policy):
             return self._default_actor(init_s)[0]
         actor = self._actor_func if self._actor_func is not None else self._default_actor
         actions, rewards = [], []
-        for i in range(self._sample_n):
-            reward = 0
-            s = init_s
-            for j in range(self._horizon_n):
-                a = actor(s) if self._dim_noise is None else actor(s, np.random.normal(0, 1.0, (1, self._dim_noise)))
-                if j == 0:
-                    actions.append(a)
-                logging.warning("i:%s,j:%s,s:%s,a:%s", i, j, s, a)
-                next_s_r = self._model_func(s, a)
-                g, r = next_s_r["goal"], next_s_r["reward"][0]
-                s = s + g
-                reward += r
-                if j == self._horizon_n - 1 and self._value_func is not None:
-                    reward += self._value_func(s)[0]
-            rewards.append(reward)
-        index = np.argmax(rewards)
-        action = actions[index][0]
-        logging.warning("reward:%s, index:%s, action%s", rewards, index, action)
+        init_s = np.repeat(np.asarray([state]), self._sample_n, axis=0)
+        s = init_s
+        reward = np.zeros([self._sample_n], dtype=np.float)
+        for j in range(self._horizon_n):
+            a = actor(s) if self._dim_noise is None else actor(s, np.random.normal(0, 1.0, (self._sample_n, self._dim_noise)))
+            if j == 0:
+                actions = a
+            # logging.warning("j:%s,s:%s,a:%s", j, s, a)
+            next_s_r = self._model_func(s, a)
+            g, r = next_s_r["goal"], next_s_r["reward"]
+            s = s + g
+            reward += r
+            if j == self._horizon_n - 1 and self._value_func is not None:
+                reward += self._value_func(s)
+        if not self._alpha_exploration or self._alpha_exploration <= 0:
+            index = np.argmax(reward)
+        else:
+            p = np.exp(1.0 / self._alpha_exploration * reward)
+            p = p / np.sum(p)
+            index = np.random.choice(self._sample_n, p=p)
+        action = actions[index]
+        logging.warning("reward:%s, index:%s, action%s", reward, index, action)
         return action
 
 

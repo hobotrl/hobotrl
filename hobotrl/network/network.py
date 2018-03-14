@@ -651,6 +651,7 @@ class BaseNetworkOptimizer(NetworkOptimizer):
         self._updater_labels = {}
         self._name_scope = tf.name_scope("NetworkOptimizer%s" % self._name)
         self._optimize_op = None
+        self._compiled = False
         self._compute_gradient_ops = {} # pass_name: op
         self._var_gradient_index = None # var: {pass_name: grad_index}
         self._apply_gradient_op = None
@@ -663,7 +664,7 @@ class BaseNetworkOptimizer(NetworkOptimizer):
         self._freeze_var = None
 
     def add_updater(self, updater, weight=1.0, name=None, forward_pass=NetworkOptimizer.DEFAULT_PASS):
-        if self._optimize_op is not None:
+        if self._compiled:
             raise RuntimeError("no updater can be added after compile()!")
         if name is None:
             name = "_" + str(len(self._updaters))
@@ -702,7 +703,7 @@ class BaseNetworkOptimizer(NetworkOptimizer):
         self._freeze_var = variables
 
     def compile(self):
-        if self._optimize_op is not None:
+        if self._compiled:
             raise RuntimeError("compile() can be invoked only once!")
         updates = {}
         for k in self._updaters:
@@ -714,8 +715,11 @@ class BaseNetworkOptimizer(NetworkOptimizer):
                 updates[pass_name] = []
             updates[pass_name].append(update)
         self.create_optimize_ops_(updates)
+        self._compiled = True
 
     def optimize_step(self, sess):
+        if not self._compiled:
+            self.compile()
         if self._optimize_op is not None:
             # single pass
             for pass_name in self._update_runs:

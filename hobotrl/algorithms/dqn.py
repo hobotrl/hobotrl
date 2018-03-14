@@ -109,7 +109,3 @@ class DQN(sampling.TransitionBatchUpdate,
             self.network.sync_target(self.sess, self._target_sync_rate)
         return info, {"score": info["FitTargetQ/td/td_losses"]}
 
-    def set_session(self, sess):
-        super(DQN, self).set_session(sess)
-        self.network.set_session(sess)
-
