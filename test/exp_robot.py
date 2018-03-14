@@ -3,10 +3,9 @@
 
 
 import sys
+sys.path.append(".")
 
 from hobotrl.experiment import ParallelGridSearch
-
-sys.path.append(".")
 
 from OpenGL import GL
 import gym
