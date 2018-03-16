@@ -11,18 +11,18 @@ from hobotrl.tf_dependent.ops import atanh
 from hobotrl.environments.environments import *
 from hobotrl.playback import Playback, BigPlayback
 from hobotrl.network import Utils
+from exp_car_flow import F
 
 
-class I2A(A3CExperimentWithI2A):
+class MsPacmanI2A(A3CExperimentWithI2A):
     def __init__(self, env=None, f_se = None, f_ac=None, f_tran=None, f_decoder=None, f_rollout=None, f_encoder = None,
                  episode_n=10000, learning_rate=1e-4, discount_factor=0.99,
                  entropy=hrl.utils.CappedLinear(1e6, 1e-1, 1e-4), batch_size=32):
         if env is None:
-            env = gym.make('Freeway-v0')
-            # env = CropMsPacman(env)
-            env = Downsample(env, length_factor=2.0)
+            env = gym.make('MsPacman-v0')
+            env = Downsample(env, dst_size=[96, 96])
             env = ScaledFloatFrame(env)
-            # env = ScaledRewards(env, 0.1)
+            env = ScaledRewards(env, 0.1)
             env = MaxAndSkipEnv(env, skip=4, max_len=1)
             env = FrameStack(env, k=4)
 
@@ -392,9 +392,211 @@ class I2A(A3CExperimentWithI2A):
             f_tran = create_transition_momentum
             f_decoder = create_decoder
 
-        super(I2A, self).__init__(env, f_se, f_ac, f_tran, f_decoder, f_rollout, f_encoder, episode_n, learning_rate,
+        super(MsPacmanI2A, self).__init__(env, f_se, f_ac, f_tran, f_decoder, f_rollout, f_encoder, episode_n, learning_rate,
                                                  discount_factor, entropy, batch_size)
-Experiment.register(I2A, "A3C with I2A for MsPacman")
+Experiment.register(MsPacmanI2A, "A3C with I2A for MsPacman")
+
+
+class MsPacmanOTDQN(OTDQNModelExperiment):
+    def __init__(self, env=None, episode_n=16000,
+                 f_create_q=None, f_se=None, f_transition=None, f_decoder=None, lower_weight=1.0, upper_weight=1.0,
+                 rollout_depth=5, discount_factor=0.99, ddqn=False, target_sync_interval=100, target_sync_rate=1.0,
+                 greedy_epsilon=0.1, network_optimizer=None, max_gradient=10.0, update_interval=4, replay_size=100000,
+                 batch_size=16, curriculum=[1, 3, 5], skip_step=[500000, 1000000], sampler_creator=None,
+                 asynchronous=False, save_image_interval=10000, with_momentum=True):
+        if env is None:
+            env = gym.make('MsPacman-v0')
+            env = Downsample(env, dst_size=[96, 96])
+            env = ScaledFloatFrame(env)
+            env = ScaledRewards(env, 0.01)
+            env = MaxAndSkipEnv(env, skip=4, max_len=1)
+            env = FrameStack(env, k=4)
+
+        if f_se is None:
+            f = F(env)
+            f_create_q = f.create_q()
+            f_se = f.create_se()
+            f_transition = f.create_transition_momentum()
+            # f_decoder = f.decoder_multiflow()
+            f_decoder = f.create_decoder()
+
+        if sampler_creator is None:
+            max_traj_length = 200
+
+            def create_sample(args):
+                bucket_size = 8
+                traj_count = replay_size / max_traj_length
+                bucket_count = traj_count / bucket_size
+                active_bucket = 4
+                ratio = 1.0 * active_bucket / bucket_count
+                transition_epoch = 8
+                trajectory_epoch = transition_epoch * max_traj_length
+                memory = BigPlayback(
+                    bucket_cls=Playback,
+                    bucket_size=bucket_size,
+                    max_sample_epoch=trajectory_epoch,
+                    capacity=traj_count,
+                    active_ratio=ratio,
+                    cache_path=os.sep.join([args.logdir, "cache", str(args.index)])
+                )
+                sampler = sampling.TruncateTrajectorySampler2(memory, replay_size / max_traj_length, max_traj_length,
+                                                              batch_size=1, trajectory_length=batch_size,
+                                                              interval=update_interval)
+                return sampler
+            sampler_creator = create_sample
+
+        super(MsPacmanOTDQN, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder, lower_weight,
+                                            upper_weight, rollout_depth, discount_factor, ddqn, target_sync_interval,
+                                            target_sync_rate, greedy_epsilon, network_optimizer, max_gradient,
+                                            update_interval, replay_size, batch_size, curriculum,
+                                            skip_step, sampler_creator, asynchronous, save_image_interval,
+                                            with_momentum=with_momentum)
+Experiment.register(MsPacmanOTDQN, "OTDQN for MsPacman with half input")
+
+
+class MsPacmanOTDQN_state(MsPacmanOTDQN):
+    def __init__(self, env=None, f_create_q=None, f_se=None, f_transition=None, f_decoder=None, with_momentum=False,
+                 state_size=1600):
+        if env is None:
+            env = gym.make('MsPacman-v0')
+            env = Downsample(env, dst_size=[96, 96])
+            env = ScaledFloatFrame(env)
+            env = ScaledRewards(env, 0.01)
+            env = MaxAndSkipEnv(env, skip=4, max_len=1)
+            env = FrameStack(env, k=4)
+
+        if f_se is None:
+            f = F(env, state_size)
+            f_create_q = f.create_q()
+            f_se = f.create_se()
+            f_transition = f.create_transition()
+            f_decoder = f.create_decoder()
+
+        super(MsPacmanOTDQN_state, self).__init__(env=env, f_create_q=f_create_q, f_se=f_se, f_transition=f_transition,
+                                                  f_decoder=f_decoder, with_momentum=with_momentum)
+Experiment.register(MsPacmanOTDQN_state, "state OTDQN for Freeway with half input")
+
+
+class MsPacmanOTDQN_state_256(MsPacmanOTDQN_state):
+    def __init__(self, state_size=256):
+        super(MsPacmanOTDQN_state_256, self).__init__(state_size=state_size)
+Experiment.register(MsPacmanOTDQN_state_256, "256 state OTDQN for Freeway with half input")
+
+
+class MsPacmanOTDQN_goal_256(MsPacmanOTDQN):
+    def __init__(self, with_momentum=False):
+        super(MsPacmanOTDQN_goal_256, self).__init__(with_momentum=with_momentum)
+Experiment.register(MsPacmanOTDQN_goal_256, "goal OTDQN for MsPacman with half input")
+
+
+class MsPacmanOTDQN_mom_1600(MsPacmanOTDQN):
+    def __init__(self, env=None, episode_n=16000, f_create_q=None, f_se=None, f_transition=None, f_decoder=None,
+                 with_momentum=True):
+        if env is None:
+            env = gym.make('MsPacman-v0')
+            env = Downsample(env, dst_size=[96, 96])
+            env = ScaledFloatFrame(env)
+            env = ScaledRewards(env, 0.01)
+            env = MaxAndSkipEnv(env, skip=4, max_len=1)
+            env = FrameStack(env, k=4)
+
+        if f_se is None:
+            f = F(env, 1600)
+            f_create_q = f.create_q()
+            f_se = f.create_se()
+            f_transition = f.create_transition_momentum()
+            # f_decoder = f.decoder_multiflow()
+            f_decoder = f.create_decoder()
+
+        super(MsPacmanOTDQN_mom_1600, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder,
+                                                     with_momentum=with_momentum)
+Experiment.register(MsPacmanOTDQN_mom_1600, "Hidden state size of 1600 on OTDQN for MsPacman with half input")
+
+
+class MsPacmanOTDQN_goal(MsPacmanOTDQN_mom_1600):
+    def __init__(self, with_momentum=False):
+        super(MsPacmanOTDQN_goal, self).__init__(with_momentum=with_momentum)
+Experiment.register(MsPacmanOTDQN_goal, "goal(1600) OTDQN for MsPacman with half input")
+
+
+class MsPacmanOTDQN_mom_decoder(MsPacmanOTDQN):
+    def __init__(self, env=None, episode_n=16000, f_create_q=None, f_se=None, f_transition=None, f_decoder=None):
+        if env is None:
+            env = gym.make('MsPacman-v0')
+            env = Downsample(env, dst_size=[96, 96])
+            env = ScaledFloatFrame(env)
+            env = ScaledRewards(env, 0.01)
+            env = MaxAndSkipEnv(env, skip=4, max_len=1)
+            env = FrameStack(env, k=4)
+
+        if f_se is None:
+            f = F(env, 256)
+            f_create_q = f.create_q()
+            f_se = f.create_se()
+            f_transition = f.create_transition_momentum()
+            # f_decoder = f.decoder_multiflow()
+            f_decoder = f.create_decoder_deconv()
+
+        super(MsPacmanOTDQN_mom_decoder, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder)
+Experiment.register(MsPacmanOTDQN_mom_decoder, "Deconv decoder and hidden state size of 1600 on OTDQN for MsPacman with half input")
+
+
+class OTDQN_ob_MsPacman(OTDQNModelExperiment):
+    def __init__(self, env=None, episode_n=160000,
+                 f_create_q=None, f_se=None, f_transition=None, f_decoder=None, lower_weight=1.0, upper_weight=1.0,
+                 rollout_depth=5, discount_factor=0.99, ddqn=False, target_sync_interval=100, target_sync_rate=1.0,
+                 greedy_epsilon=0.1, network_optimizer=None, max_gradient=10.0, update_interval=4, replay_size=1024,
+                 batch_size=16, curriculum=[1, 3, 5], skip_step=[500000, 1000000], sampler_creator=None,
+                 asynchronous=False, save_image_interval=10000, with_ob=True):
+        if env is None:
+            env = gym.make('MsPacman-v0')
+            env = Downsample(env, dst_size=[96, 96])
+            env = ScaledFloatFrame(env)
+            env = ScaledRewards(env, 0.01)
+            env = MaxAndSkipEnv(env, skip=4, max_len=1)
+            env = FrameStack(env, k=4)
+        if f_se is None:
+            f = F(env)
+            f_create_q = f.create_q()
+            f_se = f.create_se()
+            f_transition = f.create_env_upsample_fc()
+            # f_decoder = f.decoder_multiflow()
+            f_decoder = f.pass_decoder()
+        super(OTDQN_ob_MsPacman, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder, lower_weight,
+                                            upper_weight, rollout_depth, discount_factor, ddqn, target_sync_interval,
+                                            target_sync_rate, greedy_epsilon, network_optimizer, max_gradient,
+                                            update_interval, replay_size, batch_size, curriculum, skip_step,
+                                            sampler_creator, asynchronous, save_image_interval, with_ob)
+Experiment.register(OTDQN_ob_MsPacman, "Old traditional env model with dqn, for MsPacman")
+
+
+class OTDQN_ob_decoder_MsPacman(OTDQNModelExperiment):
+    def __init__(self, env=None, episode_n=160000,
+                 f_create_q=None, f_se=None, f_transition=None, f_decoder=None, lower_weight=1.0, upper_weight=1.0,
+                 rollout_depth=5, discount_factor=0.99, ddqn=False, target_sync_interval=100, target_sync_rate=1.0,
+                 greedy_epsilon=0.1, network_optimizer=None, max_gradient=10.0, update_interval=4, replay_size=1024,
+                 batch_size=16, curriculum=[1, 3, 5], skip_step=[500000, 1000000], sampler_creator=None,
+                 asynchronous=False, save_image_interval=10000, with_ob=True):
+        if env is None:
+            env = gym.make('MsPacman-v0')
+            env = Downsample(env, dst_size=[96, 96])
+            env = ScaledFloatFrame(env)
+            env = ScaledRewards(env, 0.01)
+            env = MaxAndSkipEnv(env, skip=4, max_len=1)
+            env = FrameStack(env, k=4)
+        if f_se is None:
+            f = F(env)
+            f_create_q = f.create_q()
+            f_se = f.create_se()
+            f_transition = f.create_env_deconv_fc()
+            # f_decoder = f.decoder_multiflow()
+            f_decoder = f.pass_decoder()
+        super(OTDQN_ob_decoder_MsPacman, self).__init__(env, episode_n, f_create_q, f_se, f_transition, f_decoder, lower_weight,
+                                            upper_weight, rollout_depth, discount_factor, ddqn, target_sync_interval,
+                                            target_sync_rate, greedy_epsilon, network_optimizer, max_gradient,
+                                            update_interval, replay_size, batch_size, curriculum, skip_step,
+                                            sampler_creator, asynchronous, save_image_interval, with_ob)
+Experiment.register(OTDQN_ob_decoder_MsPacman, "Old traditional env model with dqn, for MsPacman")
 
 
 if __name__ == '__main__':

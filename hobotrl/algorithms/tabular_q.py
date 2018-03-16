@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import logging
 import numpy as np
 
 from hobotrl.core import BaseAgent
@@ -14,7 +15,7 @@ class TabularQFunc(Function):
     (state, action) pair and can be updated with the temporal-difference (TD)
     learning algorithm.
     """
-    def __init__(self, actions, gamma, greedy_policy=True, alpha=1.0,
+    def __init__(self, actions, gamma, greedy_policy=True, alpha=0.1,
                  default_q_val=0.0, **kwargs):
         """Initialization
 

@@ -78,12 +78,13 @@ class TabularLake(Experiment):
         env = gym.make("FrozenLake-v0")
         agent = tabular_q.TabularQLearning(
             # TablularQMixin params
-            actions=range(env.action_space.n),
-            gamma=reward_decay,
+            env.action_space.n,
+            discount_factor=reward_decay,
             # EpsilonGreedyPolicyMixin params
-            epsilon=0.2
+            epsilon_greedy=0.1
         )
-        runner = hrl.envs.EnvRunner(env, agent, reward_decay, evaluate_interval=1000, render_interval=1000)
+        runner = hrl.envs.EnvRunner(env, agent, reward_decay, evaluate_interval=1000, render_interval=1000,
+                                    logdir=args.logdir)
         runner.episode(20000)
 Experiment.register(TabularLake, "FrozenLake with tabular-q learning")
 

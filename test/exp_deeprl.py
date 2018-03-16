@@ -135,7 +135,7 @@ Experiment.register(ACConPendulumSearch, "continuous actor critic for Pendulum")
 
 class DQNPendulum(DQNExperiment):
 
-    def __init__(self, env=None, f_create_q=None, episode_n=1000, discount_factor=0.99, ddqn=False, target_sync_interval=100,
+    def __init__(self, env=None, f_create_q=None, episode_n=200, discount_factor=0.99, ddqn=False, target_sync_interval=100,
                  target_sync_rate=1.0, update_interval=4, replay_size=1000, batch_size=32, greedy_epsilon=0.1,
                  network_optimizer_ctor=lambda: hrl.network.LocalOptimizer(tf.train.AdamOptimizer(1e-3),
                                                                            grad_clip=10.0)):
@@ -144,11 +144,13 @@ class DQNPendulum(DQNExperiment):
             env = hrl.envs.C2DEnvWrapper(env, [5])
             env = hrl.envs.AugmentEnvWrapper(env, reward_decay=0.9, reward_scale=0.1)
         if f_create_q is None:
+            l2 = 1e-10
+
             def f_net(inputs):
                 input_state = inputs[0]
                 fc_out = hrl.utils.Network.layer_fcs(
                     input_state, [200, 200], env.action_space.n,
-                    activation_hidden=tf.nn.relu, activation_out=None, l2=1e-4
+                    activation_hidden=tf.nn.relu, activation_out=None, l2=l2
                 )
                 return {"q": fc_out}
             f_create_q = f_net

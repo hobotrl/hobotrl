@@ -24,7 +24,7 @@ class EnvRunner(object):
     def __init__(self, env, agent, reward_decay=0.99, max_episode_len=5000,
                  evaluate_interval=sys.maxint, render_interval=sys.maxint,
                  render_once=False,
-                 logdir=None):
+                 logdir=None, fake=False):
         """
 
         :param env: environment.
@@ -47,6 +47,7 @@ class EnvRunner(object):
         if logdir is not None:
             self.summary_writer = SummaryWriterCache.get(logdir)
         self.render_once = True if render_once else False
+        self._fake = fake
 
     def step(self, evaluate=False):
         """
@@ -65,19 +66,27 @@ class EnvRunner(object):
         self.action = self.agent.act(
             state=self.state, evaluate=evaluate, sess=sess
         )
-        next_state, reward, done, env_info = self.env.step(self.action)
-        self.total_reward = reward + self.reward_decay * self.total_reward
-        info = self.agent.step(
-            state=self.state, action=self.action, reward=reward,
-            next_state=next_state, episode_done=done
-        )
-        info.update(env_info)
-        self.record(info)
-        self.state = next_state
-        if self.render_once:
-            self.env.render()
-            self.render_once = False
-        return done
+        if not self._fake:
+            next_state, reward, done, env_info = self.env.step(self.action)
+            self.total_reward = reward + self.reward_decay * self.total_reward
+            info = self.agent.step(
+                state=self.state, action=self.action, reward=reward,
+                next_state=next_state, episode_done=done
+            )
+            info.update(env_info)
+            self.state = next_state
+            self.record(info)
+            if self.render_once:
+                self.env.render()
+                self.render_once = False
+            return done
+        else:
+            info = self.agent.step(None, None, 1.0, None, False)
+            self.record(info)
+            if self.render_once:
+                self.env.render()
+                self.render_once = False
+            return False
 
     def record(self, info):
         if isinstance(self.agent, BaseDeepAgent):
@@ -1257,6 +1266,31 @@ class HalfFrame(gym.ObservationWrapper): #as compare to remapframe
         cv2.waitKey(10)
         dst=cv2.resize(dst, (48,48), interpolation=cv2.INTER_CUBIC)
         return dst
+
+
+class NoneSkipWrapper(gym.Wrapper):
+    def __init__(self, env, skip=4, render_all_steps=False):
+        """Return only every `skip`-th frame"""
+        super(NoneSkipWrapper, self).__init__(env)
+        self._skip = skip
+
+    def _step(self, action):
+        total_reward = 0.0
+        done = None
+        for i in range(self._skip):
+            action = action if i == 0 else None
+            obs, reward, done, info = self.env.step(action)
+            if i != 0:
+                self.env.render()
+            total_reward += reward
+            if done:
+                break
+
+        return obs, total_reward, done, info
+
+    def _reset(self):
+        obs = self.env.reset()
+        return obs
 
 
 def wrap_dqn(env):
