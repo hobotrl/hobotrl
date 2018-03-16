@@ -39,7 +39,7 @@ class EpsilonGreedyPolicy(Policy):
         if exploration and np.random.rand() < self._epsilon:
             action = np.random.randint(self._num_actions)
         else:
-            q_values = self.q_function(np.asarray([state]))[0]
+            q_values = self.q_function(np.expand_dims(np.asarray(state), axis=0))[0]
             action = np.argmax(q_values)
         return action
 
