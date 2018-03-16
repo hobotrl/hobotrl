@@ -1013,6 +1013,38 @@ class MaxAndSkipEnv(gym.Wrapper):
         return obs
 
 
+class MaxAndSkipEnv2(gym.Wrapper):
+    def __init__(self, env=None, max_len=2, skip=4):
+        """Return only every `skip`-th frame"""
+        super(MaxAndSkipEnv2, self).__init__(env)
+        # most recent raw observations (for max pooling across time steps)
+        self._obs_buffer = deque(maxlen=max_len)
+        self._skip = skip
+
+    def _step(self, action):
+        total_reward = 0.0
+        done = None
+        n = 0
+        for n in range(self._skip):
+            obs, reward, done, info = self.env.step(action)
+            self._obs_buffer.append(obs)
+            total_reward += reward
+            if done:
+                break
+        mean_reward = total_reward * 1.0 / (n+1)
+
+        max_frame = np.max(np.stack(self._obs_buffer), axis=0)
+
+        return max_frame, mean_reward, done, info
+
+    def _reset(self):
+        """Clear past frame buffer and init. to first obs. from inner env."""
+        self._obs_buffer.clear()
+        obs = self.env.reset()
+        self._obs_buffer.append(obs)
+        return obs
+
+
 class ProcessFrame84(gym.ObservationWrapper):
     def __init__(self, env=None):
         super(ProcessFrame84, self).__init__(env)
@@ -1100,7 +1132,9 @@ class FrameStack(gym.Wrapper):
         gym.Wrapper.__init__(self, env)
         self.k = k
         self.frames = deque([], maxlen=k)
-        shp = env.observation_space.shape
+        shp = list(env.observation_space.shape)
+        if len(shp) == 2:
+            shp.append(1)
         self.observation_space = gym.spaces.Box(low=0, high=255, shape=(shp[0], shp[1], shp[2] * k))
 
     def _reset(self):
