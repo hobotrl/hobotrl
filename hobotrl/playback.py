@@ -778,7 +778,9 @@ class BalancedMapPlayback(MapPlayback):
 
     @property
     def sample_prob(self):
-        if 'sample_prob' not in self.cache:
+        try:
+            ret = self.cache['sample_prob']
+        except:
             count = self.get_count()
             p_action = self.action_prob / self.UPSAMPLE_BIAS[:-1]
             data = np.array(self.data['action'].data[:count],
@@ -791,23 +793,31 @@ class BalancedMapPlayback(MapPlayback):
             p_dones = p_done[data]
             sample_prob = 1.0 / p_actions / p_dones
             sample_prob /= np.sum(sample_prob)
-            self.cache['sample_prob'] = sample_prob
-        return self.cache['sample_prob']
+            if count == self.capacity:
+                self.cache['sample_prob'] = sample_prob
+            ret = sample_prob
+        return ret
 
     @property
     def done_prob(self):
-        if 'done_prob' not in self.cache:
+        try:
+            ret = self.cache['done_prob']
+        except:
             count = self.get_count()
             data = self.data['episode_done'].data[:count]
             prob = 1.0 * sum(data) / self.count
             cap = self.P_MIN[1]
             prob = np.maximum(np.minimum(prob, 1-cap), cap)
-            self.cache['done_prob'] = prob
-        return self.cache['done_prob']
+            if count == self.capacity:
+                self.cache['done_prob'] = prob
+            ret = prob
+        return ret
 
     @property
     def action_prob(self):
-        if 'action_prob' not in self.cache:
+        try:
+            ret = self.cache['action_prob']
+        except:
             count = self.get_count()
             data = np.array(self.data['action'].data[:count])
             one_hot = np.arange(self.NUM_ACTIONS)[:, np.newaxis] == \
@@ -816,8 +826,10 @@ class BalancedMapPlayback(MapPlayback):
             prob = 1.0 * cnt / np.sum(cnt)
             cap = self.P_MIN[0]
             prob = np.maximum(np.minimum(prob, 1-cap), cap)
-            self.cache['action_prob'] = prob
-        return self.cache['action_prob']
+            if count == self.capacity:
+                self.cache['action_prob'] = prob
+            ret = prob
+        return prob
 
 
 class PersistencyWrapper(wrapt.ObjectProxy):
