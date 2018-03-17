@@ -262,10 +262,10 @@ class Playback(object):
             if self.sample_type is None:
                 self.sample_type = sample_type
                 self.sample_shape = sample_shape
-            # logging.warning(
-            #     ("[Playback.add_sample()]: initializing data with: "
-            #      "class:%s, type: %s, shape: %s"), sample_class, sample_type, sample_shape
-            # )
+            logging.warning(
+                ("[Playback.add_sample()]: initializing data with: "
+                 "class:%s, type: %s, shape: %s"), sample_class, sample_type, sample_shape
+            )
             self.data = [None] * self.capacity
 
         # Place data
@@ -376,10 +376,10 @@ class MapPlayback(Playback):
         self.push_index = (self.push_index + 1) % self.capacity
 
     def add_sample(self, sample, index, sample_score=0):
-        if self.count < self.capacity:
-            self.count += 1
         for key in self.data:
             self.data[key].add_sample(sample[key], index, sample_score)
+        if self.count < self.capacity:
+            self.count += 1
 
     def get_batch(self, index):
         batch = dict([(key, self.data[key].get_batch(index)) for key in self.data])
@@ -586,7 +586,7 @@ class NearPrioritizedPlayback(MapPlayback):
                 logging.warning("maxed score:%s", sample_score)
             else:
                 sample_score = 0.0
-        logging.warning("pushed sample score:%s", sample_score)
+        logging.warning("pushed sample, score: %s", sample_score)
         sample["_score"] = float(sample_score)
         if self.evict_policy == "sequence":
             super(NearPrioritizedPlayback, self).push_sample(sample, sample_score)
@@ -616,11 +616,13 @@ class NearPrioritizedPlayback(MapPlayback):
             self.data[i].reset()
 
     def next_batch_index(self, batch_size):
-        if self.get_count() < self.get_capacity():
+        if self.get_count() == 0:
+            return np.asarray([], dtype=int)
+        elif self.get_count() < self.get_capacity():
             p = self.data["_score"].data[:self.get_count()]
         else:
             p = self.data["_score"].data
-        p = self.compute_distribution(p.reshape(-1))
+        p = self.compute_distribution(np.asarray(p).reshape(-1))
         index = np.random.choice(np.arange(len(p)), size=batch_size, replace=False, p=p)
         return index
 
