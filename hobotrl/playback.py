@@ -551,10 +551,11 @@ class NearPrioritizedPlayback(MapPlayback):
     """
     _ARG_SLOTS = ('capacity',)
     _KWARG_SLOTS = ('augment_offset', 'augment_scale', 'evict_policy',
+                    'sample_policy',
                     'epsilon', 'priority_bias', 'importance_weight')
     def __init__(self, capacity, augment_offset={}, augment_scale={},
-                 evict_policy="sequence", epsilon=1e-3,
-                 priority_bias=1.0, importance_weight=1.0):
+                 evict_policy="sequence", sample_policy="proportional",
+                 epsilon=1e-3, priority_bias=1.0, importance_weight=1.0):
         """
 
         :param capacity:
@@ -577,16 +578,17 @@ class NearPrioritizedPlayback(MapPlayback):
                                                       augment_scale=augment_scale,
                                                       )
         self.evict_policy = evict_policy
+        self.sample_policy = sample_policy
         self.epsilon, self.priority_bias, self.importance_weight = epsilon, priority_bias, importance_weight
 
     def push_sample(self, sample, sample_score=None):
         if sample_score is None:
             if self.data is not None and self.data["_score"].data is not None:
                 sample_score = np.max(self.data["_score"].data)
-                logging.warning("maxed score:%s", sample_score)
+                # logging.warning("maxed score: %s", sample_score)
             else:
                 sample_score = 0.0
-        logging.warning("pushed sample, score: %s", sample_score)
+        # logging.warning("pushed sample, score: %s", sample_score)
         sample["_score"] = float(sample_score)
         if self.evict_policy == "sequence":
             super(NearPrioritizedPlayback, self).push_sample(sample, sample_score)
@@ -603,11 +605,17 @@ class NearPrioritizedPlayback(MapPlayback):
                 self.add_sample(sample, index)
 
     def compute_distribution(self, score):
-        s_min = np.min(score)
-        if s_min < 0:
-            score = score - s_min
-        exponent = self.priority_bias
-        score = np.power(score + self.epsilon, exponent)
+        if self.sample_policy == "proportional":
+            s_min = np.min(score)
+            if s_min < 0:
+                score = score - s_min
+            exponent = self.priority_bias
+            score = np.power(score + self.epsilon, exponent)
+        elif self.sample_policy == "rank":
+            rank = len(score) - 1 - score.argsort().argsort()
+            score = (1.0/(np.arange(len(score))+1))[rank]
+        else:
+            raise Exception("Not implemented.")
         p = score / np.sum(score)
         return p
 
