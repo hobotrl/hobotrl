@@ -580,11 +580,12 @@ class NearPrioritizedPlayback(MapPlayback):
         self.evict_policy = evict_policy
         self.sample_policy = sample_policy
         self.epsilon, self.priority_bias, self.importance_weight = epsilon, priority_bias, importance_weight
+        self.max_score = 0.0 
 
     def push_sample(self, sample, sample_score=None):
         if sample_score is None:
             if self.data is not None and self.data["_score"].data is not None:
-                sample_score = np.max(self.data["_score"].data)
+                sample_score = self.max_score + 1e-3
                 # logging.warning("maxed score: %s", sample_score)
             else:
                 sample_score = 0.0
@@ -612,6 +613,8 @@ class NearPrioritizedPlayback(MapPlayback):
             exponent = self.priority_bias
             score = np.power(score + self.epsilon, exponent)
         elif self.sample_policy == "rank":
+            # randomize tail distribution
+            score += np.random.rand(len(score)) * self.epsilon
             rank = len(score) - 1 - score.argsort().argsort()
             score = (1.0/(np.arange(len(score))+1))[rank]
         else:
@@ -662,7 +665,7 @@ class NearPrioritizedPlayback(MapPlayback):
         # logging.warning("update score[%s]: %s -> %s", index, self.data["_score"].data[index], score)
         for i, s in zip(index, score):
             self.data["_score"].data[i] = s
-
+            self.max_score = max(s, self.max_score)
 
 class NPPlayback(MapPlayback):
     _ARG_SLOTS = ('capacity',)
@@ -1018,7 +1021,7 @@ class BigPlayback(Playback):
         self.last_t_bktio = time.time()
         self.cnt_qi_empty = 0
         self.cnt_qo_empty = 0
-        
+ 
         self._thread_io_monitor = Thread(
             target=self.__monitor_loop, args=(self._monitor_stop_event,)
         )
