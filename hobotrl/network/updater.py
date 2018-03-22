@@ -56,7 +56,8 @@ class FitTargetQ(network.NetworkUpdater):
         num_actions = learn_q.output().op.shape.as_list()[-1]
         self.selected_q = tf.reduce_sum(
             tf.one_hot(self._input_action, num_actions) * op_q, axis=1)
-        self._op_losses = td_loss_fcn(self._input_target_q - self.selected_q)
+        self._op_td = self.selected_q - self._input_target_q
+        self._op_losses = td_loss_fcn(self._op_td)
         self._op_losses_weighted = self._op_losses * self._input_sample_weight
         self._sym_loss = tf.reduce_mean(self._op_losses_weighted)
         self._update_operation = network.MinimizeLoss(self._sym_loss, var_list=self._q.variables)
@@ -93,6 +94,7 @@ class FitTargetQ(network.NetworkUpdater):
             "done": batch["episode_done"],
             "q": self.selected_q, "target_q": target_q_val,
             "optimizer_loss": self._sym_loss,
+            "td": self._op_td,
             "td_losses": self._op_losses,
             "td_losses_weighted": self._op_losses_weighted}
         update_run = network.UpdateRun(feed_dict=feed_dict, fetch_dict=fetch_dict)

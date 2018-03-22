@@ -563,11 +563,12 @@ class NearPrioritizedPlayback(MapPlayback):
             "sequence": old sample is replaced as FIFO style;
             "random": old sample is replaced with probability be inversely proportional to sample's 'score_'.
         :param epsilon: minimum score_ regularizer preventing score_ == 0
-        :param priority_bias: `alpha`, [0, 1]:  bias introduced from priority sampling.
+        :param priority_bias: `alpha`, [0, +inf]:  bias exponent for priority score
             can be a constant or a callable for variable value.
-            0 for uniform distribution, no bias from priority;
-            1 for fully-prioritized distribution, with bias
-        :param importance_weight: `beta`, [0, 1]: importance sampling weight correcting priority biases.
+            0 for uniform distribution;
+            1 for proportional score, linear in score;
+            +inf for fully priotized sampling.
+        :param importance_weight: `beta`, [0, 1]: importance sampling correcting weight.
             can be a constant or a callable for variable value.
             0 for no correction at all.
             1 for fully compensation for priority bias.
@@ -606,12 +607,10 @@ class NearPrioritizedPlayback(MapPlayback):
                 self.add_sample(sample, index)
 
     def compute_distribution(self, score):
-        if self.sample_policy == "proportional":
+        if self.sample_policy == "prop":
             s_min = np.min(score)
             if s_min < 0:
                 score = score - s_min
-            exponent = self.priority_bias
-            score = np.power(score + self.epsilon, exponent)
         elif self.sample_policy == "rank":
             # randomize tail distribution
             score += np.random.rand(len(score)) * self.epsilon
@@ -619,6 +618,7 @@ class NearPrioritizedPlayback(MapPlayback):
             score = (1.0/(np.arange(len(score))+1))[rank]
         else:
             raise Exception("Not implemented.")
+        score = np.power(score + self.epsilon, self.priority_bias)
         p = score / np.sum(score)
         return p
 
@@ -657,7 +657,6 @@ class NearPrioritizedPlayback(MapPlayback):
         # max_w = np.max(w)
         # if max_w > 1.0:
         #     w = w / np.max(w)
-
         batch["_index"], batch["_weight"] = index, w
         return batch
 

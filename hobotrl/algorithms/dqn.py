@@ -107,5 +107,5 @@ class DQN(sampling.TransitionBatchUpdate,
         info = self.network_optimizer.optimize_step(self.sess)
         if self._update_count % self._target_sync_interval == 0:
             self.network.sync_target(self.sess, self._target_sync_rate)
-        return info, {"score": info["FitTargetQ/td/td_losses"]}
+        return info, {"score": np.abs(info["FitTargetQ/td/td"])}
 
